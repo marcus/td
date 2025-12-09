@@ -335,6 +335,22 @@ var wsCurrentCmd = &cobra.Command{
 			fmt.Println()
 		}
 
+		// Show changed files with diff stats
+		if ws.StartSHA != "" {
+			changes, _ := git.GetChangedFilesSince(ws.StartSHA)
+			if len(changes) > 0 {
+				fmt.Println("FILES CHANGED:")
+				for _, change := range changes {
+					stats := ""
+					if change.Additions > 0 || change.Deletions > 0 {
+						stats = fmt.Sprintf(" +%d -%d", change.Additions, change.Deletions)
+					}
+					fmt.Printf("  %s%s\n", change.Path, stats)
+				}
+				fmt.Println()
+			}
+		}
+
 		// Show recent logs from this session
 		fmt.Println("SESSION LOG (recent):")
 		for _, issueID := range issueIDs {
@@ -624,6 +640,46 @@ var wsShowCmd = &cobra.Command{
 				statusMark = " ✓"
 			}
 			fmt.Printf("  %s  %s  %s%s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status), statusMark)
+		}
+		fmt.Println()
+
+		// Show handoff summary for all tagged issues (deduplicated)
+		doneSet := make(map[string]bool)
+		decisionsSet := make(map[string]bool)
+		var allDone, allDecisions []string
+
+		for _, id := range issueIDs {
+			handoff, _ := database.GetLatestHandoff(id)
+			if handoff != nil {
+				for _, item := range handoff.Done {
+					if !doneSet[item] {
+						doneSet[item] = true
+						allDone = append(allDone, item)
+					}
+				}
+				for _, item := range handoff.Decisions {
+					if !decisionsSet[item] {
+						decisionsSet[item] = true
+						allDecisions = append(allDecisions, item)
+					}
+				}
+			}
+		}
+
+		if len(allDone) > 0 || len(allDecisions) > 0 {
+			fmt.Println("HANDOFF SUMMARY:")
+			if len(allDone) > 0 {
+				fmt.Println("  Done:")
+				for _, item := range allDone {
+					fmt.Printf("    - %s\n", item)
+				}
+			}
+			if len(allDecisions) > 0 {
+				fmt.Println("  Decisions:")
+				for _, item := range allDecisions {
+					fmt.Printf("    - %s\n", item)
+				}
+			}
 		}
 
 		return nil

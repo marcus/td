@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -299,6 +302,14 @@ var importCmd = &cobra.Command{
 
 		filePath := args[0]
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		format, _ := cmd.Flags().GetString("format")
+
+		// Auto-detect format from extension if not specified
+		if format == "" || format == "json" {
+			if strings.HasSuffix(filePath, ".md") {
+				format = "md"
+			}
+		}
 
 		data, err := os.ReadFile(filePath)
 		if err != nil {
@@ -306,68 +317,203 @@ var importCmd = &cobra.Command{
 			return err
 		}
 
-		// Parse JSON
-		var importData []map[string]interface{}
-		if err := json.Unmarshal(data, &importData); err != nil {
-			output.Error("failed to parse JSON: %v", err)
-			return err
+		var imported int
+
+		if format == "md" {
+			imported, err = importMarkdown(database, string(data), dryRun)
+		} else {
+			imported, err = importJSON(database, data, dryRun)
 		}
 
-		imported := 0
-		for _, item := range importData {
-			issueData, ok := item["issue"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			title, _ := issueData["title"].(string)
-			if title == "" {
-				continue
-			}
-
-			if dryRun {
-				fmt.Printf("[dry-run] Would import: %s\n", title)
-				imported++
-				continue
-			}
-
-			issue := &models.Issue{
-				Title: title,
-			}
-
-			if desc, ok := issueData["description"].(string); ok {
-				issue.Description = desc
-			}
-			if t, ok := issueData["type"].(string); ok {
-				issue.Type = models.Type(t)
-			}
-			if p, ok := issueData["priority"].(string); ok {
-				issue.Priority = models.Priority(p)
-			}
-			if pts, ok := issueData["points"].(float64); ok {
-				issue.Points = int(pts)
-			}
-			if labels, ok := issueData["labels"].([]interface{}); ok {
-				for _, l := range labels {
-					if label, ok := l.(string); ok {
-						issue.Labels = append(issue.Labels, label)
-					}
-				}
-			}
-
-			if err := database.CreateIssue(issue); err != nil {
-				output.Warning("failed to import '%s': %v", title, err)
-				continue
-			}
-
-			fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
-			imported++
+		if err != nil {
+			output.Error("%v", err)
+			return err
 		}
 
 		fmt.Printf("\nImported %d issues\n", imported)
 
 		return nil
 	},
+}
+
+// importJSON imports issues from JSON format
+func importJSON(database *db.DB, data []byte, dryRun bool) (int, error) {
+	var importData []map[string]interface{}
+	if err := json.Unmarshal(data, &importData); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON: %v", err)
+	}
+
+	imported := 0
+	for _, item := range importData {
+		issueData, ok := item["issue"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		title, _ := issueData["title"].(string)
+		if title == "" {
+			continue
+		}
+
+		if dryRun {
+			fmt.Printf("[dry-run] Would import: %s\n", title)
+			imported++
+			continue
+		}
+
+		issue := &models.Issue{
+			Title: title,
+		}
+
+		if desc, ok := issueData["description"].(string); ok {
+			issue.Description = desc
+		}
+		if t, ok := issueData["type"].(string); ok {
+			issue.Type = models.Type(t)
+		}
+		if p, ok := issueData["priority"].(string); ok {
+			issue.Priority = models.Priority(p)
+		}
+		if pts, ok := issueData["points"].(float64); ok {
+			issue.Points = int(pts)
+		}
+		if labels, ok := issueData["labels"].([]interface{}); ok {
+			for _, l := range labels {
+				if label, ok := l.(string); ok {
+					issue.Labels = append(issue.Labels, label)
+				}
+			}
+		}
+
+		if err := database.CreateIssue(issue); err != nil {
+			output.Warning("failed to import '%s': %v", title, err)
+			continue
+		}
+
+		fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
+		imported++
+	}
+
+	return imported, nil
+}
+
+// importMarkdown imports issues from markdown format
+// Supports formats like:
+//   ## Title
+//   - Status: open
+//   - Type: feature
+//   - Priority: P1
+//   - Points: 3
+//   - Labels: label1, label2
+//   Description text
+func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
+	scanner := bufio.NewScanner(strings.NewReader(data))
+	imported := 0
+
+	var currentIssue *models.Issue
+	var descLines []string
+	inDescription := false
+
+	// Regex patterns
+	headerRegex := regexp.MustCompile(`^##\s+(.+)$`)
+	statusRegex := regexp.MustCompile(`^-\s*Status:\s*(.+)$`)
+	typeRegex := regexp.MustCompile(`^-\s*Type:\s*(.+)$`)
+	priorityRegex := regexp.MustCompile(`^-\s*Priority:\s*(.+)$`)
+	pointsRegex := regexp.MustCompile(`^-\s*Points:\s*(\d+)$`)
+	labelsRegex := regexp.MustCompile(`^-\s*Labels:\s*(.+)$`)
+
+	saveIssue := func() {
+		if currentIssue != nil {
+			if len(descLines) > 0 {
+				currentIssue.Description = strings.TrimSpace(strings.Join(descLines, "\n"))
+			}
+
+			if dryRun {
+				fmt.Printf("[dry-run] Would import: %s (%s, %s)\n",
+					currentIssue.Title, currentIssue.Type, currentIssue.Priority)
+				imported++
+			} else {
+				if err := database.CreateIssue(currentIssue); err != nil {
+					output.Warning("failed to import '%s': %v", currentIssue.Title, err)
+				} else {
+					fmt.Printf("IMPORTED %s: %s\n", currentIssue.ID, currentIssue.Title)
+					imported++
+				}
+			}
+		}
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Check for new issue header
+		if matches := headerRegex.FindStringSubmatch(line); matches != nil {
+			saveIssue()
+			currentIssue = &models.Issue{
+				Title:    matches[1],
+				Type:     models.TypeTask,
+				Priority: models.PriorityP2,
+			}
+			descLines = nil
+			inDescription = false
+			continue
+		}
+
+		if currentIssue == nil {
+			continue
+		}
+
+		// Parse metadata lines
+		if matches := statusRegex.FindStringSubmatch(line); matches != nil {
+			// Status is set on creation, ignore
+			inDescription = false
+			continue
+		}
+		if matches := typeRegex.FindStringSubmatch(line); matches != nil {
+			currentIssue.Type = models.Type(strings.TrimSpace(matches[1]))
+			inDescription = false
+			continue
+		}
+		if matches := priorityRegex.FindStringSubmatch(line); matches != nil {
+			currentIssue.Priority = models.Priority(strings.TrimSpace(matches[1]))
+			inDescription = false
+			continue
+		}
+		if matches := pointsRegex.FindStringSubmatch(line); matches != nil {
+			var pts int
+			fmt.Sscanf(matches[1], "%d", &pts)
+			currentIssue.Points = pts
+			inDescription = false
+			continue
+		}
+		if matches := labelsRegex.FindStringSubmatch(line); matches != nil {
+			labels := strings.Split(matches[1], ",")
+			for _, l := range labels {
+				l = strings.TrimSpace(l)
+				if l != "" {
+					currentIssue.Labels = append(currentIssue.Labels, l)
+				}
+			}
+			inDescription = false
+			continue
+		}
+
+		// Skip list items that aren't recognized metadata
+		if strings.HasPrefix(strings.TrimSpace(line), "- ") && !inDescription {
+			continue
+		}
+
+		// Anything else is description
+		if strings.TrimSpace(line) != "" || inDescription {
+			inDescription = true
+			descLines = append(descLines, line)
+		}
+	}
+
+	// Save last issue
+	saveIssue()
+
+	return imported, nil
 }
 
 var upgradeCmd = &cobra.Command{

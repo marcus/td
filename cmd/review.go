@@ -17,31 +17,49 @@ var reviewCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		jsonOutput, _ := cmd.Flags().GetBool("json")
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeDatabaseError, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.Get(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
 		issueID := args[0]
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeNotFound, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
 		// Check for handoff
 		handoff, err := database.GetLatestHandoff(issueID)
 		if err != nil || handoff == nil {
-			output.Error("handoff required before review: %s", issueID)
+			errMsg := fmt.Sprintf("handoff required before review: %s", issueID)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeHandoffRequired, errMsg)
+			} else {
+				output.Error("%s", errMsg)
+			}
 			return fmt.Errorf("handoff required")
 		}
 
@@ -97,10 +115,12 @@ var approveCmd = &cobra.Command{
 		}
 
 		issueID := args[0]
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
-			if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-				output.JSONError("not_found", err.Error())
+			if jsonOutput {
+				output.JSONError(output.ErrCodeNotFound, err.Error())
 			} else {
 				output.Error("%v", err)
 			}
@@ -110,8 +130,10 @@ var approveCmd = &cobra.Command{
 		// Check that reviewer is different from implementer
 		if issue.ImplementerSession == sess.ID {
 			errMsg := fmt.Sprintf("cannot approve own implementation: %s (implemented by current session)", issueID)
-			if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-				output.JSONError("cannot_self_approve", errMsg)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
+				cmd.SilenceErrors = true
+				cmd.SilenceUsage = true
 			} else {
 				output.Error("%s", errMsg)
 			}
@@ -209,7 +231,9 @@ func init() {
 	rootCmd.AddCommand(rejectCmd)
 
 	reviewCmd.Flags().String("reason", "", "Reason for submitting")
+	reviewCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().String("reason", "", "Reason for approval")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	rejectCmd.Flags().String("reason", "", "Reason for rejection")
+	rejectCmd.Flags().Bool("json", false, "JSON output")
 }

@@ -22,38 +22,46 @@ AI coding assistants are stateless. Each conversation starts fresh. This creates
 
 **Local-first**: Everything stays in `.todos/` in your project. Git-friendly exports if you need them.
 
+## Installation
+
+```bash
+# Clone and install globally (requires Go 1.21+)
+git clone https://github.com/yourusername/td.git
+cd td
+go install .
+```
+
+This installs `td` to your `$GOPATH/bin` (typically `~/go/bin`). Make sure this is in your `PATH`.
+
 ## Quick Start
 
 ```bash
-# Build (requires Go 1.21+)
-go build -o td .
-
 # Initialize in your project
-./td init
+td init
 
 # Create an issue
-./td create "Add user authentication" --type feature --priority P1
+td create "Add user authentication" --type feature --priority P1
 
 # Start work
-./td start td-a1b2
+td start td-a1b2
 
 # Log progress as you go
-./td log "OAuth callback working"
-./td log --decision "Using JWT for stateless auth"
-./td log --blocker "Unclear on refresh token rotation"
+td log "OAuth callback working"
+td log --decision "Using JWT for stateless auth"
+td log --blocker "Unclear on refresh token rotation"
 
 # Capture state before stopping
-./td handoff td-a1b2 --done "OAuth flow" --remaining "Token refresh" --uncertain "Rotation policy"
+td handoff td-a1b2 --done "OAuth flow" --remaining "Token refresh" --uncertain "Rotation policy"
 
 # Submit for review
-./td review td-a1b2
+td review td-a1b2
 ```
 
 A different session (new terminal, new AI conversation) can then review:
 
 ```bash
-./td reviewable        # See what needs review
-./td approve td-a1b2   # Close it out
+td reviewable        # See what needs review
+td approve td-a1b2   # Close it out
 ```
 
 ## For AI Agents
@@ -79,10 +87,10 @@ The `td usage` command generates an optimized context block showing:
 For AI agents working across multiple related issues:
 
 ```bash
-./td ws start "Auth implementation"   # Start a work session
-./td ws tag td-a1b2 td-c3d4           # Associate issues
-./td ws log "Shared token storage"    # Log fans out to all tagged issues
-./td ws handoff                       # Capture state for all, end session
+td ws start "Auth implementation"   # Start a work session
+td ws tag td-a1b2 td-c3d4           # Associate issues
+td ws log "Shared token storage"    # Log fans out to all tagged issues
+td ws handoff                       # Capture state for all, end session
 ```
 
 ## Commands
@@ -117,8 +125,8 @@ The key constraint: the session that implements cannot approve. This isn't burea
 Link files to issues for change detection:
 
 ```bash
-./td link td-a1b2 src/auth/*.go
-./td files td-a1b2              # Shows [modified], [unchanged], [new], [deleted]
+td link td-a1b2 src/auth/*.go
+td files td-a1b2              # Shows [modified], [unchanged], [new], [deleted]
 ```
 
 Files are tracked by SHA at link time. `td files` compares against current state.

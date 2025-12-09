@@ -234,7 +234,13 @@ var criticalPathCmd = &cobra.Command{
 			return err
 		}
 
-		// Calculate how many issues each issue blocks
+		// Build issue map for quick lookup
+		issueMap := make(map[string]*models.Issue)
+		for i := range issues {
+			issueMap[issues[i].ID] = &issues[i]
+		}
+
+		// Calculate how many issues each issue blocks (including transitive)
 		blockCounts := make(map[string]int)
 		for _, issue := range issues {
 			count := len(getTransitiveBlocked(database, issue.ID, make(map[string]bool)))
@@ -243,7 +249,31 @@ var criticalPathCmd = &cobra.Command{
 			}
 		}
 
-		// Sort by block count
+		// Find issues with no unsatisfied dependencies (can be started now)
+		readyIssues := make([]string, 0)
+		for _, issue := range issues {
+			deps, _ := database.GetDependencies(issue.ID)
+			allResolved := true
+			for _, depID := range deps {
+				if dep, exists := issueMap[depID]; exists && dep.Status != models.StatusClosed {
+					allResolved = false
+					break
+				}
+			}
+			if allResolved && blockCounts[issue.ID] > 0 {
+				readyIssues = append(readyIssues, issue.ID)
+			}
+		}
+
+		// Sort ready issues by how much they unblock
+		sort.Slice(readyIssues, func(i, j int) bool {
+			return blockCounts[readyIssues[i]] > blockCounts[readyIssues[j]]
+		})
+
+		// Build critical path sequence - each step resolves dependencies for the next
+		criticalPath := buildCriticalPathSequence(database, issueMap, blockCounts)
+
+		// Sort by block count for bottleneck ranking
 		type issueScore struct {
 			id    string
 			score int
@@ -257,59 +287,136 @@ var criticalPathCmd = &cobra.Command{
 		})
 
 		if jsonOutput {
-			result := make([]map[string]interface{}, 0)
-			for i, s := range scores {
-				if i >= limit {
-					break
-				}
-				issue, _ := database.GetIssue(s.id)
-				if issue != nil {
-					result = append(result, map[string]interface{}{
-						"issue":         issue,
-						"blocks_count":  s.score,
-						"critical_rank": i + 1,
-					})
-				}
+			result := map[string]interface{}{
+				"critical_path":      criticalPath,
+				"ready_to_start":     readyIssues,
+				"bottleneck_ranking": scores,
 			}
 			return output.JSON(result)
 		}
 
-		if len(scores) == 0 {
+		if len(scores) == 0 && len(criticalPath) == 0 {
 			fmt.Println("No blocking dependencies found")
 			return nil
 		}
 
-		fmt.Println("CRITICAL PATH (unblocks most issues):")
-		fmt.Println()
-
-		for i, s := range scores {
-			if i >= limit {
-				break
+		if len(criticalPath) > 0 {
+			fmt.Println("CRITICAL PATH SEQUENCE (resolve in order):")
+			fmt.Println()
+			for i, id := range criticalPath {
+				if i >= limit {
+					break
+				}
+				issue := issueMap[id]
+				if issue == nil {
+					continue
+				}
+				unblocks := blockCounts[id]
+				fmt.Printf("  %d. %s  %s  %s\n", i+1, id, issue.Title, output.FormatStatus(issue.Status))
+				if unblocks > 0 {
+					fmt.Printf("     └─▶ unblocks %d\n", unblocks)
+				}
 			}
-			issue, _ := database.GetIssue(s.id)
-			if issue == nil {
-				continue
-			}
-
-			fmt.Printf("%d. %s  %s  %s  %s  %dpts\n",
-				i+1, issue.ID, issue.Title, output.FormatStatus(issue.Status), issue.Priority, issue.Points)
-			fmt.Printf("   └─▶ unblocks %d\n", s.score)
+			fmt.Println()
 		}
 
-		fmt.Println()
-		fmt.Println("BOTTLENECKS (blocking most issues):")
-
-		shown := 0
-		for _, s := range scores {
-			if shown >= 3 {
-				break
+		if len(readyIssues) > 0 {
+			fmt.Println("START NOW (no blockers, unblocks others):")
+			for i, id := range readyIssues {
+				if i >= 3 {
+					break
+				}
+				issue := issueMap[id]
+				if issue == nil {
+					continue
+				}
+				fmt.Printf("  ▶ %s  %s  (unblocks %d)\n", id, issue.Title, blockCounts[id])
 			}
-			fmt.Printf("  %s: %d issues waiting\n", s.id, s.score)
-			shown++
+			fmt.Println()
+		}
+
+		if len(scores) > 0 {
+			fmt.Println("BOTTLENECKS (blocking most issues):")
+			shown := 0
+			for _, s := range scores {
+				if shown >= 3 {
+					break
+				}
+				fmt.Printf("  %s: %d issues waiting\n", s.id, s.score)
+				shown++
+			}
 		}
 
 		return nil
 	},
+}
+
+// buildCriticalPathSequence builds the optimal sequence of issues to resolve
+// using a topological sort weighted by block counts
+func buildCriticalPathSequence(database *db.DB, issueMap map[string]*models.Issue, blockCounts map[string]int) []string {
+	// Build dependency graph
+	inDegree := make(map[string]int)
+	dependsOn := make(map[string][]string)
+
+	for id := range issueMap {
+		if issueMap[id].Status == models.StatusClosed {
+			continue
+		}
+		inDegree[id] = 0
+	}
+
+	for id := range issueMap {
+		if issueMap[id].Status == models.StatusClosed {
+			continue
+		}
+		deps, _ := database.GetDependencies(id)
+		for _, depID := range deps {
+			if dep, exists := issueMap[depID]; exists && dep.Status != models.StatusClosed {
+				inDegree[id]++
+				dependsOn[depID] = append(dependsOn[depID], id)
+			}
+		}
+	}
+
+	// Kahn's algorithm with priority queue (weighted by block count)
+	var ready []string
+	for id, degree := range inDegree {
+		if degree == 0 {
+			ready = append(ready, id)
+		}
+	}
+
+	var sequence []string
+	for len(ready) > 0 {
+		// Sort by block count (highest first) then by priority
+		sort.Slice(ready, func(i, j int) bool {
+			if blockCounts[ready[i]] != blockCounts[ready[j]] {
+				return blockCounts[ready[i]] > blockCounts[ready[j]]
+			}
+			// Secondary sort by priority
+			pi := issueMap[ready[i]]
+			pj := issueMap[ready[j]]
+			if pi != nil && pj != nil {
+				return pi.Priority < pj.Priority
+			}
+			return ready[i] < ready[j]
+		})
+
+		// Take the highest priority item
+		id := ready[0]
+		ready = ready[1:]
+		sequence = append(sequence, id)
+
+		// Update dependencies
+		for _, dependentID := range dependsOn[id] {
+			inDegree[dependentID]--
+			if inDegree[dependentID] == 0 {
+				ready = append(ready, dependentID)
+			}
+		}
+	}
+
+	return sequence
 }
 
 func init() {

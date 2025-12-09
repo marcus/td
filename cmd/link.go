@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -44,6 +46,38 @@ func countFileLines(path string) int {
 		}
 	}
 	return lines
+}
+
+// getGitModifiedFiles returns files modified in git working tree
+func getGitModifiedFiles() ([]string, []string, error) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var modified, untracked []string
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		if len(line) < 3 {
+			continue
+		}
+		status := line[:2]
+		file := strings.TrimSpace(line[3:])
+		// Handle renamed files (format: "old -> new")
+		if strings.Contains(file, " -> ") {
+			parts := strings.Split(file, " -> ")
+			file = parts[1]
+		}
+
+		if status == "??" {
+			untracked = append(untracked, file)
+		} else {
+			modified = append(modified, file)
+		}
+	}
+
+	return modified, untracked, nil
 }
 
 var linkCmd = &cobra.Command{
@@ -319,6 +353,50 @@ var filesCmd = &cobra.Command{
 			fmt.Println("No linked files")
 		}
 
+		// Show untracked changes (files modified in git but not linked to this issue)
+		showUntracked, _ := cmd.Flags().GetBool("untracked")
+		if showUntracked {
+			modified, untracked, err := getGitModifiedFiles()
+			if err == nil {
+				// Build set of linked file paths
+				linkedPaths := make(map[string]bool)
+				for _, f := range files {
+					linkedPaths[f.FilePath] = true
+					// Also check relative path
+					if rel, err := filepath.Rel(baseDir, f.FilePath); err == nil {
+						linkedPaths[rel] = true
+					}
+				}
+
+				// Filter out files that are already linked
+				var untrackedModified, untrackedNew []string
+				for _, f := range modified {
+					absPath, _ := filepath.Abs(f)
+					if !linkedPaths[f] && !linkedPaths[absPath] {
+						untrackedModified = append(untrackedModified, f)
+					}
+				}
+				for _, f := range untracked {
+					absPath, _ := filepath.Abs(f)
+					if !linkedPaths[f] && !linkedPaths[absPath] {
+						untrackedNew = append(untrackedNew, f)
+					}
+				}
+
+				if len(untrackedModified) > 0 || len(untrackedNew) > 0 {
+					fmt.Println("UNTRACKED CHANGES (not linked to this issue):")
+					for _, f := range untrackedModified {
+						fmt.Printf("  %-40s [modified]\n", f)
+					}
+					for _, f := range untrackedNew {
+						fmt.Printf("  %-40s [new]\n", f)
+					}
+					fmt.Println()
+					fmt.Printf("Use `td link %s <file>` to associate these files.\n", issueID)
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -333,4 +411,5 @@ func init() {
 
 	filesCmd.Flags().Bool("json", false, "JSON output")
 	filesCmd.Flags().Bool("changed", false, "Only show changed files")
+	filesCmd.Flags().BoolP("untracked", "u", false, "Show untracked git changes not linked to this issue")
 }
