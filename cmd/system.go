@@ -20,6 +20,7 @@ var infoCmd = &cobra.Command{
 	Use:     "info",
 	Aliases: []string{"stats"},
 	Short:   "Show database statistics and project overview",
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -112,16 +113,18 @@ var infoCmd = &cobra.Command{
 }
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version",
+	Use:     "version",
+	Short:   "Show version",
+	GroupID: "system",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("td version %s\n", version)
 	},
 }
 
 var whoamiCmd = &cobra.Command{
-	Use:   "whoami",
-	Short: "Show current session identity",
+	Use:     "whoami",
+	Short:   "Show current session identity",
+	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -157,9 +160,10 @@ var whoamiCmd = &cobra.Command{
 }
 
 var sessionNameCmd = &cobra.Command{
-	Use:   "session [name]",
-	Short: "Name/tag the current session, or create new session with --new",
-	Args:  cobra.MaximumNArgs(1),
+	Use:     "session [name]",
+	Short:   "Name/tag the current session, or create new session with --new",
+	GroupID: "session",
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -217,8 +221,9 @@ var sessionNameCmd = &cobra.Command{
 }
 
 var exportCmd = &cobra.Command{
-	Use:   "export",
-	Short: "Export database",
+	Use:     "export",
+	Short:   "Export database",
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -307,9 +312,10 @@ var exportCmd = &cobra.Command{
 }
 
 var importCmd = &cobra.Command{
-	Use:   "import [file]",
-	Short: "Import issues",
-	Args:  cobra.ExactArgs(1),
+	Use:     "import [file]",
+	Short:   "Import issues",
+	GroupID: "system",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -608,9 +614,10 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool) (int, erro
 }
 
 var upgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Run database migrations",
-	Long:  `Runs any pending database migrations to update the schema.`,
+	Use:     "upgrade",
+	Short:   "Run database migrations",
+	Long:    `Runs any pending database migrations to update the schema.`,
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

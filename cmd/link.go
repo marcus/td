@@ -91,7 +91,8 @@ Examples:
   td link td-abc1 src/main.go           # Link single file
   td link td-abc1 src/*.go              # Link via glob pattern
   td link td-abc1 file1.go file2.go     # Link multiple files`,
-	Args: cobra.MinimumNArgs(2),
+	GroupID: "files",
+	Args:    cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -233,9 +234,10 @@ Examples:
 }
 
 var unlinkCmd = &cobra.Command{
-	Use:   "unlink [issue-id] [file-pattern]",
-	Short: "Remove file associations",
-	Args:  cobra.ExactArgs(2),
+	Use:     "unlink [issue-id] [file-pattern]",
+	Short:   "Remove file associations",
+	GroupID: "files",
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -300,9 +302,10 @@ var unlinkCmd = &cobra.Command{
 }
 
 var filesCmd = &cobra.Command{
-	Use:   "files [issue-id]",
-	Short: "List linked files with change status",
-	Args:  cobra.ExactArgs(1),
+	Use:     "files [issue-id]",
+	Short:   "List linked files with change status",
+	GroupID: "files",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

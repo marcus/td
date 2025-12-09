@@ -16,6 +16,7 @@ var listCmd = &cobra.Command{
 	Use:     "list [filters]",
 	Aliases: []string{"ls"},
 	Short:   "List issues matching given filters",
+	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -169,75 +170,79 @@ var listCmd = &cobra.Command{
 	},
 }
 
+// listShortcutResult holds the result of a shortcut list operation
+type listShortcutResult struct {
+	issues []models.Issue
+}
+
+// runListShortcut is the shared core for all list shortcut commands
+func runListShortcut(opts db.ListIssuesOptions) (*listShortcutResult, error) {
+	baseDir := getBaseDir()
+
+	database, err := db.Open(baseDir)
+	if err != nil {
+		output.Error("%v", err)
+		return nil, err
+	}
+	defer database.Close()
+
+	issues, err := database.ListIssues(opts)
+	if err != nil {
+		output.Error("failed to list issues: %v", err)
+		return nil, err
+	}
+
+	return &listShortcutResult{issues: issues}, nil
+}
+
 var reviewableCmd = &cobra.Command{
-	Use:   "reviewable",
-	Short: "Show issues awaiting review that you can review",
+	Use:     "reviewable",
+	Short:   "Show issues awaiting review that you can review",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
 		sess, err := session.Get(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
 
-		issues, err := database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sess.ID,
-		})
+		result, err := runListShortcut(db.ListIssuesOptions{ReviewableBy: sess.ID})
 		if err != nil {
-			output.Error("failed to list issues: %v", err)
 			return err
 		}
 
-		for _, issue := range issues {
+		for _, issue := range result.issues {
 			fmt.Printf("%s  %s  %s%s  %s  (impl: %s)\n",
 				issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), issue.Type, issue.ImplementerSession)
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No issues awaiting your review")
 		}
-
 		return nil
 	},
 }
 
 var blockedListCmd = &cobra.Command{
-	Use:   "blocked",
-	Short: "List blocked issues",
+	Use:     "blocked",
+	Short:   "List blocked issues",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		result, err := runListShortcut(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusBlocked},
 		})
 		if err != nil {
-			output.Error("failed to list issues: %v", err)
 			return err
 		}
 
-		for _, issue := range issues {
+		for _, issue := range result.issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No blocked issues")
 		}
-
 		return nil
 	},
 }
@@ -246,32 +251,24 @@ var inReviewCmd = &cobra.Command{
 	Use:     "in-review",
 	Aliases: []string{"ir"},
 	Short:   "List all issues currently in review",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		issues, err := database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusInReview},
-			SortBy: "priority",
-		})
-		if err != nil {
-			output.Error("failed to list issues: %v", err)
-			return err
-		}
-
 		sess, err := session.Get(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
 
-		for _, issue := range issues {
+		result, err := runListShortcut(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInReview},
+			SortBy: "priority",
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, issue := range result.issues {
 			reviewable := ""
 			if issue.ImplementerSession != sess.ID {
 				reviewable = " [reviewable]"
@@ -280,119 +277,88 @@ var inReviewCmd = &cobra.Command{
 				issue.ID, issue.Title, issue.Priority, issue.Type, issue.ImplementerSession, reviewable)
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No issues in review")
 		}
-
 		return nil
 	},
 }
 
 var readyCmd = &cobra.Command{
-	Use:   "ready",
-	Short: "List open issues sorted by priority",
+	Use:     "ready",
+	Short:   "List open issues sorted by priority",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		result, err := runListShortcut(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusOpen},
 			SortBy: "priority",
 		})
 		if err != nil {
-			output.Error("failed to list issues: %v", err)
 			return err
 		}
 
-		for _, issue := range issues {
+		for _, issue := range result.issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No open issues")
 		}
-
 		return nil
 	},
 }
 
 var nextCmd = &cobra.Command{
-	Use:   "next",
-	Short: "Show highest-priority open issue",
+	Use:     "next",
+	Short:   "Show highest-priority open issue",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		result, err := runListShortcut(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusOpen},
 			SortBy: "priority",
 			Limit:  1,
 		})
 		if err != nil {
-			output.Error("failed to list issues: %v", err)
 			return err
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No open issues")
 			return nil
 		}
 
-		issue := issues[0]
+		issue := result.issues[0]
 		fmt.Printf("%s  [%s]  %s%s  %s\n",
 			issue.ID, issue.Priority, issue.Title, output.FormatPointsSuffix(issue.Points), issue.Type)
 		fmt.Println()
 		fmt.Printf("Run `td start %s` to begin working on this issue.\n", issue.ID)
-
 		return nil
 	},
 }
 
 var deletedCmd = &cobra.Command{
-	Use:   "deleted",
-	Short: "Show soft-deleted issues",
+	Use:     "deleted",
+	Short:   "Show soft-deleted issues",
+	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		result, err := runListShortcut(db.ListIssuesOptions{
 			OnlyDeleted: true,
 		})
 		if err != nil {
-			output.Error("failed to list issues: %v", err)
 			return err
 		}
 
 		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-			return output.JSON(issues)
+			return output.JSON(result.issues)
 		}
 
-		for _, issue := range issues {
+		for _, issue := range result.issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
 
-		if len(issues) == 0 {
+		if len(result.issues) == 0 {
 			fmt.Println("No deleted issues")
 		}
-
 		return nil
 	},
 }

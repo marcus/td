@@ -34,7 +34,8 @@ Or use flags with values, stdin (-), or file (@path):
   --done "item"          Single item
   --done @done.txt       Items from file (one per line)
   echo "item" | td handoff ID --done -   Items from stdin`,
-	Args: cobra.ExactArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

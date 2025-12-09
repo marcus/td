@@ -13,9 +13,10 @@ import (
 )
 
 var updateCmd = &cobra.Command{
-	Use:   "update [issue-id...]",
-	Short: "Update one or more fields on existing issues",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "update [issue-id...]",
+	Short:   "Update one or more fields on existing issues",
+	GroupID: "core",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

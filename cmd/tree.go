@@ -11,9 +11,10 @@ import (
 )
 
 var treeCmd = &cobra.Command{
-	Use:   "tree [issue-id]",
-	Short: "Visualize parent/child relationships",
-	Args:  cobra.ExactArgs(1),
+	Use:     "tree [issue-id]",
+	Short:   "Visualize parent/child relationships",
+	GroupID: "query",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -137,9 +138,10 @@ func buildTree(database *db.DB, issueID string, depth int, maxDepth int) map[str
 }
 
 var commentCmd = &cobra.Command{
-	Use:   "comment [issue-id] \"text\"",
-	Short: "Add a comment to an issue (alias for 'comments add')",
-	Args:  cobra.ExactArgs(2),
+	Use:     "comment [issue-id] \"text\"",
+	Short:   "Add a comment to an issue (alias for 'comments add')",
+	GroupID: "workflow",
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -183,9 +185,10 @@ var commentCmd = &cobra.Command{
 }
 
 var commentsCmd = &cobra.Command{
-	Use:   "comments [issue-id]",
-	Short: "List comments for an issue",
-	Args:  cobra.ExactArgs(1),
+	Use:     "comments [issue-id]",
+	Short:   "List comments for an issue",
+	GroupID: "workflow",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

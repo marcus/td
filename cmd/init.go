@@ -14,9 +14,10 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a new td project",
-	Long:  `Creates the local .todos directory and SQLite database.`,
+	Use:     "init",
+	Short:   "Initialize a new td project",
+	Long:    `Creates the local .todos directory and SQLite database.`,
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

@@ -12,9 +12,10 @@ import (
 )
 
 var focusCmd = &cobra.Command{
-	Use:   "focus [issue-id]",
-	Short: "Set the current working issue",
-	Args:  cobra.ExactArgs(1),
+	Use:     "focus [issue-id]",
+	Short:   "Set the current working issue",
+	GroupID: "session",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -45,8 +46,9 @@ var focusCmd = &cobra.Command{
 }
 
 var unfocusCmd = &cobra.Command{
-	Use:   "unfocus",
-	Short: "Clear focus",
+	Use:     "unfocus",
+	Short:   "Clear focus",
+	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -61,8 +63,9 @@ var unfocusCmd = &cobra.Command{
 }
 
 var currentCmd = &cobra.Command{
-	Use:   "current",
-	Short: "Show focused issue, active work, and pending reviews",
+	Use:     "current",
+	Short:   "Show focused issue, active work, and pending reviews",
+	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -175,6 +178,7 @@ Returns exit code 0 if no handoff needed, exit code 1 if handoff needed.
 Can be used in scripts or AI agent exit hooks to remind about handoff.
 
 Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
+	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

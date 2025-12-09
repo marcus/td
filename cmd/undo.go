@@ -26,6 +26,7 @@ Supported actions:
   - approve/reject: Reverts issue to in_review status
 
 Use 'td undo --list' to see recent undoable actions.`,
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -211,8 +212,9 @@ func formatTimeAgo(t time.Time) string {
 }
 
 var lastCmd = &cobra.Command{
-	Use:   "last",
-	Short: "Show the last action performed",
+	Use:     "last",
+	Short:   "Show the last action performed",
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

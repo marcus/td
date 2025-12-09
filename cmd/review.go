@@ -27,7 +27,8 @@ var reviewCmd = &cobra.Command{
 
 Supports bulk operations:
   td review td-abc1 td-abc2 td-abc3    # Submit multiple issues for review`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -142,7 +143,8 @@ var approveCmd = &cobra.Command{
 Supports bulk operations:
   td approve td-abc1 td-abc2 td-abc3    # Approve multiple issues
   td approve --all                      # Approve all reviewable issues`,
-	Args: cobra.MinimumNArgs(0),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -274,7 +276,8 @@ var rejectCmd = &cobra.Command{
 
 Supports bulk operations:
   td reject td-abc1 td-abc2    # Reject multiple issues`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -387,7 +390,8 @@ var closeCmd = &cobra.Command{
 Examples:
   td close td-abc1                    # Close single issue
   td close td-abc1 td-abc2 td-abc3    # Close multiple issues`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

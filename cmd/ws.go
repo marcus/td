@@ -20,9 +20,10 @@ import (
 
 var wsCmd = &cobra.Command{
 	Use:     "ws",
-	Aliases: []string{"session", "worksession"},
+	Aliases: []string{"worksession"},
 	Short:   "Work session commands",
 	Long:    `Manage multi-issue work sessions.`,
+	GroupID: "session",
 }
 
 var wsStartCmd = &cobra.Command{

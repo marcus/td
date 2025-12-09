@@ -12,9 +12,10 @@ import (
 )
 
 var resumeCmd = &cobra.Command{
-	Use:   "resume [issue-id]",
-	Short: "Show context and set focus",
-	Args:  cobra.ExactArgs(1),
+	Use:     "resume [issue-id]",
+	Short:   "Show context and set focus",
+	GroupID: "session",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -30,8 +31,9 @@ var resumeCmd = &cobra.Command{
 }
 
 var usageCmd = &cobra.Command{
-	Use:   "usage",
-	Short: "Generate optimized context block for AI agents",
+	Use:     "usage",
+	Short:   "Generate optimized context block for AI agents",
+	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

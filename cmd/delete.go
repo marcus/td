@@ -12,9 +12,10 @@ import (
 )
 
 var deleteCmd = &cobra.Command{
-	Use:   "delete [issue-id...]",
-	Short: "Soft-delete one or more issues",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "delete [issue-id...]",
+	Short:   "Soft-delete one or more issues",
+	GroupID: "core",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -60,9 +61,10 @@ var deleteCmd = &cobra.Command{
 }
 
 var restoreCmd = &cobra.Command{
-	Use:   "restore [issue-id...]",
-	Short: "Restore soft-deleted issues",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "restore [issue-id...]",
+	Short:   "Restore soft-deleted issues",
+	GroupID: "core",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

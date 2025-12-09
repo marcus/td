@@ -27,7 +27,8 @@ Supports stdin input for multi-line messages or piped input:
   Multi-line
   log message
   EOF`,
-	Args: cobra.MaximumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

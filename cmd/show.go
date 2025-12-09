@@ -13,6 +13,7 @@ var showCmd = &cobra.Command{
 	Use:     "show [issue-id...]",
 	Aliases: []string{"context"},
 	Short:   "Display full details of one or more issues",
+	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

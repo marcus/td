@@ -21,7 +21,8 @@ var startCmd = &cobra.Command{
 Examples:
   td start td-abc1                    # Start single issue
   td start td-abc1 td-abc2 td-abc3    # Start multiple issues`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

@@ -11,9 +11,10 @@ import (
 )
 
 var blockedByCmd = &cobra.Command{
-	Use:   "blocked-by [issue-id]",
-	Short: "Show what issues are waiting on this issue",
-	Args:  cobra.ExactArgs(1),
+	Use:     "blocked-by [issue-id]",
+	Short:   "Show what issues are waiting on this issue",
+	GroupID: "query",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -136,9 +137,10 @@ func getTransitiveBlocked(database *db.DB, issueID string, visited map[string]bo
 }
 
 var dependsOnCmd = &cobra.Command{
-	Use:   "depends-on [issue-id]",
-	Short: "Show what issues this issue depends on",
-	Args:  cobra.ExactArgs(1),
+	Use:     "depends-on [issue-id]",
+	Short:   "Show what issues this issue depends on",
+	GroupID: "query",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -207,8 +209,9 @@ var dependsOnCmd = &cobra.Command{
 }
 
 var criticalPathCmd = &cobra.Command{
-	Use:   "critical-path",
-	Short: "Show the sequence of issues that unblocks the most work",
+	Use:     "critical-path",
+	Short:   "Show the sequence of issues that unblocks the most work",
+	GroupID: "query",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -436,7 +439,8 @@ var depCmd = &cobra.Command{
 Examples:
   td dep td-abc td-xyz     # td-abc now depends on td-xyz
   td dep feature bugfix    # feature depends on bugfix`,
-	Args: cobra.ExactArgs(2),
+	GroupID: "workflow",
+	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -493,10 +497,11 @@ Examples:
 }
 
 var depsCmd = &cobra.Command{
-	Use:   "deps [issue]",
-	Short: "Show dependencies (alias for depends-on)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  dependsOnCmd.RunE,
+	Use:     "deps [issue]",
+	Short:   "Show dependencies (alias for depends-on)",
+	GroupID: "query",
+	Args:    cobra.ExactArgs(1),
+	RunE:    dependsOnCmd.RunE,
 }
 
 // wouldCreateCycle checks if adding dep would create a circular dependency

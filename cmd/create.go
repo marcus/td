@@ -17,6 +17,7 @@ var createCmd = &cobra.Command{
 	Aliases: []string{"add", "new"},
 	Short:   "Create a new issue",
 	Long:    `Create a new issue with optional flags for type, priority, labels, and more.`,
+	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

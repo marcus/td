@@ -34,6 +34,21 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initBaseDir)
+
+	// Define command groups for organized help output
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "core", Title: "Core Commands:"},
+		&cobra.Group{ID: "workflow", Title: "Workflow Commands:"},
+		&cobra.Group{ID: "query", Title: "Query Commands:"},
+		&cobra.Group{ID: "shortcuts", Title: "Shortcuts:"},
+		&cobra.Group{ID: "session", Title: "Session Commands:"},
+		&cobra.Group{ID: "files", Title: "File Commands:"},
+		&cobra.Group{ID: "system", Title: "System Commands:"},
+	)
+
+	// Assign built-in commands to system group
+	rootCmd.SetHelpCommandGroupID("system")
+	rootCmd.SetCompletionCommandGroupID("system")
 }
 
 func initBaseDir() {

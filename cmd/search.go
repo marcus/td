@@ -10,10 +10,11 @@ import (
 )
 
 var searchCmd = &cobra.Command{
-	Use:   "search [query]",
-	Short: "Full-text search across issues",
-	Long:  `Search title, description, logs, and handoff content.`,
-	Args:  cobra.ExactArgs(1),
+	Use:     "search [query]",
+	Short:   "Full-text search across issues",
+	Long:    `Search title, description, logs, and handoff content.`,
+	GroupID: "query",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

@@ -12,9 +12,10 @@ import (
 )
 
 var blockCmd = &cobra.Command{
-	Use:   "block [issue-id...]",
-	Short: "Mark issue(s) as blocked",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "block [issue-id...]",
+	Short:   "Mark issue(s) as blocked",
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -89,7 +90,8 @@ var reopenCmd = &cobra.Command{
 Examples:
   td reopen td-abc1                    # Reopen single issue
   td reopen td-abc1 td-abc2 td-abc3    # Reopen multiple issues`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -180,7 +182,8 @@ var unblockCmd = &cobra.Command{
 Examples:
   td unblock td-abc1                    # Unblock single issue
   td unblock td-abc1 td-abc2 td-abc3    # Unblock multiple issues`,
-	Args: cobra.MinimumNArgs(1),
+	GroupID: "workflow",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

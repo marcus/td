@@ -27,6 +27,7 @@ Key bindings:
   r              Force refresh
   ?              Toggle help
   q              Quit`,
+	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
