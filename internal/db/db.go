@@ -614,6 +614,37 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 	return &handoff, nil
 }
 
+// GetRecentHandoffs retrieves recent handoffs across all issues
+func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, error) {
+	var handoffs []models.Handoff
+
+	rows, err := db.conn.Query(`
+		SELECT id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp
+		FROM handoffs WHERE timestamp > ? ORDER BY timestamp DESC LIMIT ?
+	`, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var h models.Handoff
+		var doneJSON, remainingJSON, decisionsJSON, uncertainJSON string
+		err := rows.Scan(&h.ID, &h.IssueID, &h.SessionID,
+			&doneJSON, &remainingJSON, &decisionsJSON, &uncertainJSON, &h.Timestamp)
+		if err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(doneJSON), &h.Done)
+		json.Unmarshal([]byte(remainingJSON), &h.Remaining)
+		json.Unmarshal([]byte(decisionsJSON), &h.Decisions)
+		json.Unmarshal([]byte(uncertainJSON), &h.Uncertain)
+		handoffs = append(handoffs, h)
+	}
+
+	return handoffs, nil
+}
+
 // AddGitSnapshot records a git state snapshot
 func (db *DB) AddGitSnapshot(snapshot *models.GitSnapshot) error {
 	snapshot.Timestamp = time.Now()
@@ -1079,6 +1110,32 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 	}
 
 	return actions, nil
+}
+
+// GetActiveSessions returns distinct session IDs with activity since the given time
+func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
+	query := `SELECT DISTINCT session_id FROM logs
+	          WHERE session_id != '' AND timestamp > ?
+	          ORDER BY MAX(timestamp) DESC`
+
+	rows, err := db.conn.Query(query, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []string
+	for rows.Next() {
+		var sessionID string
+		if err := rows.Scan(&sessionID); err != nil {
+			continue
+		}
+		if sessionID != "" {
+			sessions = append(sessions, sessionID)
+		}
+	}
+
+	return sessions, nil
 }
 
 // GetRecentLogsAll returns recent logs across all issues

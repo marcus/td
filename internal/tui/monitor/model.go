@@ -35,6 +35,13 @@ type TaskListData struct {
 	Blocked    []models.Issue
 }
 
+// RecentHandoff represents a recent handoff for display
+type RecentHandoff struct {
+	IssueID   string
+	SessionID string
+	Timestamp time.Time
+}
+
 // Model is the main Bubble Tea model for the monitor TUI
 type Model struct {
 	// Database and session
@@ -46,17 +53,20 @@ type Model struct {
 	Height int
 
 	// Panel data
-	FocusedIssue *models.Issue
-	InProgress   []models.Issue
-	Activity     []ActivityItem
-	TaskList     TaskListData
+	FocusedIssue    *models.Issue
+	InProgress      []models.Issue
+	Activity        []ActivityItem
+	TaskList        TaskListData
+	RecentHandoffs  []RecentHandoff // Handoffs since monitor started
+	ActiveSessions  []string        // Sessions with recent activity
 
 	// UI state
 	ActivePanel  Panel
 	ScrollOffset map[Panel]int
 	ShowHelp     bool
 	LastRefresh  time.Time
-	Err          error // Last error, if any
+	StartedAt    time.Time // When monitor started, to track new handoffs
+	Err          error     // Last error, if any
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -73,11 +83,13 @@ type TickMsg time.Time
 
 // RefreshDataMsg carries refreshed data
 type RefreshDataMsg struct {
-	FocusedIssue *models.Issue
-	InProgress   []models.Issue
-	Activity     []ActivityItem
-	TaskList     TaskListData
-	Timestamp    time.Time
+	FocusedIssue   *models.Issue
+	InProgress     []models.Issue
+	Activity       []ActivityItem
+	TaskList       TaskListData
+	RecentHandoffs []RecentHandoff
+	ActiveSessions []string
+	Timestamp      time.Time
 }
 
 // NewModel creates a new monitor model
@@ -88,6 +100,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		RefreshInterval: interval,
 		ScrollOffset:    make(map[Panel]int),
 		ActivePanel:     PanelCurrentWork,
+		StartedAt:       time.Now(),
 	}
 }
 
@@ -118,6 +131,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.InProgress = msg.InProgress
 		m.Activity = msg.Activity
 		m.TaskList = msg.TaskList
+		m.RecentHandoffs = msg.RecentHandoffs
+		m.ActiveSessions = msg.ActiveSessions
 		m.LastRefresh = msg.Timestamp
 		return m, nil
 	}
@@ -187,7 +202,7 @@ func (m Model) scheduleTick() tea.Cmd {
 // fetchData returns a command that fetches all data and sends a RefreshDataMsg
 func (m Model) fetchData() tea.Cmd {
 	return func() tea.Msg {
-		data := FetchData(m.DB, m.SessionID)
+		data := FetchData(m.DB, m.SessionID, m.StartedAt)
 		return data
 	}
 }

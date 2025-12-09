@@ -10,7 +10,7 @@ import (
 )
 
 // FetchData retrieves all data needed for the monitor display
-func FetchData(database *db.DB, sessionID string) RefreshDataMsg {
+func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDataMsg {
 	msg := RefreshDataMsg{
 		Timestamp: time.Now(),
 	}
@@ -35,6 +35,12 @@ func FetchData(database *db.DB, sessionID string) RefreshDataMsg {
 
 	// Get task list
 	msg.TaskList = fetchTaskList(database, sessionID)
+
+	// Get recent handoffs since monitor started
+	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
+
+	// Get active sessions (activity in last 5 minutes)
+	msg.ActiveSessions = fetchActiveSessions(database)
 
 	return msg
 }
@@ -135,6 +141,36 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 	data.Blocked = blocked
 
 	return data
+}
+
+// fetchActiveSessions retrieves sessions with activity in the last 5 minutes
+func fetchActiveSessions(database *db.DB) []string {
+	since := time.Now().Add(-5 * time.Minute)
+	sessions, err := database.GetActiveSessions(since)
+	if err != nil {
+		return nil
+	}
+	return sessions
+}
+
+// fetchRecentHandoffs retrieves handoffs since the given time
+func fetchRecentHandoffs(database *db.DB, since time.Time) []RecentHandoff {
+	var result []RecentHandoff
+
+	handoffs, err := database.GetRecentHandoffs(10, since)
+	if err != nil {
+		return result
+	}
+
+	for _, h := range handoffs {
+		result = append(result, RecentHandoff{
+			IssueID:   h.IssueID,
+			SessionID: h.SessionID,
+			Timestamp: h.Timestamp,
+		})
+	}
+
+	return result
 }
 
 // formatActionMessage creates a human-readable message for an action

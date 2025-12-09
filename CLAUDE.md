@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **This project uses `td` itself for issue tracking and task management.** Before starting work:
 1. Run `td session --new` to create a new session (enables cross-session reviews)
 2. Run `td usage` to see current state, available issues, AND reviewable tasks. Reviewable issues are only visible to sessions that didn't implement them
+   - **After first read, use `td usage -q` to save context** (hides workflow instructions)
 3. Use `td start <id>` when beginning work on an issue
 4. Use `td log "message"` to track progress
 5. Use `td handoff <id>` before stopping to capture state for the next session

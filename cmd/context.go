@@ -212,6 +212,8 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 			fmt.Println("FOR LLMs: Run `td session --new` at the start of each conversation")
 			fmt.Println("to ensure fresh session tracking and enable cross-session reviews.")
+			fmt.Println()
+			fmt.Println("TIP: Use `td usage -q` to hide these instructions after first read.")
 		}
 
 		return nil
