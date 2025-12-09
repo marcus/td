@@ -5,7 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Important: Use td for Task Management
 
 **This project uses `td` itself for issue tracking and task management.** Before starting work:
-1. Run `td session --new` to create a new session (enables cross-session reviews)
+1. Run `td session --new "descriptive-name"` to create a named session (enables cross-session reviews)
+   - Name your session descriptively, e.g. `td session --new "fix-auth-bug"` or `td session --new "refactor-api"`
+   - Session names appear in logs and make it easier to track who did what
 2. Run `td usage` to see current state, available issues, AND reviewable tasks. Reviewable issues are only visible to sessions that didn't implement them
    - **After first read, use `td usage -q` to save context** (hides workflow instructions)
 3. Use `td start <id>` when beginning work on an issue
