@@ -46,7 +46,8 @@ func getContextID() string {
 
 	// Priority 2: AI agent session IDs (Claude Code, etc.)
 	for _, envVar := range []string{
-		"CLAUDE_SESSION_ID",    // Claude Code session
+		"CLAUDE_CODE_SSE_PORT", // Claude Code SSE port (unique per session)
+		"CLAUDE_SESSION_ID",    // Claude Code session (if set)
 		"ANTHROPIC_SESSION_ID", // Generic Anthropic
 		"AI_SESSION_ID",        // Generic AI
 		"CURSOR_SESSION_ID",    // Cursor IDE
