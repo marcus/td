@@ -148,6 +148,23 @@ func FormatIssueShort(issue *models.Issue) string {
 	return strings.Join(parts, "  ")
 }
 
+// FormatIssueDeleted formats a deleted issue showing [deleted] marker instead of status
+func FormatIssueDeleted(issue *models.Issue) string {
+	var parts []string
+	parts = append(parts, titleStyle.Render(issue.ID))
+	parts = append(parts, FormatPriority(issue.Priority))
+	parts = append(parts, issue.Title)
+
+	if issue.Points > 0 {
+		parts = append(parts, subtleStyle.Render(fmt.Sprintf("%dpts", issue.Points)))
+	}
+
+	parts = append(parts, subtleStyle.Render(string(issue.Type)))
+	parts = append(parts, errorStyle.Render("[deleted]"))
+
+	return strings.Join(parts, "  ")
+}
+
 // FormatIssueLong formats an issue in long format
 func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Handoff) string {
 	var sb strings.Builder

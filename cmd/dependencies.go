@@ -138,6 +138,7 @@ func getTransitiveBlocked(database *db.DB, issueID string, visited map[string]bo
 
 var dependsOnCmd = &cobra.Command{
 	Use:     "depends-on [issue-id]",
+	Aliases: []string{"deps"},
 	Short:   "Show what issues this issue depends on",
 	GroupID: "query",
 	Args:    cobra.ExactArgs(1),
@@ -496,13 +497,6 @@ Examples:
 	},
 }
 
-var depsCmd = &cobra.Command{
-	Use:     "deps [issue]",
-	Short:   "Show dependencies (alias for depends-on)",
-	GroupID: "query",
-	Args:    cobra.ExactArgs(1),
-	RunE:    dependsOnCmd.RunE,
-}
 
 // wouldCreateCycle checks if adding dep would create a circular dependency
 func wouldCreateCycle(database *db.DB, issueID, newDepID string) bool {
@@ -531,7 +525,6 @@ func hasCyclePath(database *db.DB, from, to string, visited map[string]bool) boo
 func init() {
 	rootCmd.AddCommand(blockedByCmd)
 	rootCmd.AddCommand(dependsOnCmd)
-	rootCmd.AddCommand(depsCmd)
 	rootCmd.AddCommand(depCmd)
 	rootCmd.AddCommand(criticalPathCmd)
 
@@ -539,7 +532,6 @@ func init() {
 	blockedByCmd.Flags().Bool("json", false, "JSON output")
 
 	dependsOnCmd.Flags().Bool("json", false, "JSON output")
-	depsCmd.Flags().Bool("json", false, "JSON output")
 
 	criticalPathCmd.Flags().Int("limit", 10, "Max issues to show")
 	criticalPathCmd.Flags().Bool("json", false, "JSON output")

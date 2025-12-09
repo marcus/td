@@ -213,8 +213,7 @@ var reviewableCmd = &cobra.Command{
 		}
 
 		for _, issue := range result.issues {
-			fmt.Printf("%s  %s  %s%s  %s  (impl: %s)\n",
-				issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), issue.Type, issue.ImplementerSession)
+			fmt.Printf("%s  (impl: %s)\n", output.FormatIssueShort(&issue), issue.ImplementerSession)
 		}
 
 		if len(result.issues) == 0 {
@@ -273,8 +272,7 @@ var inReviewCmd = &cobra.Command{
 			if issue.ImplementerSession != sess.ID {
 				reviewable = " [reviewable]"
 			}
-			fmt.Printf("%s  %s  %s  %s  (impl: %s)%s\n",
-				issue.ID, issue.Title, issue.Priority, issue.Type, issue.ImplementerSession, reviewable)
+			fmt.Printf("%s  (impl: %s)%s\n", output.FormatIssueShort(&issue), issue.ImplementerSession, reviewable)
 		}
 
 		if len(result.issues) == 0 {
@@ -328,8 +326,7 @@ var nextCmd = &cobra.Command{
 		}
 
 		issue := result.issues[0]
-		fmt.Printf("%s  [%s]  %s%s  %s\n",
-			issue.ID, issue.Priority, issue.Title, output.FormatPointsSuffix(issue.Points), issue.Type)
+		fmt.Println(output.FormatIssueShort(&issue))
 		fmt.Println()
 		fmt.Printf("Run `td start %s` to begin working on this issue.\n", issue.ID)
 		return nil
@@ -353,7 +350,7 @@ var deletedCmd = &cobra.Command{
 		}
 
 		for _, issue := range result.issues {
-			fmt.Println(output.FormatIssueShort(&issue))
+			fmt.Println(output.FormatIssueDeleted(&issue))
 		}
 
 		if len(result.issues) == 0 {
