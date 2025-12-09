@@ -212,8 +212,9 @@ var usageCmd = &cobra.Command{
 			fmt.Println("IMPORTANT: You cannot approve issues you implemented.")
 			fmt.Println("Use `td handoff` or `td ws handoff` before stopping work.")
 			fmt.Println()
-			fmt.Println("FOR LLMs: Run `td session --new` at the start of each conversation")
-			fmt.Println("to ensure fresh session tracking and enable cross-session reviews.")
+			fmt.Println("FOR LLMs: Run `td session --new` at conversation start for session ID.")
+			fmt.Println("Use `td ws start` when implementing multiple issues to group handoffs.")
+			fmt.Println("  - session = identity (always exists)  |  ws = work container (optional)")
 			fmt.Println()
 			fmt.Println("TIP: Use `td usage -q` to hide these instructions after first read.")
 		}
