@@ -5,6 +5,7 @@ import (
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
@@ -64,8 +65,16 @@ var contextCmd = &cobra.Command{
 		deps, _ := database.GetDependencies(issueID)
 		blocked, _ := database.GetBlockedBy(issueID)
 
-		// Get start snapshot
+		// Get start snapshot and current git state
 		startSnapshot, _ := database.GetStartSnapshot(issueID)
+		var gitState *git.State
+		var commitsSinceStart int
+		var diffStats *git.DiffStats
+		if startSnapshot != nil {
+			gitState, _ = git.GetState()
+			commitsSinceStart, _ = git.GetCommitsSince(startSnapshot.CommitSHA)
+			diffStats, _ = git.GetDiffStatsSince(startSnapshot.CommitSHA)
+		}
 
 		if jsonOutput {
 			result := map[string]interface{}{
@@ -77,7 +86,23 @@ var contextCmd = &cobra.Command{
 				"blocks":     blocked,
 			}
 			if startSnapshot != nil {
-				result["start_snapshot"] = startSnapshot
+				gitInfo := map[string]interface{}{
+					"start_commit": startSnapshot.CommitSHA,
+					"start_branch": startSnapshot.Branch,
+					"started_at":   startSnapshot.Timestamp,
+				}
+				if gitState != nil {
+					gitInfo["current_commit"] = gitState.CommitSHA
+					gitInfo["current_branch"] = gitState.Branch
+					gitInfo["commits_since_start"] = commitsSinceStart
+					gitInfo["dirty_files"] = gitState.DirtyFiles
+				}
+				if diffStats != nil {
+					gitInfo["files_changed"] = diffStats.FilesChanged
+					gitInfo["additions"] = diffStats.Additions
+					gitInfo["deletions"] = diffStats.Deletions
+				}
+				result["git"] = gitInfo
 			}
 			return output.JSON(result)
 		}
@@ -119,6 +144,22 @@ var contextCmd = &cobra.Command{
 					typeLabel = fmt.Sprintf(" %s:", log.Type)
 				}
 				fmt.Printf("  [%s]%s %s\n", log.Timestamp.Format("15:04"), typeLabel, log.Message)
+			}
+			fmt.Println()
+		}
+
+		// Git state
+		if startSnapshot != nil {
+			fmt.Println("GIT STATE:")
+			fmt.Printf("  Started: %s (%s) %s\n",
+				startSnapshot.CommitSHA[:7], startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
+			if gitState != nil {
+				fmt.Printf("  Current: %s (%s) +%d commits\n",
+					gitState.CommitSHA[:7], gitState.Branch, commitsSinceStart)
+				if diffStats != nil && diffStats.FilesChanged > 0 {
+					fmt.Printf("  Changed: %d files (+%d -%d)\n",
+						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
+				}
 			}
 			fmt.Println()
 		}

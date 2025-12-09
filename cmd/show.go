@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,17 @@ var showCmd = &cobra.Command{
 		// Get logs and handoff
 		logs, _ := database.GetLogs(issueID, 0)
 		handoff, _ := database.GetLatestHandoff(issueID)
+
+		// Get git snapshots
+		startSnapshot, _ := database.GetStartSnapshot(issueID)
+		var gitState *git.State
+		var commitsSinceStart int
+		var diffStats *git.DiffStats
+		if startSnapshot != nil {
+			gitState, _ = git.GetState()
+			commitsSinceStart, _ = git.GetCommitsSince(startSnapshot.CommitSHA)
+			diffStats, _ = git.GetDiffStatsSince(startSnapshot.CommitSHA)
+		}
 
 		// Check output format
 		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
@@ -76,9 +88,29 @@ var showCmd = &cobra.Command{
 						"timestamp": log.Timestamp,
 						"message":   log.Message,
 						"type":      log.Type,
+						"session":   log.SessionID,
 					}
 				}
 				result["logs"] = logEntries
+			}
+			if startSnapshot != nil {
+				gitInfo := map[string]interface{}{
+					"start_commit": startSnapshot.CommitSHA,
+					"start_branch": startSnapshot.Branch,
+					"started_at":   startSnapshot.Timestamp,
+				}
+				if gitState != nil {
+					gitInfo["current_commit"] = gitState.CommitSHA
+					gitInfo["current_branch"] = gitState.Branch
+					gitInfo["commits_since_start"] = commitsSinceStart
+					gitInfo["dirty_files"] = gitState.DirtyFiles
+				}
+				if diffStats != nil {
+					gitInfo["files_changed"] = diffStats.FilesChanged
+					gitInfo["additions"] = diffStats.Additions
+					gitInfo["deletions"] = diffStats.Deletions
+				}
+				result["git"] = gitInfo
 			}
 			return output.JSON(result)
 		}
@@ -90,6 +122,52 @@ var showCmd = &cobra.Command{
 
 		// Long format (default)
 		fmt.Print(output.FormatIssueLong(issue, logs, handoff))
+
+		// Add git state section
+		if startSnapshot != nil {
+			fmt.Printf("\nGIT STATE:\n")
+			fmt.Printf("  Started: %s (%s) %s\n",
+				startSnapshot.CommitSHA[:7], startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
+			if gitState != nil {
+				fmt.Printf("  Current: %s (%s) +%d commits\n",
+					gitState.CommitSHA[:7], gitState.Branch, commitsSinceStart)
+				if diffStats != nil && diffStats.FilesChanged > 0 {
+					fmt.Printf("  Changed: %d files (+%d -%d)\n",
+						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
+				}
+			}
+		}
+
+		// Add session history from logs
+		sessionMap := make(map[string]bool)
+		for _, log := range logs {
+			if log.SessionID != "" {
+				sessionMap[log.SessionID] = true
+			}
+		}
+		if handoff != nil && handoff.SessionID != "" {
+			sessionMap[handoff.SessionID] = true
+		}
+		if issue.ImplementerSession != "" {
+			sessionMap[issue.ImplementerSession] = true
+		}
+		if issue.ReviewerSession != "" {
+			sessionMap[issue.ReviewerSession] = true
+		}
+		if len(sessionMap) > 0 {
+			fmt.Printf("\nSESSIONS INVOLVED:\n")
+			for sess := range sessionMap {
+				role := ""
+				if sess == issue.ImplementerSession {
+					role = " (implementer)"
+				}
+				if sess == issue.ReviewerSession {
+					role = " (reviewer)"
+				}
+				fmt.Printf("  %s%s\n", sess, role)
+			}
+		}
+
 		return nil
 	},
 }
