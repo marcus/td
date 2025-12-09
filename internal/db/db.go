@@ -71,6 +71,11 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+// BaseDir returns the base directory for the database
+func (db *DB) BaseDir() string {
+	return db.baseDir
+}
+
 // GetSchemaVersion returns the current schema version from the database
 func (db *DB) GetSchemaVersion() (int, error) {
 	var version string
@@ -1074,4 +1079,99 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 	}
 
 	return actions, nil
+}
+
+// GetRecentLogsAll returns recent logs across all issues
+func (db *DB) GetRecentLogsAll(limit int) ([]models.Log, error) {
+	query := `SELECT id, issue_id, session_id, work_session_id, message, type, timestamp
+	          FROM logs ORDER BY timestamp DESC`
+	args := []interface{}{}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []models.Log
+	for rows.Next() {
+		var log models.Log
+		err := rows.Scan(&log.ID, &log.IssueID, &log.SessionID, &log.WorkSessionID, &log.Message, &log.Type, &log.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, log)
+	}
+
+	return logs, nil
+}
+
+// GetRecentActionsAll returns recent action_log entries across all sessions
+func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
+	query := `
+		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log
+		ORDER BY timestamp DESC`
+	args := []interface{}{}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []models.ActionLog
+	for rows.Next() {
+		var action models.ActionLog
+		var undone int
+		err := rows.Scan(
+			&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+			&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+		)
+		if err != nil {
+			return nil, err
+		}
+		action.Undone = undone == 1
+		actions = append(actions, action)
+	}
+
+	return actions, nil
+}
+
+// GetRecentCommentsAll returns recent comments across all issues
+func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
+	query := `SELECT id, issue_id, session_id, text, created_at
+	          FROM comments ORDER BY created_at DESC`
+	args := []interface{}{}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var comments []models.Comment
+	for rows.Next() {
+		var c models.Comment
+		if err := rows.Scan(&c.ID, &c.IssueID, &c.SessionID, &c.Text, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		comments = append(comments, c)
+	}
+	return comments, nil
 }
