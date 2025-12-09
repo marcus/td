@@ -26,7 +26,7 @@ AI coding assistants are stateless. Each conversation starts fresh. This creates
 
 ```bash
 # Clone and install globally (requires Go 1.21+)
-git clone https://github.com/yourusername/td.git
+git clone https://github.com/marcus/td.git
 cd td
 go install .
 ```
