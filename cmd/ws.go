@@ -330,8 +330,8 @@ var wsCurrentCmd = &cobra.Command{
 				if err != nil {
 					continue
 				}
-				fmt.Printf("  %s  %s  %s  %s  %dpts\n",
-					issue.ID, issue.Title, output.FormatStatus(issue.Status), issue.Priority, issue.Points)
+				fmt.Printf("  %s  %s  %s  %s%s\n",
+					issue.ID, issue.Title, output.FormatStatus(issue.Status), issue.Priority, output.FormatPointsSuffix(issue.Points))
 			}
 			fmt.Println()
 		}
@@ -426,6 +426,23 @@ var wsHandoffCmd = &cobra.Command{
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
 			if stat.Size() > 0 {
 				parseWSHandoffInput(handoff)
+			}
+		}
+
+		// Auto-populate from session logs if no explicit content provided
+		if len(handoff.Done) == 0 && len(handoff.Remaining) == 0 && len(handoff.Decisions) == 0 && len(handoff.Uncertain) == 0 {
+			logs, _ := database.GetLogsByWorkSession(wsID)
+			for _, log := range logs {
+				switch log.Type {
+				case models.LogTypeProgress, models.LogTypeResult:
+					handoff.Done = append(handoff.Done, log.Message)
+				case models.LogTypeDecision:
+					handoff.Decisions = append(handoff.Decisions, log.Message)
+				case models.LogTypeBlocker:
+					handoff.Uncertain = append(handoff.Uncertain, log.Message)
+				case models.LogTypeTried, models.LogTypeHypothesis:
+					// These are context, skip for handoff summary
+				}
 			}
 		}
 

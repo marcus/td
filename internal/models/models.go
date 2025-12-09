@@ -177,6 +177,7 @@ const (
 	ActionReject       ActionType = "reject"
 	ActionBlock        ActionType = "block"
 	ActionUnblock      ActionType = "unblock"
+	ActionClose        ActionType = "close"
 	ActionAddDep       ActionType = "add_dependency"
 	ActionRemoveDep    ActionType = "remove_dependency"
 	ActionLinkFile     ActionType = "link_file"

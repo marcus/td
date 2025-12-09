@@ -127,7 +127,7 @@ func undoIssueAction(database *db.DB, action *models.ActionLog) error {
 		return database.RestoreIssue(action.EntityID)
 
 	case models.ActionUpdate, models.ActionStart, models.ActionReview,
-		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock:
+		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose:
 		// Restore previous state
 		if action.PreviousData == "" {
 			return fmt.Errorf("no previous data to restore")
@@ -210,7 +210,63 @@ func formatTimeAgo(t time.Time) string {
 	return fmt.Sprintf("%dd ago", days)
 }
 
+var lastCmd = &cobra.Command{
+	Use:   "last",
+	Short: "Show the last action performed",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		// Run migrations to ensure action_log table exists
+		if _, err := database.RunMigrations(); err != nil {
+			output.Error("failed to run migrations: %v", err)
+			return err
+		}
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		n, _ := cmd.Flags().GetInt("n")
+		if n <= 0 {
+			n = 1
+		}
+
+		actions, err := database.GetRecentActions(sess.ID, n)
+		if err != nil {
+			output.Error("failed to get actions: %v", err)
+			return err
+		}
+
+		if len(actions) == 0 {
+			fmt.Println("No recent actions")
+			return nil
+		}
+
+		for _, action := range actions {
+			status := ""
+			if action.Undone {
+				status = " [undone]"
+			}
+			ago := formatTimeAgo(action.Timestamp)
+			fmt.Printf("%s %s %s (%s)%s\n",
+				action.ActionType, action.EntityType, action.EntityID, ago, status)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(undoCmd)
+	rootCmd.AddCommand(lastCmd)
 	undoCmd.Flags().Bool("list", false, "List recent undoable actions")
+	lastCmd.Flags().IntP("n", "n", 1, "Number of actions to show")
 }

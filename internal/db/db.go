@@ -522,6 +522,30 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 	return logs, nil
 }
 
+// GetLogsByWorkSession retrieves logs for a specific work session
+func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
+	query := `SELECT id, issue_id, session_id, work_session_id, message, type, timestamp
+	          FROM logs WHERE work_session_id = ? ORDER BY timestamp`
+
+	rows, err := db.conn.Query(query, wsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []models.Log
+	for rows.Next() {
+		var log models.Log
+		err := rows.Scan(&log.ID, &log.IssueID, &log.SessionID, &log.WorkSessionID, &log.Message, &log.Type, &log.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, log)
+	}
+
+	return logs, nil
+}
+
 // AddHandoff adds a handoff entry
 func (db *DB) AddHandoff(handoff *models.Handoff) error {
 	handoff.Timestamp = time.Now()

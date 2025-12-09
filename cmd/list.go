@@ -28,10 +28,21 @@ var listCmd = &cobra.Command{
 
 		opts := db.ListIssuesOptions{}
 
+		// Check if --all flag is set
+		showAll, _ := cmd.Flags().GetBool("all")
+
 		// Parse status filter
 		if statusStr, _ := cmd.Flags().GetStringArray("status"); len(statusStr) > 0 {
 			for _, s := range statusStr {
 				opts.Status = append(opts.Status, models.Status(s))
+			}
+		} else if !showAll {
+			// Default: exclude closed issues unless --all is specified
+			opts.Status = []models.Status{
+				models.StatusOpen,
+				models.StatusInProgress,
+				models.StatusBlocked,
+				models.StatusInReview,
 			}
 		}
 
@@ -170,8 +181,8 @@ var reviewableCmd = &cobra.Command{
 		}
 
 		for _, issue := range issues {
-			fmt.Printf("%s  %s  %s  %dpts  %s  (impl: %s)\n",
-				issue.ID, issue.Title, issue.Priority, issue.Points, issue.Type, issue.ImplementerSession)
+			fmt.Printf("%s  %s  %s%s  %s  (impl: %s)\n",
+				issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), issue.Type, issue.ImplementerSession)
 		}
 
 		if len(issues) == 0 {
@@ -278,8 +289,8 @@ var nextCmd = &cobra.Command{
 		}
 
 		issue := issues[0]
-		fmt.Printf("%s  [%s]  %s  %dpts  %s\n",
-			issue.ID, issue.Priority, issue.Title, issue.Points, issue.Type)
+		fmt.Printf("%s  [%s]  %s%s  %s\n",
+			issue.ID, issue.Priority, issue.Title, output.FormatPointsSuffix(issue.Points), issue.Type)
 		fmt.Println()
 		fmt.Printf("Run `td start %s` to begin working on this issue.\n", issue.ID)
 
@@ -428,6 +439,7 @@ func init() {
 	listCmd.Flags().Bool("long", false, "Detailed output")
 	listCmd.Flags().Bool("short", false, "Compact output (default)")
 	listCmd.Flags().Bool("json", false, "JSON output")
+	listCmd.Flags().BoolP("all", "a", false, "Include closed issues (by default, closed issues are hidden)")
 
 	deletedCmd.Flags().Bool("json", false, "JSON output")
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/db"
@@ -39,12 +40,26 @@ var blockCmd = &cobra.Command{
 				continue
 			}
 
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
 			issue.Status = models.StatusBlocked
 
 			if err := database.UpdateIssue(issue); err != nil {
 				output.Error("failed to block %s: %v", issueID, err)
 				continue
 			}
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionBlock,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
 
 			// Log
 			logMsg := "Blocked"
@@ -96,6 +111,9 @@ var reopenCmd = &cobra.Command{
 				continue
 			}
 
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
 			issue.Status = models.StatusOpen
 			issue.ReviewerSession = ""
 			issue.ClosedAt = nil
@@ -104,6 +122,17 @@ var reopenCmd = &cobra.Command{
 				output.Error("failed to reopen %s: %v", issueID, err)
 				continue
 			}
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionUnblock,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
 
 			// Log
 			logMsg := "Reopened"

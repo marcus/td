@@ -114,6 +114,23 @@ func FormatPriority(p models.Priority) string {
 	return priorityStyle.Render(fmt.Sprintf("[%s]", p))
 }
 
+// FormatPoints returns empty string if points is 0, otherwise "Npts"
+func FormatPoints(points int) string {
+	if points == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%dpts", points)
+}
+
+// FormatPointsSuffix returns "  Npts" if points > 0, empty string otherwise
+// Useful for appending to format strings
+func FormatPointsSuffix(points int) string {
+	if points == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  %dpts", points)
+}
+
 // FormatIssueShort formats an issue in short format
 func FormatIssueShort(issue *models.Issue) string {
 	var parts []string

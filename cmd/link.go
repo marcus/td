@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -99,6 +101,12 @@ Examples:
 			return err
 		}
 		defer database.Close()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		issueID := args[0]
 		patterns := args[1:]
@@ -195,6 +203,22 @@ Examples:
 				output.Warning("failed to link %s: %v", file, err)
 				continue
 			}
+
+			// Log action for undo
+			linkData, _ := json.Marshal(map[string]string{
+				"issue_id":  issueID,
+				"file_path": absPath,
+				"role":      string(role),
+				"sha":       sha,
+			})
+			database.LogAction(&models.ActionLog{
+				SessionID:  sess.ID,
+				ActionType: models.ActionLinkFile,
+				EntityType: "file_link",
+				EntityID:   issueID + ":" + absPath,
+				NewData:    string(linkData),
+			})
+
 			count++
 		}
 
@@ -222,6 +246,12 @@ var unlinkCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		issueID := args[0]
 		pattern := args[1]
 
@@ -236,6 +266,21 @@ var unlinkCmd = &cobra.Command{
 		for _, file := range files {
 			matched, _ := filepath.Match(pattern, file.FilePath)
 			if matched || file.FilePath == pattern {
+				// Log action for undo (before unlink so we capture the file info)
+				linkData, _ := json.Marshal(map[string]string{
+					"issue_id":  issueID,
+					"file_path": file.FilePath,
+					"role":      string(file.Role),
+					"sha":       file.LinkedSHA,
+				})
+				database.LogAction(&models.ActionLog{
+					SessionID:  sess.ID,
+					ActionType: models.ActionUnlinkFile,
+					EntityType: "file_link",
+					EntityID:   issueID + ":" + file.FilePath,
+					NewData:    string(linkData),
+				})
+
 				if err := database.UnlinkFile(issueID, file.FilePath); err != nil {
 					output.Warning("failed to unlink %s: %v", file.FilePath, err)
 					continue

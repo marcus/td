@@ -96,12 +96,30 @@ var updateCmd = &cobra.Command{
 				// First get existing deps and remove them
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
+					// Log removal for undo
+					depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
+					database.LogAction(&models.ActionLog{
+						SessionID:  sess.ID,
+						ActionType: models.ActionRemoveDep,
+						EntityType: "dependency",
+						EntityID:   issueID + ":" + dep,
+						NewData:    string(depData),
+					})
 					database.RemoveDependency(issueID, dep)
 				}
 				// Add new deps
 				if dependsOn != "" {
 					for _, dep := range strings.Split(dependsOn, ",") {
 						dep = strings.TrimSpace(dep)
+						// Log addition for undo
+						depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
+						database.LogAction(&models.ActionLog{
+							SessionID:  sess.ID,
+							ActionType: models.ActionAddDep,
+							EntityType: "dependency",
+							EntityID:   issueID + ":" + dep,
+							NewData:    string(depData),
+						})
 						database.AddDependency(issueID, dep, "depends_on")
 					}
 				}
@@ -111,12 +129,30 @@ var updateCmd = &cobra.Command{
 				// For blocks, we need to find issues that depend on this one and update them
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
+					// Log removal for undo
+					depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
+					database.LogAction(&models.ActionLog{
+						SessionID:  sess.ID,
+						ActionType: models.ActionRemoveDep,
+						EntityType: "dependency",
+						EntityID:   b + ":" + issueID,
+						NewData:    string(depData),
+					})
 					database.RemoveDependency(b, issueID)
 				}
 				// Add new blocks
 				if blocks != "" {
 					for _, b := range strings.Split(blocks, ",") {
 						b = strings.TrimSpace(b)
+						// Log addition for undo
+						depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
+						database.LogAction(&models.ActionLog{
+							SessionID:  sess.ID,
+							ActionType: models.ActionAddDep,
+							EntityType: "dependency",
+							EntityID:   b + ":" + issueID,
+							NewData:    string(depData),
+						})
 						database.AddDependency(b, issueID, "depends_on")
 					}
 				}

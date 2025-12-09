@@ -400,6 +400,9 @@ Examples:
 				continue
 			}
 
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
 			// Update issue
 			issue.Status = models.StatusClosed
 			now := issue.UpdatedAt
@@ -410,6 +413,17 @@ Examples:
 				skipped++
 				continue
 			}
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionClose,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
 
 			// Log
 			reason, _ := cmd.Flags().GetString("reason")

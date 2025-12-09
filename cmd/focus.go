@@ -93,8 +93,8 @@ var currentCmd = &cobra.Command{
 				if jsonOutput {
 					result["focused"] = issue
 				} else {
-					fmt.Printf("FOCUSED: %s  %s  %s  %dpts  %s\n",
-						issue.ID, issue.Title, issue.Priority, issue.Points, output.FormatStatus(issue.Status))
+					fmt.Printf("FOCUSED: %s  %s  %s%s  %s\n",
+						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), output.FormatStatus(issue.Status))
 					fmt.Println()
 				}
 			}
@@ -115,8 +115,8 @@ var currentCmd = &cobra.Command{
 			} else {
 				fmt.Println("IN PROGRESS (this session):")
 				for _, issue := range inProgress {
-					fmt.Printf("  %s  %s  %s  %dpts\n",
-						issue.ID, issue.Title, issue.Priority, issue.Points)
+					fmt.Printf("  %s  %s  %s%s\n",
+						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points))
 				}
 				fmt.Println()
 			}
@@ -133,8 +133,8 @@ var currentCmd = &cobra.Command{
 			} else {
 				fmt.Println("AWAITING YOUR REVIEW:")
 				for _, issue := range reviewable {
-					fmt.Printf("  %s  %s  %s  %dpts  (impl: %s)\n",
-						issue.ID, issue.Title, issue.Priority, issue.Points, issue.ImplementerSession)
+					fmt.Printf("  %s  %s  %s%s  (impl: %s)\n",
+						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), issue.ImplementerSession)
 				}
 				fmt.Println()
 			}
@@ -152,8 +152,8 @@ var currentCmd = &cobra.Command{
 			} else {
 				fmt.Println("SUBMITTED FOR REVIEW (by you):")
 				for _, issue := range submittedForReview {
-					fmt.Printf("  %s  %s  %s  %dpts\n",
-						issue.ID, issue.Title, issue.Priority, issue.Points)
+					fmt.Printf("  %s  %s  %s%s\n",
+						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points))
 				}
 			}
 		}
