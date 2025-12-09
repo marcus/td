@@ -524,6 +524,209 @@ td current
 
 ---
 
+## Work Sessions
+
+Work sessions provide an alternative entry point for agents working across multiple issues. Issues remain the source of truth; sessions collect work and fan out to issues on handoff.
+
+```
+┌─────────────────────────────────────────────────┐
+│  Work Session (agent entry point)               │
+│  - Collects logs, progress, decisions           │
+│  - Tags multiple issues as relevant             │
+└───────────────┬─────────────────────────────────┘
+                │ fans out on handoff
+                ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  Issue td-5q    │  │  Issue td-6r    │  │  Issue td-7s    │
+│  - handoff      │  │  - handoff      │  │  - handoff      │
+│  - logs         │  │  - logs         │  │  - logs         │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+```
+
+### `td ws start [name]`
+
+Start a named work session. Aliases: `td session start`, `td worksession start`.
+
+```bash
+td ws start "Auth layer implementation"
+# Output:
+# WORK SESSION STARTED: ws-7f3a
+# Name: Auth layer implementation
+#
+# Tag issues with: td ws tag <issue-ids>
+# Log progress with: td ws log "message"
+```
+
+Automatically runs `td start` on tagged issues when they're added.
+
+### `td ws tag [issue-ids...]`
+
+Associate issues with the current work session.
+
+```bash
+td ws tag td-5q
+# Output: TAGGED td-5q → ws-7f3a
+# STARTED td-5q (session: ses_a1b2c3)
+
+# Discover related work mid-session
+td ws tag td-6r td-7s
+# Output:
+# TAGGED td-6r → ws-7f3a
+# STARTED td-6r (session: ses_a1b2c3)
+# TAGGED td-7s → ws-7f3a
+# STARTED td-7s (session: ses_a1b2c3)
+```
+
+### `td ws untag [issue-ids...]`
+
+Remove issues from work session (doesn't change issue status).
+
+```bash
+td ws untag td-7s
+# Output: UNTAGGED td-7s from ws-7f3a
+```
+
+### `td ws log "message" [flags]`
+
+Log to the work session. Entry is attached to the session AND all tagged issues.
+
+```bash
+td ws log "Discovered OAuth and session mgmt share token storage"
+# Output: LOGGED ws-7f3a → td-5q, td-6r
+
+td ws log --hypothesis "Token refresh failing due to shared state"
+# Output: LOGGED ws-7f3a [hypothesis] → td-5q, td-6r
+```
+
+**Flags:** Same as `td log` (`--blocker`, `--decision`, `--hypothesis`, `--tried`, `--result`)
+
+To log to a specific issue only:
+
+```bash
+td ws log "OAuth-specific: Added Google provider" --only td-5q
+# Output: LOGGED ws-7f3a → td-5q
+```
+
+### `td ws current`
+
+Show current work session state.
+
+```bash
+td ws current
+# Output:
+# WORK SESSION: ws-7f3a "Auth layer implementation"
+# Started: 2h ago
+# Git: abc1234 → def5678 (+5 commits)
+#
+# TAGGED ISSUES:
+#   td-5q  Implement OAuth flow      [in_progress]  P1  5pts
+#   td-6r  Session management        [in_progress]  P2  3pts
+#
+# SESSION LOG (last 5):
+#   [10:30] Started session
+#   [10:35] Tagged td-5q, td-6r
+#   [10:45] "Discovered shared token storage"
+#   [11:00] [hypothesis] "Token refresh failing due to shared state"
+#   [11:30] [result] "Confirmed - extracted shared TokenStore"
+#
+# FILES CHANGED:
+#   internal/auth/oauth.go      +45 -12
+#   internal/auth/session.go    +23 -8
+#   internal/auth/tokens.go     +89 (new)
+```
+
+**Flags:**
+
+```txt
+  --json        Machine-readable output
+```
+
+### `td ws handoff [flags]`
+
+End work session and generate handoffs for all tagged issues.
+
+```bash
+td ws handoff << EOF
+done:
+  - Unified token storage for OAuth and sessions
+  - Shared TokenStore middleware extracted
+  - OAuth callback working
+remaining:
+  - OAuth refresh flow (td-5q)
+  - Session expiry handling (td-6r)
+decisions:
+  - Single token store, not per-auth-method
+  - JWT for OAuth, opaque for sessions
+uncertain:
+  - Token rotation policy across both systems
+EOF
+# Output:
+# HANDOFF RECORDED ws-7f3a
+# Generated handoffs:
+#   td-5q: done=3, remaining=1
+#   td-6r: done=2, remaining=1
+#
+# Cross-references added to both issues.
+# Work session ended.
+```
+
+**Issue-specific remaining items:** Tag items with `(td-xxx)` to route them to specific issues. Untagged items go to all.
+
+**Flags:**
+
+```bash
+td ws handoff --continue   # Record handoff but keep session open
+td ws handoff --review     # Handoff and submit all tagged issues for review
+```
+
+### `td ws end`
+
+End work session without handoff (for abandoning work).
+
+```bash
+td ws end
+# Output:
+# WARNING: No handoff recorded for ws-7f3a
+# Tagged issues remain in_progress: td-5q, td-6r
+# WORK SESSION ENDED
+```
+
+### `td ws list`
+
+List recent work sessions.
+
+```bash
+td ws list
+# Output:
+# ws-7f3a  "Auth layer implementation"     2h ago   td-5q,td-6r    [active]
+# ws-6e2b  "API refactor"                  1d ago   td-3a,td-4b    [completed]
+# ws-5d1a  "Bug fixes"                     3d ago   td-1x          [completed]
+```
+
+### `td ws show [session-id]`
+
+Show details of a past work session.
+
+```bash
+td ws show ws-6e2b
+# Output:
+# WORK SESSION: ws-6e2b "API refactor"
+# Duration: 3h (1d ago)
+# Git: aaa1111 → bbb2222 (+8 commits)
+#
+# TAGGED ISSUES:
+#   td-3a  Refactor endpoints    [closed]  ✓
+#   td-4b  Update API docs       [closed]  ✓
+#
+# HANDOFF SUMMARY:
+#   Done: REST endpoints consolidated, OpenAPI spec updated
+#   Decisions: Kept v1 compat, added deprecation warnings
+#
+# Full log: td ws show ws-6e2b --full
+```
+
+---
+
 ## Listing and Search
 
 ### `td list [filters] [flags]`
@@ -750,7 +953,7 @@ td resume td-5q
 
 Generate optimized context block for AI agents. Includes:
 
-1. Current session identity
+1. Current session identity and active work session (if any)
 2. Focused issue with handoff state
 3. Issues awaiting review (that this session can review)
 4. High-priority open issues
@@ -762,6 +965,7 @@ td usage
 # You have access to `td`, a local task management CLI.
 #
 # CURRENT SESSION: ses_a1b2c3
+# WORK SESSION: ws-7f3a "Auth layer implementation" (2 issues tagged)
 #
 # FOCUSED ISSUE: td-5q "Implement OAuth flow" [in_progress]
 #   Last handoff (2h ago):
@@ -778,25 +982,33 @@ td usage
 #   td-9d "Add logout endpoint" P1 feature
 #   td-2e "Update auth docs" P3 task
 #
-# WORKFLOW:
-#   1. `td start <id>` to begin work
-#   2. `td log "message"` to track progress
-#   3. `td handoff <id>` to capture state (REQUIRED)
-#   4. `td review <id>` to submit for review
-#   5. Different session runs `td approve/reject <id>`
+# WORKFLOWS:
+#
+#   Single-issue:
+#     1. `td start <id>` to begin work
+#     2. `td log "message"` to track progress
+#     3. `td handoff <id>` to capture state (REQUIRED)
+#     4. `td review <id>` to submit for review
+#
+#   Multi-issue (recommended for agents):
+#     1. `td ws start "name"` to begin work session
+#     2. `td ws tag <ids>` to associate issues as you discover them
+#     3. `td ws log "message"` to track progress (fans out to all tagged)
+#     4. `td ws handoff` to capture state and end session
 #
 # KEY COMMANDS:
 #   td current              What you're working on
+#   td ws current           Current work session state
 #   td context <id>         Full context for resuming
 #   td next                 Highest priority open issue
+#   td critical-path        What unblocks the most work
 #   td reviewable           Issues you can review
-#   td log "msg"            Track progress
-#   td handoff <id>         Capture working state
-#   td review <id>          Submit for review
+#   td ws log "msg"         Track progress (multi-issue)
+#   td ws handoff           Capture state, end session
 #   td approve/reject <id>  Complete review
 #
 # IMPORTANT: You cannot approve issues you implemented.
-# Use `td handoff` before stopping work or submitting for review.
+# Use `td handoff` or `td ws handoff` before stopping work.
 ```
 
 **Flags:**
@@ -1065,9 +1277,13 @@ td list --points "1-5"          # 1, 2, 3, 5
 * **Session tracking**: Session ID generated per terminal session, stored in `.todos/session`. Can be named with `td session`.
 * **Handoff versioning**: Each `td handoff` creates a new snapshot. Previous handoffs preserved in `handoff_history` table.
 * **Review enforcement**: `implementer_session` column on issues. `td approve` checks `current_session != implementer_session`.
-* **Logs**: Append-only `logs` table with `issue_id`, `session_id`, `timestamp`, `message`, `type` (progress/blocker/decision).
+* **Logs**: Append-only `logs` table with `issue_id`, `session_id`, `work_session_id`, `timestamp`, `message`, `type` (progress/blocker/decision/hypothesis/tried/result).
 * **Focus state**: `.todos/config.json`
 * **Issue IDs**: Hash-based, 4-6 characters.
+* **Work session IDs**: `ws-` prefix, 4 characters hash.
+* **File linking**: `issue_files` table with `issue_id`, `file_path`, `role`, `linked_sha`, `linked_at`. SHA compared against current for change detection.
+* **Git state**: `git_snapshots` table with `issue_id`, `event` (start/handoff), `commit_sha`, `branch`, `dirty_files`, `timestamp`.
+* **Work sessions**: `work_sessions` table with `id`, `name`, `session_id`, `started_at`, `ended_at`, `start_sha`, `end_sha`. Junction table `work_session_issues` links sessions to issues with `tagged_at`.
 
 ---
 
@@ -1097,6 +1313,12 @@ td list --points "1-5"          # 1, 2, 3, 5
 | What's blocked by this | `td blocked-by td-5q` |
 | What this depends on | `td depends-on td-5q` |
 | Critical path | `td critical-path` |
+| Start work session | `td ws start "name"` |
+| Tag issue to session | `td ws tag td-5q` |
+| Log to session | `td ws log "message"` |
+| View session state | `td ws current` |
+| End session + handoff | `td ws handoff` |
+| List work sessions | `td ws list` |
 | Delete issue | `td delete td-5q` |
 | Restore deleted | `td restore td-5q` |
 | View deleted | `td deleted` |
