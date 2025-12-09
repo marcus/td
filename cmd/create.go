@@ -13,9 +13,10 @@ import (
 )
 
 var createCmd = &cobra.Command{
-	Use:   "create [title]",
-	Short: "Create a new issue",
-	Long:  `Create a new issue with optional flags for type, priority, labels, and more.`,
+	Use:     "create [title]",
+	Aliases: []string{"add", "new"},
+	Short:   "Create a new issue",
+	Long:    `Create a new issue with optional flags for type, priority, labels, and more.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -69,9 +70,14 @@ var createCmd = &cobra.Command{
 			issue.Points = pts
 		}
 
-		// Labels
-		if labels, _ := cmd.Flags().GetString("labels"); labels != "" {
-			issue.Labels = strings.Split(labels, ",")
+		// Labels (support both --labels and --label)
+		labelsStr, _ := cmd.Flags().GetString("labels")
+		labelStr, _ := cmd.Flags().GetString("label")
+		if labelsStr == "" && labelStr != "" {
+			labelsStr = labelStr
+		}
+		if labelsStr != "" {
+			issue.Labels = strings.Split(labelsStr, ",")
 			for i := range issue.Labels {
 				issue.Labels[i] = strings.TrimSpace(issue.Labels[i])
 			}
@@ -137,6 +143,7 @@ func init() {
 	createCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	createCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
 	createCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
+	createCmd.Flags().String("label", "", "Alias for --labels (single or comma-separated)")
 	createCmd.Flags().StringP("description", "d", "", "Description text")
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
 	createCmd.Flags().String("parent", "", "Parent issue ID")

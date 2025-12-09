@@ -372,3 +372,227 @@ func TestWorkSession(t *testing.T) {
 		t.Error("Issue not untagged from work session")
 	}
 }
+
+func TestGetLogsByWorkSession(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create work session
+	ws := &models.WorkSession{
+		Name:      "Test Session",
+		SessionID: "ses_test",
+	}
+	if err := db.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+
+	// Create issues and tag them
+	issue1 := &models.Issue{Title: "Issue 1"}
+	issue2 := &models.Issue{Title: "Issue 2"}
+	if err := db.CreateIssue(issue1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := db.CreateIssue(issue2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	db.TagIssueToWorkSession(ws.ID, issue1.ID)
+	db.TagIssueToWorkSession(ws.ID, issue2.ID)
+
+	// Add logs with work session ID
+	log1 := &models.Log{
+		IssueID:       issue1.ID,
+		SessionID:     "ses_test",
+		WorkSessionID: ws.ID,
+		Message:       "Progress on issue 1",
+		Type:          models.LogTypeProgress,
+	}
+	log2 := &models.Log{
+		IssueID:       issue2.ID,
+		SessionID:     "ses_test",
+		WorkSessionID: ws.ID,
+		Message:       "Progress on issue 2",
+		Type:          models.LogTypeProgress,
+	}
+	log3 := &models.Log{
+		IssueID:       issue1.ID,
+		SessionID:     "ses_test",
+		WorkSessionID: ws.ID,
+		Message:       "Decision made",
+		Type:          models.LogTypeDecision,
+	}
+
+	if err := db.AddLog(log1); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+	if err := db.AddLog(log2); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+	if err := db.AddLog(log3); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	// Get logs by work session
+	logs, err := db.GetLogsByWorkSession(ws.ID)
+	if err != nil {
+		t.Fatalf("GetLogsByWorkSession failed: %v", err)
+	}
+
+	if len(logs) != 3 {
+		t.Errorf("Expected 3 logs, got %d", len(logs))
+	}
+
+	// Verify logs are from both issues
+	issueIDs := make(map[string]bool)
+	for _, log := range logs {
+		issueIDs[log.IssueID] = true
+	}
+	if len(issueIDs) != 2 {
+		t.Errorf("Expected logs from 2 issues, got %d", len(issueIDs))
+	}
+}
+
+func TestActionLog(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Run migrations to ensure action_log table exists
+	if _, err := db.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations failed: %v", err)
+	}
+
+	sessionID := "ses_test123"
+
+	// Test logging an action
+	action := &models.ActionLog{
+		SessionID:    sessionID,
+		ActionType:   models.ActionCreate,
+		EntityType:   "issue",
+		EntityID:     "td-test1",
+		PreviousData: "",
+		NewData:      `{"id":"td-test1","title":"Test Issue"}`,
+	}
+	if err := db.LogAction(action); err != nil {
+		t.Fatalf("LogAction failed: %v", err)
+	}
+
+	// Test GetLastAction
+	lastAction, err := db.GetLastAction(sessionID)
+	if err != nil {
+		t.Fatalf("GetLastAction failed: %v", err)
+	}
+	if lastAction == nil {
+		t.Fatal("Expected action, got nil")
+	}
+	if lastAction.EntityID != "td-test1" {
+		t.Errorf("Expected entity ID td-test1, got %s", lastAction.EntityID)
+	}
+	if lastAction.ActionType != models.ActionCreate {
+		t.Errorf("Expected action type create, got %s", lastAction.ActionType)
+	}
+
+	// Log another action
+	action2 := &models.ActionLog{
+		SessionID:    sessionID,
+		ActionType:   models.ActionUpdate,
+		EntityType:   "issue",
+		EntityID:     "td-test1",
+		PreviousData: `{"id":"td-test1","title":"Test Issue"}`,
+		NewData:      `{"id":"td-test1","title":"Updated Issue"}`,
+	}
+	if err := db.LogAction(action2); err != nil {
+		t.Fatalf("LogAction failed: %v", err)
+	}
+
+	// Test GetRecentActions
+	recent, err := db.GetRecentActions(sessionID, 10)
+	if err != nil {
+		t.Fatalf("GetRecentActions failed: %v", err)
+	}
+	if len(recent) != 2 {
+		t.Errorf("Expected 2 recent actions, got %d", len(recent))
+	}
+	// Most recent should be first
+	if recent[0].ActionType != models.ActionUpdate {
+		t.Error("Expected most recent action to be update")
+	}
+
+	// Test MarkActionUndone
+	if err := db.MarkActionUndone(recent[0].ID); err != nil {
+		t.Fatalf("MarkActionUndone failed: %v", err)
+	}
+
+	// GetLastAction should now return the first action (create), not the undone one
+	lastAction, err = db.GetLastAction(sessionID)
+	if err != nil {
+		t.Fatalf("GetLastAction failed: %v", err)
+	}
+	if lastAction == nil {
+		t.Fatal("Expected action, got nil")
+	}
+	if lastAction.ActionType != models.ActionCreate {
+		t.Errorf("Expected first non-undone action (create), got %s", lastAction.ActionType)
+	}
+
+	// Test limit on GetRecentActions
+	limited, err := db.GetRecentActions(sessionID, 1)
+	if err != nil {
+		t.Fatalf("GetRecentActions with limit failed: %v", err)
+	}
+	if len(limited) != 1 {
+		t.Errorf("Expected 1 action with limit, got %d", len(limited))
+	}
+}
+
+func TestActionLogDifferentSessions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations failed: %v", err)
+	}
+
+	// Log actions from different sessions
+	action1 := &models.ActionLog{
+		SessionID:  "ses_session1",
+		ActionType: models.ActionCreate,
+		EntityType: "issue",
+		EntityID:   "td-abc1",
+	}
+	action2 := &models.ActionLog{
+		SessionID:  "ses_session2",
+		ActionType: models.ActionCreate,
+		EntityType: "issue",
+		EntityID:   "td-abc2",
+	}
+	db.LogAction(action1)
+	db.LogAction(action2)
+
+	// Each session should only see its own actions
+	session1Actions, _ := db.GetRecentActions("ses_session1", 10)
+	session2Actions, _ := db.GetRecentActions("ses_session2", 10)
+
+	if len(session1Actions) != 1 {
+		t.Errorf("Session 1 should have 1 action, got %d", len(session1Actions))
+	}
+	if len(session2Actions) != 1 {
+		t.Errorf("Session 2 should have 1 action, got %d", len(session2Actions))
+	}
+	if session1Actions[0].EntityID != "td-abc1" {
+		t.Error("Session 1 got wrong action")
+	}
+	if session2Actions[0].EntityID != "td-abc2" {
+		t.Error("Session 2 got wrong action")
+	}
+}

@@ -104,6 +104,11 @@ var listCmd = &cobra.Command{
 			opts.Implementer = sess.ID
 		}
 
+		// Open shorthand (--open is equivalent to --status open)
+		if open, _ := cmd.Flags().GetBool("open"); open {
+			opts.Status = []models.Status{models.StatusOpen}
+		}
+
 		// Date filters
 		if created, _ := cmd.Flags().GetString("created"); created != "" {
 			opts.CreatedAfter, opts.CreatedBefore = parseDateFilter(created)
@@ -226,6 +231,52 @@ var blockedListCmd = &cobra.Command{
 
 		if len(issues) == 0 {
 			fmt.Println("No blocked issues")
+		}
+
+		return nil
+	},
+}
+
+var inReviewCmd = &cobra.Command{
+	Use:     "in-review",
+	Aliases: []string{"ir"},
+	Short:   "List all issues currently in review",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInReview},
+			SortBy: "priority",
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		for _, issue := range issues {
+			reviewable := ""
+			if issue.ImplementerSession != sess.ID {
+				reviewable = " [reviewable]"
+			}
+			fmt.Printf("%s  %s  %s  %s  (impl: %s)%s\n",
+				issue.ID, issue.Title, issue.Priority, issue.Type, issue.ImplementerSession, reviewable)
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No issues in review")
 		}
 
 		return nil
@@ -421,6 +472,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(reviewableCmd)
 	rootCmd.AddCommand(blockedListCmd)
+	rootCmd.AddCommand(inReviewCmd)
 	rootCmd.AddCommand(readyCmd)
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(deletedCmd)
@@ -436,6 +488,7 @@ func init() {
 	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
 	listCmd.Flags().BoolP("mine", "m", false, "Show issues where you are the implementer")
+	listCmd.Flags().BoolP("open", "o", false, "Show only open issues (shorthand for --status open)")
 	listCmd.Flags().String("created", "", "Created date filter")
 	listCmd.Flags().String("updated", "", "Updated date filter")
 	listCmd.Flags().String("closed", "", "Closed date filter")

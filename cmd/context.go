@@ -26,16 +26,22 @@ var contextCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		// Get issue ID from args or focus
+		// Get issue ID from args, --focused flag, or current focus
 		issueID := ""
 		if len(args) > 0 {
 			issueID = args[0]
+		} else if focused, _ := cmd.Flags().GetBool("focused"); focused {
+			issueID, _ = config.GetFocus(baseDir)
+			if issueID == "" {
+				output.Error("no focused issue (use td focus <id> to set one)")
+				return fmt.Errorf("no focused issue")
+			}
 		} else {
 			issueID, _ = config.GetFocus(baseDir)
 		}
 
 		if issueID == "" {
-			output.Error("no issue specified and no focused issue")
+			output.Error("no issue specified and no focused issue (use --focused or provide an ID)")
 			return fmt.Errorf("no issue specified")
 		}
 
@@ -242,6 +248,7 @@ var usageCmd = &cobra.Command{
 		}
 
 		compact, _ := cmd.Flags().GetBool("compact")
+		quiet, _ := cmd.Flags().GetBool("quiet")
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 
 		// Get focused issue
@@ -260,6 +267,13 @@ var usageCmd = &cobra.Command{
 			wsIssues, _ = database.GetWorkSessionIssues(wsID)
 		}
 
+		// Get in-progress issues for this session
+		inProgress, _ := database.ListIssues(db.ListIssuesOptions{
+			Status:      []models.Status{models.StatusInProgress},
+			Implementer: sess.ID,
+			SortBy:      "priority",
+		})
+
 		// Get reviewable issues
 		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
 			ReviewableBy: sess.ID,
@@ -274,12 +288,13 @@ var usageCmd = &cobra.Command{
 
 		if jsonOutput {
 			result := map[string]interface{}{
-				"session":     sess.ID,
-				"focused":     focusedIssue,
+				"session":      sess.ID,
+				"focused":      focusedIssue,
 				"work_session": activeWS,
-				"ws_issues":   wsIssues,
-				"reviewable":  reviewable,
-				"ready":       ready,
+				"ws_issues":    wsIssues,
+				"in_progress":  inProgress,
+				"reviewable":   reviewable,
+				"ready":        ready,
 			}
 			return output.JSON(result)
 		}
@@ -340,6 +355,14 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 		}
 
+		if len(inProgress) > 0 {
+			fmt.Printf("IN PROGRESS (%d issues):\n", len(inProgress))
+			for _, issue := range inProgress {
+				fmt.Printf("  %s \"%s\" %s %s\n", issue.ID, issue.Title, issue.Priority, issue.Type)
+			}
+			fmt.Println()
+		}
+
 		if len(reviewable) > 0 {
 			fmt.Printf("AWAITING YOUR REVIEW (%d issues):\n", len(reviewable))
 			for _, issue := range reviewable {
@@ -356,7 +379,7 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		if !compact {
+		if !compact && !quiet {
 			fmt.Println("WORKFLOWS:")
 			fmt.Println()
 			fmt.Println("  Single-issue:")
@@ -411,7 +434,9 @@ func init() {
 
 	contextCmd.Flags().Bool("full", false, "Include complete session history")
 	contextCmd.Flags().Bool("json", false, "JSON output")
+	contextCmd.Flags().BoolP("focused", "f", false, "Show context for focused issue")
 
 	usageCmd.Flags().Bool("compact", false, "Shorter output")
+	usageCmd.Flags().BoolP("quiet", "q", false, "Hide workflow instructions (show only actionable items)")
 	usageCmd.Flags().Bool("json", false, "JSON output")
 }

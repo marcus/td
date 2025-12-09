@@ -39,6 +39,13 @@ var showCmd = &cobra.Command{
 		logs, _ := database.GetLogs(issueID, 0)
 		handoff, _ := database.GetLatestHandoff(issueID)
 
+		// Get linked files
+		files, _ := database.GetLinkedFiles(issueID)
+
+		// Get dependencies
+		deps, _ := database.GetDependencies(issueID)
+		blocked, _ := database.GetBlockedBy(issueID)
+
 		// Get git snapshots
 		startSnapshot, _ := database.GetStartSnapshot(issueID)
 		var gitState *git.State
@@ -165,6 +172,39 @@ var showCmd = &cobra.Command{
 					role = " (reviewer)"
 				}
 				fmt.Printf("  %s%s\n", sess, role)
+			}
+		}
+
+		// Show linked files
+		if len(files) > 0 {
+			fmt.Printf("\nLINKED FILES:\n")
+			for _, f := range files {
+				fmt.Printf("  %s (%s)\n", f.FilePath, f.Role)
+			}
+		}
+
+		// Show dependencies
+		if len(deps) > 0 {
+			fmt.Printf("\nBLOCKED BY:\n")
+			for _, depID := range deps {
+				dep, _ := database.GetIssue(depID)
+				if dep != nil {
+					fmt.Printf("  %s \"%s\" [%s]\n", dep.ID, dep.Title, dep.Status)
+				} else {
+					fmt.Printf("  %s\n", depID)
+				}
+			}
+		}
+
+		if len(blocked) > 0 {
+			fmt.Printf("\nBLOCKS:\n")
+			for _, id := range blocked {
+				b, _ := database.GetIssue(id)
+				if b != nil {
+					fmt.Printf("  %s \"%s\" [%s]\n", b.ID, b.Title, b.Status)
+				} else {
+					fmt.Printf("  %s\n", id)
+				}
 			}
 		}
 
