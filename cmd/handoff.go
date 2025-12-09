@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -29,8 +30,10 @@ Accepts YAML-like format via stdin:
   uncertain:
     - Question/uncertainty
 
-Or use flags:
-  --done "item" --remaining "item" --decision "item" --uncertain "item"`,
+Or use flags with values, stdin (-), or file (@path):
+  --done "item"          Single item
+  --done @done.txt       Items from file (one per line)
+  echo "item" | td handoff ID --done -   Items from stdin`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -60,23 +63,25 @@ Or use flags:
 			SessionID: sess.ID,
 		}
 
-		// Get from flags
+		// Get from flags with stdin/file expansion
 		done, _ := cmd.Flags().GetStringArray("done")
 		remaining, _ := cmd.Flags().GetStringArray("remaining")
 		decisions, _ := cmd.Flags().GetStringArray("decision")
 		uncertain, _ := cmd.Flags().GetStringArray("uncertain")
 
-		handoff.Done = done
-		handoff.Remaining = remaining
-		handoff.Decisions = decisions
-		handoff.Uncertain = uncertain
+		var stdinUsed bool
+		handoff.Done, stdinUsed = expandFlagValues(done, stdinUsed)
+		handoff.Remaining, stdinUsed = expandFlagValues(remaining, stdinUsed)
+		handoff.Decisions, stdinUsed = expandFlagValues(decisions, stdinUsed)
+		handoff.Uncertain, stdinUsed = expandFlagValues(uncertain, stdinUsed)
 
-		// Check if stdin has data - only read if it's a pipe AND has available data
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			// Stdin is not a terminal - check if there's actually data available
-			if stat.Size() > 0 {
-				parseHandoffInput(handoff)
+		// Check if stdin has data (YAML format) - only if not already used by flag expansion
+		if !stdinUsed {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				if stat.Size() > 0 {
+					parseHandoffInput(handoff)
+				}
 			}
 		}
 
@@ -155,6 +160,51 @@ func parseHandoffInput(handoff *models.Handoff) {
 			}
 		}
 	}
+}
+
+// expandFlagValues expands flag values that use - (stdin) or @file syntax
+// Returns the expanded values and whether stdin was consumed
+func expandFlagValues(values []string, stdinUsed bool) ([]string, bool) {
+	var result []string
+	for _, v := range values {
+		if v == "-" {
+			// Read from stdin (one item per line)
+			if stdinUsed {
+				output.Warning("stdin already used, ignoring additional - flag")
+				continue
+			}
+			stdinUsed = true
+			lines := readLinesFromReader(os.Stdin)
+			result = append(result, lines...)
+		} else if strings.HasPrefix(v, "@") {
+			// Read from file
+			path := strings.TrimPrefix(v, "@")
+			file, err := os.Open(path)
+			if err != nil {
+				output.Warning("failed to read %s: %v", path, err)
+				continue
+			}
+			lines := readLinesFromReader(file)
+			file.Close()
+			result = append(result, lines...)
+		} else {
+			result = append(result, v)
+		}
+	}
+	return result, stdinUsed
+}
+
+// readLinesFromReader reads non-empty lines from a reader
+func readLinesFromReader(r io.Reader) []string {
+	var lines []string
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func init() {

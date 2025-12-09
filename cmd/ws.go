@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -379,6 +380,12 @@ var wsCurrentCmd = &cobra.Command{
 var wsHandoffCmd = &cobra.Command{
 	Use:   "handoff",
 	Short: "End work session and generate handoffs for all tagged issues",
+	Long: `End work session and generate handoffs for all tagged issues.
+
+Flags support values, stdin (-), or file (@path):
+  --done "item"          Single item
+  --done @done.txt       Items from file (one per line)
+  echo "item" | td ws handoff --done -   Items from stdin`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -415,22 +422,25 @@ var wsHandoffCmd = &cobra.Command{
 			SessionID: sess.ID,
 		}
 
-		// Get from flags
+		// Get from flags with stdin/file expansion
 		done, _ := cmd.Flags().GetStringArray("done")
 		remaining, _ := cmd.Flags().GetStringArray("remaining")
 		decisions, _ := cmd.Flags().GetStringArray("decision")
 		uncertain, _ := cmd.Flags().GetStringArray("uncertain")
 
-		handoff.Done = done
-		handoff.Remaining = remaining
-		handoff.Decisions = decisions
-		handoff.Uncertain = uncertain
+		var stdinUsed bool
+		handoff.Done, stdinUsed = expandWSFlagValues(done, stdinUsed)
+		handoff.Remaining, stdinUsed = expandWSFlagValues(remaining, stdinUsed)
+		handoff.Decisions, stdinUsed = expandWSFlagValues(decisions, stdinUsed)
+		handoff.Uncertain, stdinUsed = expandWSFlagValues(uncertain, stdinUsed)
 
-		// Check if stdin has data - only read if it's a pipe AND has available data
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			if stat.Size() > 0 {
-				parseWSHandoffInput(handoff)
+		// Check if stdin has data (YAML format) - only if not already used by flag expansion
+		if !stdinUsed {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				if stat.Size() > 0 {
+					parseWSHandoffInput(handoff)
+				}
 			}
 		}
 
@@ -794,6 +804,48 @@ func parseWSHandoffInput(handoff *models.Handoff) {
 			}
 		}
 	}
+}
+
+// expandWSFlagValues expands flag values that use - (stdin) or @file syntax
+func expandWSFlagValues(values []string, stdinUsed bool) ([]string, bool) {
+	var result []string
+	for _, v := range values {
+		if v == "-" {
+			if stdinUsed {
+				output.Warning("stdin already used, ignoring additional - flag")
+				continue
+			}
+			stdinUsed = true
+			lines := readWSLinesFromReader(os.Stdin)
+			result = append(result, lines...)
+		} else if strings.HasPrefix(v, "@") {
+			path := strings.TrimPrefix(v, "@")
+			file, err := os.Open(path)
+			if err != nil {
+				output.Warning("failed to read %s: %v", path, err)
+				continue
+			}
+			lines := readWSLinesFromReader(file)
+			file.Close()
+			result = append(result, lines...)
+		} else {
+			result = append(result, v)
+		}
+	}
+	return result, stdinUsed
+}
+
+// readWSLinesFromReader reads non-empty lines from a reader
+func readWSLinesFromReader(r io.Reader) []string {
+	var lines []string
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // filterForIssue filters remaining items tagged with (td-xxx) for a specific issue
