@@ -3,12 +3,12 @@ package cmd
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
+	"github.com/marcus/td/internal/input"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
@@ -70,10 +70,10 @@ Or use flags with values, stdin (-), or file (@path):
 		uncertain, _ := cmd.Flags().GetStringArray("uncertain")
 
 		var stdinUsed bool
-		handoff.Done, stdinUsed = expandFlagValues(done, stdinUsed)
-		handoff.Remaining, stdinUsed = expandFlagValues(remaining, stdinUsed)
-		handoff.Decisions, stdinUsed = expandFlagValues(decisions, stdinUsed)
-		handoff.Uncertain, stdinUsed = expandFlagValues(uncertain, stdinUsed)
+		handoff.Done, stdinUsed = input.ExpandFlagValues(done, stdinUsed)
+		handoff.Remaining, stdinUsed = input.ExpandFlagValues(remaining, stdinUsed)
+		handoff.Decisions, stdinUsed = input.ExpandFlagValues(decisions, stdinUsed)
+		handoff.Uncertain, stdinUsed = input.ExpandFlagValues(uncertain, stdinUsed)
 
 		// Check if stdin has data (YAML format) - only if not already used by flag expansion
 		if !stdinUsed {
@@ -160,51 +160,6 @@ func parseHandoffInput(handoff *models.Handoff) {
 			}
 		}
 	}
-}
-
-// expandFlagValues expands flag values that use - (stdin) or @file syntax
-// Returns the expanded values and whether stdin was consumed
-func expandFlagValues(values []string, stdinUsed bool) ([]string, bool) {
-	var result []string
-	for _, v := range values {
-		if v == "-" {
-			// Read from stdin (one item per line)
-			if stdinUsed {
-				output.Warning("stdin already used, ignoring additional - flag")
-				continue
-			}
-			stdinUsed = true
-			lines := readLinesFromReader(os.Stdin)
-			result = append(result, lines...)
-		} else if strings.HasPrefix(v, "@") {
-			// Read from file
-			path := strings.TrimPrefix(v, "@")
-			file, err := os.Open(path)
-			if err != nil {
-				output.Warning("failed to read %s: %v", path, err)
-				continue
-			}
-			lines := readLinesFromReader(file)
-			file.Close()
-			result = append(result, lines...)
-		} else {
-			result = append(result, v)
-		}
-	}
-	return result, stdinUsed
-}
-
-// readLinesFromReader reads non-empty lines from a reader
-func readLinesFromReader(r io.Reader) []string {
-	var lines []string
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines
 }
 
 func init() {
