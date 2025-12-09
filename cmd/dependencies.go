@@ -427,15 +427,114 @@ func buildCriticalPathSequence(database *db.DB, issueMap map[string]*models.Issu
 	return sequence
 }
 
+var depCmd = &cobra.Command{
+	Use:     "dep [issue] [depends-on-issue]",
+	Aliases: []string{"add-dep"},
+	Short:   "Add a dependency (issue depends on another)",
+	Long: `Add a dependency between issues. The first issue will depend on the second.
+
+Examples:
+  td dep td-abc td-xyz     # td-abc now depends on td-xyz
+  td dep feature bugfix    # feature depends on bugfix`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issueID := args[0]
+		dependsOnID := args[1]
+
+		// Verify both issues exist
+		issue, err := database.GetIssue(issueID)
+		if err != nil {
+			output.Error("issue not found: %s", issueID)
+			return err
+		}
+
+		depIssue, err := database.GetIssue(dependsOnID)
+		if err != nil {
+			output.Error("issue not found: %s", dependsOnID)
+			return err
+		}
+
+		// Check for circular dependency
+		if wouldCreateCycle(database, issueID, dependsOnID) {
+			output.Error("cannot add dependency: would create circular dependency")
+			return fmt.Errorf("circular dependency")
+		}
+
+		// Check if dependency already exists
+		existingDeps, _ := database.GetDependencies(issueID)
+		for _, d := range existingDeps {
+			if d == dependsOnID {
+				output.Warning("%s already depends on %s", issueID, dependsOnID)
+				return nil
+			}
+		}
+
+		// Add the dependency
+		if err := database.AddDependency(issueID, dependsOnID, "depends_on"); err != nil {
+			output.Error("failed to add dependency: %v", err)
+			return err
+		}
+
+		fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
+		fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+		fmt.Printf("  └── now depends on: %s: %s\n", depIssue.ID, depIssue.Title)
+
+		return nil
+	},
+}
+
+var depsCmd = &cobra.Command{
+	Use:   "deps [issue]",
+	Short: "Show dependencies (alias for depends-on)",
+	Args:  cobra.ExactArgs(1),
+	RunE:  dependsOnCmd.RunE,
+}
+
+// wouldCreateCycle checks if adding dep would create a circular dependency
+func wouldCreateCycle(database *db.DB, issueID, newDepID string) bool {
+	visited := make(map[string]bool)
+	return hasCyclePath(database, newDepID, issueID, visited)
+}
+
+func hasCyclePath(database *db.DB, from, to string, visited map[string]bool) bool {
+	if from == to {
+		return true
+	}
+	if visited[from] {
+		return false
+	}
+	visited[from] = true
+
+	deps, _ := database.GetDependencies(from)
+	for _, dep := range deps {
+		if hasCyclePath(database, dep, to, visited) {
+			return true
+		}
+	}
+	return false
+}
+
 func init() {
 	rootCmd.AddCommand(blockedByCmd)
 	rootCmd.AddCommand(dependsOnCmd)
+	rootCmd.AddCommand(depsCmd)
+	rootCmd.AddCommand(depCmd)
 	rootCmd.AddCommand(criticalPathCmd)
 
 	blockedByCmd.Flags().Bool("direct", false, "Only show direct dependencies")
 	blockedByCmd.Flags().Bool("json", false, "JSON output")
 
 	dependsOnCmd.Flags().Bool("json", false, "JSON output")
+	depsCmd.Flags().Bool("json", false, "JSON output")
 
 	criticalPathCmd.Flags().Int("limit", 10, "Max issues to show")
 	criticalPathCmd.Flags().Bool("json", false, "JSON output")

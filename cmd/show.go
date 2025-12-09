@@ -10,10 +10,10 @@ import (
 )
 
 var showCmd = &cobra.Command{
-	Use:     "show [issue-id]",
+	Use:     "show [issue-id...]",
 	Aliases: []string{"context"},
-	Short:   "Display full details of an issue",
-	Args:    cobra.ExactArgs(1),
+	Short:   "Display full details of one or more issues",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -23,6 +23,11 @@ var showCmd = &cobra.Command{
 			return err
 		}
 		defer database.Close()
+
+		// Handle multiple issues
+		if len(args) > 1 {
+			return showMultipleIssues(cmd, database, args)
+		}
 
 		issueID := args[0]
 
@@ -211,6 +216,55 @@ var showCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// showMultipleIssues displays multiple issues with separators
+func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) error {
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+
+	if jsonOutput {
+		issues := make([]map[string]interface{}, 0)
+		for _, id := range issueIDs {
+			issue, err := database.GetIssue(id)
+			if err != nil {
+				continue
+			}
+			issues = append(issues, map[string]interface{}{
+				"id":          issue.ID,
+				"title":       issue.Title,
+				"status":      issue.Status,
+				"priority":    issue.Priority,
+				"type":        issue.Type,
+				"description": issue.Description,
+			})
+		}
+		return output.JSON(issues)
+	}
+
+	short, _ := cmd.Flags().GetBool("short")
+
+	for i, id := range issueIDs {
+		issue, err := database.GetIssue(id)
+		if err != nil {
+			output.Warning("issue not found: %s", id)
+			continue
+		}
+
+		if short {
+			fmt.Println(output.FormatIssueShort(issue))
+		} else {
+			logs, _ := database.GetLogs(id, 5)
+			handoff, _ := database.GetLatestHandoff(id)
+			fmt.Print(output.FormatIssueLong(issue, logs, handoff))
+		}
+
+		// Add separator between issues
+		if i < len(issueIDs)-1 {
+			fmt.Println("---")
+		}
+	}
+
+	return nil
 }
 
 func init() {

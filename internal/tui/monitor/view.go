@@ -132,18 +132,19 @@ func (m Model) renderActivityPanel(height int) string {
 }
 
 // renderTaskListPanel renders the task list panel (Panel 3)
+// Shows Reviewable section FIRST when items need review to draw attention
 func (m Model) renderTaskListPanel(height int) string {
 	var content strings.Builder
 	lines := 0
 	maxLines := height - 2
 
-	// Ready section
-	if len(m.TaskList.Ready) > 0 && lines < maxLines {
-		content.WriteString(readyColor.Render("READY"))
-		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Ready)))
+	// Reviewable section - shown FIRST when there are items to review
+	if len(m.TaskList.Reviewable) > 0 && lines < maxLines {
+		content.WriteString(reviewAlertStyle.Render("★ REVIEWABLE"))
+		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Reviewable)))
 		lines++
 
-		for _, issue := range m.TaskList.Ready {
+		for _, issue := range m.TaskList.Reviewable {
 			if lines >= maxLines {
 				break
 			}
@@ -154,17 +155,17 @@ func (m Model) renderTaskListPanel(height int) string {
 		}
 	}
 
-	// Reviewable section
-	if len(m.TaskList.Reviewable) > 0 && lines < maxLines {
+	// Ready section
+	if len(m.TaskList.Ready) > 0 && lines < maxLines {
 		if lines > 0 {
 			content.WriteString("\n")
 			lines++
 		}
-		content.WriteString(reviewColor.Render("REVIEWABLE"))
-		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Reviewable)))
+		content.WriteString(readyColor.Render("READY"))
+		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Ready)))
 		lines++
 
-		for _, issue := range m.TaskList.Reviewable {
+		for _, issue := range m.TaskList.Ready {
 			if lines >= maxLines {
 				break
 			}
@@ -206,15 +207,22 @@ func (m Model) renderTaskListPanel(height int) string {
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
 	keys := helpStyle.Render("q:quit  tab:switch  j/k:scroll  r:refresh  ?:help")
+
+	// Show prominent review alert if items need review
+	reviewAlert := ""
+	if len(m.TaskList.Reviewable) > 0 {
+		reviewAlert = reviewAlertStyle.Render(fmt.Sprintf(" [%d TO REVIEW] ", len(m.TaskList.Reviewable)))
+	}
+
 	refresh := timestampStyle.Render(fmt.Sprintf("Last: %s", m.LastRefresh.Format("15:04:05")))
 
 	// Calculate spacing
-	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(refresh) - 2
+	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(reviewAlert) - lipgloss.Width(refresh) - 2
 	if padding < 0 {
 		padding = 0
 	}
 
-	return fmt.Sprintf(" %s%s%s", keys, strings.Repeat(" ", padding), refresh)
+	return fmt.Sprintf(" %s%s%s%s", keys, strings.Repeat(" ", padding), reviewAlert, refresh)
 }
 
 // renderHelp renders the help overlay
@@ -352,4 +360,10 @@ var (
 	readyColor   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	reviewColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
 	blockedColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+	// Prominent style for review alert in footer
+	reviewAlertStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("141"))
 )
