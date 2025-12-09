@@ -228,16 +228,29 @@ These commands track the working state of issues and enforce the review workflow
 
 ### `td start [issue-id] [--reason "text"] [--force]`
 
-Begin work on an issue. Records current session as implementer.
+Begin work on an issue. Records current session as implementer and captures git state.
 
 ```bash
 td start td-5q --reason "Starting OAuth implementation"
-# Output: STARTED td-5q (session: ses_a1b2c3)
+# Output:
+# STARTED td-5q (session: ses_a1b2c3)
+# Git: abc1234 (main) clean
+```
+
+If working tree is dirty:
+
+```bash
+td start td-5q
+# Output:
+# STARTED td-5q (session: ses_a1b2c3)
+# Git: abc1234 (main) 2 modified, 1 untracked
+# Warning: Starting with uncommitted changes
 ```
 
 - Cannot start blocked issues without `--force`
 - Sets status to `in_progress`
 - Records session ID as implementer
+- Records git commit SHA, branch, and dirty file count
 
 ### `td log "message"`
 
@@ -254,19 +267,35 @@ td log --blocker "Unsure about refresh token expiry handling"
 # Output: LOGGED td-5q [blocker]
 ```
 
+**Structured reasoning traces** for capturing debugging/exploration process:
+
+```bash
+td log --hypothesis "Token refresh failing due to clock skew"
+# Output: LOGGED td-5q [hypothesis]
+
+td log --tried "Added 30s buffer to expiry check"
+# Output: LOGGED td-5q [tried]
+
+td log --result "Fixed for local, need to verify prod"
+# Output: LOGGED td-5q [result]
+```
+
 **Flags:**
 
 ```txt
   --blocker     Mark this log entry as a blocker/uncertainty
   --decision    Mark as a decision made
+  --hypothesis  Mark as a hypothesis being tested
+  --tried       Mark as an approach that was attempted
+  --result      Mark as the outcome of a hypothesis/attempt
   --issue       Specify issue ID (default: focused issue)
 ```
 
-Logs are timestamped and attached to the current session.
+Logs are timestamped and attached to the current session. The `hypothesis → tried → result` pattern captures debugging reasoning for future sessions.
 
 ### `td handoff [issue-id] [flags]`
 
-Capture structured working state. Required before `td review` or when stopping work.
+Capture structured working state. Required before `td review` or when stopping work. Automatically captures git state.
 
 ```bash
 td handoff td-5q << EOF
@@ -282,12 +311,11 @@ decisions:
   - 1 hour token expiry
 uncertain:
   - Should refresh tokens be one-time use?
-files:
-  - routes/auth.go (new)
-  - db/tokens.go (new)
-  - db/migrations/003_tokens.sql (new)
 EOF
-# Output: HANDOFF RECORDED td-5q
+# Output:
+# HANDOFF RECORDED td-5q
+# Git: def5678 (feature/oauth) +3 commits since start
+# Changed: 4 files (+156 -23)
 ```
 
 **Alternative flag syntax:**
@@ -299,8 +327,7 @@ td handoff td-5q \
   --remaining "Error handling" \
   --remaining "Unit tests" \
   --decision "Using JWT tokens" \
-  --uncertain "Refresh token rotation?" \
-  --files "routes/auth.go,db/tokens.go"
+  --uncertain "Refresh token rotation?"
 ```
 
 **Flags:**
@@ -310,10 +337,15 @@ td handoff td-5q \
   --remaining string   Remaining item (repeatable)
   --decision string    Decision made (repeatable)
   --uncertain string   Uncertainty/question (repeatable)
-  --files string       Files touched (comma-separated or repeatable)
 ```
 
 Handoff state is versioned—each handoff creates a snapshot, previous handoffs are preserved in history.
+
+Git state is captured automatically:
+- Current commit SHA and branch
+- Commits since `td start`
+- Changed files with line counts (staged + unstaged)
+- Uncommitted changes warning if working tree is dirty
 
 ### `td review [issue-id] [--reason "text"]`
 
@@ -371,6 +403,77 @@ Reopen closed issues. Requires new review cycle.
 td reopen td-5q --reason "Regression found in production"
 # Output: REOPENED td-5q → open
 ```
+
+---
+
+## File Linking
+
+Associate files with issues for context tracking and change detection.
+
+### `td link [issue-id] [file-pattern] [flags]`
+
+Link files to an issue with an optional role.
+
+```bash
+td link td-5q src/auth/*.go --role implementation
+# Output: LINKED 3 files to td-5q
+
+td link td-5q docs/oauth.md --role reference
+# Output: LINKED 1 file to td-5q
+
+td link td-5q internal/tokens/ --role implementation
+# Output: LINKED 5 files to td-5q
+```
+
+**Flags:**
+
+```txt
+  --role string    File role: implementation, test, reference, config (default: implementation)
+  --recursive      Include subdirectories (default for directories)
+```
+
+### `td unlink [issue-id] [file-pattern]`
+
+Remove file associations.
+
+```bash
+td unlink td-5q src/auth/deprecated.go
+# Output: UNLINKED 1 file from td-5q
+```
+
+### `td files [issue-id]`
+
+List linked files with change status since issue was started.
+
+```bash
+td files td-5q
+# Output:
+# td-5q: Implement OAuth flow
+# Started: abc1234 (2h ago)
+#
+# IMPLEMENTATION:
+#   src/auth/oauth.go        [modified]  +45 -12
+#   src/auth/tokens.go       [modified]  +23 -0
+#   src/auth/middleware.go   [unchanged]
+#
+# TEST:
+#   src/auth/oauth_test.go   [new]       +120
+#
+# REFERENCE:
+#   docs/oauth.md            [unchanged]
+#
+# UNTRACKED CHANGES:
+#   src/auth/util.go         [modified]  +8 -2  (not linked)
+```
+
+**Flags:**
+
+```txt
+  --json          Machine-readable output
+  --changed       Only show files with changes
+```
+
+Linked files are tracked with their SHA at link time. `td files` compares against current state to show drift.
 
 ---
 
@@ -493,6 +596,80 @@ td next
 #
 # Run `td start td-5q` to begin working on this issue.
 ```
+
+---
+
+## Dependency Graph
+
+### `td blocked-by [issue-id]`
+
+Show what issues are waiting on this issue (directly or transitively).
+
+```bash
+td blocked-by td-5q
+# Output:
+# td-5q: Implement OAuth flow [in_progress]
+# └── blocks:
+#     td-8c: Add protected routes [open]
+#     └── blocks:
+#         td-9d: User dashboard [open]
+#         td-10e: Admin panel [open]
+#
+# 3 issues blocked (1 direct, 2 transitive)
+```
+
+**Flags:**
+
+```txt
+  --direct      Only show direct dependencies (no transitive)
+  --json        Machine-readable output
+```
+
+### `td depends-on [issue-id]`
+
+Show what issues this issue depends on.
+
+```bash
+td depends-on td-8c
+# Output:
+# td-8c: Add protected routes [open]
+# └── depends on:
+#     td-5q: Implement OAuth flow [in_progress]
+#     td-2a: Session middleware [closed] ✓
+#
+# 1 blocking, 1 resolved
+```
+
+### `td critical-path`
+
+Show the sequence of issues that unblocks the most work.
+
+```bash
+td critical-path
+# Output:
+# CRITICAL PATH (unblocks 12 issues):
+#
+# 1. td-5q  Implement OAuth flow       [in_progress]  P1  5pts
+#    └─▶ unblocks 3
+# 2. td-8c  Add protected routes       [open]         P1  3pts
+#    └─▶ unblocks 2
+# 3. td-9d  User dashboard             [open]         P2  8pts
+#    └─▶ unblocks 4
+#
+# BOTTLENECKS (blocking most issues):
+#   td-5q: 6 issues waiting (direct + transitive)
+#   td-3a: 4 issues waiting
+#   td-8c: 3 issues waiting
+```
+
+**Flags:**
+
+```txt
+  --limit int   Max issues to show (default: 10)
+  --json        Machine-readable output
+```
+
+---
 
 ### `td search [query] [filters] [flags]`
 
@@ -901,6 +1078,9 @@ td list --points "1-5"          # 1, 2, 3, 5
 | Start work | `td start td-5q` |
 | Log progress | `td log "message"` |
 | Log blocker | `td log --blocker "stuck on X"` |
+| Log hypothesis | `td log --hypothesis "might be X"` |
+| Log attempt | `td log --tried "tried Y"` |
+| Log result | `td log --result "Y worked"` |
 | Capture state | `td handoff td-5q` |
 | Submit for review | `td review td-5q` |
 | Approve (reviewer) | `td approve td-5q` |
@@ -912,6 +1092,11 @@ td list --points "1-5"          # 1, 2, 3, 5
 | What's next | `td next` |
 | Current focus | `td current` |
 | List issues | `td list` or `td ls` |
+| Link files | `td link td-5q src/*.go` |
+| View linked files | `td files td-5q` |
+| What's blocked by this | `td blocked-by td-5q` |
+| What this depends on | `td depends-on td-5q` |
+| Critical path | `td critical-path` |
 | Delete issue | `td delete td-5q` |
 | Restore deleted | `td restore td-5q` |
 | View deleted | `td deleted` |
