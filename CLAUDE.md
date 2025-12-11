@@ -1,10 +1,8 @@
 # CLAUDE.md
 
-## Use `td` for Task Management
+## MANDATORY: Use `td` for Task Management
 
-IMPORTANT: Run `td session --new "name"` then `td usage` for workflow. This tells you what to work on next.
-
-Use `td usage -q` after first read.
+Run `td session --new "name"` then `td usage` for workflow. This tells you what to work on next. Use `td usage -q` after first read.
 
 ## Build
 
