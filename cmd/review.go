@@ -201,10 +201,10 @@ Supports bulk operations:
 				continue
 			}
 
-			// Check that reviewer is different from implementer
-			if issue.ImplementerSession == sess.ID {
+			// Check that reviewer is different from implementer (unless minor task)
+			if issue.ImplementerSession == sess.ID && !issue.Minor {
 				if !all { // Only show error for explicit requests
-					errMsg := fmt.Sprintf("cannot approve own implementation: %s", issueID)
+					errMsg := fmt.Sprintf("cannot approve own implementation: %s (use --minor on create for self-review)", issueID)
 					if jsonOutput {
 						output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
 					} else {

@@ -27,7 +27,7 @@ type DB struct {
 	baseDir string
 }
 
-// Open opens the database
+// Open opens the database and runs any pending migrations
 func Open(baseDir string) (*DB, error) {
 	dbPath := filepath.Join(baseDir, dbFile)
 
@@ -41,7 +41,14 @@ func Open(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	return &DB{conn: conn, baseDir: baseDir}, nil
+	db := &DB{conn: conn, baseDir: baseDir}
+
+	// Run any pending migrations
+	if _, err := db.RunMigrations(); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	return db, nil
 }
 
 // Initialize creates the database and runs migrations
@@ -63,7 +70,14 @@ func Initialize(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
-	return &DB{conn: conn, baseDir: baseDir}, nil
+	db := &DB{conn: conn, baseDir: baseDir}
+
+	// Run migrations
+	if _, err := db.RunMigrations(); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	return db, nil
 }
 
 // Close closes the database
@@ -179,9 +193,9 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 	labels := strings.Join(issue.Labels, ",")
 
 	_, err = db.conn.Exec(`
-		INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt)
+		INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor)
 
 	return err
 }
@@ -194,12 +208,12 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at
+		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor
 		FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 		&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-		&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt,
+		&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor,
 	)
 
 	if err == sql.ErrNoRows {
@@ -284,7 +298,7 @@ type ListIssuesOptions struct {
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-	                 implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at
+	                 implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor
 	          FROM issues WHERE 1=1`
 	var args []interface{}
 
@@ -368,9 +382,9 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		args = append(args, opts.Reviewer)
 	}
 
-	// Reviewable by (issues that can be reviewed by this session - different implementer)
+	// Reviewable by (issues that can be reviewed by this session - different implementer OR minor task)
 	if opts.ReviewableBy != "" {
-		query += " AND status = ? AND implementer_session != ? AND implementer_session != ''"
+		query += " AND status = ? AND implementer_session != '' AND (implementer_session != ? OR minor = 1)"
 		args = append(args, models.StatusInReview, opts.ReviewableBy)
 	}
 
@@ -448,7 +462,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt,
+			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor,
 		)
 		if err != nil {
 			return nil, err

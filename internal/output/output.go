@@ -177,6 +177,9 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	if issue.Points > 0 {
 		sb.WriteString(fmt.Sprintf(" | Points: %d", issue.Points))
 	}
+	if issue.Minor {
+		sb.WriteString(" | Minor")
+	}
 	sb.WriteString("\n")
 
 	if len(issue.Labels) > 0 {

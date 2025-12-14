@@ -227,6 +227,7 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  td approve/reject <id>  Complete review")
 			fmt.Println()
 			fmt.Println("IMPORTANT: You cannot approve issues you implemented.")
+			fmt.Println("  Exception: `td add \"title\" --minor` creates self-reviewable tasks.")
 			fmt.Println("Use `td handoff` or `td ws handoff` before stopping work.")
 			fmt.Println()
 			fmt.Println("FOR LLMs: Run `td session --new` at conversation start for session ID.")

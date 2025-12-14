@@ -103,6 +103,9 @@ var createCmd = &cobra.Command{
 		// Parent
 		issue.ParentID, _ = cmd.Flags().GetString("parent")
 
+		// Minor (allows self-review)
+		issue.Minor, _ = cmd.Flags().GetBool("minor")
+
 		// Create the issue
 		if err := database.CreateIssue(issue); err != nil {
 			output.Error("failed to create issue: %v", err)
@@ -162,4 +165,5 @@ func init() {
 	createCmd.Flags().String("parent", "", "Parent issue ID")
 	createCmd.Flags().String("depends-on", "", "Issues this depends on")
 	createCmd.Flags().String("blocks", "", "Issues this blocks")
+	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 }

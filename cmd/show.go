@@ -81,6 +81,7 @@ var showCmd = &cobra.Command{
 				"reviewer_session":    issue.ReviewerSession,
 				"created_at":          issue.CreatedAt,
 				"updated_at":          issue.UpdatedAt,
+				"minor":               issue.Minor,
 			}
 			if issue.ClosedAt != nil {
 				result["closed_at"] = issue.ClosedAt

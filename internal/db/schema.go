@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 const schema = `
 -- Issues table
@@ -192,5 +192,10 @@ ALTER TABLE logs_new RENAME TO logs;
 CREATE INDEX IF NOT EXISTS idx_logs_issue ON logs(issue_id);
 CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
 `,
+	},
+	{
+		Version:     4,
+		Description: "Add minor flag to issues for self-reviewable tasks",
+		SQL:         `ALTER TABLE issues ADD COLUMN minor INTEGER DEFAULT 0;`,
 	},
 }
