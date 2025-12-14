@@ -1,0 +1,222 @@
+package monitor
+
+import (
+	"testing"
+
+	"github.com/marcus/td/internal/models"
+)
+
+func TestRowCount(t *testing.T) {
+	m := Model{
+		CurrentWorkRows: []string{"id1", "id2"},
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "td-1"}},
+			{Issue: models.Issue{ID: "td-2"}},
+			{Issue: models.Issue{ID: "td-3"}},
+		},
+		Activity: []ActivityItem{{}, {}},
+	}
+
+	tests := []struct {
+		panel    Panel
+		expected int
+	}{
+		{PanelCurrentWork, 2},
+		{PanelTaskList, 3},
+		{PanelActivity, 2},
+	}
+
+	for _, tt := range tests {
+		got := m.rowCount(tt.panel)
+		if got != tt.expected {
+			t.Errorf("rowCount(%d) = %d, want %d", tt.panel, got, tt.expected)
+		}
+	}
+}
+
+func TestClampCursor(t *testing.T) {
+	tests := []struct {
+		name        string
+		rowCount    int
+		cursorStart int
+		expected    int
+	}{
+		{"empty list", 0, 5, 0},
+		{"cursor beyond end", 3, 5, 2},
+		{"cursor at end", 3, 2, 2},
+		{"cursor in range", 3, 1, 1},
+		{"negative cursor", 3, -1, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Cursor:          make(map[Panel]int),
+				CurrentWorkRows: make([]string, tt.rowCount),
+			}
+			m.Cursor[PanelCurrentWork] = tt.cursorStart
+			m.clampCursor(PanelCurrentWork)
+			if m.Cursor[PanelCurrentWork] != tt.expected {
+				t.Errorf("clampCursor: got %d, want %d", m.Cursor[PanelCurrentWork], tt.expected)
+			}
+		})
+	}
+}
+
+func TestMoveCursor(t *testing.T) {
+	tests := []struct {
+		name        string
+		rowCount    int
+		cursorStart int
+		delta       int
+		expected    int
+	}{
+		{"move down", 5, 2, 1, 3},
+		{"move up", 5, 2, -1, 1},
+		{"clamp at bottom", 5, 4, 1, 4},
+		{"clamp at top", 5, 0, -1, 0},
+		{"empty list", 0, 0, 1, 0},
+		{"move multiple down", 5, 0, 3, 3},
+		{"move multiple up", 5, 4, -3, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Cursor:          make(map[Panel]int),
+				SelectedID:      make(map[Panel]string),
+				CurrentWorkRows: make([]string, tt.rowCount),
+				ActivePanel:     PanelCurrentWork,
+			}
+			// Fill with dummy IDs
+			for i := range m.CurrentWorkRows {
+				m.CurrentWorkRows[i] = "id-" + string(rune('a'+i))
+			}
+			m.Cursor[PanelCurrentWork] = tt.cursorStart
+			m.moveCursor(tt.delta)
+			if m.Cursor[PanelCurrentWork] != tt.expected {
+				t.Errorf("moveCursor(%d): got %d, want %d", tt.delta, m.Cursor[PanelCurrentWork], tt.expected)
+			}
+		})
+	}
+}
+
+func TestSelectedIssueID(t *testing.T) {
+	m := Model{
+		Cursor: map[Panel]int{
+			PanelCurrentWork: 1,
+			PanelTaskList:    0,
+			PanelActivity:    2,
+		},
+		CurrentWorkRows: []string{"cw-1", "cw-2", "cw-3"},
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "tl-1"}},
+			{Issue: models.Issue{ID: "tl-2"}},
+		},
+		Activity: []ActivityItem{
+			{IssueID: "act-1"},
+			{IssueID: "act-2"},
+			{IssueID: "act-3"},
+		},
+	}
+
+	tests := []struct {
+		panel    Panel
+		expected string
+	}{
+		{PanelCurrentWork, "cw-2"},
+		{PanelTaskList, "tl-1"},
+		{PanelActivity, "act-3"},
+	}
+
+	for _, tt := range tests {
+		got := m.SelectedIssueID(tt.panel)
+		if got != tt.expected {
+			t.Errorf("SelectedIssueID(%d) = %q, want %q", tt.panel, got, tt.expected)
+		}
+	}
+}
+
+func TestSelectedIssueIDEmptyLists(t *testing.T) {
+	m := Model{
+		Cursor: map[Panel]int{
+			PanelCurrentWork: 0,
+			PanelTaskList:    0,
+			PanelActivity:    0,
+		},
+		CurrentWorkRows: []string{},
+		TaskListRows:    []TaskListRow{},
+		Activity:        []ActivityItem{},
+	}
+
+	for _, panel := range []Panel{PanelCurrentWork, PanelTaskList, PanelActivity} {
+		got := m.SelectedIssueID(panel)
+		if got != "" {
+			t.Errorf("SelectedIssueID(%d) for empty list = %q, want empty", panel, got)
+		}
+	}
+}
+
+func TestBuildTaskListRows(t *testing.T) {
+	m := Model{
+		TaskList: TaskListData{
+			Reviewable: []models.Issue{{ID: "r1"}, {ID: "r2"}},
+			Ready:      []models.Issue{{ID: "rd1"}},
+			Blocked:    []models.Issue{{ID: "b1"}, {ID: "b2"}, {ID: "b3"}},
+		},
+	}
+
+	m.buildTaskListRows()
+
+	// Order should be: Reviewable, Ready, Blocked
+	expected := []struct {
+		id       string
+		category TaskListCategory
+	}{
+		{"r1", CategoryReviewable},
+		{"r2", CategoryReviewable},
+		{"rd1", CategoryReady},
+		{"b1", CategoryBlocked},
+		{"b2", CategoryBlocked},
+		{"b3", CategoryBlocked},
+	}
+
+	if len(m.TaskListRows) != len(expected) {
+		t.Fatalf("TaskListRows length = %d, want %d", len(m.TaskListRows), len(expected))
+	}
+
+	for i, exp := range expected {
+		row := m.TaskListRows[i]
+		if row.Issue.ID != exp.id {
+			t.Errorf("TaskListRows[%d].ID = %q, want %q", i, row.Issue.ID, exp.id)
+		}
+		if row.Category != exp.category {
+			t.Errorf("TaskListRows[%d].Category = %q, want %q", i, row.Category, exp.category)
+		}
+	}
+}
+
+func TestBuildCurrentWorkRows(t *testing.T) {
+	focusedIssue := &models.Issue{ID: "focused"}
+	m := Model{
+		FocusedIssue: focusedIssue,
+		InProgress: []models.Issue{
+			{ID: "ip1"},
+			{ID: "focused"}, // duplicate, should be skipped
+			{ID: "ip2"},
+		},
+	}
+
+	m.buildCurrentWorkRows()
+
+	expected := []string{"focused", "ip1", "ip2"}
+	if len(m.CurrentWorkRows) != len(expected) {
+		t.Fatalf("CurrentWorkRows length = %d, want %d", len(m.CurrentWorkRows), len(expected))
+	}
+
+	for i, exp := range expected {
+		if m.CurrentWorkRows[i] != exp {
+			t.Errorf("CurrentWorkRows[%d] = %q, want %q", i, m.CurrentWorkRows[i], exp)
+		}
+	}
+}

@@ -7,12 +7,20 @@ import (
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 )
 
 // FetchData retrieves all data needed for the monitor display
 func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDataMsg {
 	msg := RefreshDataMsg{
 		Timestamp: time.Now(),
+	}
+
+	// Auto-detect current session for reviewable calculation
+	// This allows the monitor to see reviewable issues when a new session starts
+	currentSessionID := sessionID
+	if sess, err := session.Get(database.BaseDir()); err == nil {
+		currentSessionID = sess.ID
 	}
 
 	// Get focused issue
@@ -33,8 +41,8 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDa
 	// Get activity feed
 	msg.Activity = fetchActivity(database, 50)
 
-	// Get task list
-	msg.TaskList = fetchTaskList(database, sessionID)
+	// Get task list (uses current session for reviewable calculation)
+	msg.TaskList = fetchTaskList(database, currentSessionID)
 
 	// Get recent handoffs since monitor started
 	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
@@ -110,7 +118,8 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 		SortBy: "priority",
 	})
 
-	// Filter out blocked issues (those with unresolved dependencies)
+	// Separate open issues into ready vs blocked-by-dependency
+	var blockedByDep []models.Issue
 	for _, issue := range openIssues {
 		deps, _ := database.GetDependencies(issue.ID)
 		isBlocked := false
@@ -121,7 +130,9 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 				break
 			}
 		}
-		if !isBlocked {
+		if isBlocked {
+			blockedByDep = append(blockedByDep, issue)
+		} else {
 			data.Ready = append(data.Ready, issue)
 		}
 	}
@@ -133,12 +144,12 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 	})
 	data.Reviewable = reviewable
 
-	// Blocked issues
+	// Blocked issues: explicit blocked status + issues blocked by dependencies
 	blocked, _ := database.ListIssues(db.ListIssuesOptions{
 		Status: []models.Status{models.StatusBlocked},
 		SortBy: "priority",
 	})
-	data.Blocked = blocked
+	data.Blocked = append(blocked, blockedByDep...)
 
 	return data
 }

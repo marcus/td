@@ -347,6 +347,32 @@ func (m Model) renderModal() string {
 		lines = append(lines, "")
 	}
 
+	// Blocked by (dependencies)
+	if len(m.ModalBlockedBy) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKED BY (%d)", len(m.ModalBlockedBy))))
+		for _, dep := range m.ModalBlockedBy {
+			depLine := fmt.Sprintf("  %s %s %s",
+				titleStyle.Render(dep.ID),
+				formatStatus(dep.Status),
+				truncateString(dep.Title, contentWidth-20))
+			lines = append(lines, depLine)
+		}
+		lines = append(lines, "")
+	}
+
+	// Blocks (dependents)
+	if len(m.ModalBlocks) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKS (%d)", len(m.ModalBlocks))))
+		for _, dep := range m.ModalBlocks {
+			depLine := fmt.Sprintf("  %s %s %s",
+				titleStyle.Render(dep.ID),
+				formatStatus(dep.Status),
+				truncateString(dep.Title, contentWidth-20))
+			lines = append(lines, depLine)
+		}
+		lines = append(lines, "")
+	}
+
 	// Latest handoff
 	if m.ModalHandoff != nil {
 		lines = append(lines, sectionHeader.Render("LATEST HANDOFF"))

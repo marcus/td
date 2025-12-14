@@ -90,14 +90,16 @@ type Model struct {
 	CurrentWorkRows []string      // Issue IDs for current work panel (focused + in-progress)
 
 	// Modal state for issue details
-	ModalOpen    bool
-	ModalIssueID string
-	ModalScroll  int
-	ModalLoading bool
-	ModalError   error
-	ModalIssue   *models.Issue
-	ModalHandoff *models.Handoff
-	ModalLogs    []models.Log
+	ModalOpen      bool
+	ModalIssueID   string
+	ModalScroll    int
+	ModalLoading   bool
+	ModalError     error
+	ModalIssue     *models.Issue
+	ModalHandoff   *models.Handoff
+	ModalLogs      []models.Log
+	ModalBlockedBy []models.Issue // Dependencies (issues blocking this one)
+	ModalBlocks    []models.Issue // Dependents (issues blocked by this one)
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -125,11 +127,13 @@ type RefreshDataMsg struct {
 
 // IssueDetailsMsg carries fetched issue details for the modal
 type IssueDetailsMsg struct {
-	IssueID  string
-	Issue    *models.Issue
-	Handoff  *models.Handoff
-	Logs     []models.Log
-	Error    error
+	IssueID   string
+	Issue     *models.Issue
+	Handoff   *models.Handoff
+	Logs      []models.Log
+	BlockedBy []models.Issue // Dependencies (issues blocking this one)
+	Blocks    []models.Issue // Dependents (issues blocked by this one)
+	Error     error
 }
 
 // NewModel creates a new monitor model
@@ -193,6 +197,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ModalIssue = msg.Issue
 			m.ModalHandoff = msg.Handoff
 			m.ModalLogs = msg.Logs
+			m.ModalBlockedBy = msg.BlockedBy
+			m.ModalBlocks = msg.Blocks
 		}
 		return m, nil
 	}
@@ -320,6 +326,8 @@ func (m *Model) closeModal() {
 	m.ModalIssue = nil
 	m.ModalHandoff = nil
 	m.ModalLogs = nil
+	m.ModalBlockedBy = nil
+	m.ModalBlocks = nil
 }
 
 // View implements tea.Model
@@ -362,6 +370,22 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 		// Fetch recent logs (cap at 20)
 		logs, _ := m.DB.GetLogs(issueID, 20)
 		msg.Logs = logs
+
+		// Fetch dependencies (blocked by)
+		depIDs, _ := m.DB.GetDependencies(issueID)
+		for _, depID := range depIDs {
+			if depIssue, err := m.DB.GetIssue(depID); err == nil {
+				msg.BlockedBy = append(msg.BlockedBy, *depIssue)
+			}
+		}
+
+		// Fetch dependents (issues blocked by this one)
+		blockedIDs, _ := m.DB.GetBlockedBy(issueID)
+		for _, blockedID := range blockedIDs {
+			if blockedIssue, err := m.DB.GetIssue(blockedID); err == nil {
+				msg.Blocks = append(msg.Blocks, *blockedIssue)
+			}
+		}
 
 		return msg
 	}
