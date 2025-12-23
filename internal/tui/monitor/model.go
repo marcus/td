@@ -231,11 +231,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "2":
-		m.ActivePanel = PanelActivity
+		m.ActivePanel = PanelTaskList
 		return m, nil
 
 	case "3":
-		m.ActivePanel = PanelTaskList
+		m.ActivePanel = PanelActivity
 		return m, nil
 
 	case "down":

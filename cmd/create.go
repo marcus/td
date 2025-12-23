@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
@@ -105,6 +106,12 @@ var createCmd = &cobra.Command{
 
 		// Minor (allows self-review)
 		issue.Minor, _ = cmd.Flags().GetBool("minor")
+
+		// Capture current git branch
+		gitState, _ := git.GetState()
+		if gitState != nil {
+			issue.CreatedBranch = gitState.Branch
+		}
 
 		// Create the issue
 		if err := database.CreateIssue(issue); err != nil {
