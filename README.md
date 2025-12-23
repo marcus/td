@@ -2,15 +2,11 @@
 
 A minimalist CLI for tracking tasks across AI coding sessions. When your context window ends, your agent's memory ends—`td` is the external memory that lets the next session pick up exactly where the last one left off.
 
-## Status
-
-**Active development** — Core features stable, new capabilities being added.
-
-See [Issues](https://github.com/marcus/td/issues) for roadmap and feature requests.
-
 ## Overview
 
 `td` is a lightweight CLI for tracking tasks across AI coding sessions. It provides structured handoffs (done/remaining/decisions/uncertain) so new sessions continue from accurate state instead of guessing. Session-based review workflows prevent "works on my context" bugs. Works with Claude Code, Cursor, Copilot, and any AI that runs shell commands.
+
+![td](docs/td.png)
 
 ## Table of Contents
 
@@ -321,13 +317,8 @@ Contributions welcome! Process:
 4. **PR review**: One reviewer approval required
 5. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
 
-See [Issues](https://github.com/marcus/td/issues) for good first issues.
-
-No formal CONTRIBUTING.md yet — this section covers essentials.
-
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/marcus/td/issues) for bugs and features
 - **Questions**: Open a discussion issue or tag `@marcus` in existing threads
 
 ## Credits
