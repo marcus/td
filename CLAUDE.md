@@ -53,6 +53,32 @@ td version
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
 
+## Task Workflow
+
+### Single-Issue Workflow
+```bash
+td start <id>           # Begin work on issue
+td log "message"        # Track progress
+td handoff <id>         # Capture state (REQUIRED before stopping)
+td review <id>          # Submit for review
+# Another session approves:
+td approve <id>         # Approve and close
+# Or reject:
+td reject <id>          # Send back to in_progress
+```
+
+### Multi-Issue Workflow (Agent use case)
+```bash
+td ws start "name"      # Start work session
+td ws tag <ids>         # Associate issues with session
+td ws log "message"     # Track progress
+td ws handoff           # Capture state and end session
+# Another session reviews:
+td approve <ids>        # Approve multiple issues
+```
+
+Issue lifecycle: `open` → `in_progress` → `in_review` → `closed` (or `blocked`)
+
 ## Undo Support
 
 Log actions via `database.LogAction()`. See `cmd/undo.go` for implementation.
