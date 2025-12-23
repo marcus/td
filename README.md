@@ -2,6 +2,35 @@
 
 A minimalist CLI for tracking tasks across AI coding sessions. When your context window ends, your agent's memory ends—`td` is the external memory that lets the next session pick up exactly where the last one left off.
 
+## Status
+
+**Active development** — Core features stable, new capabilities being added.
+
+See [Issues](https://github.com/marcus/td/issues) for roadmap and feature requests.
+
+## Overview
+
+`td` is a lightweight CLI for tracking tasks across AI coding sessions. It provides structured handoffs (done/remaining/decisions/uncertain) so new sessions continue from accurate state instead of guessing. Session-based review workflows prevent "works on my context" bugs. Works with Claude Code, Cursor, Copilot, and any AI that runs shell commands.
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Claude Code Skill](#claude-code--openai-codex-skill)
+- [Workflow](#workflow)
+- [Multi-Issue Work Sessions](#multi-issue-work-sessions)
+- [File Tracking](#file-tracking)
+- [Full Command Reference](#full-command-reference)
+- [Live Monitor](#live-monitor)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Release](#release)
+- [AI Agent Testimonials](#ai-agent-testimonials)
+- [Design Philosophy](#design-philosophy)
+- [Contributing](#contributing)
+- [Support](#support)
+- [License](#license)
+
 ## The Problem
 
 You're using Claude Code, Cursor, Codex, or Copilot. Your AI agent does great work, then the session ends. New session starts. It has no idea what happened. You paste in context. It misunderstands. You correct it. Repeat.
@@ -41,10 +70,12 @@ OPEN (P1):
   td-e5f6 "Rate limiting on API" [open]
 ```
 
-## Quick Start
+## Installation
+
+**Requirements**: Go 1.21+
 
 ```bash
-# Install a versioned release (requires Go 1.21+)
+# Install latest release
 go install github.com/marcus/td@latest
 
 # Or install a specific version
@@ -53,17 +84,31 @@ go install github.com/marcus/td@latest
 # (Dev) Install from a local clone
 # git clone https://github.com/marcus/td.git && cd td && make install
 
-# Ensure ~/go/bin is in your PATH (add to ~/.zshrc or ~/.bashrc)
-export PATH="$PATH:$HOME/go/bin"
+# Verify installation
+td version
+```
 
+**Setup PATH**: Ensure `~/go/bin` is in your `$PATH`:
+
+```bash
+export PATH="$PATH:$HOME/go/bin"  # Add to ~/.zshrc or ~/.bashrc
+```
+
+## Quick Start
+
+```bash
 # Initialize in your project
+cd /path/to/your/project
 td init
 
-# That's it for setup. Add this to your AI's system prompt:
+# For AI agents: Add this to your system prompt or CLAUDE.md:
 # "Run `td usage --new-session` at conversation start (or after /clear)."
 
-# Verify installation
-# td version
+# Create your first issue
+td create "Add user auth" --type feature --priority P1
+
+# Start work
+td start <issue-id>
 ```
 
 ## Claude Code / OpenAI Codex Skill
@@ -77,17 +122,59 @@ For AI agents in Claude Code, Codex, Cursor, or other compatible environments:
 
 Or use the skill directly from the repo: See `./td-task-management/SKILL.md` for full documentation.
 
+## Architecture
+
+```
+td/
+├── cmd/              # Cobra CLI commands (create, start, handoff, review, etc.)
+├── internal/
+│   ├── db/          # SQLite persistence layer (schema.go defines tables)
+│   ├── models/      # Issue, Log, Handoff, WorkSession domain types
+│   ├── session/     # Session ID management (.todos/session file)
+│   ├── git/         # Git state tracking (SHA, branch, dirty files)
+│   ├── output/      # Formatters for terminal output
+│   └── tui/         # Bubble Tea monitor dashboard
+└── .todos/          # Local SQLite database + session state
+```
+
+**Data Flow**:
+1. Commands (cmd/) → Database layer (internal/db/) → SQLite (.todos/db.sqlite)
+2. Git integration captures snapshots at start/handoff
+3. Session manager auto-rotates context IDs based on terminal/agent identity
+
+See [SPEC.md](./SPEC.md) for detailed schemas and workflows.
+
 ## Development
 
 ```bash
-# Run tests
-make test
+# Build
+go build -o td .
 
 # Install from your local working tree
 make install
 
 # Install with an explicit dev version injected (useful for local binaries)
 make install-dev
+
+# Format code
+make fmt
+```
+
+## Tests & Quality Checks
+
+```bash
+# Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
+make test
+
+# Expected output: ok for each package, ~2s total runtime
+# Example:
+#   ok  	github.com/marcus/td/cmd	1.994s
+#   ok  	github.com/marcus/td/internal/db	1.245s
+
+# Format code (runs gofmt)
+make fmt
+
+# No linter configured yet — clean gofmt is current quality bar
 ```
 
 ## Release
@@ -223,6 +310,25 @@ open --> in_progress --> in_review --> closed
 - Go (single binary, no runtime deps)
 - SQLite (pure Go, no CGO)
 - Cobra for CLI
+
+## Contributing
+
+Contributions welcome! Process:
+
+1. **Fork and branch**: Work on feature branches
+2. **Tests required**: Add tests for new features/fixes (see `cmd/*_test.go` for patterns)
+3. **Run `make test` and `make fmt`** before submitting
+4. **PR review**: One reviewer approval required
+5. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
+
+See [Issues](https://github.com/marcus/td/issues) for good first issues.
+
+No formal CONTRIBUTING.md yet — this section covers essentials.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/marcus/td/issues) for bugs and features
+- **Questions**: Open a discussion issue or tag `@marcus` in existing threads
 
 ## Credits
 
