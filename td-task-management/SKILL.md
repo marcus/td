@@ -43,7 +43,8 @@ For agents handling related issues:
 
 ```bash
 td ws start "Auth implementation"      # Start work session
-td ws tag td-a1b2 td-c3d4             # Associate issues
+td ws tag td-a1b2 td-c3d4             # Associate issues (auto-starts them)
+td ws tag --no-start td-e5f6          # Associate without starting
 td ws log "Shared token storage"       # Log to all tagged issues
 td ws handoff                          # Capture state, end session
 ```
@@ -129,6 +130,7 @@ td context td-a1b2  # Refresh context when blocker resolves
 
 ### Working on Issues
 - `td start <id>` - Begin work
+- `td unstart <id>` - Revert to open (undo accidental start)
 - `td log "msg"` - Track progress
 - `td log --decision "..."` - Log decision
 - `td log --blocker "..."` - Log blocker

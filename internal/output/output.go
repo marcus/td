@@ -279,9 +279,17 @@ func FormatTimeAgo(t time.Time) string {
 	}
 }
 
+// ShortSHA safely shortens a git SHA to 7 characters or returns as-is if shorter
+func ShortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
+}
+
 // FormatGitState formats git state for display
 func FormatGitState(sha, branch string, dirty int) string {
-	state := fmt.Sprintf("%s (%s)", sha[:7], branch)
+	state := fmt.Sprintf("%s (%s)", ShortSHA(sha), branch)
 	if dirty > 0 {
 		state += fmt.Sprintf(" %d dirty", dirty)
 	} else {

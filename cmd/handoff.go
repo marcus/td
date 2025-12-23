@@ -94,17 +94,21 @@ Or use flags with values, stdin (-), or file (@path):
 		// Capture git state
 		gitState, gitErr := git.GetState()
 		if gitErr == nil {
-			database.AddGitSnapshot(&models.GitSnapshot{
+			if err := database.AddGitSnapshot(&models.GitSnapshot{
 				IssueID:    issueID,
 				Event:      "handoff",
 				CommitSHA:  gitState.CommitSHA,
 				Branch:     gitState.Branch,
 				DirtyFiles: gitState.DirtyFiles,
-			})
+			}); err != nil {
+				output.Warning("failed to save git snapshot: %v", err)
+			}
 		}
 
 		// Update issue timestamp
-		database.UpdateIssue(issue)
+		if err := database.UpdateIssue(issue); err != nil {
+			output.Warning("failed to update issue: %v", err)
+		}
 
 		// Output
 		fmt.Printf("HANDOFF RECORDED %s\n", issueID)
@@ -115,7 +119,7 @@ Or use flags with values, stdin (-), or file (@path):
 			if startSnapshot != nil {
 				commits, _ := git.GetCommitsSince(startSnapshot.CommitSHA)
 				fmt.Printf("Git: %s (%s) +%d commits since start\n",
-					gitState.CommitSHA[:7], gitState.Branch, commits)
+					output.ShortSHA(gitState.CommitSHA), gitState.Branch, commits)
 
 				// Show diff stats
 				diffStats, err := git.GetDiffStatsSince(startSnapshot.CommitSHA)

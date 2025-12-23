@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -131,7 +132,20 @@ func GetOrCreate(baseDir string) (*Session, error) {
 	// Check if session file exists
 	data, err := os.ReadFile(sessionPath)
 	if err == nil {
-		// Parse existing session
+		var sess Session
+
+		// Try JSON format first
+		if err := json.Unmarshal(data, &sess); err == nil {
+			// If context matches, reuse existing session
+			if sess.ContextID == currentContextID {
+				sess.IsNew = false
+				return &sess, nil
+			}
+			// Context changed - create new session, track previous
+			return createNewSession(baseDir, sessionPath, currentContextID, sess.ID)
+		}
+
+		// Fallback: legacy line-based format for backward compatibility
 		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 		if len(lines) >= 3 {
 			storedContextID := strings.TrimSpace(lines[2])
@@ -152,6 +166,7 @@ func GetOrCreate(baseDir string) (*Session, error) {
 				if len(lines) >= 5 {
 					sess.PreviousSessionID = strings.TrimSpace(lines[4])
 				}
+				// Migrate to JSON format on next save
 				return sess, nil
 			}
 
@@ -193,19 +208,16 @@ func createNewSession(baseDir, sessionPath, contextID, previousID string) (*Sess
 	return sess, nil
 }
 
-// Save writes the session to disk
-// Format: ID\nStartedAt\nContextID\nName\nPreviousSessionID
+// Save writes the session to disk as JSON
 func Save(baseDir string, sess *Session) error {
 	sessionPath := filepath.Join(baseDir, sessionFile)
 
-	content := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n",
-		sess.ID,
-		sess.StartedAt.Format(time.RFC3339),
-		sess.ContextID,
-		sess.Name,
-		sess.PreviousSessionID,
-	)
-	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
+	data, err := json.MarshalIndent(sess, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal session: %w", err)
+	}
+
+	if err := os.WriteFile(sessionPath, data, 0644); err != nil {
 		return fmt.Errorf("write session file: %w", err)
 	}
 
@@ -236,12 +248,19 @@ func Get(baseDir string) (*Session, error) {
 		return nil, fmt.Errorf("session not found: run 'td init' first")
 	}
 
+	// Try JSON format first
+	var sess Session
+	if err := json.Unmarshal(data, &sess); err == nil {
+		return &sess, nil
+	}
+
+	// Fallback: legacy line-based format
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) < 2 {
 		return nil, fmt.Errorf("invalid session file")
 	}
 
-	sess := &Session{
+	sess = Session{
 		ID: strings.TrimSpace(lines[0]),
 	}
 	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(lines[1])); err == nil {
@@ -257,7 +276,7 @@ func Get(baseDir string) (*Session, error) {
 		sess.PreviousSessionID = strings.TrimSpace(lines[4])
 	}
 
-	return sess, nil
+	return &sess, nil
 }
 
 // GetWithContextCheck returns the current session and checks if context changed.

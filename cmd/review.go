@@ -98,14 +98,16 @@ Supports bulk operations:
 
 			// Log action for undo
 			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
+			if err := database.LogAction(&models.ActionLog{
 				SessionID:    sess.ID,
 				ActionType:   models.ActionReview,
 				EntityType:   "issue",
 				EntityID:     issueID,
 				PreviousData: string(prevData),
 				NewData:      string(newData),
-			})
+			}); err != nil {
+				output.Warning("log action failed: %v", err)
+			}
 
 			// Log
 			reason, _ := cmd.Flags().GetString("reason")
@@ -114,12 +116,14 @@ Supports bulk operations:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("add log failed: %v", err)
+			}
 
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
@@ -230,30 +234,37 @@ Supports bulk operations:
 				continue
 			}
 
-			// Log
+			// Log (check both --reason and --message flags)
 			reason, _ := cmd.Flags().GetString("reason")
+			if reason == "" {
+				reason, _ = cmd.Flags().GetString("message")
+			}
 			logMsg := "Approved"
 			if reason != "" {
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("add log failed: %v", err)
+			}
 
 			// Log action for undo
 			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
+			if err := database.LogAction(&models.ActionLog{
 				SessionID:    sess.ID,
 				ActionType:   models.ActionApprove,
 				EntityType:   "issue",
 				EntityID:     issueID,
 				PreviousData: string(prevData),
 				NewData:      string(newData),
-			})
+			}); err != nil {
+				output.Warning("log action failed: %v", err)
+			}
 
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
@@ -340,23 +351,27 @@ Supports bulk operations:
 				logMsg = "Rejected: " + reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("add log failed: %v", err)
+			}
 
 			// Log action for undo
 			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
+			if err := database.LogAction(&models.ActionLog{
 				SessionID:    sess.ID,
 				ActionType:   models.ActionReject,
 				EntityType:   "issue",
 				EntityID:     issueID,
 				PreviousData: string(prevData),
 				NewData:      string(newData),
-			})
+			}); err != nil {
+				output.Warning("log action failed: %v", err)
+			}
 
 			if jsonOutput {
 				result := map[string]interface{}{
@@ -434,14 +449,16 @@ Examples:
 
 			// Log action for undo
 			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
+			if err := database.LogAction(&models.ActionLog{
 				SessionID:    sess.ID,
 				ActionType:   models.ActionClose,
 				EntityType:   "issue",
 				EntityID:     issueID,
 				PreviousData: string(prevData),
 				NewData:      string(newData),
-			})
+			}); err != nil {
+				output.Warning("log action failed: %v", err)
+			}
 
 			// Log
 			reason, _ := cmd.Flags().GetString("reason")
@@ -450,12 +467,14 @@ Examples:
 				logMsg = "Closed: " + reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("add log failed: %v", err)
+			}
 
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
@@ -480,6 +499,7 @@ func init() {
 	reviewCmd.Flags().String("reason", "", "Reason for submitting")
 	reviewCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().String("reason", "", "Reason for approval")
+	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	rejectCmd.Flags().String("reason", "", "Reason for rejection")

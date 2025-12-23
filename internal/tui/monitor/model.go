@@ -13,8 +13,8 @@ type Panel int
 
 const (
 	PanelCurrentWork Panel = iota
-	PanelActivity
 	PanelTaskList
+	PanelActivity
 )
 
 // ActivityItem represents a unified activity item (log, action, or comment)
@@ -90,16 +90,17 @@ type Model struct {
 	CurrentWorkRows []string      // Issue IDs for current work panel (focused + in-progress)
 
 	// Modal state for issue details
-	ModalOpen      bool
-	ModalIssueID   string
-	ModalScroll    int
-	ModalLoading   bool
-	ModalError     error
-	ModalIssue     *models.Issue
-	ModalHandoff   *models.Handoff
-	ModalLogs      []models.Log
-	ModalBlockedBy []models.Issue // Dependencies (issues blocking this one)
-	ModalBlocks    []models.Issue // Dependents (issues blocked by this one)
+	ModalOpen        bool
+	ModalIssueID     string
+	ModalSourcePanel Panel // Panel the modal was opened from (for navigation)
+	ModalScroll      int
+	ModalLoading     bool
+	ModalError       error
+	ModalIssue       *models.Issue
+	ModalHandoff     *models.Handoff
+	ModalLogs        []models.Log
+	ModalBlockedBy   []models.Issue // Dependencies (issues blocking this one)
+	ModalBlocks      []models.Issue // Dependents (issues blocked by this one)
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -289,12 +290,82 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "left", "h":
+		return m.navigateModal(-1)
+
+	case "right", "l":
+		return m.navigateModal(1)
+
 	case "r":
 		// Refresh both dashboard and modal details
 		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
 	}
 
 	return m, nil
+}
+
+// navigateModal moves to the prev/next issue in the source panel's list
+func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
+	// Get the list of issue IDs for the source panel (panel that opened the modal)
+	var issueIDs []string
+	switch m.ModalSourcePanel {
+	case PanelCurrentWork:
+		issueIDs = m.CurrentWorkRows
+	case PanelTaskList:
+		for _, row := range m.TaskListRows {
+			issueIDs = append(issueIDs, row.Issue.ID)
+		}
+	case PanelActivity:
+		// For activity, collect unique issue IDs
+		seen := make(map[string]bool)
+		for _, item := range m.Activity {
+			if item.IssueID != "" && !seen[item.IssueID] {
+				seen[item.IssueID] = true
+				issueIDs = append(issueIDs, item.IssueID)
+			}
+		}
+	}
+
+	if len(issueIDs) == 0 {
+		return m, nil
+	}
+
+	// Find current position
+	currentIdx := -1
+	for i, id := range issueIDs {
+		if id == m.ModalIssueID {
+			currentIdx = i
+			break
+		}
+	}
+
+	if currentIdx == -1 {
+		return m, nil
+	}
+
+	// Calculate new position with bounds
+	newIdx := currentIdx + delta
+	if newIdx < 0 || newIdx >= len(issueIDs) {
+		return m, nil // At boundary, don't wrap
+	}
+
+	// Navigate to new issue
+	newIssueID := issueIDs[newIdx]
+	m.ModalIssueID = newIssueID
+	m.ModalScroll = 0
+	m.ModalLoading = true
+	m.ModalError = nil
+	m.ModalIssue = nil
+	m.ModalHandoff = nil
+	m.ModalLogs = nil
+	m.ModalBlockedBy = nil
+	m.ModalBlocks = nil
+
+	// Update cursor position to match in source panel
+	m.Cursor[m.ModalSourcePanel] = newIdx
+	m.saveSelectedID(m.ModalSourcePanel)
+
+	return m, m.fetchIssueDetails(newIssueID)
 }
 
 // openModal opens the details modal for the currently selected issue
@@ -306,6 +377,7 @@ func (m Model) openModal() (tea.Model, tea.Cmd) {
 
 	m.ModalOpen = true
 	m.ModalIssueID = issueID
+	m.ModalSourcePanel = m.ActivePanel // Track which panel opened the modal
 	m.ModalScroll = 0
 	m.ModalLoading = true
 	m.ModalError = nil

@@ -37,11 +37,11 @@ func (m Model) renderView() string {
 	activity := m.renderActivityPanel(panelHeight)
 	taskList := m.renderTaskListPanel(panelHeight)
 
-	// Stack panels vertically
+	// Stack panels vertically (Current Work → Task List → Activity)
 	panels := lipgloss.JoinVertical(lipgloss.Left,
 		currentWork,
-		activity,
 		taskList,
+		activity,
 	)
 
 	// Add footer
@@ -478,7 +478,7 @@ func (m Model) wrapModal(content string, width, height int) string {
 		Height(height)
 
 	// Add footer with key hints
-	footer := subtleStyle.Render("↑↓:scroll  esc:close  r:refresh")
+	footer := subtleStyle.Render("↑↓:scroll  ←→:prev/next  esc:close  r:refresh")
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
@@ -562,6 +562,7 @@ NAVIGATION:
 
 MODAL:
   ↑ / ↓ / j / k     Scroll modal content
+  ← / → / h / l     Navigate prev/next issue
   Esc / Enter       Close modal
   r                 Refresh data
 

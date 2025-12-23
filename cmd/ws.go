@@ -88,7 +88,8 @@ var wsStartCmd = &cobra.Command{
 
 var wsTagCmd = &cobra.Command{
 	Use:   "tag [issue-ids...]",
-	Short: "Associate issues with the current work session",
+	Short: "Associate issues with the current work session (auto-starts open issues)",
+	Long:  `Associate issues with the current work session. By default, open issues are automatically started (status changed to in_progress). Use --no-start to tag without changing status.`,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -128,8 +129,9 @@ var wsTagCmd = &cobra.Command{
 
 			fmt.Printf("TAGGED %s → %s\n", issueID, wsID)
 
-			// Start the issue if not already started
-			if issue.Status == models.StatusOpen {
+			// Start the issue if not already started (unless --no-start)
+			noStart, _ := cmd.Flags().GetBool("no-start")
+			if !noStart && issue.Status == models.StatusOpen {
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
 				database.UpdateIssue(issue)
@@ -324,7 +326,7 @@ var wsCurrentCmd = &cobra.Command{
 			gitState, _ := git.GetState()
 			if gitState != nil {
 				commits, _ := git.GetCommitsSince(ws.StartSHA)
-				fmt.Printf("Git: %s → %s (+%d commits)\n", ws.StartSHA[:7], gitState.CommitSHA[:7], commits)
+				fmt.Printf("Git: %s → %s (+%d commits)\n", output.ShortSHA(ws.StartSHA), output.ShortSHA(gitState.CommitSHA), commits)
 			}
 		}
 
@@ -659,7 +661,7 @@ var wsShowCmd = &cobra.Command{
 
 		if ws.StartSHA != "" && ws.EndSHA != "" {
 			commits, _ := git.GetCommitsSince(ws.StartSHA)
-			fmt.Printf("Git: %s → %s (+%d commits)\n", ws.StartSHA[:7], ws.EndSHA[:7], commits)
+			fmt.Printf("Git: %s → %s (+%d commits)\n", output.ShortSHA(ws.StartSHA), output.ShortSHA(ws.EndSHA), commits)
 		}
 
 		fmt.Println()
@@ -845,6 +847,8 @@ func init() {
 	wsLogCmd.Flags().String("only", "", "Log to specific issue only")
 
 	wsCurrentCmd.Flags().Bool("json", false, "JSON output")
+
+	wsTagCmd.Flags().Bool("no-start", false, "Tag without starting (don't change status to in_progress)")
 
 	wsHandoffCmd.Flags().StringArray("done", nil, "Completed item (repeatable)")
 	wsHandoffCmd.Flags().StringArray("remaining", nil, "Remaining item (repeatable)")

@@ -39,7 +39,12 @@ var listCmd = &cobra.Command{
 				for _, part := range strings.Split(s, ",") {
 					part = strings.TrimSpace(part)
 					if part != "" {
-						opts.Status = append(opts.Status, models.Status(part))
+						status := models.Status(part)
+						if !models.IsValidStatus(status) {
+							output.Error("invalid status: %s (valid: open, in_progress, blocked, in_review, closed)", part)
+							return fmt.Errorf("invalid status: %s", part)
+						}
+						opts.Status = append(opts.Status, status)
 					}
 				}
 			}
@@ -56,7 +61,12 @@ var listCmd = &cobra.Command{
 		// Parse type filter
 		if typeStr, _ := cmd.Flags().GetStringArray("type"); len(typeStr) > 0 {
 			for _, t := range typeStr {
-				opts.Type = append(opts.Type, models.Type(t))
+				typ := models.Type(t)
+				if !models.IsValidType(typ) {
+					output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
+					return fmt.Errorf("invalid type: %s", t)
+				}
+				opts.Type = append(opts.Type, typ)
 			}
 		}
 
@@ -364,25 +374,34 @@ func parsePointsFilter(s string) (min, max int) {
 	s = strings.TrimSpace(s)
 
 	if strings.HasPrefix(s, ">=") {
-		fmt.Sscanf(strings.TrimPrefix(s, ">="), "%d", &min)
+		if n, err := fmt.Sscanf(strings.TrimPrefix(s, ">="), "%d", &min); n != 1 || err != nil {
+			return 0, 0 // Invalid format, no filter
+		}
 		return min, 0
 	}
 	if strings.HasPrefix(s, "<=") {
-		fmt.Sscanf(strings.TrimPrefix(s, "<="), "%d", &max)
+		if n, err := fmt.Sscanf(strings.TrimPrefix(s, "<="), "%d", &max); n != 1 || err != nil {
+			return 0, 0
+		}
 		return 0, max
 	}
 	if strings.Contains(s, "-") {
 		parts := strings.Split(s, "-")
 		if len(parts) == 2 {
-			fmt.Sscanf(parts[0], "%d", &min)
-			fmt.Sscanf(parts[1], "%d", &max)
-			return min, max
+			n1, _ := fmt.Sscanf(parts[0], "%d", &min)
+			n2, _ := fmt.Sscanf(parts[1], "%d", &max)
+			if n1 == 1 && n2 == 1 {
+				return min, max
+			}
+			return 0, 0
 		}
 	}
 
 	// Exact match
 	var exact int
-	fmt.Sscanf(s, "%d", &exact)
+	if n, err := fmt.Sscanf(s, "%d", &exact); n != 1 || err != nil {
+		return 0, 0
+	}
 	return exact, exact
 }
 

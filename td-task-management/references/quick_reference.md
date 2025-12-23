@@ -9,6 +9,7 @@
 
 ### Single-Issue Workflow
 - `td start <id>` - Begin work on an issue
+- `td unstart <id>` - Revert to open (undo accidental start)
 - `td log "message"` - Track progress
 - `td log --decision "chose X because Y"` - Log a decision
 - `td log --blocker "stuck on X"` - Log a blocker
@@ -19,7 +20,8 @@
 
 ### Multi-Issue Workflow
 - `td ws start "name"` - Start a work session for multiple issues
-- `td ws tag <id1> <id2>` - Associate issues with work session
+- `td ws tag <id1> <id2>` - Associate issues with work session (auto-starts open issues)
+- `td ws tag --no-start <id>` - Associate without starting
 - `td ws log "message"` - Log to all tagged issues
 - `td ws handoff` - Capture state and end session
 - `td ws current` - See current work session state

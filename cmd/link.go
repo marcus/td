@@ -339,7 +339,7 @@ var filesCmd = &cobra.Command{
 		// Get start snapshot
 		startSnapshot, _ := database.GetStartSnapshot(issueID)
 		if startSnapshot != nil {
-			fmt.Printf("Started: %s (%s)\n", startSnapshot.CommitSHA[:7], output.FormatTimeAgo(startSnapshot.Timestamp))
+			fmt.Printf("Started: %s (%s)\n", output.ShortSHA(startSnapshot.CommitSHA), output.FormatTimeAgo(startSnapshot.Timestamp))
 		}
 		fmt.Println()
 

@@ -126,7 +126,7 @@ Examples:
 			if !gitState.IsClean {
 				stateStr = fmt.Sprintf("%d modified, %d untracked", gitState.Modified, gitState.Untracked)
 			}
-			fmt.Printf("Git: %s (%s) %s\n", gitState.CommitSHA[:7], gitState.Branch, stateStr)
+			fmt.Printf("Git: %s (%s) %s\n", output.ShortSHA(gitState.CommitSHA), gitState.Branch, stateStr)
 
 			if !gitState.IsClean {
 				output.Warning("Starting with uncommitted changes")

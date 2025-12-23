@@ -142,10 +142,10 @@ var showCmd = &cobra.Command{
 		if startSnapshot != nil {
 			fmt.Printf("\nGIT STATE:\n")
 			fmt.Printf("  Started: %s (%s) %s\n",
-				startSnapshot.CommitSHA[:7], startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
+				output.ShortSHA(startSnapshot.CommitSHA), startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
 			if gitState != nil {
 				fmt.Printf("  Current: %s (%s) +%d commits\n",
-					gitState.CommitSHA[:7], gitState.Branch, commitsSinceStart)
+					output.ShortSHA(gitState.CommitSHA), gitState.Branch, commitsSinceStart)
 				if diffStats != nil && diffStats.FilesChanged > 0 {
 					fmt.Printf("  Changed: %d files (+%d -%d)\n",
 						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)

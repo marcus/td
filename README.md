@@ -133,7 +133,8 @@ When an agent is tackling related issues together:
 
 ```bash
 td ws start "Auth implementation"   # Start a work session
-td ws tag td-a1b2 td-c3d4           # Associate issues
+td ws tag td-a1b2 td-c3d4           # Associate issues (auto-starts open ones)
+td ws tag --no-start td-e5f6        # Associate without starting
 td ws log "Shared token storage"    # Log fans out to all tagged issues
 td ws handoff                       # Capture state for all, end session
 ```
@@ -160,6 +161,7 @@ Files are SHA-tracked at link time. No more "did I already change this file?"
 | List by status | `td list --status in_progress` |
 | What should I work on? | `td next` |
 | Start work | `td start <id>` |
+| Revert to open | `td unstart <id>` |
 | Log progress | `td log "message"` |
 | Log a decision | `td log --decision "chose X because Y"` |
 | Log a blocker | `td log --blocker "stuck on X"` |

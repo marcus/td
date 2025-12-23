@@ -152,7 +152,7 @@ func (db *DB) RunMigrations() (int, error) {
 
 // generateID generates a unique issue ID
 func generateID() (string, error) {
-	bytes := make([]byte, 2) // 4 hex characters
+	bytes := make([]byte, 4) // 8 hex characters - larger space to reduce collision risk
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
@@ -430,9 +430,14 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		args = append(args, opts.ClosedBefore)
 	}
 
-	// Sorting
+	// Sorting - validate column name to prevent SQL injection
+	allowedSortCols := map[string]bool{
+		"id": true, "title": true, "status": true, "type": true,
+		"priority": true, "points": true, "created_at": true,
+		"updated_at": true, "closed_at": true,
+	}
 	sortCol := "priority"
-	if opts.SortBy != "" {
+	if opts.SortBy != "" && allowedSortCols[opts.SortBy] {
 		sortCol = opts.SortBy
 	}
 	sortDir := "ASC"
@@ -620,10 +625,18 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 		return nil, err
 	}
 
-	json.Unmarshal([]byte(doneJSON), &handoff.Done)
-	json.Unmarshal([]byte(remainingJSON), &handoff.Remaining)
-	json.Unmarshal([]byte(decisionsJSON), &handoff.Decisions)
-	json.Unmarshal([]byte(uncertainJSON), &handoff.Uncertain)
+	if err := json.Unmarshal([]byte(doneJSON), &handoff.Done); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal done: %w", err)
+	}
+	if err := json.Unmarshal([]byte(remainingJSON), &handoff.Remaining); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
+	}
+	if err := json.Unmarshal([]byte(decisionsJSON), &handoff.Decisions); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
+	}
+	if err := json.Unmarshal([]byte(uncertainJSON), &handoff.Uncertain); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
+	}
 
 	return &handoff, nil
 }
@@ -647,12 +660,20 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 		err := rows.Scan(&h.ID, &h.IssueID, &h.SessionID,
 			&doneJSON, &remainingJSON, &decisionsJSON, &uncertainJSON, &h.Timestamp)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to scan handoff row: %w", err)
 		}
-		json.Unmarshal([]byte(doneJSON), &h.Done)
-		json.Unmarshal([]byte(remainingJSON), &h.Remaining)
-		json.Unmarshal([]byte(decisionsJSON), &h.Decisions)
-		json.Unmarshal([]byte(uncertainJSON), &h.Uncertain)
+		if err := json.Unmarshal([]byte(doneJSON), &h.Done); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal done: %w", err)
+		}
+		if err := json.Unmarshal([]byte(remainingJSON), &h.Remaining); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
+		}
+		if err := json.Unmarshal([]byte(decisionsJSON), &h.Decisions); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
+		}
+		if err := json.Unmarshal([]byte(uncertainJSON), &h.Uncertain); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
+		}
 		handoffs = append(handoffs, h)
 	}
 
@@ -1128,8 +1149,9 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 
 // GetActiveSessions returns distinct session IDs with activity since the given time
 func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
-	query := `SELECT DISTINCT session_id FROM logs
+	query := `SELECT session_id FROM logs
 	          WHERE session_id != '' AND timestamp > ?
+	          GROUP BY session_id
 	          ORDER BY MAX(timestamp) DESC`
 
 	rows, err := db.conn.Query(query, since)
