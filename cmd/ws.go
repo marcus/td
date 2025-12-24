@@ -533,6 +533,9 @@ Flags support values, stdin (-), or file (@path):
 		if !continueSession {
 			fmt.Println()
 			fmt.Println("Work session ended.")
+			if !submitReview && len(issueIDs) > 0 {
+				fmt.Printf("Next: `td review <id>` to submit for review\n")
+			}
 		}
 
 		return nil

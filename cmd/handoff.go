@@ -130,6 +130,8 @@ Or use flags with values, stdin (-), or file (@path):
 			}
 		}
 
+		fmt.Printf("\nNext: `td review %s` to submit for review\n", issueID)
+
 		return nil
 	},
 }
