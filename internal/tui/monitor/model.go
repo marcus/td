@@ -109,6 +109,12 @@ type Model struct {
 	SearchQuery   string // Current search query
 	IncludeClosed bool   // Whether to include closed tasks
 
+	// Confirmation dialog state
+	ConfirmOpen    bool
+	ConfirmAction  string // "delete"
+	ConfirmIssueID string
+	ConfirmTitle   string
+
 	// Configuration
 	RefreshInterval time.Duration
 }
@@ -219,6 +225,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes key input
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Confirmation dialog key handling
+	if m.ConfirmOpen {
+		return m.handleConfirmKey(msg)
+	}
+
 	// Modal-specific key handling
 	if m.ModalOpen {
 		return m.handleModalKey(msg)
@@ -281,7 +292,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "r":
+		// Mark for review if in Current Work panel, otherwise refresh
+		if m.ActivePanel == PanelCurrentWork {
+			return m.markForReview()
+		}
 		return m, m.fetchData()
+
+	case "a":
+		// Approve issue if in Task List panel
+		if m.ActivePanel == PanelTaskList {
+			return m.approveIssue()
+		}
+		return m, nil
+
+	case "x":
+		// Delete with confirmation
+		return m.confirmDelete()
 
 	case "?":
 		m.ShowHelp = !m.ShowHelp
@@ -728,4 +754,148 @@ func (m Model) SelectedIssueID(panel Panel) string {
 		}
 	}
 	return ""
+}
+
+// handleConfirmKey processes key input when confirmation dialog is open
+func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if m.ConfirmAction == "delete" {
+			return m.executeDelete()
+		}
+	case "n", "N", "esc":
+		m.ConfirmOpen = false
+	}
+	return m, nil
+}
+
+// markForReview marks the selected in-progress issue for review
+func (m Model) markForReview() (tea.Model, tea.Cmd) {
+	issueID := m.SelectedIssueID(PanelCurrentWork)
+	if issueID == "" {
+		return m, nil
+	}
+
+	issue, err := m.DB.GetIssue(issueID)
+	if err != nil || issue == nil {
+		return m, nil
+	}
+
+	// Only allow marking in_progress issues for review
+	if issue.Status != models.StatusInProgress {
+		return m, nil
+	}
+
+	// Update status
+	issue.Status = models.StatusInReview
+	if err := m.DB.UpdateIssue(issue); err != nil {
+		return m, nil
+	}
+
+	// Log action for undo
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionReview,
+		EntityType: "issue",
+		EntityID:   issueID,
+	})
+
+	return m, m.fetchData()
+}
+
+// confirmDelete opens confirmation dialog for deleting selected issue
+func (m Model) confirmDelete() (tea.Model, tea.Cmd) {
+	issueID := m.SelectedIssueID(m.ActivePanel)
+	if issueID == "" {
+		return m, nil
+	}
+
+	issue, err := m.DB.GetIssue(issueID)
+	if err != nil || issue == nil {
+		return m, nil
+	}
+
+	m.ConfirmOpen = true
+	m.ConfirmAction = "delete"
+	m.ConfirmIssueID = issueID
+	m.ConfirmTitle = issue.Title
+
+	return m, nil
+}
+
+// executeDelete performs the actual deletion after confirmation
+func (m Model) executeDelete() (tea.Model, tea.Cmd) {
+	if m.ConfirmIssueID == "" {
+		m.ConfirmOpen = false
+		return m, nil
+	}
+
+	// Delete issue
+	if err := m.DB.DeleteIssue(m.ConfirmIssueID); err != nil {
+		m.ConfirmOpen = false
+		return m, nil
+	}
+
+	// Log action for undo
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionDelete,
+		EntityType: "issue",
+		EntityID:   m.ConfirmIssueID,
+	})
+
+	m.ConfirmOpen = false
+	m.ConfirmIssueID = ""
+	m.ConfirmTitle = ""
+	m.ConfirmAction = ""
+
+	return m, m.fetchData()
+}
+
+// approveIssue approves/closes the selected reviewable issue
+func (m Model) approveIssue() (tea.Model, tea.Cmd) {
+	// Must be in Task List panel
+	if m.ActivePanel != PanelTaskList {
+		return m, nil
+	}
+
+	cursor := m.Cursor[PanelTaskList]
+	if cursor >= len(m.TaskListRows) {
+		return m, nil
+	}
+
+	row := m.TaskListRows[cursor]
+	// Only allow approving reviewable issues
+	if row.Category != CategoryReviewable {
+		return m, nil
+	}
+
+	issue, err := m.DB.GetIssue(row.Issue.ID)
+	if err != nil || issue == nil {
+		return m, nil
+	}
+
+	// Can't approve your own issues
+	if issue.ImplementerSession == m.SessionID {
+		return m, nil
+	}
+
+	// Update status
+	now := time.Now()
+	issue.Status = models.StatusClosed
+	issue.ReviewerSession = m.SessionID
+	issue.ClosedAt = &now
+	if err := m.DB.UpdateIssue(issue); err != nil {
+		return m, nil
+	}
+
+	// Log action for undo
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionApprove,
+		EntityType: "issue",
+		EntityID:   issue.ID,
+	})
+
+	return m, m.fetchData()
 }

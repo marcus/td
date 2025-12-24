@@ -64,6 +64,14 @@ func (m Model) renderView() string {
 
 	base := lipgloss.JoinVertical(lipgloss.Left, content, footer)
 
+	// Overlay confirmation dialog if open
+	if m.ConfirmOpen {
+		confirm := m.renderConfirmation()
+		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, confirm,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
+	}
+
 	// Overlay modal if open
 	if m.ModalOpen {
 		modal := m.renderModal()
@@ -648,6 +656,46 @@ func (m Model) wrapModal(content string, width, height int) string {
 	return modalStyle.Render(inner)
 }
 
+// renderConfirmation renders the confirmation dialog
+func (m Model) renderConfirmation() string {
+	width := 40
+	if len(m.ConfirmTitle) > 30 {
+		width = len(m.ConfirmTitle) + 10
+	}
+	if width > 60 {
+		width = 60
+	}
+
+	var content strings.Builder
+
+	// Title
+	action := "Delete"
+	if m.ConfirmAction != "delete" {
+		action = m.ConfirmAction
+	}
+	content.WriteString(titleStyle.Render(fmt.Sprintf("%s %s?", action, m.ConfirmIssueID)))
+	content.WriteString("\n")
+
+	// Issue title (truncated)
+	title := m.ConfirmTitle
+	if len(title) > width-4 {
+		title = title[:width-7] + "..."
+	}
+	content.WriteString(subtleStyle.Render(fmt.Sprintf("\"%s\"", title)))
+	content.WriteString("\n\n")
+
+	// Options
+	content.WriteString("[Y]es  [N]o")
+
+	confirmStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(errorColor).
+		Padding(1, 2).
+		Width(width)
+
+	return confirmStyle.Render(content.String())
+}
+
 // wrapText wraps text to fit within maxWidth
 func wrapText(text string, maxWidth int) []string {
 	if maxWidth <= 0 {
@@ -728,7 +776,7 @@ func (m Model) renderSearchBar() string {
 
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render("q:quit  /:search  c:closed  tab:switch  ↑↓:select  enter:details  r:refresh  ?:help")
+	keys := helpStyle.Render("q:quit /:search r:review a:approve x:del tab:panel ↑↓:sel enter:details ?:help")
 
 	// Show active sessions indicator
 	sessionsIndicator := ""
@@ -775,10 +823,13 @@ MODAL:
   ↑ / ↓ / j / k     Scroll modal content
   ← / → / h / l     Navigate prev/next issue
   Esc / Enter       Close modal
-  r                 Refresh data
 
 ACTIONS:
-  r                 Force refresh
+  r                 Mark for review (Current Work) / Refresh
+  a                 Approve issue (Task List reviewable)
+  x                 Delete issue (confirmation required)
+  /                 Search tasks
+  c                 Toggle closed tasks
   q / Ctrl+C        Quit
 
 Press ? to close help
