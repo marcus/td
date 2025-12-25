@@ -138,7 +138,7 @@ func getTransitiveBlocked(database *db.DB, issueID string, visited map[string]bo
 
 var dependsOnCmd = &cobra.Command{
 	Use:     "depends-on [issue-id]",
-	Aliases: []string{"deps"},
+	Aliases: []string{"deps", "dependencies"},
 	Short:   "Show what issues this issue depends on",
 	GroupID: "query",
 	Args:    cobra.ExactArgs(1),
