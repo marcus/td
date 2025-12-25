@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
 )
@@ -511,8 +512,9 @@ func (m Model) renderModal() string {
 	// Description
 	if issue.Description != "" {
 		lines = append(lines, sectionHeader.Render("DESCRIPTION"))
-		// Word-wrap description
-		for _, line := range wrapText(issue.Description, contentWidth) {
+		// Render markdown with glamour
+		rendered := renderMarkdown(issue.Description, contentWidth)
+		for _, line := range strings.Split(rendered, "\n") {
 			lines = append(lines, line)
 		}
 		lines = append(lines, "")
@@ -521,7 +523,9 @@ func (m Model) renderModal() string {
 	// Acceptance criteria
 	if issue.Acceptance != "" {
 		lines = append(lines, sectionHeader.Render("ACCEPTANCE CRITERIA"))
-		for _, line := range wrapText(issue.Acceptance, contentWidth) {
+		// Render markdown with glamour
+		rendered := renderMarkdown(issue.Acceptance, contentWidth)
+		for _, line := range strings.Split(rendered, "\n") {
 			lines = append(lines, line)
 		}
 		lines = append(lines, "")
@@ -996,6 +1000,33 @@ func wrapText(text string, maxWidth int) []string {
 	}
 
 	return lines
+}
+
+// renderMarkdown renders markdown text using glamour, with fallback to plain text
+func renderMarkdown(text string, width int) string {
+	if text == "" {
+		return ""
+	}
+
+	// Create renderer with auto style detection and word wrap
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		// Fallback to word-wrapped plain text on error
+		return strings.Join(wrapText(text, width), "\n")
+	}
+
+	// Render the markdown
+	rendered, err := renderer.Render(text)
+	if err != nil {
+		// Fallback to word-wrapped plain text on error
+		return strings.Join(wrapText(text, width), "\n")
+	}
+
+	// Trim trailing newline added by glamour
+	return strings.TrimSuffix(rendered, "\n")
 }
 
 // Error style for modal

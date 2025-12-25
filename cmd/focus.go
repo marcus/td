@@ -62,112 +62,7 @@ var unfocusCmd = &cobra.Command{
 	},
 }
 
-var currentCmd = &cobra.Command{
-	Use:     "current",
-	Short:   "Show focused issue, active work, and pending reviews",
-	GroupID: "session",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		sess, err := session.GetOrCreate(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
-		jsonOutput, _ := cmd.Flags().GetBool("json")
-
-		result := map[string]interface{}{
-			"session": sess.ID,
-		}
-
-		// Get focused issue
-		focusedID, _ := config.GetFocus(baseDir)
-		if focusedID != "" {
-			issue, err := database.GetIssue(focusedID)
-			if err == nil {
-				if jsonOutput {
-					result["focused"] = issue
-				} else {
-					fmt.Printf("FOCUSED: %s  %s  %s%s  %s\n",
-						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), output.FormatStatus(issue.Status))
-					fmt.Println()
-				}
-			}
-		} else if !jsonOutput {
-			fmt.Println("No focused issue")
-			fmt.Println()
-		}
-
-		// Get in-progress issues for this session
-		inProgress, _ := database.ListIssues(db.ListIssuesOptions{
-			Status:      []models.Status{models.StatusInProgress},
-			Implementer: sess.ID,
-		})
-
-		if len(inProgress) > 0 {
-			if jsonOutput {
-				result["in_progress"] = inProgress
-			} else {
-				fmt.Println("IN PROGRESS (this session):")
-				for _, issue := range inProgress {
-					fmt.Printf("  %s  %s  %s%s\n",
-						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points))
-				}
-				fmt.Println()
-			}
-		}
-
-		// Get issues awaiting review (that this session can review)
-		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sess.ID,
-		})
-
-		if len(reviewable) > 0 {
-			if jsonOutput {
-				result["awaiting_review"] = reviewable
-			} else {
-				fmt.Println("AWAITING YOUR REVIEW:")
-				for _, issue := range reviewable {
-					fmt.Printf("  %s  %s  %s%s  (impl: %s)\n",
-						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points), issue.ImplementerSession)
-				}
-				fmt.Println()
-			}
-		}
-
-		// Get issues this session submitted for review
-		submittedForReview, _ := database.ListIssues(db.ListIssuesOptions{
-			Status:      []models.Status{models.StatusInReview},
-			Implementer: sess.ID,
-		})
-
-		if len(submittedForReview) > 0 {
-			if jsonOutput {
-				result["submitted_for_review"] = submittedForReview
-			} else {
-				fmt.Println("SUBMITTED FOR REVIEW (by you):")
-				for _, issue := range submittedForReview {
-					fmt.Printf("  %s  %s  %s%s\n",
-						issue.ID, issue.Title, issue.Priority, output.FormatPointsSuffix(issue.Points))
-				}
-			}
-		}
-
-		if jsonOutput {
-			return output.JSON(result)
-		}
-
-		return nil
-	},
-}
+// Note: currentCmd moved to status.go (with "current" as alias)
 
 var checkHandoffCmd = &cobra.Command{
 	Use:   "check-handoff",
@@ -264,10 +159,8 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 func init() {
 	rootCmd.AddCommand(focusCmd)
 	rootCmd.AddCommand(unfocusCmd)
-	rootCmd.AddCommand(currentCmd)
 	rootCmd.AddCommand(checkHandoffCmd)
 
-	currentCmd.Flags().Bool("json", false, "JSON output")
 	checkHandoffCmd.Flags().Bool("quiet", false, "Suppress output, only return exit code")
 	checkHandoffCmd.Flags().Bool("json", false, "JSON output")
 }

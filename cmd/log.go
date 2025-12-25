@@ -16,9 +16,14 @@ import (
 )
 
 var logCmd = &cobra.Command{
-	Use:   "log [message]",
+	Use:   "log [issue-id] <message>",
 	Short: "Append a log entry to the current issue",
 	Long: `Low-friction progress tracking during a session.
+
+Syntax:
+  td log <message>              # Log to focused issue
+  td log <issue-id> <message>   # Log to specific issue
+  td log --issue <id> <message> # Log to specific issue (flag syntax)
 
 Supports stdin input for multi-line messages or piped input:
   echo "message" | td log
@@ -28,7 +33,7 @@ Supports stdin input for multi-line messages or piped input:
   log message
   EOF`,
 	GroupID: "workflow",
-	Args:    cobra.MaximumNArgs(1),
+	Args:    cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -45,14 +50,71 @@ Supports stdin input for multi-line messages or piped input:
 			return err
 		}
 
-		// Get issue ID from flag or focus
-		issueID, _ := cmd.Flags().GetString("issue")
-		if issueID == "" {
-			issueID, err = config.GetFocus(baseDir)
-			if err != nil || issueID == "" {
-				output.Error("no focused issue. Use --issue or td focus <issue-id>")
-				return fmt.Errorf("no focused issue")
+		// Parse args to determine issue ID and message
+		var issueID string
+		var message string
+
+		if len(args) == 2 {
+			// Two args: first is issue ID, second is message
+			issueID = args[0]
+			message = args[1]
+		} else if len(args) == 1 {
+			// One arg: check if it's an issue ID or message
+			// Issue IDs start with "td-", otherwise it's a message
+			if strings.HasPrefix(args[0], "td-") {
+				// It's an issue ID, get message from stdin
+				issueID = args[0]
+				// Check if stdin has data
+				stat, _ := os.Stdin.Stat()
+				if (stat.Mode() & os.ModeCharDevice) == 0 {
+					if stat.Size() > 0 {
+						reader := bufio.NewReader(os.Stdin)
+						data, err := io.ReadAll(reader)
+						if err != nil {
+							output.Error("failed to read stdin: %v", err)
+							return err
+						}
+						message = strings.TrimSpace(string(data))
+					}
+				}
+			} else {
+				// It's a message, get issue ID from flag or focus
+				message = args[0]
+				issueID, _ = cmd.Flags().GetString("issue")
 			}
+		}
+
+		// If no issue ID yet, check flag or fall back to focus
+		if issueID == "" {
+			issueID, _ = cmd.Flags().GetString("issue")
+			if issueID == "" {
+				issueID, err = config.GetFocus(baseDir)
+				if err != nil || issueID == "" {
+					output.Error("no focused issue. Use --issue or td focus <issue-id>")
+					return fmt.Errorf("no focused issue")
+				}
+			}
+		}
+
+		// If still no message, try stdin
+		if message == "" {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				if stat.Size() > 0 {
+					reader := bufio.NewReader(os.Stdin)
+					data, err := io.ReadAll(reader)
+					if err != nil {
+						output.Error("failed to read stdin: %v", err)
+						return err
+					}
+					message = strings.TrimSpace(string(data))
+				}
+			}
+		}
+
+		if message == "" {
+			output.Error("no message provided. Use: td log \"message\" or pipe input")
+			return fmt.Errorf("no message provided")
 		}
 
 		// Verify issue exists
@@ -81,32 +143,6 @@ Supports stdin input for multi-line messages or piped input:
 		} else if result, _ := cmd.Flags().GetBool("result"); result {
 			logType = models.LogTypeResult
 			typeLabel = " [result]"
-		}
-
-		// Get message from args or stdin
-		var message string
-		if len(args) > 0 {
-			message = args[0]
-		} else {
-			// Check if stdin has data - only read if it's a pipe AND has available data
-			stat, _ := os.Stdin.Stat()
-			if (stat.Mode() & os.ModeCharDevice) == 0 {
-				if stat.Size() > 0 {
-					// Read from stdin
-					reader := bufio.NewReader(os.Stdin)
-					data, err := io.ReadAll(reader)
-					if err != nil {
-						output.Error("failed to read stdin: %v", err)
-						return err
-					}
-					message = strings.TrimSpace(string(data))
-				}
-			}
-		}
-
-		if message == "" {
-			output.Error("no message provided. Use: td log \"message\" or pipe input")
-			return fmt.Errorf("no message provided")
 		}
 
 		// Get active work session if any
