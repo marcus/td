@@ -41,6 +41,21 @@ func Open(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// Enable WAL mode for concurrent reads while writes are serialized
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout as fallback protection (500ms, matches lock timeout)
+	if _, err := conn.Exec("PRAGMA busy_timeout=500"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
+	// Slightly faster writes, still safe with WAL
+	conn.Exec("PRAGMA synchronous=NORMAL")
+
 	db := &DB{conn: conn, baseDir: baseDir}
 
 	// Run any pending migrations
@@ -65,6 +80,21 @@ func Initialize(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// Enable WAL mode for concurrent reads while writes are serialized
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout as fallback protection (500ms, matches lock timeout)
+	if _, err := conn.Exec("PRAGMA busy_timeout=500"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
+	// Slightly faster writes, still safe with WAL
+	conn.Exec("PRAGMA synchronous=NORMAL")
+
 	// Run schema
 	if _, err := conn.Exec(schema); err != nil {
 		return nil, fmt.Errorf("create schema: %w", err)
@@ -88,6 +118,17 @@ func (db *DB) Close() error {
 // BaseDir returns the base directory for the database
 func (db *DB) BaseDir() string {
 	return db.baseDir
+}
+
+// withWriteLock executes fn while holding an exclusive write lock.
+// This prevents concurrent writes from multiple processes.
+func (db *DB) withWriteLock(fn func() error) error {
+	locker := newWriteLocker(db.baseDir)
+	if err := locker.acquire(defaultTimeout); err != nil {
+		return err
+	}
+	defer locker.release()
+	return fn()
 }
 
 // columnExists checks whether a column exists on a table
@@ -138,6 +179,13 @@ func (db *DB) GetSchemaVersion() (int, error) {
 
 // SetSchemaVersion sets the schema version in the database
 func (db *DB) SetSchemaVersion(version int) error {
+	return db.withWriteLock(func() error {
+		return db.setSchemaVersionInternal(version)
+	})
+}
+
+// setSchemaVersionInternal sets schema version without acquiring lock (for use during init)
+func (db *DB) setSchemaVersionInternal(version int) error {
 	_, err := db.conn.Exec(`INSERT OR REPLACE INTO schema_info (key, value) VALUES ('version', ?)`,
 		fmt.Sprintf("%d", version))
 	return err
@@ -145,6 +193,24 @@ func (db *DB) SetSchemaVersion(version int) error {
 
 // RunMigrations runs any pending database migrations
 func (db *DB) RunMigrations() (int, error) {
+	// Quick check without lock - if already at current version, skip
+	currentVersion, _ := db.GetSchemaVersion()
+	if currentVersion >= SchemaVersion {
+		return 0, nil
+	}
+
+	// Need to run migrations - acquire lock
+	var migrationsRun int
+	err := db.withWriteLock(func() error {
+		var err error
+		migrationsRun, err = db.runMigrationsInternal()
+		return err
+	})
+	return migrationsRun, err
+}
+
+// runMigrationsInternal runs migrations without acquiring lock (for use during init)
+func (db *DB) runMigrationsInternal() (int, error) {
 	// Ensure schema_info table exists
 	_, err := db.conn.Exec(`CREATE TABLE IF NOT EXISTS schema_info (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
 	if err != nil {
@@ -165,7 +231,7 @@ func (db *DB) RunMigrations() (int, error) {
 					return migrationsRun, fmt.Errorf("check column minor: %w", err)
 				}
 				if exists {
-					if err := db.SetSchemaVersion(migration.Version); err != nil {
+					if err := db.setSchemaVersionInternal(migration.Version); err != nil {
 						return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
 					}
 					migrationsRun++
@@ -178,7 +244,7 @@ func (db *DB) RunMigrations() (int, error) {
 					return migrationsRun, fmt.Errorf("check column created_branch: %w", err)
 				}
 				if exists {
-					if err := db.SetSchemaVersion(migration.Version); err != nil {
+					if err := db.setSchemaVersionInternal(migration.Version); err != nil {
 						return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
 					}
 					migrationsRun++
@@ -188,7 +254,7 @@ func (db *DB) RunMigrations() (int, error) {
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
-			if err := db.SetSchemaVersion(migration.Version); err != nil {
+			if err := db.setSchemaVersionInternal(migration.Version); err != nil {
 				return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
 			}
 			migrationsRun++
@@ -197,7 +263,7 @@ func (db *DB) RunMigrations() (int, error) {
 
 	// If no migrations and version is 0, set to current schema version
 	if currentVersion == 0 {
-		if err := db.SetSchemaVersion(SchemaVersion); err != nil {
+		if err := db.setSchemaVersionInternal(SchemaVersion); err != nil {
 			return migrationsRun, err
 		}
 	}
@@ -225,34 +291,36 @@ func generateWSID() (string, error) {
 
 // CreateIssue creates a new issue
 func (db *DB) CreateIssue(issue *models.Issue) error {
-	id, err := generateID()
-	if err != nil {
+	return db.withWriteLock(func() error {
+		id, err := generateID()
+		if err != nil {
+			return err
+		}
+		issue.ID = id
+
+		if issue.Status == "" {
+			issue.Status = models.StatusOpen
+		}
+		if issue.Type == "" {
+			issue.Type = models.TypeTask
+		}
+		if issue.Priority == "" {
+			issue.Priority = models.PriorityP2
+		}
+
+		now := time.Now()
+		issue.CreatedAt = now
+		issue.UpdatedAt = now
+
+		labels := strings.Join(issue.Labels, ",")
+
+		_, err = db.conn.Exec(`
+			INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch)
+
 		return err
-	}
-	issue.ID = id
-
-	if issue.Status == "" {
-		issue.Status = models.StatusOpen
-	}
-	if issue.Type == "" {
-		issue.Type = models.TypeTask
-	}
-	if issue.Priority == "" {
-		issue.Priority = models.PriorityP2
-	}
-
-	now := time.Now()
-	issue.CreatedAt = now
-	issue.UpdatedAt = now
-
-	labels := strings.Join(issue.Labels, ",")
-
-	_, err = db.conn.Exec(`
-		INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch)
-
-	return err
+	})
 }
 
 // GetIssue retrieves an issue by ID
@@ -293,34 +361,40 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 
 // UpdateIssue updates an issue
 func (db *DB) UpdateIssue(issue *models.Issue) error {
-	issue.UpdatedAt = time.Now()
-	labels := strings.Join(issue.Labels, ",")
+	return db.withWriteLock(func() error {
+		issue.UpdatedAt = time.Now()
+		labels := strings.Join(issue.Labels, ",")
 
-	_, err := db.conn.Exec(`
-		UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
-		                  points = ?, labels = ?, parent_id = ?, acceptance = ?,
-		                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
-		                  closed_at = ?, deleted_at = ?
-		WHERE id = ?
-	`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
-		issue.Points, labels, issue.ParentID, issue.Acceptance,
-		issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
-		issue.ClosedAt, issue.DeletedAt, issue.ID)
+		_, err := db.conn.Exec(`
+			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
+			                  points = ?, labels = ?, parent_id = ?, acceptance = ?,
+			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
+			                  closed_at = ?, deleted_at = ?
+			WHERE id = ?
+		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
+			issue.Points, labels, issue.ParentID, issue.Acceptance,
+			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
+			issue.ClosedAt, issue.DeletedAt, issue.ID)
 
-	return err
+		return err
+	})
 }
 
 // DeleteIssue soft-deletes an issue
 func (db *DB) DeleteIssue(id string) error {
-	now := time.Now()
-	_, err := db.conn.Exec(`UPDATE issues SET deleted_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
-	return err
+	return db.withWriteLock(func() error {
+		now := time.Now()
+		_, err := db.conn.Exec(`UPDATE issues SET deleted_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
+		return err
+	})
 }
 
 // RestoreIssue restores a soft-deleted issue
 func (db *DB) RestoreIssue(id string) error {
-	_, err := db.conn.Exec(`UPDATE issues SET deleted_at = NULL, updated_at = ? WHERE id = ?`, time.Now(), id)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`UPDATE issues SET deleted_at = NULL, updated_at = ? WHERE id = ?`, time.Now(), id)
+		return err
+	})
 }
 
 // ListIssuesOptions contains filter options for listing issues
@@ -546,24 +620,26 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 
 // AddLog adds a log entry to an issue
 func (db *DB) AddLog(log *models.Log) error {
-	log.Timestamp = time.Now()
+	return db.withWriteLock(func() error {
+		log.Timestamp = time.Now()
 
-	result, err := db.conn.Exec(`
-		INSERT INTO logs (issue_id, session_id, work_session_id, message, type, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, log.IssueID, log.SessionID, log.WorkSessionID, log.Message, log.Type, log.Timestamp)
+		result, err := db.conn.Exec(`
+			INSERT INTO logs (issue_id, session_id, work_session_id, message, type, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, log.IssueID, log.SessionID, log.WorkSessionID, log.Message, log.Type, log.Timestamp)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-	log.ID = id
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		log.ID = id
 
-	return nil
+		return nil
+	})
 }
 
 // GetLogs retrieves logs for an issue, including work session logs
@@ -635,29 +711,31 @@ func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
 
 // AddHandoff adds a handoff entry
 func (db *DB) AddHandoff(handoff *models.Handoff) error {
-	handoff.Timestamp = time.Now()
+	return db.withWriteLock(func() error {
+		handoff.Timestamp = time.Now()
 
-	doneJSON, _ := json.Marshal(handoff.Done)
-	remainingJSON, _ := json.Marshal(handoff.Remaining)
-	decisionsJSON, _ := json.Marshal(handoff.Decisions)
-	uncertainJSON, _ := json.Marshal(handoff.Uncertain)
+		doneJSON, _ := json.Marshal(handoff.Done)
+		remainingJSON, _ := json.Marshal(handoff.Remaining)
+		decisionsJSON, _ := json.Marshal(handoff.Decisions)
+		uncertainJSON, _ := json.Marshal(handoff.Uncertain)
 
-	result, err := db.conn.Exec(`
-		INSERT INTO handoffs (issue_id, session_id, done, remaining, decisions, uncertain, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
+		result, err := db.conn.Exec(`
+			INSERT INTO handoffs (issue_id, session_id, done, remaining, decisions, uncertain, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-	handoff.ID = id
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		handoff.ID = id
 
-	return nil
+		return nil
+	})
 }
 
 // GetLatestHandoff retrieves the latest handoff for an issue
@@ -737,24 +815,26 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 
 // AddGitSnapshot records a git state snapshot
 func (db *DB) AddGitSnapshot(snapshot *models.GitSnapshot) error {
-	snapshot.Timestamp = time.Now()
+	return db.withWriteLock(func() error {
+		snapshot.Timestamp = time.Now()
 
-	result, err := db.conn.Exec(`
-		INSERT INTO git_snapshots (issue_id, event, commit_sha, branch, dirty_files, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, snapshot.IssueID, snapshot.Event, snapshot.CommitSHA, snapshot.Branch, snapshot.DirtyFiles, snapshot.Timestamp)
+		result, err := db.conn.Exec(`
+			INSERT INTO git_snapshots (issue_id, event, commit_sha, branch, dirty_files, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, snapshot.IssueID, snapshot.Event, snapshot.CommitSHA, snapshot.Branch, snapshot.DirtyFiles, snapshot.Timestamp)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-	snapshot.ID = id
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		snapshot.ID = id
 
-	return nil
+		return nil
+	})
 }
 
 // GetStartSnapshot returns the start snapshot for an issue
@@ -781,17 +861,21 @@ func (db *DB) GetStartSnapshot(issueID string) (*models.GitSnapshot, error) {
 
 // AddDependency adds a dependency between issues
 func (db *DB) AddDependency(issueID, dependsOnID, relationType string) error {
-	_, err := db.conn.Exec(`
-		INSERT OR REPLACE INTO issue_dependencies (issue_id, depends_on_id, relation_type)
-		VALUES (?, ?, ?)
-	`, issueID, dependsOnID, relationType)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			INSERT OR REPLACE INTO issue_dependencies (issue_id, depends_on_id, relation_type)
+			VALUES (?, ?, ?)
+		`, issueID, dependsOnID, relationType)
+		return err
+	})
 }
 
 // RemoveDependency removes a dependency
 func (db *DB) RemoveDependency(issueID, dependsOnID string) error {
-	_, err := db.conn.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID)
+		return err
+	})
 }
 
 // GetDependencies returns what an issue depends on
@@ -838,17 +922,21 @@ func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 
 // LinkFile links a file to an issue
 func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha string) error {
-	_, err := db.conn.Exec(`
-		INSERT OR REPLACE INTO issue_files (issue_id, file_path, role, linked_sha, linked_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, issueID, filePath, role, sha, time.Now())
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			INSERT OR REPLACE INTO issue_files (issue_id, file_path, role, linked_sha, linked_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, issueID, filePath, role, sha, time.Now())
+		return err
+	})
 }
 
 // UnlinkFile removes a file link
 func (db *DB) UnlinkFile(issueID, filePath string) error {
-	_, err := db.conn.Exec(`DELETE FROM issue_files WHERE issue_id = ? AND file_path = ?`, issueID, filePath)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`DELETE FROM issue_files WHERE issue_id = ? AND file_path = ?`, issueID, filePath)
+		return err
+	})
 }
 
 // GetLinkedFiles returns files linked to an issue
@@ -875,19 +963,21 @@ func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 
 // CreateWorkSession creates a new work session
 func (db *DB) CreateWorkSession(ws *models.WorkSession) error {
-	id, err := generateWSID()
-	if err != nil {
+	return db.withWriteLock(func() error {
+		id, err := generateWSID()
+		if err != nil {
+			return err
+		}
+		ws.ID = id
+		ws.StartedAt = time.Now()
+
+		_, err = db.conn.Exec(`
+			INSERT INTO work_sessions (id, name, session_id, started_at, start_sha)
+			VALUES (?, ?, ?, ?, ?)
+		`, ws.ID, ws.Name, ws.SessionID, ws.StartedAt, ws.StartSHA)
+
 		return err
-	}
-	ws.ID = id
-	ws.StartedAt = time.Now()
-
-	_, err = db.conn.Exec(`
-		INSERT INTO work_sessions (id, name, session_id, started_at, start_sha)
-		VALUES (?, ?, ?, ?, ?)
-	`, ws.ID, ws.Name, ws.SessionID, ws.StartedAt, ws.StartSHA)
-
-	return err
+	})
 }
 
 // GetWorkSession retrieves a work session
@@ -916,26 +1006,32 @@ func (db *DB) GetWorkSession(id string) (*models.WorkSession, error) {
 
 // UpdateWorkSession updates a work session
 func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
-	_, err := db.conn.Exec(`
-		UPDATE work_sessions SET name = ?, ended_at = ?, end_sha = ?
-		WHERE id = ?
-	`, ws.Name, ws.EndedAt, ws.EndSHA, ws.ID)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			UPDATE work_sessions SET name = ?, ended_at = ?, end_sha = ?
+			WHERE id = ?
+		`, ws.Name, ws.EndedAt, ws.EndSHA, ws.ID)
+		return err
+	})
 }
 
 // TagIssueToWorkSession links an issue to a work session
 func (db *DB) TagIssueToWorkSession(wsID, issueID string) error {
-	_, err := db.conn.Exec(`
-		INSERT OR IGNORE INTO work_session_issues (work_session_id, issue_id, tagged_at)
-		VALUES (?, ?, ?)
-	`, wsID, issueID, time.Now())
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			INSERT OR IGNORE INTO work_session_issues (work_session_id, issue_id, tagged_at)
+			VALUES (?, ?, ?)
+		`, wsID, issueID, time.Now())
+		return err
+	})
 }
 
 // UntagIssueFromWorkSession removes an issue from a work session
 func (db *DB) UntagIssueFromWorkSession(wsID, issueID string) error {
-	_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE work_session_id = ? AND issue_id = ?`, wsID, issueID)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE work_session_id = ? AND issue_id = ?`, wsID, issueID)
+		return err
+	})
 }
 
 // GetWorkSessionIssues returns issues tagged to a work session
@@ -997,24 +1093,26 @@ func (db *DB) ListWorkSessions(limit int) ([]models.WorkSession, error) {
 
 // AddComment adds a comment to an issue
 func (db *DB) AddComment(comment *models.Comment) error {
-	comment.CreatedAt = time.Now()
+	return db.withWriteLock(func() error {
+		comment.CreatedAt = time.Now()
 
-	result, err := db.conn.Exec(`
-		INSERT INTO comments (issue_id, session_id, text, created_at)
-		VALUES (?, ?, ?, ?)
-	`, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
+		result, err := db.conn.Exec(`
+			INSERT INTO comments (issue_id, session_id, text, created_at)
+			VALUES (?, ?, ?, ?)
+		`, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-	comment.ID = id
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		comment.ID = id
 
-	return nil
+		return nil
+	})
 }
 
 // GetComments retrieves comments for an issue
@@ -1112,24 +1210,26 @@ func (db *DB) GetIssueSessionLog(sessionID string) ([]string, error) {
 
 // LogAction records an action for undo support
 func (db *DB) LogAction(action *models.ActionLog) error {
-	action.Timestamp = time.Now()
+	return db.withWriteLock(func() error {
+		action.Timestamp = time.Now()
 
-	result, err := db.conn.Exec(`
-		INSERT INTO action_log (session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-	`, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
+		result, err := db.conn.Exec(`
+			INSERT INTO action_log (session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		`, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
 
-	if err != nil {
-		return err
-	}
+		if err != nil {
+			return err
+		}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-	action.ID = id
+		id, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		action.ID = id
 
-	return nil
+		return nil
+	})
 }
 
 // GetLastAction returns the most recent undoable action for a session
@@ -1160,8 +1260,10 @@ func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
 
 // MarkActionUndone marks an action as undone
 func (db *DB) MarkActionUndone(actionID int64) error {
-	_, err := db.conn.Exec(`UPDATE action_log SET undone = 1 WHERE id = ?`, actionID)
-	return err
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`UPDATE action_log SET undone = 1 WHERE id = ?`, actionID)
+		return err
+	})
 }
 
 // GetRecentActions returns recent actions for a session
