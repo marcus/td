@@ -90,9 +90,10 @@ var linkCmd = &cobra.Command{
 Examples:
   td link td-abc1 src/main.go           # Link single file
   td link td-abc1 src/*.go              # Link via glob pattern
-  td link td-abc1 file1.go file2.go     # Link multiple files`,
+  td link td-abc1 file1.go file2.go     # Link multiple files
+  td link td-abc1 --depends-on td-xyz   # Add dependency (alternative to 'td dep')`,
 	GroupID: "files",
-	Args:    cobra.MinimumNArgs(2),
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -110,6 +111,56 @@ Examples:
 		}
 
 		issueID := args[0]
+
+		// Handle --depends-on flag
+		dependsOnID, _ := cmd.Flags().GetString("depends-on")
+		if dependsOnID != "" {
+			// Add dependency instead of linking files
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				output.Error("issue not found: %s", issueID)
+				return err
+			}
+
+			depIssue, err := database.GetIssue(dependsOnID)
+			if err != nil {
+				output.Error("issue not found: %s", dependsOnID)
+				return err
+			}
+
+			// Check for circular dependency
+			if wouldCreateCycle(database, issueID, dependsOnID) {
+				output.Error("cannot add dependency: would create circular dependency")
+				return fmt.Errorf("circular dependency")
+			}
+
+			// Check if dependency already exists
+			existingDeps, _ := database.GetDependencies(issueID)
+			for _, d := range existingDeps {
+				if d == dependsOnID {
+					output.Warning("%s already depends on %s", issueID, dependsOnID)
+					return nil
+				}
+			}
+
+			// Add the dependency
+			if err := database.AddDependency(issueID, dependsOnID, "depends_on"); err != nil {
+				output.Error("failed to add dependency: %v", err)
+				return err
+			}
+
+			fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
+			fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+			fmt.Printf("  └── now depends on: %s: %s\n", depIssue.ID, depIssue.Title)
+
+			return nil
+		}
+
+		// Regular file linking (requires at least 2 args: issue + files)
+		if len(args) < 2 {
+			return fmt.Errorf("need file patterns or --depends-on flag")
+		}
+
 		patterns := args[1:]
 
 		// Verify issue exists
@@ -471,6 +522,7 @@ func init() {
 
 	linkCmd.Flags().String("role", "implementation", "File role: implementation, test, reference, config")
 	linkCmd.Flags().Bool("recursive", true, "Include subdirectories")
+	linkCmd.Flags().String("depends-on", "", "Add dependency instead of linking files (alternative to 'td dep')")
 
 	filesCmd.Flags().Bool("json", false, "JSON output")
 	filesCmd.Flags().Bool("changed", false, "Only show changed files")

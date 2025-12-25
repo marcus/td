@@ -13,6 +13,12 @@ var showCmd = &cobra.Command{
 	Use:     "show [issue-id...]",
 	Aliases: []string{"context"},
 	Short:   "Display full details of one or more issues",
+	Long: `Display full details of one or more issues.
+
+Examples:
+  td show td-abc1                  # Show issue details
+  td show td-abc1 --children       # Show issue with child tasks
+  td show td-abc1 td-abc2          # Show multiple issues`,
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -220,6 +226,38 @@ var showCmd = &cobra.Command{
 			}
 		}
 
+		// Show children if --children flag is set
+		if showChildren, _ := cmd.Flags().GetBool("children"); showChildren {
+			children, _ := database.ListIssues(db.ListIssuesOptions{
+				ParentID: issueID,
+			})
+			if len(children) > 0 {
+				fmt.Printf("\nCHILDREN:\n")
+				for i, child := range children {
+					statusMark := ""
+					switch child.Status {
+					case "closed":
+						statusMark = " ✓"
+					case "in_review":
+						statusMark = " ⧗"
+					case "in_progress":
+						statusMark = " ●"
+					case "blocked":
+						statusMark = " ✗"
+					}
+
+					isLast := i == len(children)-1
+					connector := "├── "
+					if isLast {
+						connector = "└── "
+					}
+
+					fmt.Printf("  %s%s %s: %s [%s]%s\n",
+						connector, child.Type, child.ID, child.Title, child.Status, statusMark)
+				}
+			}
+		}
+
 		return nil
 	},
 }
@@ -283,4 +321,5 @@ func init() {
 	showCmd.Flags().Bool("short", false, "Compact summary")
 	showCmd.Flags().Bool("json", false, "Machine-readable JSON")
 	showCmd.Flags().StringP("format", "f", "", "Output format (json)")
+	showCmd.Flags().Bool("children", false, "Display child issues inline (alternative to 'td tree')")
 }

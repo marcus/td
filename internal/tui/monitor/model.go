@@ -115,6 +115,13 @@ type Model struct {
 	ConfirmIssueID string
 	ConfirmTitle   string
 
+	// Stats modal state
+	StatsOpen    bool
+	StatsLoading bool
+	StatsData    *StatsData
+	StatsScroll  int
+	StatsError   error
+
 	// Configuration
 	RefreshInterval time.Duration
 }
@@ -218,6 +225,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ModalBlocks = msg.Blocks
 		}
 		return m, nil
+
+	case StatsDataMsg:
+		// Only update if stats modal is open
+		if m.StatsOpen {
+			m.StatsLoading = false
+			m.StatsError = msg.Error
+			m.StatsData = msg.Data
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -228,6 +244,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Confirmation dialog key handling
 	if m.ConfirmOpen {
 		return m.handleConfirmKey(msg)
+	}
+
+	// Stats modal key handling
+	if m.StatsOpen {
+		return m.handleStatsKey(msg)
 	}
 
 	// Modal-specific key handling
@@ -313,6 +334,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ShowHelp = !m.ShowHelp
 		return m, nil
 
+	case "s":
+		return m.openStatsModal()
+
 	case "enter":
 		return m.openModal()
 	}
@@ -392,6 +416,34 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Refresh both dashboard and modal details
 		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
+	}
+
+	return m, nil
+}
+
+// handleStatsKey processes key input when stats modal is open
+func (m Model) handleStatsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc", "enter":
+		m.closeStatsModal()
+		return m, nil
+
+	case "down", "j":
+		m.StatsScroll++
+		return m, nil
+
+	case "up", "k":
+		if m.StatsScroll > 0 {
+			m.StatsScroll--
+		}
+		return m, nil
+
+	case "r":
+		// Refresh stats
+		return m, m.fetchStats()
 	}
 
 	return m, nil
@@ -495,6 +547,26 @@ func (m *Model) closeModal() {
 	m.ModalBlocks = nil
 }
 
+// openStatsModal opens the stats modal and fetches stats data
+func (m Model) openStatsModal() (tea.Model, tea.Cmd) {
+	m.StatsOpen = true
+	m.StatsScroll = 0
+	m.StatsLoading = true
+	m.StatsError = nil
+	m.StatsData = nil
+
+	return m, m.fetchStats()
+}
+
+// closeStatsModal closes the stats modal and clears transient state
+func (m *Model) closeStatsModal() {
+	m.StatsOpen = false
+	m.StatsScroll = 0
+	m.StatsLoading = false
+	m.StatsError = nil
+	m.StatsData = nil
+}
+
 // View implements tea.Model
 func (m Model) View() string {
 	return m.renderView()
@@ -553,6 +625,13 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 		}
 
 		return msg
+	}
+}
+
+// fetchStats returns a command that fetches stats data for the stats modal
+func (m Model) fetchStats() tea.Cmd {
+	return func() tea.Msg {
+		return FetchStats(m.DB)
 	}
 }
 
@@ -896,6 +975,10 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		EntityType: "issue",
 		EntityID:   issue.ID,
 	})
+
+	// Clear the saved ID so cursor stays at the same position after refresh
+	// The item will move to Closed, and we want cursor at same index for next item
+	m.SelectedID[PanelTaskList] = ""
 
 	return m, m.fetchData()
 }
