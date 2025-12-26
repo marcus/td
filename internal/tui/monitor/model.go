@@ -161,6 +161,13 @@ type IssueDetailsMsg struct {
 	Error     error
 }
 
+// MarkdownRenderedMsg carries pre-rendered markdown for the modal
+type MarkdownRenderedMsg struct {
+	IssueID    string
+	DescRender string
+	AcceptRender string
+}
+
 // NewModel creates a new monitor model
 func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 	return Model{
@@ -228,15 +235,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ModalBlockedBy = msg.BlockedBy
 			m.ModalBlocks = msg.Blocks
 
-			// Pre-render markdown (expensive, do once not on every View)
-			if msg.Issue != nil {
-				width := m.Width - 20 // Approximate modal content width
+			// Trigger async markdown rendering (expensive)
+			if msg.Issue != nil && (msg.Issue.Description != "" || msg.Issue.Acceptance != "") {
+				width := m.Width - 20
 				if width < 40 {
 					width = 40
 				}
-				m.ModalDescRender = preRenderMarkdown(msg.Issue.Description, width)
-				m.ModalAcceptRender = preRenderMarkdown(msg.Issue.Acceptance, width)
+				return m, m.renderMarkdownAsync(msg.IssueID, msg.Issue.Description, msg.Issue.Acceptance, width)
 			}
+		}
+		return m, nil
+
+	case MarkdownRenderedMsg:
+		// Only update if this is for the currently open modal
+		if m.ModalOpen && msg.IssueID == m.ModalIssueID {
+			m.ModalDescRender = msg.DescRender
+			m.ModalAcceptRender = msg.AcceptRender
 		}
 		return m, nil
 
@@ -563,6 +577,17 @@ func (m *Model) closeModal() {
 	m.ModalAcceptRender = ""
 }
 
+// renderMarkdownAsync returns a command that renders markdown in background
+func (m Model) renderMarkdownAsync(issueID, desc, accept string, width int) tea.Cmd {
+	return func() tea.Msg {
+		return MarkdownRenderedMsg{
+			IssueID:      issueID,
+			DescRender:   preRenderMarkdown(desc, width),
+			AcceptRender: preRenderMarkdown(accept, width),
+		}
+	}
+}
+
 // preRenderMarkdown renders markdown once (expensive operation)
 func preRenderMarkdown(text string, width int) string {
 	if text == "" {
@@ -582,7 +607,8 @@ func preRenderMarkdown(text string, width int) string {
 		return text // fallback to plain text
 	}
 
-	return strings.TrimSuffix(rendered, "\n")
+	// Glamour adds lots of trailing newlines - strip them all
+	return strings.TrimRight(rendered, "\n\r\t ")
 }
 
 // openStatsModal opens the stats modal and fetches stats data
