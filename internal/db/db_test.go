@@ -178,6 +178,124 @@ func TestDeleteAndRestore(t *testing.T) {
 	}
 }
 
+func TestEpicFilter(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create epic
+	epic := &models.Issue{
+		Title: "Epic Issue",
+		Type:  models.TypeEpic,
+	}
+	if err := db.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create direct children of epic
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		ParentID: epic.ID,
+	}
+	if err := db.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		ParentID: epic.ID,
+	}
+	if err := db.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create grandchild (nested under child1)
+	grandchild := &models.Issue{
+		Title:    "Grandchild",
+		ParentID: child1.ID,
+	}
+	if err := db.CreateIssue(grandchild); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create unrelated issue
+	unrelated := &models.Issue{
+		Title: "Unrelated",
+	}
+	if err := db.CreateIssue(unrelated); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Test epic filter - should return all descendants
+	results, err := db.ListIssues(ListIssuesOptions{
+		EpicID: epic.ID,
+	})
+	if err != nil {
+		t.Fatalf("ListIssues with epic filter failed: %v", err)
+	}
+
+	// Should return child1, child2, and grandchild (3 total)
+	if len(results) != 3 {
+		t.Errorf("Expected 3 issues in epic, got %d", len(results))
+	}
+
+	// Verify IDs are correct
+	foundIDs := make(map[string]bool)
+	for _, issue := range results {
+		foundIDs[issue.ID] = true
+	}
+
+	if !foundIDs[child1.ID] {
+		t.Error("Child 1 not found in epic results")
+	}
+	if !foundIDs[child2.ID] {
+		t.Error("Child 2 not found in epic results")
+	}
+	if !foundIDs[grandchild.ID] {
+		t.Error("Grandchild not found in epic results")
+	}
+	if foundIDs[epic.ID] {
+		t.Error("Epic itself should not be in results")
+	}
+	if foundIDs[unrelated.ID] {
+		t.Error("Unrelated issue should not be in epic results")
+	}
+}
+
+func TestEpicFilterNoChildren(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create epic with no children
+	epic := &models.Issue{
+		Title: "Empty Epic",
+		Type:  models.TypeEpic,
+	}
+	if err := db.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Test epic filter on empty epic
+	results, err := db.ListIssues(ListIssuesOptions{
+		EpicID: epic.ID,
+	})
+	if err != nil {
+		t.Fatalf("ListIssues with epic filter failed: %v", err)
+	}
+
+	// Should return empty list
+	if len(results) != 0 {
+		t.Errorf("Expected 0 issues in empty epic, got %d", len(results))
+	}
+}
+
 func TestLogs(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)

@@ -397,6 +397,46 @@ func (db *DB) RestoreIssue(id string) error {
 	})
 }
 
+// getDescendants returns all descendant IDs of a given parent ID (recursively)
+func (db *DB) getDescendants(parentID string) ([]string, error) {
+	var descendants []string
+	visited := make(map[string]bool)
+	queue := []string{parentID}
+
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		if visited[currentID] {
+			continue
+		}
+		visited[currentID] = true
+
+		// Get direct children of current ID
+		rows, err := db.conn.Query(`SELECT id FROM issues WHERE parent_id = ? AND deleted_at IS NULL`, currentID)
+		if err != nil {
+			return nil, err
+		}
+
+		var children []string
+		for rows.Next() {
+			var childID string
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			children = append(children, childID)
+			descendants = append(descendants, childID)
+		}
+		rows.Close()
+
+		// Add children to queue for recursive processing
+		queue = append(queue, children...)
+	}
+
+	return descendants, nil
+}
+
 // ListIssuesOptions contains filter options for listing issues
 type ListIssuesOptions struct {
 	Status         []models.Status
@@ -410,6 +450,7 @@ type ListIssuesOptions struct {
 	Reviewer       string
 	ReviewableBy   string // Issues that this session can review
 	ParentID       string
+	EpicID         string // Filter by epic (parent_id matches epic, recursively)
 	PointsMin      int
 	PointsMax      int
 	CreatedAfter   time.Time
@@ -521,6 +562,26 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	if opts.ParentID != "" {
 		query += " AND parent_id = ?"
 		args = append(args, opts.ParentID)
+	}
+
+	// Epic filter (find all descendants of an epic)
+	if opts.EpicID != "" {
+		// Get all descendants recursively
+		descendants, err := db.getDescendants(opts.EpicID)
+		if err != nil {
+			return nil, fmt.Errorf("get epic descendants: %w", err)
+		}
+		if len(descendants) > 0 {
+			placeholders := make([]string, len(descendants))
+			for i, id := range descendants {
+				placeholders[i] = "?"
+				args = append(args, id)
+			}
+			query += fmt.Sprintf(" AND id IN (%s)", strings.Join(placeholders, ","))
+		} else {
+			// No descendants found, return empty result
+			query += " AND 1=0"
+		}
 	}
 
 	// Points filter

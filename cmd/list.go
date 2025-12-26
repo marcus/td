@@ -100,6 +100,11 @@ var listCmd = &cobra.Command{
 			opts.ParentID = parentID
 		}
 
+		// Epic filter
+		if epicID, _ := cmd.Flags().GetString("epic"); epicID != "" {
+			opts.EpicID = epicID
+		}
+
 		// Reviewable filter
 		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
 			sess, err := session.GetOrCreate(baseDir)
@@ -475,6 +480,7 @@ func init() {
 	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
 	listCmd.Flags().String("parent", "", "Filter by parent issue ID")
+	listCmd.Flags().String("epic", "", "Filter by epic (shows all tasks within epic)")
 	listCmd.Flags().BoolP("mine", "m", false, "Show issues where you are the implementer")
 	listCmd.Flags().BoolP("open", "o", false, "Show only open issues (shorthand for --status open)")
 	listCmd.Flags().String("created", "", "Created date filter")
