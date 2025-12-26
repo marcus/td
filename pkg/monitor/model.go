@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 )
 
 // Panel represents which panel is active
@@ -183,6 +184,34 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		SearchQuery:     "",
 		IncludeClosed:   false,
 	}
+}
+
+// NewEmbedded creates a monitor model for embedding in external applications.
+// It opens the database and creates/gets a session automatically.
+// The caller must call Close() when done to release resources.
+func NewEmbedded(baseDir string, interval time.Duration) (*Model, error) {
+	database, err := db.Open(baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sess, err := session.GetOrCreate(baseDir)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+
+	m := NewModel(database, sess.ID, interval)
+	return &m, nil
+}
+
+// Close releases resources held by an embedded monitor.
+// Only call this if the model was created with NewEmbedded.
+func (m *Model) Close() error {
+	if m.DB != nil {
+		return m.DB.Close()
+	}
+	return nil
 }
 
 // Init implements tea.Model

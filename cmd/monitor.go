@@ -8,7 +8,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
-	"github.com/marcus/td/internal/tui/monitor"
+	"github.com/marcus/td/pkg/monitor"
 	"github.com/spf13/cobra"
 )
 
