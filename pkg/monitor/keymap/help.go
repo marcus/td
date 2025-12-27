@@ -157,6 +157,10 @@ func CommandHelp(cmd Command) string {
 		return "Approve a reviewable issue"
 	case CmdDelete:
 		return "Delete an issue"
+	case CmdFocusTaskSection:
+		return "Toggle focus on epic task list"
+	case CmdOpenEpicTask:
+		return "Open selected task from epic"
 	default:
 		return string(cmd)
 	}
@@ -224,6 +228,7 @@ func AllCommands() []Command {
 		CmdOpenDetails, CmdOpenStats, CmdSearch, CmdToggleClosed,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
+		CmdFocusTaskSection, CmdOpenEpicTask,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {
