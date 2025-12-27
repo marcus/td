@@ -3,6 +3,7 @@ package monitor
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -218,5 +219,149 @@ func TestBuildCurrentWorkRows(t *testing.T) {
 		if m.CurrentWorkRows[i] != exp {
 			t.Errorf("CurrentWorkRows[%d] = %q, want %q", i, m.CurrentWorkRows[i], exp)
 		}
+	}
+}
+
+func TestHandleKey_JMovesCursorAndKeepsVisible(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+	}
+
+	// Fill task list with enough rows to require scrolling.
+	for i := 0; i < 20; i++ {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
+	}
+
+	// With Height=30: availableHeight=27, panelHeight=9, visibleHeight=4 (9-5 for title/border/scroll indicators).
+	// Put cursor at last visible row (position 3 when offset=0).
+	m.Cursor[PanelTaskList] = 3
+	m.ScrollOffset[PanelTaskList] = 0
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.Cursor[PanelTaskList] != 4 {
+		t.Fatalf("cursor after j = %d, want %d", m2.Cursor[PanelTaskList], 4)
+	}
+	// Cursor moved past viewport. When transitioning from offset=0 to offset>0,
+	// the "▲ more above" indicator appears taking 1 line, so we scroll 1 extra.
+	// newOffset = cursor(4) - effectiveHeight(4) + 1 = 1, then +1 for indicator = 2.
+	if m2.ScrollOffset[PanelTaskList] != 2 {
+		t.Fatalf("offset after j = %d, want %d", m2.ScrollOffset[PanelTaskList], 2)
+	}
+}
+
+func TestHandleKey_PanelSwitchEnsuresCursorVisible(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelCurrentWork,
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+	}
+	for i := 0; i < 5; i++ {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
+	}
+
+	m.Cursor[PanelTaskList] = 0
+	m.ScrollOffset[PanelTaskList] = 10 // invalid: cursor would be offscreen
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m2 := updated.(Model)
+
+	if m2.ActivePanel != PanelTaskList {
+		t.Fatalf("active panel after '2' = %v, want %v", m2.ActivePanel, PanelTaskList)
+	}
+	if m2.ScrollOffset[PanelTaskList] != 0 {
+		t.Fatalf("offset after panel switch = %d, want %d", m2.ScrollOffset[PanelTaskList], 0)
+	}
+}
+
+func TestRestoreCursorsEnsuresCursorVisible(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+	}
+	for i := 0; i < 5; i++ {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
+	}
+
+	m.Cursor[PanelTaskList] = 0
+	m.ScrollOffset[PanelTaskList] = 10
+
+	m.restoreCursors()
+
+	if m.ScrollOffset[PanelTaskList] != 0 {
+		t.Fatalf("offset after restoreCursors = %d, want %d", m.ScrollOffset[PanelTaskList], 0)
+	}
+}
+
+func TestCategoryHeaderLinesBetween(t *testing.T) {
+	tests := []struct {
+		name     string
+		rows     []TaskListRow
+		start    int
+		end      int
+		expected int
+	}{
+		{
+			name:     "empty list",
+			rows:     nil,
+			start:    0,
+			end:      5,
+			expected: 0,
+		},
+		{
+			name: "same category",
+			rows: []TaskListRow{
+				{Category: CategoryClosed},
+				{Category: CategoryClosed},
+				{Category: CategoryClosed},
+			},
+			start:    0,
+			end:      3,
+			expected: 1, // first header only
+		},
+		{
+			name: "two categories from start",
+			rows: []TaskListRow{
+				{Category: CategoryReviewable},
+				{Category: CategoryClosed},
+				{Category: CategoryClosed},
+			},
+			start:    0,
+			end:      3,
+			expected: 3, // first header (1) + blank+header for second category (2)
+		},
+		{
+			name: "category transition mid-range",
+			rows: []TaskListRow{
+				{Category: CategoryReviewable},
+				{Category: CategoryReviewable},
+				{Category: CategoryClosed},
+				{Category: CategoryClosed},
+			},
+			start:    1,
+			end:      4,
+			expected: 2, // blank + header when transitioning to Closed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{TaskListRows: tt.rows}
+			got := m.categoryHeaderLinesBetween(tt.start, tt.end)
+			if got != tt.expected {
+				t.Errorf("categoryHeaderLinesBetween(%d, %d) = %d, want %d",
+					tt.start, tt.end, got, tt.expected)
+			}
+		})
 	}
 }

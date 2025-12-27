@@ -37,7 +37,11 @@ func (m Model) renderView() string {
 	}
 
 	// Calculate panel heights (3 panels + footer + optional search bar)
-	availableHeight := m.Height - 3 - searchBarHeight // Leave room for footer and search bar
+	footerHeight := 3
+	if m.Embedded {
+		footerHeight = 0
+	}
+	availableHeight := m.Height - footerHeight - searchBarHeight
 	panelHeight := availableHeight / 3
 
 	// Render each panel
@@ -60,10 +64,14 @@ func (m Model) renderView() string {
 		content = panels
 	}
 
-	// Add footer
-	footer := m.renderFooter()
-
-	base := lipgloss.JoinVertical(lipgloss.Left, content, footer)
+	// Add footer (unless embedded in sidecar)
+	var base string
+	if m.Embedded {
+		base = content
+	} else {
+		footer := m.renderFooter()
+		base = lipgloss.JoinVertical(lipgloss.Left, content, footer)
+	}
 
 	// Overlay confirmation dialog if open
 	if m.ConfirmOpen {
@@ -1178,11 +1186,18 @@ func (m Model) formatIssueCompact(issue *models.Issue) string {
 
 // formatIssueShort formats an issue in a short format
 func (m Model) formatIssueShort(issue *models.Issue) string {
-	return fmt.Sprintf("%s %s %s",
-		subtleStyle.Render(issue.ID),
-		formatPriority(issue.Priority),
-		truncateString(issue.Title, 40),
-	)
+	idStr := subtleStyle.Render(issue.ID)
+	priorityStr := formatPriority(issue.Priority)
+
+	// Calculate available width for title:
+	// m.Width - 4 (panel border) - 8 (row prefix "  [TAG] ") - ID - priority - 2 spaces
+	overhead := 4 + 8 + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 2
+	titleWidth := m.Width - overhead
+	if titleWidth < 20 {
+		titleWidth = 20 // minimum reasonable width
+	}
+
+	return fmt.Sprintf("%s %s %s", idStr, priorityStr, truncateString(issue.Title, titleWidth))
 }
 
 // formatActivityItem formats a single activity item

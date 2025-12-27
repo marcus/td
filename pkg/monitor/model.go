@@ -89,6 +89,7 @@ type Model struct {
 	LastRefresh  time.Time
 	StartedAt    time.Time // When monitor started, to track new handoffs
 	Err          error     // Last error, if any
+	Embedded     bool      // When true, skip footer (embedded in sidecar)
 
 	// Flattened rows for selection
 	TaskListRows    []TaskListRow // Flattened task list for selection
@@ -202,6 +203,7 @@ func NewEmbedded(baseDir string, interval time.Duration) (*Model, error) {
 	}
 
 	m := NewModel(database, sess.ID, interval)
+	m.Embedded = true
 	return &m, nil
 }
 
@@ -333,22 +335,32 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		m.ActivePanel = (m.ActivePanel + 1) % 3
+		m.clampCursor(m.ActivePanel)
+		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
 	case "shift+tab":
 		m.ActivePanel = (m.ActivePanel + 2) % 3
+		m.clampCursor(m.ActivePanel)
+		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
 	case "1":
 		m.ActivePanel = PanelCurrentWork
+		m.clampCursor(m.ActivePanel)
+		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
 	case "2":
 		m.ActivePanel = PanelTaskList
+		m.clampCursor(m.ActivePanel)
+		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
 	case "3":
 		m.ActivePanel = PanelActivity
+		m.clampCursor(m.ActivePanel)
+		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
 	case "down":
@@ -360,13 +372,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j":
-		m.ScrollOffset[m.ActivePanel]++
+		m.moveCursor(1)
 		return m, nil
 
 	case "k":
-		if m.ScrollOffset[m.ActivePanel] > 0 {
-			m.ScrollOffset[m.ActivePanel]--
-		}
+		m.moveCursor(-1)
 		return m, nil
 
 	case "r":
@@ -806,6 +816,11 @@ func (m *Model) restoreCursors() {
 
 	// Activity panel
 	m.clampCursor(PanelActivity)
+
+	// Ensure scroll offsets keep the cursor visible after refresh
+	m.ensureCursorVisible(PanelCurrentWork)
+	m.ensureCursorVisible(PanelTaskList)
+	m.ensureCursorVisible(PanelActivity)
 }
 
 // clampCursor ensures cursor is within valid bounds for a panel
@@ -870,14 +885,66 @@ func (m *Model) ensureCursorVisible(panel Panel) {
 		return
 	}
 
+	// Calculate effective height accounting for dynamic factors
+	effectiveHeight := visibleHeight
+
+	// For task list panel, account for category header lines
+	if panel == PanelTaskList {
+		headerLines := m.categoryHeaderLinesBetween(offset, cursor)
+		effectiveHeight -= headerLines
+	}
+
+	if effectiveHeight < 1 {
+		effectiveHeight = 1
+	}
+
 	// Scroll down if cursor below viewport
-	if cursor >= offset+visibleHeight {
-		m.ScrollOffset[panel] = cursor - visibleHeight + 1
+	if cursor >= offset+effectiveHeight {
+		// After scrolling, "▲ more above" will appear taking 1 line,
+		// so we need to scroll 1 extra to compensate
+		newOffset := cursor - effectiveHeight + 1
+		if offset == 0 && newOffset > 0 {
+			newOffset++ // Compensate for "more above" indicator appearing
+		}
+		m.ScrollOffset[panel] = newOffset
 	}
 	// Scroll up if cursor above viewport
 	if cursor < offset {
 		m.ScrollOffset[panel] = cursor
 	}
+}
+
+// categoryHeaderLinesBetween counts how many lines are consumed by category
+// headers between two row indices in TaskListRows. Each category transition
+// adds a blank line (if not first) plus a header line.
+func (m Model) categoryHeaderLinesBetween(startIdx, endIdx int) int {
+	if len(m.TaskListRows) == 0 || startIdx >= endIdx {
+		return 0
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if endIdx > len(m.TaskListRows) {
+		endIdx = len(m.TaskListRows)
+	}
+
+	lines := 0
+	var currentCategory TaskListCategory
+	if startIdx > 0 {
+		currentCategory = m.TaskListRows[startIdx-1].Category
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		row := m.TaskListRows[i]
+		if row.Category != currentCategory {
+			if i > startIdx || startIdx > 0 {
+				lines++ // blank line before category (except first visible)
+			}
+			lines++ // header line
+			currentCategory = row.Category
+		}
+	}
+	return lines
 }
 
 // visibleHeightForPanel calculates visible rows for a panel
@@ -891,11 +958,18 @@ func (m Model) visibleHeightForPanel(panel Panel) int {
 	if m.SearchMode || m.SearchQuery != "" {
 		searchBarHeight = 2
 	}
-	availableHeight := m.Height - 3 - searchBarHeight
+	footerHeight := 3
+	if m.Embedded {
+		footerHeight = 0
+	}
+	availableHeight := m.Height - footerHeight - searchBarHeight
 	panelHeight := availableHeight / 3
 
-	// Account for title + border + category headers overhead
-	return panelHeight - 3
+	// Account for: title (1) + border (2) + scroll indicators (2)
+	// Scroll indicators: "▲ more above" and "▼ more below" each take 1 line
+	// when the list is scrollable. Reserve space for both to ensure cursor
+	// stays visible during navigation.
+	return panelHeight - 5
 }
 
 // saveSelectedID saves the currently selected issue ID for a panel
