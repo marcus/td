@@ -938,8 +938,8 @@ func (m Model) wrapModal(content string, width, height int) string {
 		Width(width).
 		Height(height)
 
-	// Add footer with key hints
-	footer := subtleStyle.Render("↑↓:scroll  ←→:prev/next  esc:close  r:refresh")
+	// Add footer with key hints (from keymap registry)
+	footer := subtleStyle.Render(m.Keymap.ModalFooterHelp())
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
@@ -1066,7 +1066,7 @@ func (m Model) renderSearchBar() string {
 
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render("q:quit s:stats /:search r:review a:approve x:del tab:panel ↑↓:sel enter:details ?:help")
+	keys := helpStyle.Render(m.Keymap.FooterHelp())
 
 	// Show active sessions indicator
 	sessionsIndicator := ""
@@ -1099,34 +1099,7 @@ func (m Model) renderFooter() string {
 
 // renderHelp renders the help overlay
 func (m Model) renderHelp() string {
-	help := `
-MONITOR TUI - Key Bindings
-
-NAVIGATION:
-  Tab / Shift+Tab   Switch between panels
-  1 / 2 / 3         Jump to panel
-  ↑ / ↓             Select row in active panel
-  j / k             Scroll viewport
-  Enter             Open issue details
-
-MODALS:
-  ↑ / ↓ / j / k     Scroll modal content
-  ← / → / h / l     Navigate prev/next issue (issue details only)
-  Esc / Enter       Close modal
-  r                 Refresh modal content
-
-ACTIONS:
-  r                 Mark for review (Current Work) / Refresh
-  a                 Approve issue (Task List reviewable)
-  x                 Delete issue (confirmation required)
-  s                 Show statistics dashboard
-  /                 Search tasks
-  c                 Toggle closed tasks
-  q / Ctrl+C        Quit
-
-Press ? to close help
-`
-	return helpStyle.Render(help)
+	return helpStyle.Render(m.Keymap.GenerateHelp())
 }
 
 // wrapPanel wraps content in a panel with title and border

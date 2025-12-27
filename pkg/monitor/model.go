@@ -9,6 +9,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/pkg/monitor/keymap"
 )
 
 // Panel represents which panel is active
@@ -130,6 +131,9 @@ type Model struct {
 
 	// Configuration
 	RefreshInterval time.Duration
+
+	// Keymap registry for keyboard shortcuts
+	Keymap *keymap.Registry
 }
 
 // MinWidth is the minimum terminal width for proper display
@@ -172,6 +176,10 @@ type MarkdownRenderedMsg struct {
 
 // NewModel creates a new monitor model
 func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
+	// Initialize keymap with default bindings
+	km := keymap.NewRegistry()
+	keymap.RegisterDefaults(km)
+
 	return Model{
 		DB:              database,
 		SessionID:       sessionID,
@@ -184,6 +192,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		SearchMode:      false,
 		SearchQuery:     "",
 		IncludeClosed:   false,
+		Keymap:          km,
 	}
 }
 
@@ -298,219 +307,309 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleKey processes key input
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Confirmation dialog key handling
+// currentContext returns the keymap context based on current UI state
+func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
-		return m.handleConfirmKey(msg)
+		return keymap.ContextConfirm
 	}
-
-	// Stats modal key handling
 	if m.StatsOpen {
-		return m.handleStatsKey(msg)
+		return keymap.ContextStats
 	}
-
-	// Modal-specific key handling
 	if m.ModalOpen {
-		return m.handleModalKey(msg)
+		return keymap.ContextModal
 	}
-
-	// Search mode key handling
 	if m.SearchMode {
-		return m.handleSearchKey(msg)
+		return keymap.ContextSearch
+	}
+	return keymap.ContextMain
+}
+
+// handleKey processes key input using the centralized keymap registry
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	ctx := m.currentContext()
+
+	// Search mode handles printable characters specially
+	if ctx == keymap.ContextSearch {
+		if keymap.IsPrintable(msg) {
+			m.SearchQuery += string(msg.Runes)
+			return m, m.fetchData()
+		}
+		// Handle space specially in search mode
+		if msg.Type == tea.KeySpace {
+			m.SearchQuery += " "
+			return m, m.fetchData()
+		}
 	}
 
-	switch msg.String() {
-	case "q", "ctrl+c":
+	// Look up command from keymap
+	cmd, found := m.Keymap.Lookup(msg, ctx)
+	if !found {
+		return m, nil
+	}
+
+	// Execute command
+	return m.executeCommand(cmd)
+}
+
+// executeCommand executes a keymap command and returns the updated model and any tea.Cmd
+func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
+	switch cmd {
+	// Global commands
+	case keymap.CmdQuit:
 		return m, tea.Quit
 
-	case "/":
-		m.SearchMode = true
-		m.SearchQuery = ""
+	case keymap.CmdToggleHelp:
+		m.ShowHelp = !m.ShowHelp
 		return m, nil
 
-	case "c":
-		m.IncludeClosed = !m.IncludeClosed
+	case keymap.CmdRefresh:
+		if m.ModalOpen {
+			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
+		}
+		if m.StatsOpen {
+			return m, m.fetchStats()
+		}
 		return m, m.fetchData()
 
-	case "tab":
+	// Panel navigation (main context)
+	case keymap.CmdNextPanel:
 		m.ActivePanel = (m.ActivePanel + 1) % 3
 		m.clampCursor(m.ActivePanel)
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case "shift+tab":
+	case keymap.CmdPrevPanel:
 		m.ActivePanel = (m.ActivePanel + 2) % 3
 		m.clampCursor(m.ActivePanel)
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case "1":
+	case keymap.CmdFocusPanel1:
 		m.ActivePanel = PanelCurrentWork
 		m.clampCursor(m.ActivePanel)
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case "2":
+	case keymap.CmdFocusPanel2:
 		m.ActivePanel = PanelTaskList
 		m.clampCursor(m.ActivePanel)
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case "3":
+	case keymap.CmdFocusPanel3:
 		m.ActivePanel = PanelActivity
 		m.clampCursor(m.ActivePanel)
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case "down":
-		m.moveCursor(1)
+	// Cursor movement
+	case keymap.CmdCursorDown, keymap.CmdScrollDown:
+		if m.ModalOpen {
+			m.ModalScroll++
+		} else if m.StatsOpen {
+			m.StatsScroll++
+		} else {
+			m.moveCursor(1)
+		}
 		return m, nil
 
-	case "up":
-		m.moveCursor(-1)
+	case keymap.CmdCursorUp, keymap.CmdScrollUp:
+		if m.ModalOpen {
+			if m.ModalScroll > 0 {
+				m.ModalScroll--
+			}
+		} else if m.StatsOpen {
+			if m.StatsScroll > 0 {
+				m.StatsScroll--
+			}
+		} else {
+			m.moveCursor(-1)
+		}
 		return m, nil
 
-	case "j":
-		m.moveCursor(1)
+	case keymap.CmdCursorTop:
+		if m.ModalOpen {
+			m.ModalScroll = 0
+		} else if m.StatsOpen {
+			m.StatsScroll = 0
+		} else {
+			m.Cursor[m.ActivePanel] = 0
+			m.saveSelectedID(m.ActivePanel)
+			m.ensureCursorVisible(m.ActivePanel)
+		}
 		return m, nil
 
-	case "k":
-		m.moveCursor(-1)
+	case keymap.CmdCursorBottom:
+		if m.ModalOpen {
+			m.ModalScroll = 9999 // Will be clamped by view
+		} else if m.StatsOpen {
+			m.StatsScroll = 9999 // Will be clamped by view
+		} else {
+			count := m.rowCount(m.ActivePanel)
+			if count > 0 {
+				m.Cursor[m.ActivePanel] = count - 1
+				m.saveSelectedID(m.ActivePanel)
+				m.ensureCursorVisible(m.ActivePanel)
+			}
+		}
 		return m, nil
 
-	case "r":
+	case keymap.CmdHalfPageDown:
+		pageSize := m.visibleHeightForPanel(m.ActivePanel) / 2
+		if pageSize < 1 {
+			pageSize = 5
+		}
+		if m.ModalOpen {
+			m.ModalScroll += pageSize
+		} else if m.StatsOpen {
+			m.StatsScroll += pageSize
+		} else {
+			for i := 0; i < pageSize; i++ {
+				m.moveCursor(1)
+			}
+		}
+		return m, nil
+
+	case keymap.CmdHalfPageUp:
+		pageSize := m.visibleHeightForPanel(m.ActivePanel) / 2
+		if pageSize < 1 {
+			pageSize = 5
+		}
+		if m.ModalOpen {
+			m.ModalScroll -= pageSize
+			if m.ModalScroll < 0 {
+				m.ModalScroll = 0
+			}
+		} else if m.StatsOpen {
+			m.StatsScroll -= pageSize
+			if m.StatsScroll < 0 {
+				m.StatsScroll = 0
+			}
+		} else {
+			for i := 0; i < pageSize; i++ {
+				m.moveCursor(-1)
+			}
+		}
+		return m, nil
+
+	case keymap.CmdFullPageDown:
+		pageSize := m.visibleHeightForPanel(m.ActivePanel)
+		if pageSize < 1 {
+			pageSize = 10
+		}
+		if m.ModalOpen {
+			m.ModalScroll += pageSize
+		} else if m.StatsOpen {
+			m.StatsScroll += pageSize
+		} else {
+			for i := 0; i < pageSize; i++ {
+				m.moveCursor(1)
+			}
+		}
+		return m, nil
+
+	case keymap.CmdFullPageUp:
+		pageSize := m.visibleHeightForPanel(m.ActivePanel)
+		if pageSize < 1 {
+			pageSize = 10
+		}
+		if m.ModalOpen {
+			m.ModalScroll -= pageSize
+			if m.ModalScroll < 0 {
+				m.ModalScroll = 0
+			}
+		} else if m.StatsOpen {
+			m.StatsScroll -= pageSize
+			if m.StatsScroll < 0 {
+				m.StatsScroll = 0
+			}
+		} else {
+			for i := 0; i < pageSize; i++ {
+				m.moveCursor(-1)
+			}
+		}
+		return m, nil
+
+	// Modal navigation
+	case keymap.CmdNavigatePrev:
+		return m.navigateModal(-1)
+
+	case keymap.CmdNavigateNext:
+		return m.navigateModal(1)
+
+	case keymap.CmdClose:
+		if m.ModalOpen {
+			m.closeModal()
+		} else if m.StatsOpen {
+			m.closeStatsModal()
+		}
+		return m, nil
+
+	// Actions
+	case keymap.CmdOpenDetails:
+		return m.openModal()
+
+	case keymap.CmdOpenStats:
+		return m.openStatsModal()
+
+	case keymap.CmdSearch:
+		m.SearchMode = true
+		m.SearchQuery = ""
+		return m, nil
+
+	case keymap.CmdToggleClosed:
+		m.IncludeClosed = !m.IncludeClosed
+		return m, m.fetchData()
+
+	case keymap.CmdMarkForReview:
 		// Mark for review if in Current Work panel, otherwise refresh
 		if m.ActivePanel == PanelCurrentWork {
 			return m.markForReview()
 		}
 		return m, m.fetchData()
 
-	case "a":
-		// Approve issue if in Task List panel
+	case keymap.CmdApprove:
 		if m.ActivePanel == PanelTaskList {
 			return m.approveIssue()
 		}
 		return m, nil
 
-	case "x":
-		// Delete with confirmation
+	case keymap.CmdDelete:
 		return m.confirmDelete()
 
-	case "?":
-		m.ShowHelp = !m.ShowHelp
+	// Search commands
+	case keymap.CmdSearchConfirm:
+		m.SearchMode = false
 		return m, nil
 
-	case "s":
-		return m.openStatsModal()
-
-	case "enter":
-		return m.openModal()
-	}
-
-	return m, nil
-}
-
-// handleSearchKey processes key input when in search mode
-func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		// Exit search mode and reset
+	case keymap.CmdSearchCancel:
 		m.SearchMode = false
 		m.SearchQuery = ""
 		return m, m.fetchData()
 
-	case "enter":
-		// Exit search mode but keep the query applied
-		m.SearchMode = false
-		return m, nil
+	case keymap.CmdSearchClear:
+		m.SearchQuery = ""
+		return m, m.fetchData()
 
-	case "backspace":
-		// Remove last character from query
+	case keymap.CmdSearchBackspace:
 		if len(m.SearchQuery) > 0 {
 			m.SearchQuery = m.SearchQuery[:len(m.SearchQuery)-1]
 			return m, m.fetchData()
 		}
 		return m, nil
 
-	case "ctrl+u", "ctrl+w":
-		// Clear entire query
-		m.SearchQuery = ""
-		return m, m.fetchData()
-
-	case "space":
-		m.SearchQuery += " "
-		return m, m.fetchData()
-
-	default:
-		// Append printable characters to search query
-		keyStr := msg.String()
-		if len(keyStr) == 1 && keyStr >= " " && keyStr <= "~" {
-			m.SearchQuery += keyStr
-			return m, m.fetchData()
-		}
-	}
-
-	return m, nil
-}
-
-// handleModalKey processes key input when modal is open
-func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-
-	case "esc", "enter":
-		m.closeModal()
-		return m, nil
-
-	case "down", "j":
-		m.ModalScroll++
-		return m, nil
-
-	case "up", "k":
-		if m.ModalScroll > 0 {
-			m.ModalScroll--
+	// Confirmation commands
+	case keymap.CmdConfirm:
+		if m.ConfirmOpen && m.ConfirmAction == "delete" {
+			return m.executeDelete()
 		}
 		return m, nil
 
-	case "left", "h":
-		return m.navigateModal(-1)
-
-	case "right", "l":
-		return m.navigateModal(1)
-
-	case "r":
-		// Refresh both dashboard and modal details
-		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
-	}
-
-	return m, nil
-}
-
-// handleStatsKey processes key input when stats modal is open
-func (m Model) handleStatsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-
-	case "esc", "enter":
-		m.closeStatsModal()
-		return m, nil
-
-	case "down", "j":
-		m.StatsScroll++
-		return m, nil
-
-	case "up", "k":
-		if m.StatsScroll > 0 {
-			m.StatsScroll--
+	case keymap.CmdCancel:
+		if m.ConfirmOpen {
+			m.ConfirmOpen = false
 		}
 		return m, nil
-
-	case "r":
-		// Refresh stats
-		return m, m.fetchStats()
 	}
 
 	return m, nil
@@ -1007,19 +1106,6 @@ func (m Model) SelectedIssueID(panel Panel) string {
 		}
 	}
 	return ""
-}
-
-// handleConfirmKey processes key input when confirmation dialog is open
-func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
-		if m.ConfirmAction == "delete" {
-			return m.executeDelete()
-		}
-	case "n", "N", "esc":
-		m.ConfirmOpen = false
-	}
-	return m, nil
 }
 
 // markForReview marks the selected in-progress issue for review

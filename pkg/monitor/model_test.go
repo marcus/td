@@ -5,7 +5,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/pkg/monitor/keymap"
 )
+
+// newTestKeymap creates a keymap with default bindings for testing
+func newTestKeymap() *keymap.Registry {
+	km := keymap.NewRegistry()
+	keymap.RegisterDefaults(km)
+	return km
+}
 
 func TestRowCount(t *testing.T) {
 	m := Model{
@@ -229,6 +237,7 @@ func TestHandleKey_JMovesCursorAndKeepsVisible(t *testing.T) {
 		Cursor:       make(map[Panel]int),
 		SelectedID:   make(map[Panel]string),
 		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
 	}
 
 	// Fill task list with enough rows to require scrolling.
@@ -262,6 +271,7 @@ func TestHandleKey_PanelSwitchEnsuresCursorVisible(t *testing.T) {
 		Cursor:       make(map[Panel]int),
 		SelectedID:   make(map[Panel]string),
 		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
 	}
 	for i := 0; i < 5; i++ {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
