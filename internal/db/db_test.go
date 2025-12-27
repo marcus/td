@@ -714,3 +714,146 @@ func TestActionLogDifferentSessions(t *testing.T) {
 		t.Error("Session 2 got wrong action")
 	}
 }
+
+func TestSearchIssuesRanked(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create test issues with specific IDs via manual setting after create
+	// Issue 1: ID contains 'grace', title is different
+	issue1 := &models.Issue{
+		Title:       "Other title",
+		Description: "Some description",
+		Status:      models.StatusOpen,
+	}
+	if err := db.CreateIssue(issue1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	// Update ID to contain 'grace' for testing
+	_, err = db.conn.Exec(`UPDATE issues SET id = ? WHERE id = ?`, "td-grace123", issue1.ID)
+	if err != nil {
+		t.Fatalf("Update ID failed: %v", err)
+	}
+	issue1.ID = "td-grace123"
+
+	// Issue 2: title contains 'gracefully'
+	issue2 := &models.Issue{
+		Title:       "Gracefully handle errors",
+		Description: "Some other description",
+		Status:      models.StatusOpen,
+	}
+	if err := db.CreateIssue(issue2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Issue 3: description contains 'gracefully'
+	issue3 := &models.Issue{
+		Title:       "Other task",
+		Description: "gracefully shutdown the service",
+		Status:      models.StatusOpen,
+	}
+	if err := db.CreateIssue(issue3); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Issue 4: closed issue with 'grace' in description
+	issue4 := &models.Issue{
+		Title:       "Closed issue",
+		Description: "Handle grace period",
+		Status:      models.StatusClosed,
+	}
+	if err := db.CreateIssue(issue4); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Test 1: Search 'grace' - ID match should score highest
+	t.Run("ID match scores highest", func(t *testing.T) {
+		results, err := db.SearchIssuesRanked("grace", ListIssuesOptions{})
+		if err != nil {
+			t.Fatalf("SearchIssuesRanked failed: %v", err)
+		}
+
+		if len(results) == 0 {
+			t.Fatal("Expected results, got none")
+		}
+
+		// First result should be td-grace123 (ID match = 90 points)
+		if results[0].Issue.ID != "td-grace123" {
+			t.Errorf("Expected td-grace123 first (ID match), got %s", results[0].Issue.ID)
+		}
+		if results[0].Score != 90 {
+			t.Errorf("Expected score 90 for ID match, got %d", results[0].Score)
+		}
+		if results[0].MatchField != "id" {
+			t.Errorf("Expected matchField 'id', got %s", results[0].MatchField)
+		}
+	})
+
+	// Test 2: Search 'gracefully' - title match should score higher than description
+	t.Run("title match scores higher than description", func(t *testing.T) {
+		results, err := db.SearchIssuesRanked("gracefully", ListIssuesOptions{})
+		if err != nil {
+			t.Fatalf("SearchIssuesRanked failed: %v", err)
+		}
+
+		if len(results) < 2 {
+			t.Fatalf("Expected at least 2 results, got %d", len(results))
+		}
+
+		// Title match should come before description match
+		if results[0].Issue.ID != issue2.ID {
+			t.Errorf("Expected title match first, got %s", results[0].Issue.ID)
+		}
+		if results[0].MatchField != "title" {
+			t.Errorf("Expected matchField 'title', got %s", results[0].MatchField)
+		}
+	})
+
+	// Test 3: Case-insensitive search
+	t.Run("case insensitive search", func(t *testing.T) {
+		results, err := db.SearchIssuesRanked("GRACEFULLY", ListIssuesOptions{})
+		if err != nil {
+			t.Fatalf("SearchIssuesRanked failed: %v", err)
+		}
+
+		if len(results) < 2 {
+			t.Fatalf("Expected at least 2 results for case-insensitive search, got %d", len(results))
+		}
+	})
+
+	// Test 4: Search with closed status filter
+	t.Run("closed status filter", func(t *testing.T) {
+		results, err := db.SearchIssuesRanked("grace", ListIssuesOptions{
+			Status: []models.Status{models.StatusClosed},
+		})
+		if err != nil {
+			t.Fatalf("SearchIssuesRanked failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 closed result, got %d", len(results))
+		}
+		if results[0].Issue.ID != issue4.ID {
+			t.Errorf("Expected closed issue, got %s", results[0].Issue.ID)
+		}
+	})
+
+	// Test 5: Search by issue ID prefix
+	t.Run("search by ID prefix", func(t *testing.T) {
+		results, err := db.SearchIssuesRanked("td-grace", ListIssuesOptions{})
+		if err != nil {
+			t.Fatalf("SearchIssuesRanked failed: %v", err)
+		}
+
+		if len(results) != 1 {
+			t.Fatalf("Expected 1 result for ID prefix search, got %d", len(results))
+		}
+		if results[0].Issue.ID != "td-grace123" {
+			t.Errorf("Expected td-grace123, got %s", results[0].Issue.ID)
+		}
+	})
+}

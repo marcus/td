@@ -59,7 +59,7 @@ var searchCmd = &cobra.Command{
 			opts.Limit = 50
 		}
 
-		issues, err := database.SearchIssues(query, opts)
+		results, err := database.SearchIssuesRanked(query, opts)
 		if err != nil {
 			output.Error("search failed: %v", err)
 			return err
@@ -67,14 +67,19 @@ var searchCmd = &cobra.Command{
 
 		// Output
 		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-			return output.JSON(issues)
+			return output.JSON(results)
 		}
 
-		for _, issue := range issues {
-			fmt.Println(output.FormatIssueShort(&issue))
+		showScore, _ := cmd.Flags().GetBool("show-score")
+		for _, result := range results {
+			line := output.FormatIssueShort(&result.Issue)
+			if showScore {
+				line += fmt.Sprintf(" [score:%d]", result.Score)
+			}
+			fmt.Println(line)
 		}
 
-		if len(issues) == 0 {
+		if len(results) == 0 {
 			fmt.Printf("No issues matching '%s'\n", query)
 		}
 
@@ -91,4 +96,5 @@ func init() {
 	searchCmd.Flags().StringP("priority", "p", "", "Filter by priority")
 	searchCmd.Flags().IntP("limit", "n", 50, "Limit results")
 	searchCmd.Flags().Bool("json", false, "JSON output")
+	searchCmd.Flags().Bool("show-score", false, "Show relevance scores")
 }

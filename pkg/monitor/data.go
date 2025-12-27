@@ -124,12 +124,28 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool) TaskListData {
 	var data TaskListData
 
+	// Helper to extract issues from ranked results
+	extractIssues := func(results []db.SearchResult) []models.Issue {
+		issues := make([]models.Issue, len(results))
+		for i, r := range results {
+			issues[i] = r.Issue
+		}
+		return issues
+	}
+
 	// Ready issues: open status, not blocked, sorted by priority
-	openIssues, _ := database.ListIssues(db.ListIssuesOptions{
-		Status: []models.Status{models.StatusOpen},
-		SortBy: "priority",
-		Search: searchQuery,
-	})
+	var openIssues []models.Issue
+	if searchQuery != "" {
+		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+			Status: []models.Status{models.StatusOpen},
+		})
+		openIssues = extractIssues(results)
+	} else {
+		openIssues, _ = database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusOpen},
+			SortBy: "priority",
+		})
+	}
 
 	// Separate open issues into ready vs blocked-by-dependency
 	var blockedByDep []models.Issue
@@ -151,29 +167,45 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	}
 
 	// Reviewable issues: in_review status, different implementer than current session
-	reviewable, _ := database.ListIssues(db.ListIssuesOptions{
-		ReviewableBy: sessionID,
-		SortBy:       "priority",
-		Search:       searchQuery,
-	})
-	data.Reviewable = reviewable
+	if searchQuery != "" {
+		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+			ReviewableBy: sessionID,
+		})
+		data.Reviewable = extractIssues(results)
+	} else {
+		data.Reviewable, _ = database.ListIssues(db.ListIssuesOptions{
+			ReviewableBy: sessionID,
+			SortBy:       "priority",
+		})
+	}
 
 	// Blocked issues: explicit blocked status + issues blocked by dependencies
-	blocked, _ := database.ListIssues(db.ListIssuesOptions{
-		Status: []models.Status{models.StatusBlocked},
-		SortBy: "priority",
-		Search: searchQuery,
-	})
-	data.Blocked = append(blocked, blockedByDep...)
+	if searchQuery != "" {
+		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+			Status: []models.Status{models.StatusBlocked},
+		})
+		data.Blocked = append(extractIssues(results), blockedByDep...)
+	} else {
+		blocked, _ := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusBlocked},
+			SortBy: "priority",
+		})
+		data.Blocked = append(blocked, blockedByDep...)
+	}
 
 	// Closed issues (if toggle enabled)
 	if includeClosed {
-		closed, _ := database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusClosed},
-			SortBy: "priority",
-			Search: searchQuery,
-		})
-		data.Closed = closed
+		if searchQuery != "" {
+			results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+				Status: []models.Status{models.StatusClosed},
+			})
+			data.Closed = extractIssues(results)
+		} else {
+			data.Closed, _ = database.ListIssues(db.ListIssuesOptions{
+				Status: []models.Status{models.StatusClosed},
+				SortBy: "priority",
+			})
+		}
 	}
 
 	return data
