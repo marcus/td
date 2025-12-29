@@ -830,6 +830,8 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 	modal.EpicTasks = nil
 	modal.EpicTasksCursor = 0
 	modal.TaskSectionFocused = false
+	modal.ParentEpic = nil
+	modal.ParentEpicFocused = false
 	modal.DescRender = ""
 	modal.AcceptRender = ""
 

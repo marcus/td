@@ -1072,3 +1072,37 @@ func TestParentEpicFocus_KKeyStaysOnEpicWhenAlreadyFocused(t *testing.T) {
 		t.Errorf("k key should not push new modal, depth = %d", m2.ModalDepth())
 	}
 }
+
+func TestNavigateModalClearsParentEpicState(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap:     newTestKeymap(),
+		Cursor:     map[Panel]int{PanelTaskList: 0},
+		SelectedID: map[Panel]string{},
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "td-001"}},
+			{Issue: models.Issue{ID: "td-002"}},
+		},
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-001",
+				SourcePanel:       PanelTaskList,
+				ParentEpic:        parentEpic,
+				ParentEpicFocused: true,
+			},
+		},
+	}
+
+	updated, _ := m.navigateModal(1)
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().ParentEpic != nil {
+		t.Error("navigateModal should clear ParentEpic")
+	}
+	if m2.CurrentModal().ParentEpicFocused {
+		t.Error("navigateModal should clear ParentEpicFocused")
+	}
+	if m2.CurrentModal().IssueID != "td-002" {
+		t.Errorf("navigateModal should move to td-002, got %s", m2.CurrentModal().IssueID)
+	}
+}
