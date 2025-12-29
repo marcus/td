@@ -141,6 +141,17 @@ func DefaultBindings() []Binding {
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
+
+		// ============================================================
+		// PARENT EPIC FOCUSED BINDINGS
+		// Active when parent epic row is focused in modal
+		// ============================================================
+		{Key: "enter", Command: CmdOpenParentEpic, Context: ContextParentEpicFocused, Description: "Open parent epic"},
+		{Key: "esc", Command: CmdClose, Context: ContextParentEpicFocused, Description: "Close modal"},
+		{Key: "j", Command: CmdCursorDown, Context: ContextParentEpicFocused, Description: "Unfocus epic"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextParentEpicFocused, Description: "Unfocus epic"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 	}
 }
 

@@ -374,9 +374,15 @@ func (m Model) currentContext() keymap.Context {
 		return keymap.ContextStats
 	}
 	if m.ModalOpen() {
-		// Check if epic tasks section is focused
-		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
-			return keymap.ContextEpicTasks
+		if modal := m.CurrentModal(); modal != nil {
+			// Check if parent epic row is focused
+			if modal.ParentEpicFocused {
+				return keymap.ContextParentEpicFocused
+			}
+			// Check if epic tasks section is focused
+			if modal.TaskSectionFocused {
+				return keymap.ContextEpicTasks
+			}
 		}
 		return keymap.ContextModal
 	}
@@ -486,6 +492,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				if modal.EpicTasksCursor < len(modal.EpicTasks)-1 {
 					modal.EpicTasksCursor++
 				}
+			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
+				// At top with parent epic, focus it first before scrolling
+				modal.ParentEpicFocused = true
 			} else {
 				modal.Scroll++
 			}
@@ -631,11 +640,6 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.navigateModal(1)
 
 	case keymap.CmdClose:
-		// If parent epic is focused, open it instead of closing
-		if modal := m.CurrentModal(); modal != nil && modal.ParentEpicFocused && modal.ParentEpic != nil {
-			modal.ParentEpicFocused = false
-			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
-		}
 		if m.ModalOpen() {
 			m.closeModal()
 		} else if m.StatsOpen {
@@ -645,11 +649,6 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Actions
 	case keymap.CmdOpenDetails:
-		// If in modal with parent epic focused, open the parent epic
-		if modal := m.CurrentModal(); modal != nil && modal.ParentEpicFocused && modal.ParentEpic != nil {
-			modal.ParentEpicFocused = false // Reset before push
-			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
-		}
 		return m.openModal()
 
 	case keymap.CmdOpenStats:
@@ -746,6 +745,13 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.TaskSectionFocused = false // Unfocus before pushing
 				return m.pushModal(taskID, m.ModalSourcePanel())
 			}
+		}
+		return m, nil
+
+	case keymap.CmdOpenParentEpic:
+		if modal := m.CurrentModal(); modal != nil && modal.ParentEpic != nil {
+			modal.ParentEpicFocused = false // Unfocus before pushing
+			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
 		}
 		return m, nil
 	}

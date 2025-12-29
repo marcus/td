@@ -14,13 +14,14 @@ const sequenceTimeout = 500 * time.Millisecond
 type Context string
 
 const (
-	ContextGlobal    Context = "global"
-	ContextMain      Context = "main"
-	ContextModal     Context = "modal"
-	ContextStats     Context = "stats"
-	ContextSearch    Context = "search"
-	ContextConfirm   Context = "confirm"
-	ContextEpicTasks Context = "epic-tasks" // When task list in epic modal is focused
+	ContextGlobal            Context = "global"
+	ContextMain              Context = "main"
+	ContextModal             Context = "modal"
+	ContextStats             Context = "stats"
+	ContextSearch            Context = "search"
+	ContextConfirm           Context = "confirm"
+	ContextEpicTasks         Context = "epic-tasks"         // When task list in epic modal is focused
+	ContextParentEpicFocused Context = "parent-epic-focused" // When parent epic row is focused
 )
 
 // Command represents a named command that can be triggered by key bindings
