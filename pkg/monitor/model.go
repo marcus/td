@@ -485,8 +485,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
 		if modal := m.CurrentModal(); modal != nil {
 			if modal.ParentEpicFocused {
-				// Unfocus parent epic, start scrolling content
+				// Unfocus parent epic, move past epic zone so next j scrolls
 				modal.ParentEpicFocused = false
+				modal.Scroll = 1
 			} else if modal.TaskSectionFocused {
 				// Move epic task cursor
 				if modal.EpicTasksCursor < len(modal.EpicTasks)-1 {
