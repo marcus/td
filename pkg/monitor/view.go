@@ -93,6 +93,14 @@ func (m Model) renderView() string {
 			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
 	}
 
+	// Overlay handoffs modal if open
+	if m.HandoffsOpen {
+		handoffs := m.renderHandoffsModal()
+		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, handoffs,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
+	}
+
 	// Overlay modal if open
 	if m.ModalOpen() {
 		modal := m.renderModal()
@@ -867,6 +875,131 @@ func (m Model) renderStatsModal() string {
 	}
 
 	return m.wrapModal(content.String(), modalWidth, modalHeight)
+}
+
+// renderHandoffsModal renders the handoffs modal
+func (m Model) renderHandoffsModal() string {
+	// Calculate modal dimensions (80% of terminal, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+
+	contentWidth := modalWidth - 4 // Account for border and padding
+
+	var content strings.Builder
+
+	// Loading state
+	if m.HandoffsLoading {
+		content.WriteString(subtleStyle.Render("Loading handoffs..."))
+		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Error state
+	if m.HandoffsError != nil {
+		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.HandoffsError)))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Press esc to close"))
+		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Empty state
+	if len(m.HandoffsData) == 0 {
+		content.WriteString(subtleStyle.Render("No handoffs found"))
+		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Build content lines
+	var lines []string
+	lines = append(lines, titleStyle.Render(fmt.Sprintf("RECENT HANDOFFS (%d)", len(m.HandoffsData))))
+	lines = append(lines, "")
+
+	for i, h := range m.HandoffsData {
+		// Format: [timestamp] [session] [issue_id] done:X remaining:Y
+		timestamp := subtleStyle.Render(h.Timestamp.Format("01-02 15:04"))
+		session := subtleStyle.Render(truncateSession(h.SessionID))
+		issueID := titleStyle.Render(h.IssueID)
+
+		summary := fmt.Sprintf("done:%d remaining:%d", len(h.Done), len(h.Remaining))
+		if len(h.Uncertain) > 0 {
+			summary += fmt.Sprintf(" uncertain:%d", len(h.Uncertain))
+		}
+
+		line := fmt.Sprintf("  %s %s %s %s", timestamp, session, issueID, summary)
+
+		if i == m.HandoffsCursor {
+			// Highlight selected row
+			line = selectedRowStyle.Render(fmt.Sprintf("> %s %s %s %s", timestamp, session, issueID, summary))
+		}
+
+		lines = append(lines, truncateString(line, contentWidth))
+	}
+
+	// Apply scroll offset
+	visibleHeight := modalHeight - 5 // border, title, footer
+	totalLines := len(lines)
+
+	maxScroll := totalLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	scroll := m.HandoffsScroll
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	// Auto-scroll to keep cursor visible
+	if m.HandoffsCursor < scroll {
+		scroll = m.HandoffsCursor
+	} else if m.HandoffsCursor >= scroll+visibleHeight {
+		scroll = m.HandoffsCursor - visibleHeight + 1
+	}
+
+	endIdx := scroll + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll < totalLines {
+		visibleLines := lines[scroll:endIdx]
+		content.WriteString(strings.Join(visibleLines, "\n"))
+	}
+
+	// Scroll indicator
+	if totalLines > visibleHeight {
+		content.WriteString("\n")
+		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		content.WriteString(scrollInfo)
+	}
+
+	return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
+}
+
+// wrapHandoffsModal wraps content in a modal box with green border
+func (m Model) wrapHandoffsModal(content string, width, height int) string {
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("42")). // Green for handoffs
+		Padding(1, 2).
+		Width(width).
+		Height(height)
+
+	footer := subtleStyle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
+	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	return modalStyle.Render(inner)
 }
 
 // renderStatusBarChart renders a horizontal bar chart for status breakdown

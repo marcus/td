@@ -41,6 +41,7 @@ func DefaultBindings() []Binding {
 		// Actions
 		{Key: "enter", Command: CmdOpenDetails, Context: ContextMain, Description: "Open details"},
 		{Key: "s", Command: CmdOpenStats, Context: ContextMain, Description: "Open statistics"},
+		{Key: "h", Command: CmdOpenHandoffs, Context: ContextMain, Description: "Open handoffs"},
 		{Key: "/", Command: CmdSearch, Context: ContextMain, Description: "Search"},
 		{Key: "c", Command: CmdToggleClosed, Context: ContextMain, Description: "Toggle closed tasks"},
 		{Key: "S", Command: CmdCycleSortMode, Context: ContextMain, Description: "Cycle sort mode"},
@@ -152,6 +153,22 @@ func DefaultBindings() []Binding {
 		{Key: "down", Command: CmdCursorDown, Context: ContextParentEpicFocused, Description: "Unfocus epic"},
 		{Key: "k", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 		{Key: "up", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
+
+		// ============================================================
+		// HANDOFFS MODAL BINDINGS
+		// Active when the handoffs modal is open
+		// ============================================================
+		{Key: "esc", Command: CmdClose, Context: ContextHandoffs, Description: "Close modal"},
+		{Key: "enter", Command: CmdOpenDetails, Context: ContextHandoffs, Description: "Open issue"},
+		{Key: "j", Command: CmdCursorDown, Context: ContextHandoffs, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextHandoffs, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextHandoffs, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextHandoffs, Description: "Move up"},
+		{Key: "ctrl+d", Command: CmdHalfPageDown, Context: ContextHandoffs, Description: "Half page down"},
+		{Key: "ctrl+u", Command: CmdHalfPageUp, Context: ContextHandoffs, Description: "Half page up"},
+		{Key: "G", Command: CmdCursorBottom, Context: ContextHandoffs, Description: "Go to bottom"},
+		{Key: "g g", Command: CmdCursorTop, Context: ContextHandoffs, Description: "Go to top"},
+		{Key: "r", Command: CmdRefresh, Context: ContextHandoffs, Description: "Refresh"},
 	}
 }
 

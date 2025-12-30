@@ -20,8 +20,9 @@ const (
 	ContextStats             Context = "stats"
 	ContextSearch            Context = "search"
 	ContextConfirm           Context = "confirm"
-	ContextEpicTasks         Context = "epic-tasks"         // When task list in epic modal is focused
+	ContextEpicTasks         Context = "epic-tasks"          // When task list in epic modal is focused
 	ContextParentEpicFocused Context = "parent-epic-focused" // When parent epic row is focused
+	ContextHandoffs          Context = "handoffs"            // When handoffs modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -81,6 +82,9 @@ const (
 
 	// Parent epic navigation
 	CmdOpenParentEpic Command = "open-parent-epic"
+
+	// Handoffs modal
+	CmdOpenHandoffs Command = "open-handoffs"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

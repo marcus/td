@@ -182,6 +182,14 @@ type Model struct {
 	StatsScroll  int
 	StatsError   error
 
+	// Handoffs modal state
+	HandoffsOpen    bool
+	HandoffsLoading bool
+	HandoffsData    []models.Handoff
+	HandoffsCursor  int
+	HandoffsScroll  int
+	HandoffsError   error
+
 	// Configuration
 	RefreshInterval time.Duration
 
@@ -224,9 +232,15 @@ type IssueDetailsMsg struct {
 
 // MarkdownRenderedMsg carries pre-rendered markdown for the modal
 type MarkdownRenderedMsg struct {
-	IssueID    string
-	DescRender string
+	IssueID      string
+	DescRender   string
 	AcceptRender string
+}
+
+// HandoffsDataMsg carries fetched handoffs data for the modal
+type HandoffsDataMsg struct {
+	Data  []models.Handoff
+	Error error
 }
 
 // NewModel creates a new monitor model
@@ -366,6 +380,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatsData = msg.Data
 		}
 		return m, nil
+
+	case HandoffsDataMsg:
+		// Only update if handoffs modal is open
+		if m.HandoffsOpen {
+			m.HandoffsLoading = false
+			m.HandoffsError = msg.Error
+			m.HandoffsData = msg.Data
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -375,6 +398,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
+	}
+	if m.HandoffsOpen {
+		return keymap.ContextHandoffs
 	}
 	if m.StatsOpen {
 		return keymap.ContextStats
@@ -451,6 +477,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if modal := m.CurrentModal(); modal != nil {
 			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 		}
+		if m.HandoffsOpen {
+			return m, m.fetchHandoffs()
+		}
 		if m.StatsOpen {
 			return m, m.fetchStats()
 		}
@@ -505,6 +534,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				modal.Scroll++
 			}
+		} else if m.HandoffsOpen {
+			if m.HandoffsCursor < len(m.HandoffsData)-1 {
+				m.HandoffsCursor++
+			}
 		} else if m.StatsOpen {
 			m.StatsScroll++
 		} else {
@@ -527,6 +560,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else if modal.Scroll > 0 {
 				modal.Scroll--
 			}
+		} else if m.HandoffsOpen {
+			if m.HandoffsCursor > 0 {
+				m.HandoffsCursor--
+			}
 		} else if m.StatsOpen {
 			if m.StatsScroll > 0 {
 				m.StatsScroll--
@@ -539,6 +576,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdCursorTop:
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = 0
+		} else if m.HandoffsOpen {
+			m.HandoffsCursor = 0
+			m.HandoffsScroll = 0
 		} else if m.StatsOpen {
 			m.StatsScroll = 0
 		} else {
@@ -551,6 +591,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdCursorBottom:
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = 9999 // Will be clamped by view
+		} else if m.HandoffsOpen {
+			if len(m.HandoffsData) > 0 {
+				m.HandoffsCursor = len(m.HandoffsData) - 1
+			}
 		} else if m.StatsOpen {
 			m.StatsScroll = 9999 // Will be clamped by view
 		} else {
@@ -570,6 +614,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll += pageSize
+		} else if m.HandoffsOpen {
+			m.HandoffsCursor += pageSize
+			if m.HandoffsCursor >= len(m.HandoffsData) {
+				m.HandoffsCursor = len(m.HandoffsData) - 1
+			}
+			if m.HandoffsCursor < 0 {
+				m.HandoffsCursor = 0
+			}
 		} else if m.StatsOpen {
 			m.StatsScroll += pageSize
 		} else {
@@ -588,6 +640,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			modal.Scroll -= pageSize
 			if modal.Scroll < 0 {
 				modal.Scroll = 0
+			}
+		} else if m.HandoffsOpen {
+			m.HandoffsCursor -= pageSize
+			if m.HandoffsCursor < 0 {
+				m.HandoffsCursor = 0
 			}
 		} else if m.StatsOpen {
 			m.StatsScroll -= pageSize
@@ -649,6 +706,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdClose:
 		if m.ModalOpen() {
 			m.closeModal()
+		} else if m.HandoffsOpen {
+			m.closeHandoffsModal()
 		} else if m.StatsOpen {
 			m.closeStatsModal()
 		}
@@ -656,10 +715,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Actions
 	case keymap.CmdOpenDetails:
+		if m.HandoffsOpen {
+			return m.openIssueFromHandoffs()
+		}
 		return m.openModal()
 
 	case keymap.CmdOpenStats:
 		return m.openStatsModal()
+
+	case keymap.CmdOpenHandoffs:
+		return m.openHandoffsModal()
 
 	case keymap.CmdSearch:
 		m.SearchMode = true
@@ -749,7 +814,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
 			if modal.EpicTasksCursor < len(modal.EpicTasks) {
 				taskID := modal.EpicTasks[modal.EpicTasksCursor].ID
-				modal.TaskSectionFocused = false // Unfocus before pushing
+				// Don't reset TaskSectionFocused - preserve parent modal state for when we return
 				return m.pushModal(taskID, m.ModalSourcePanel())
 			}
 		}
@@ -972,6 +1037,46 @@ func (m *Model) closeStatsModal() {
 	m.StatsLoading = false
 	m.StatsError = nil
 	m.StatsData = nil
+}
+
+// openHandoffsModal opens the handoffs modal and fetches data
+func (m Model) openHandoffsModal() (tea.Model, tea.Cmd) {
+	m.HandoffsOpen = true
+	m.HandoffsCursor = 0
+	m.HandoffsScroll = 0
+	m.HandoffsLoading = true
+	m.HandoffsError = nil
+	m.HandoffsData = nil
+
+	return m, m.fetchHandoffs()
+}
+
+// closeHandoffsModal closes the handoffs modal and clears state
+func (m *Model) closeHandoffsModal() {
+	m.HandoffsOpen = false
+	m.HandoffsCursor = 0
+	m.HandoffsScroll = 0
+	m.HandoffsLoading = false
+	m.HandoffsError = nil
+	m.HandoffsData = nil
+}
+
+// openIssueFromHandoffs opens the issue detail modal for the selected handoff
+func (m Model) openIssueFromHandoffs() (tea.Model, tea.Cmd) {
+	if m.HandoffsCursor >= len(m.HandoffsData) {
+		return m, nil
+	}
+	issueID := m.HandoffsData[m.HandoffsCursor].IssueID
+	m.closeHandoffsModal()
+	return m.pushModal(issueID, PanelCurrentWork)
+}
+
+// fetchHandoffs returns a command that fetches all handoffs
+func (m Model) fetchHandoffs() tea.Cmd {
+	return func() tea.Msg {
+		handoffs, err := m.DB.GetRecentHandoffs(50, time.Time{})
+		return HandoffsDataMsg{Data: handoffs, Error: err}
+	}
 }
 
 // View implements tea.Model

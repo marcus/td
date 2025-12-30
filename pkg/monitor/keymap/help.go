@@ -72,12 +72,24 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "a", Description: "Approve issue (Task List reviewable)"},
 		{Keys: "x", Description: "Delete issue (confirmation required)"},
 		{Keys: "s", Description: "Show statistics dashboard"},
+		{Keys: "h", Description: "Show handoffs modal"},
 		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
 		{Keys: "/", Description: "Search tasks"},
 		{Keys: "c", Description: "Toggle closed tasks"},
 		{Keys: "q / Ctrl+C", Description: "Quit"},
 	}
 	for _, b := range actionBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nHANDOFFS MODAL:\n")
+	handoffBindings := []HelpBinding{
+		{Keys: "↑ / ↓ / j / k", Description: "Select handoff"},
+		{Keys: "Enter", Description: "Open issue for selected handoff"},
+		{Keys: "Esc", Description: "Close handoffs modal"},
+		{Keys: "r", Description: "Refresh handoffs"},
+	}
+	for _, b := range handoffBindings {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
@@ -206,7 +218,7 @@ func (r *Registry) GenerateTDQHelp() string {
 
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
-	return "q:quit s:stats S:sort /:search c:closed r:review a:approve x:del tab:panel ?:help"
+	return "q:quit s:stats h:handoffs S:sort /:search c:closed r:review a:approve x:del tab:panel ?:help"
 }
 
 // ModalFooterHelp generates help text for the modal footer
@@ -252,6 +264,8 @@ func CommandHelp(cmd Command) string {
 		return "Open issue details modal"
 	case CmdOpenStats:
 		return "Open statistics dashboard"
+	case CmdOpenHandoffs:
+		return "Open handoffs modal"
 	case CmdSearch:
 		return "Enter search mode"
 	case CmdToggleClosed:
@@ -334,7 +348,7 @@ func AllCommands() []Command {
 		CmdHalfPageDown, CmdHalfPageUp, CmdFullPageDown, CmdFullPageUp,
 		CmdScrollDown, CmdScrollUp, CmdSelect, CmdBack, CmdClose,
 		CmdNavigatePrev, CmdNavigateNext,
-		CmdOpenDetails, CmdOpenStats, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
+		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
 		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic,
