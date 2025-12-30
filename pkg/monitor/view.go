@@ -1379,6 +1379,7 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 // formatIssueCompact formats an issue in a compact single-line format
 func (m Model) formatIssueCompact(issue *models.Issue) string {
 	parts := []string{
+		formatTypeIcon(issue.Type),
 		titleStyle.Render(issue.ID),
 		formatPriority(issue.Priority),
 		issue.Title,
@@ -1393,18 +1394,19 @@ func (m Model) formatIssueCompact(issue *models.Issue) string {
 
 // formatIssueShort formats an issue in a short format
 func (m Model) formatIssueShort(issue *models.Issue) string {
+	typeIcon := formatTypeIcon(issue.Type)
 	idStr := subtleStyle.Render(issue.ID)
 	priorityStr := formatPriority(issue.Priority)
 
 	// Calculate available width for title:
-	// m.Width - 4 (panel border) - 8 (row prefix "  [TAG] ") - ID - priority - 2 spaces
-	overhead := 4 + 8 + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 2
+	// m.Width - 4 (panel border) - 8 (row prefix "  [TAG] ") - typeIcon - ID - priority - 3 spaces
+	overhead := 4 + 8 + 2 + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
 	titleWidth := m.Width - overhead
 	if titleWidth < 20 {
 		titleWidth = 20 // minimum reasonable width
 	}
 
-	return fmt.Sprintf("%s %s %s", idStr, priorityStr, truncateString(issue.Title, titleWidth))
+	return fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, truncateString(issue.Title, titleWidth))
 }
 
 // formatActivityItem formats a single activity item

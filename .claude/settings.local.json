@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./td usage:*)",
+      "Bash(./td help:*)",
+      "Bash(./td add:*)",
+      "Bash(./td deps:*)"
+    ]
+  }
+}

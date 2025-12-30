@@ -101,6 +101,24 @@ var (
 	breadcrumbStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
 			Italic(true)
+
+	// Type icon styles
+	typeIconStyles = map[models.Type]lipgloss.Style{
+		models.TypeEpic:    lipgloss.NewStyle().Foreground(lipgloss.Color("212")), // Purple/magenta
+		models.TypeFeature: lipgloss.NewStyle().Foreground(lipgloss.Color("42")),  // Green
+		models.TypeBug:     lipgloss.NewStyle().Foreground(lipgloss.Color("196")), // Red
+		models.TypeTask:    lipgloss.NewStyle().Foreground(lipgloss.Color("45")),  // Cyan
+		models.TypeChore:   lipgloss.NewStyle().Foreground(lipgloss.Color("241")), // Gray
+	}
+
+	// Type icon symbols
+	typeIcons = map[models.Type]string{
+		models.TypeEpic:    "◆", // Diamond - container
+		models.TypeFeature: "●", // Filled circle - new thing
+		models.TypeBug:     "✗", // X mark - defect
+		models.TypeTask:    "■", // Square - building block
+		models.TypeChore:   "○", // Empty circle - routine
+	}
 )
 
 // formatStatus renders a status with color
@@ -119,6 +137,19 @@ func formatPriority(p models.Priority) string {
 		return string(p)
 	}
 	return style.Render(string(p))
+}
+
+// formatTypeIcon renders a type icon with color
+func formatTypeIcon(t models.Type) string {
+	icon, ok := typeIcons[t]
+	if !ok {
+		icon = "?"
+	}
+	style, ok := typeIconStyles[t]
+	if !ok {
+		return icon
+	}
+	return style.Render(icon)
 }
 
 // formatActivityBadge renders an activity type badge
