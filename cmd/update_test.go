@@ -445,3 +445,95 @@ func TestUpdateAcceptanceCriteria(t *testing.T) {
 		t.Errorf("Acceptance not updated: got %q", retrieved.Acceptance)
 	}
 }
+
+// TestAppendDescription tests appending to existing description
+func TestAppendDescription(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test", Description: "Initial description"}
+	database.CreateIssue(issue)
+
+	// Simulate append mode: concat with double newline
+	newDesc := "Appended text"
+	issue.Description = issue.Description + "\n\n" + newDesc
+	database.UpdateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	expected := "Initial description\n\nAppended text"
+	if retrieved.Description != expected {
+		t.Errorf("Description append failed: got %q, want %q", retrieved.Description, expected)
+	}
+}
+
+// TestAppendToEmptyDescription tests append to empty description sets value directly
+func TestAppendToEmptyDescription(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test", Description: ""}
+	database.CreateIssue(issue)
+
+	// With empty existing description, just set the value (no leading separator)
+	issue.Description = "New description"
+	database.UpdateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	if retrieved.Description != "New description" {
+		t.Errorf("Description not set: got %q", retrieved.Description)
+	}
+}
+
+// TestAppendAcceptance tests appending to existing acceptance criteria
+func TestAppendAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test", Acceptance: "Initial criteria"}
+	database.CreateIssue(issue)
+
+	// Simulate append mode
+	newAC := "Additional criteria"
+	issue.Acceptance = issue.Acceptance + "\n\n" + newAC
+	database.UpdateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	expected := "Initial criteria\n\nAdditional criteria"
+	if retrieved.Acceptance != expected {
+		t.Errorf("Acceptance append failed: got %q, want %q", retrieved.Acceptance, expected)
+	}
+}
+
+// TestAppendToEmptyAcceptance tests append to empty acceptance sets value directly
+func TestAppendToEmptyAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test", Acceptance: ""}
+	database.CreateIssue(issue)
+
+	// With empty existing acceptance, just set the value
+	issue.Acceptance = "New criteria"
+	database.UpdateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	if retrieved.Acceptance != "New criteria" {
+		t.Errorf("Acceptance not set: got %q", retrieved.Acceptance)
+	}
+}

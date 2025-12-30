@@ -48,12 +48,22 @@ var updateCmd = &cobra.Command{
 				issue.Title = title
 			}
 
+			appendMode, _ := cmd.Flags().GetBool("append")
+
 			if desc, _ := cmd.Flags().GetString("description"); desc != "" {
-				issue.Description = desc
+				if appendMode && issue.Description != "" {
+					issue.Description = issue.Description + "\n\n" + desc
+				} else {
+					issue.Description = desc
+				}
 			}
 
 			if acceptance, _ := cmd.Flags().GetString("acceptance"); acceptance != "" {
-				issue.Acceptance = acceptance
+				if appendMode && issue.Acceptance != "" {
+					issue.Acceptance = issue.Acceptance + "\n\n" + acceptance
+				} else {
+					issue.Acceptance = acceptance
+				}
 			}
 
 			if t, _ := cmd.Flags().GetString("type"); t != "" {
@@ -201,4 +211,5 @@ func init() {
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
 	updateCmd.Flags().String("depends-on", "", "Replace dependencies")
 	updateCmd.Flags().String("blocks", "", "Replace blocked issues")
+	updateCmd.Flags().Bool("append", false, "Append to text fields instead of replacing")
 }
