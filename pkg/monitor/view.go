@@ -550,7 +550,7 @@ func (m Model) renderModal() string {
 	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
 		header := fmt.Sprintf("TASKS IN EPIC (%d)", len(modal.EpicTasks))
 		if modal.TaskSectionFocused {
-			header = epicTasksFocusedStyle.Render(header + " [Tab:exit]")
+			header = epicTasksFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:scroll]")
 		} else {
 			header = sectionHeader.Render(header + " [Tab:focus]")
 		}
@@ -1024,7 +1024,7 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	// Add key hints
 	modal := m.CurrentModal()
 	if modal != nil && modal.TaskSectionFocused {
-		footerParts = append(footerParts, subtleStyle.Render("↑↓:select  Enter:open  Tab:exit  Esc:close"))
+		footerParts = append(footerParts, subtleStyle.Render("↑↓:navigate  Enter:open  Tab:scroll  Esc:close"))
 	} else if depth > 1 {
 		// Show Tab hint if this is an epic with tasks
 		if modal != nil && modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {

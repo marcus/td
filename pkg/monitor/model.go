@@ -333,6 +333,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.ParentEpic = msg.ParentEpic
 			modal.ParentEpicFocused = false // Reset focus on load
 
+			// Auto-focus task section for epics with tasks (enables j/k navigation)
+			if msg.Issue != nil && msg.Issue.Type == models.TypeEpic && len(msg.EpicTasks) > 0 {
+				modal.TaskSectionFocused = true
+				modal.EpicTasksCursor = 0
+			}
+
 			// Trigger async markdown rendering (expensive)
 			if msg.Issue != nil && (msg.Issue.Description != "" || msg.Issue.Acceptance != "") {
 				width := m.Width - 20

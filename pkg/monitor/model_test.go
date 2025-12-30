@@ -1106,3 +1106,71 @@ func TestNavigateModalClearsParentEpicState(t *testing.T) {
 		t.Errorf("navigateModal should move to td-002, got %s", m2.CurrentModal().IssueID)
 	}
 }
+
+// TestEpicAutoFocusTaskSection verifies that epics with tasks auto-focus the task section
+// This enables j/k navigation without requiring Tab to enter the task section
+func TestEpicAutoFocusTaskSection(t *testing.T) {
+	tests := []struct {
+		name               string
+		issue              *models.Issue
+		epicTasks          []models.Issue
+		expectFocused      bool
+		expectCursor       int
+	}{
+		{
+			name:          "epic with tasks auto-focuses",
+			issue:         &models.Issue{ID: "td-001", Type: models.TypeEpic},
+			epicTasks:     []models.Issue{{ID: "td-002"}, {ID: "td-003"}},
+			expectFocused: true,
+			expectCursor:  0,
+		},
+		{
+			name:          "epic without tasks does not auto-focus",
+			issue:         &models.Issue{ID: "td-001", Type: models.TypeEpic},
+			epicTasks:     []models.Issue{},
+			expectFocused: false,
+			expectCursor:  0,
+		},
+		{
+			name:          "non-epic does not auto-focus",
+			issue:         &models.Issue{ID: "td-001", Type: models.TypeTask},
+			epicTasks:     []models.Issue{},
+			expectFocused: false,
+			expectCursor:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:            tt.issue.ID,
+						Loading:            true,
+						TaskSectionFocused: false,
+					},
+				},
+			}
+
+			// Simulate IssueDetailsMsg
+			msg := IssueDetailsMsg{
+				IssueID:   tt.issue.ID,
+				Issue:     tt.issue,
+				EpicTasks: tt.epicTasks,
+			}
+
+			updated, _ := m.Update(msg)
+			m2 := updated.(Model)
+
+			if m2.CurrentModal().TaskSectionFocused != tt.expectFocused {
+				t.Errorf("TaskSectionFocused = %v, want %v",
+					m2.CurrentModal().TaskSectionFocused, tt.expectFocused)
+			}
+			if m2.CurrentModal().EpicTasksCursor != tt.expectCursor {
+				t.Errorf("EpicTasksCursor = %d, want %d",
+					m2.CurrentModal().EpicTasksCursor, tt.expectCursor)
+			}
+		})
+	}
+}
