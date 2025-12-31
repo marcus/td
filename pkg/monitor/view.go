@@ -77,6 +77,14 @@ func (m Model) renderView() string {
 		base = lipgloss.JoinVertical(lipgloss.Left, content, footer)
 	}
 
+	// Overlay form modal if open
+	if m.FormOpen && m.FormState != nil {
+		form := m.renderFormModal()
+		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, form,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
+	}
+
 	// Overlay confirmation dialog if open
 	if m.ConfirmOpen {
 		confirm := m.renderConfirmation()
@@ -1001,6 +1009,57 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 
 	footer := subtleStyle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	return modalStyle.Render(inner)
+}
+
+// renderFormModal renders the form modal using huh form
+func (m Model) renderFormModal() string {
+	if m.FormState == nil || m.FormState.Form == nil {
+		return ""
+	}
+
+	// Calculate modal dimensions (80% of terminal, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 90 {
+		modalWidth = 90
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+	modalHeight := m.Height * 85 / 100
+	if modalHeight > 35 {
+		modalHeight = 35
+	}
+	if modalHeight < 20 {
+		modalHeight = 20
+	}
+
+	// Render the huh form
+	formView := m.FormState.Form.View()
+
+	// Build footer with key hints
+	var footerParts []string
+	if m.FormState.ShowExtended {
+		footerParts = append(footerParts, subtleStyle.Render("Ctrl+E:hide extended"))
+	} else {
+		footerParts = append(footerParts, subtleStyle.Render("Ctrl+E:show extended"))
+	}
+	footerParts = append(footerParts, subtleStyle.Render("Ctrl+S:submit  Esc:cancel"))
+	footer := strings.Join(footerParts, "  ")
+
+	// Combine form and footer
+	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", footer)
+
+	// Select border color - cyan for forms (different from issue modals)
+	borderColor := lipgloss.Color("45") // Cyan
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(modalWidth).
+		Height(modalHeight)
 
 	return modalStyle.Render(inner)
 }

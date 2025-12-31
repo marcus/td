@@ -23,6 +23,7 @@ const (
 	ContextEpicTasks         Context = "epic-tasks"          // When task list in epic modal is focused
 	ContextParentEpicFocused Context = "parent-epic-focused" // When parent epic row is focused
 	ContextHandoffs          Context = "handoffs"            // When handoffs modal is open
+	ContextForm              Context = "form"                // When form modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -88,6 +89,13 @@ const (
 
 	// Clipboard
 	CmdCopyToClipboard Command = "copy-to-clipboard"
+
+	// Form commands
+	CmdNewIssue         Command = "new-issue"
+	CmdEditIssue        Command = "edit-issue"
+	CmdFormSubmit       Command = "form-submit"
+	CmdFormCancel       Command = "form-cancel"
+	CmdFormToggleExtend Command = "form-toggle-extend"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

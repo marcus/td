@@ -48,6 +48,8 @@ func DefaultBindings() []Binding {
 		{Key: "r", Command: CmdMarkForReview, Context: ContextMain, Description: "Review/Refresh"},
 		{Key: "a", Command: CmdApprove, Context: ContextMain, Description: "Approve issue"},
 		{Key: "x", Command: CmdDelete, Context: ContextMain, Description: "Delete issue"},
+		{Key: "n", Command: CmdNewIssue, Context: ContextMain, Description: "New issue"},
+		{Key: "e", Command: CmdEditIssue, Context: ContextMain, Description: "Edit issue"},
 
 		// ============================================================
 		// MODAL BINDINGS (Issue Details)
@@ -83,6 +85,11 @@ func DefaultBindings() []Binding {
 
 		// Copy to clipboard
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},
+
+		// Issue CRUD from modal
+		{Key: "n", Command: CmdNewIssue, Context: ContextModal, Description: "New issue"},
+		{Key: "e", Command: CmdEditIssue, Context: ContextModal, Description: "Edit issue"},
+		{Key: "x", Command: CmdDelete, Context: ContextModal, Description: "Delete issue"},
 
 		// ============================================================
 		// STATS MODAL BINDINGS
@@ -174,6 +181,15 @@ func DefaultBindings() []Binding {
 		{Key: "G", Command: CmdCursorBottom, Context: ContextHandoffs, Description: "Go to bottom"},
 		{Key: "g g", Command: CmdCursorTop, Context: ContextHandoffs, Description: "Go to top"},
 		{Key: "r", Command: CmdRefresh, Context: ContextHandoffs, Description: "Refresh"},
+
+		// ============================================================
+		// FORM MODAL BINDINGS
+		// Active when form modal is open
+		// Note: Most key handling is delegated to huh.Form
+		// ============================================================
+		{Key: "ctrl+s", Command: CmdFormSubmit, Context: ContextForm, Description: "Submit form"},
+		{Key: "esc", Command: CmdFormCancel, Context: ContextForm, Description: "Cancel form"},
+		{Key: "ctrl+e", Command: CmdFormToggleExtend, Context: ContextForm, Description: "Toggle extended fields"},
 	}
 }
 

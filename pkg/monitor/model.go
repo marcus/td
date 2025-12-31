@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/huh"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
@@ -344,6 +345,10 @@ type Model struct {
 	HandoffsScroll  int
 	HandoffsError   error
 
+	// Form modal state
+	FormOpen  bool
+	FormState *FormState
+
 	// Configuration
 	RefreshInterval time.Duration
 
@@ -487,6 +492,11 @@ func (m Model) Init() tea.Cmd {
 
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Form mode: forward all messages to huh form first
+	if m.FormOpen && m.FormState != nil && m.FormState.Form != nil {
+		return m.handleFormUpdate(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -600,6 +610,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}
+	if m.FormOpen {
+		return keymap.ContextForm
+	}
 	if m.HandoffsOpen {
 		return keymap.ContextHandoffs
 	}
@@ -623,6 +636,41 @@ func (m Model) currentContext() keymap.Context {
 		return keymap.ContextSearch
 	}
 	return keymap.ContextMain
+}
+
+// handleFormUpdate handles all messages when form is open
+func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle our custom key bindings first
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch {
+		case keyMsg.Type == tea.KeyCtrlS:
+			return m.executeCommand(keymap.CmdFormSubmit)
+		case keyMsg.Type == tea.KeyEsc:
+			return m.executeCommand(keymap.CmdFormCancel)
+		case keyMsg.Type == tea.KeyCtrlE:
+			return m.executeCommand(keymap.CmdFormToggleExtend)
+		}
+	}
+
+	// Handle window resize
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.Width = sizeMsg.Width
+		m.Height = sizeMsg.Height
+		m.updatePanelBounds()
+	}
+
+	// Forward message to huh form
+	form, cmd := m.FormState.Form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.FormState.Form = f
+	}
+
+	// Check if form completed (user pressed enter on last field)
+	if m.FormState.Form.State == huh.StateCompleted {
+		return m.executeCommand(keymap.CmdFormSubmit)
+	}
+
+	return m, cmd
 }
 
 // handleKey processes key input using the centralized keymap registry
@@ -1033,6 +1081,26 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdCopyToClipboard:
 		return m.copyCurrentIssueToClipboard()
+
+	// Form commands
+	case keymap.CmdNewIssue:
+		return m.openNewIssueForm()
+
+	case keymap.CmdEditIssue:
+		return m.openEditIssueForm()
+
+	case keymap.CmdFormSubmit:
+		return m.submitForm()
+
+	case keymap.CmdFormCancel:
+		m.closeForm()
+		return m, nil
+
+	case keymap.CmdFormToggleExtend:
+		if m.FormState != nil {
+			m.FormState.ToggleExtended()
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -1667,15 +1735,26 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 }
 
 // confirmDelete opens confirmation dialog for deleting selected issue
+// Works from both main panel selection and modal view
 func (m Model) confirmDelete() (tea.Model, tea.Cmd) {
-	issueID := m.SelectedIssueID(m.ActivePanel)
-	if issueID == "" {
-		return m, nil
-	}
+	var issueID string
+	var issue *models.Issue
 
-	issue, err := m.DB.GetIssue(issueID)
-	if err != nil || issue == nil {
-		return m, nil
+	// Check if a modal is open - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issueID = modal.IssueID
+		issue = modal.Issue
+	} else {
+		// Otherwise, use the selected issue from the panel
+		issueID = m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
 	}
 
 	m.ConfirmOpen = true
@@ -1693,8 +1772,10 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	deletedID := m.ConfirmIssueID
+
 	// Delete issue
-	if err := m.DB.DeleteIssue(m.ConfirmIssueID); err != nil {
+	if err := m.DB.DeleteIssue(deletedID); err != nil {
 		m.ConfirmOpen = false
 		return m, nil
 	}
@@ -1704,13 +1785,18 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 		SessionID:  m.SessionID,
 		ActionType: models.ActionDelete,
 		EntityType: "issue",
-		EntityID:   m.ConfirmIssueID,
+		EntityID:   deletedID,
 	})
 
 	m.ConfirmOpen = false
 	m.ConfirmIssueID = ""
 	m.ConfirmTitle = ""
 	m.ConfirmAction = ""
+
+	// Close modal if we just deleted the issue being viewed
+	if modal := m.CurrentModal(); modal != nil && modal.IssueID == deletedID {
+		m.closeModal()
+	}
 
 	return m, m.fetchData()
 }
@@ -1977,6 +2063,141 @@ func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	// Double-click opens issue details
 	if isDoubleClick {
 		return m.openModal()
+	}
+
+	return m, nil
+}
+
+// openNewIssueForm opens the new issue form
+// If an epic is selected/open, auto-populates parent field
+func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
+	var parentID string
+
+	// Check if we're in a modal viewing an epic
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		if modal.Issue.Type == models.TypeEpic {
+			parentID = modal.Issue.ID
+		}
+	}
+
+	// Create form state
+	m.FormState = NewFormState(FormModeCreate, parentID)
+	m.FormOpen = true
+
+	// Initialize the form
+	return m, m.FormState.Form.Init()
+}
+
+// openEditIssueForm opens the edit form for the selected/modal issue
+func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
+	var issue *models.Issue
+
+	// If modal is open, edit that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issue = modal.Issue
+	} else {
+		// Otherwise, edit the selected issue from the panel
+		issueID := m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
+	}
+
+	// Create form state with issue data
+	m.FormState = NewFormStateForEdit(issue)
+	m.FormOpen = true
+
+	// Initialize the form
+	return m, m.FormState.Form.Init()
+}
+
+// closeForm closes the form modal and clears state
+func (m *Model) closeForm() {
+	m.FormOpen = false
+	m.FormState = nil
+}
+
+// submitForm validates and submits the form
+func (m Model) submitForm() (tea.Model, tea.Cmd) {
+	if m.FormState == nil {
+		return m, nil
+	}
+
+	// Get issue data from form
+	issue := m.FormState.ToIssue()
+	deps := m.FormState.GetDependencies()
+
+	if m.FormState.Mode == FormModeCreate {
+		// Create new issue with all fields
+		issue.Status = models.StatusOpen
+		if err := m.DB.CreateIssue(issue); err != nil {
+			m.Err = err
+			return m, nil
+		}
+
+		// Add dependencies
+		for _, depID := range deps {
+			if depID != "" {
+				_ = m.DB.AddDependency(issue.ID, depID, "depends_on")
+			}
+		}
+
+		// Log action for undo
+		m.DB.LogAction(&models.ActionLog{
+			SessionID:  m.SessionID,
+			ActionType: models.ActionCreate,
+			EntityType: "issue",
+			EntityID:   issue.ID,
+		})
+
+		m.closeForm()
+		return m, m.fetchData()
+
+	} else if m.FormState.Mode == FormModeEdit {
+		// Update existing issue
+		existingIssue, err := m.DB.GetIssue(m.FormState.IssueID)
+		if err != nil || existingIssue == nil {
+			m.Err = err
+			return m, nil
+		}
+
+		// Update fields
+		existingIssue.Title = issue.Title
+		existingIssue.Type = issue.Type
+		existingIssue.Priority = issue.Priority
+		existingIssue.Description = issue.Description
+		existingIssue.Labels = issue.Labels
+		existingIssue.ParentID = issue.ParentID
+		existingIssue.Points = issue.Points
+		existingIssue.Acceptance = issue.Acceptance
+		existingIssue.Minor = issue.Minor
+
+		if err := m.DB.UpdateIssue(existingIssue); err != nil {
+			m.Err = err
+			return m, nil
+		}
+
+		// Log action for undo
+		m.DB.LogAction(&models.ActionLog{
+			SessionID:  m.SessionID,
+			ActionType: models.ActionUpdate,
+			EntityType: "issue",
+			EntityID:   existingIssue.ID,
+		})
+
+		m.closeForm()
+
+		// Refresh modal if open
+		if modal := m.CurrentModal(); modal != nil && modal.IssueID == existingIssue.ID {
+			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(existingIssue.ID))
+		}
+
+		return m, m.fetchData()
 	}
 
 	return m, nil

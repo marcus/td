@@ -68,11 +68,30 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nCRUD:\n")
+	crudBindings := []HelpBinding{
+		{Keys: "n", Description: "New issue"},
+		{Keys: "e", Description: "Edit selected/open issue"},
+		{Keys: "x", Description: "Delete issue (confirmation required)"},
+	}
+	for _, b := range crudBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nFORM (when editing):\n")
+	formBindings := []HelpBinding{
+		{Keys: "Ctrl+S", Description: "Save form"},
+		{Keys: "Esc", Description: "Cancel form"},
+		{Keys: "Ctrl+E", Description: "Toggle extended fields"},
+	}
+	for _, b := range formBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nACTIONS:\n")
 	actionBindings := []HelpBinding{
 		{Keys: "r", Description: "Mark for review (Current Work) / Refresh"},
 		{Keys: "a", Description: "Approve issue (Task List reviewable)"},
-		{Keys: "x", Description: "Delete issue (confirmation required)"},
 		{Keys: "s", Description: "Show statistics dashboard"},
 		{Keys: "h", Description: "Show handoffs modal"},
 		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
@@ -230,7 +249,7 @@ func (r *Registry) GenerateTDQHelp() string {
 
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
-	return "q:quit s:stats h:handoffs S:sort /:search c:closed r:review a:approve x:del tab:panel ?:help"
+	return "n:new e:edit x:del a:approve r:review s:stats /:search c:closed tab:panel ?:help"
 }
 
 // ModalFooterHelp generates help text for the modal footer
