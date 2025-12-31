@@ -25,6 +25,12 @@ var (
 				BorderForeground(primaryColor).
 				Padding(0, 1)
 
+	// Hover style for inactive panels (subtle highlight when mouse over)
+	hoverPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("245")).
+			Padding(0, 1)
+
 	panelTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Background(lipgloss.Color("237")).

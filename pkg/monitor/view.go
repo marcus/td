@@ -531,7 +531,7 @@ func (m Model) renderModal() string {
 	// Status line: status, type, priority, points
 	statusLine := fmt.Sprintf("%s  %s  %s",
 		formatStatus(issue.Status),
-		subtleStyle.Render(string(issue.Type)),
+		formatTypeIcon(issue.Type),
 		formatPriority(issue.Priority))
 	if issue.Points > 0 {
 		statusLine += fmt.Sprintf("  %dpts", issue.Points)
@@ -566,13 +566,14 @@ func (m Model) renderModal() string {
 
 		for i, task := range modal.EpicTasks {
 			prefix := "  "
-			taskLine := fmt.Sprintf("%s %s %s",
+			taskLine := fmt.Sprintf("%s %s %s %s",
+				formatTypeIcon(task.Type),
 				subtleStyle.Render(task.ID),
 				formatStatus(task.Status),
-				truncateString(task.Title, contentWidth-25))
+				truncateString(task.Title, contentWidth-29))
 
 			if modal.TaskSectionFocused && i == modal.EpicTasksCursor {
-				taskLine = epicTaskSelectedStyle.Render("> " + task.ID + " " + formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-25))
+				taskLine = epicTaskSelectedStyle.Render("> " + formatTypeIcon(task.Type) + " " + task.ID + " " + formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-29))
 			} else {
 				taskLine = prefix + taskLine
 			}
@@ -622,10 +623,11 @@ func (m Model) renderModal() string {
 		if len(activeBlockers) > 0 {
 			lines = append(lines, blockedColor.Render(fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))))
 			for _, dep := range activeBlockers {
-				depLine := fmt.Sprintf("  %s %s %s",
+				depLine := fmt.Sprintf("  %s %s %s %s",
+					formatTypeIcon(dep.Type),
 					titleStyle.Render(dep.ID),
 					formatStatus(dep.Status),
-					truncateString(dep.Title, contentWidth-20))
+					truncateString(dep.Title, contentWidth-24))
 				lines = append(lines, depLine)
 			}
 			lines = append(lines, "")
@@ -648,10 +650,11 @@ func (m Model) renderModal() string {
 	if len(modal.Blocks) > 0 {
 		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))))
 		for _, dep := range modal.Blocks {
-			depLine := fmt.Sprintf("  %s %s %s",
+			depLine := fmt.Sprintf("  %s %s %s %s",
+				formatTypeIcon(dep.Type),
 				titleStyle.Render(dep.ID),
 				formatStatus(dep.Status),
-				truncateString(dep.Title, contentWidth-20))
+				truncateString(dep.Title, contentWidth-24))
 			lines = append(lines, depLine)
 		}
 		lines = append(lines, "")
@@ -1352,6 +1355,8 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 	style := panelStyle
 	if m.ActivePanel == panel {
 		style = activePanelStyle
+	} else if m.HoverPanel == panel {
+		style = hoverPanelStyle
 	}
 
 	// Render title

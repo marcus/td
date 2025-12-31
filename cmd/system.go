@@ -132,7 +132,9 @@ var versionCmd = &cobra.Command{
 		if cached, err := version.LoadCache(); err == nil && version.IsCacheValid(cached, versionStr) {
 			if cached.HasUpdate {
 				fmt.Printf("\nUpdate available: %s → %s\n", versionStr, cached.LatestVersion)
-				fmt.Printf("Run: %s\n", version.UpdateCommand(cached.LatestVersion))
+				if cmd := version.UpdateCommand(cached.LatestVersion); cmd != "" {
+					fmt.Printf("Run: %s\n", cmd)
+				}
 			}
 			return
 		}
@@ -157,7 +159,9 @@ var versionCmd = &cobra.Command{
 
 		if result.HasUpdate {
 			fmt.Printf("\nUpdate available: %s → %s\n", versionStr, result.LatestVersion)
-			fmt.Printf("Run: %s\n", version.UpdateCommand(result.LatestVersion))
+			if cmd := version.UpdateCommand(result.LatestVersion); cmd != "" {
+				fmt.Printf("Run: %s\n", cmd)
+			}
 		}
 	},
 }

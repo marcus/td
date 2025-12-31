@@ -22,6 +22,159 @@ const (
 	PanelActivity
 )
 
+// Rect represents a rectangular region for hit-testing
+type Rect struct {
+	X, Y, W, H int
+}
+
+// Contains returns true if the point (x, y) is within the rectangle
+func (r Rect) Contains(x, y int) bool {
+	return x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H
+}
+
+// HitTestPanel returns which panel contains the point (x, y), or -1 if none
+func (m Model) HitTestPanel(x, y int) Panel {
+	for panel, bounds := range m.PanelBounds {
+		if bounds.Contains(x, y) {
+			return panel
+		}
+	}
+	return -1
+}
+
+// HitTestRow returns the row index within a panel for a given y coordinate, or -1 if none.
+// Accounts for scroll indicators, category headers, and separator lines.
+func (m Model) HitTestRow(panel Panel, y int) int {
+	bounds, ok := m.PanelBounds[panel]
+	if !ok {
+		return -1
+	}
+
+	// Content starts after top border (1 line) and title (1 line)
+	contentY := bounds.Y + 2
+	if y < contentY {
+		return -1
+	}
+
+	// Calculate relative position within content area
+	relY := y - contentY
+
+	// Delegate to panel-specific hit testing
+	switch panel {
+	case PanelTaskList:
+		return m.hitTestTaskListRow(relY)
+	case PanelCurrentWork:
+		return m.hitTestCurrentWorkRow(relY)
+	case PanelActivity:
+		return m.hitTestActivityRow(relY)
+	}
+	return -1
+}
+
+// hitTestTaskListRow maps a y position to a TaskListRows index, accounting for headers
+func (m Model) hitTestTaskListRow(relY int) int {
+	if len(m.TaskListRows) == 0 {
+		return -1
+	}
+
+	offset := m.ScrollOffset[PanelTaskList]
+	height := m.visibleHeightForPanel(PanelTaskList)
+
+	// Account for "▲ more above" indicator
+	linePos := 0
+	if offset > 0 {
+		if relY == 0 {
+			return -1 // Clicked on scroll indicator
+		}
+		linePos = 1
+	}
+
+	// Walk through visible rows, tracking line position
+	var currentCategory TaskListCategory
+	if offset > 0 && offset <= len(m.TaskListRows) {
+		currentCategory = m.TaskListRows[offset-1].Category
+	}
+
+	for i := offset; i < len(m.TaskListRows); i++ {
+		row := m.TaskListRows[i]
+
+		// Category header takes lines
+		if row.Category != currentCategory {
+			if i > offset {
+				linePos++ // Blank separator line
+			}
+			if relY == linePos {
+				return -1 // Clicked on header
+			}
+			linePos++ // Header line
+			currentCategory = row.Category
+		}
+
+		// Check if this row matches
+		if relY == linePos {
+			return i
+		}
+		linePos++
+
+		// Stop if we've gone past visible area
+		if linePos > height {
+			break
+		}
+	}
+
+	return -1
+}
+
+// hitTestCurrentWorkRow maps a y position to a CurrentWorkRows index
+func (m Model) hitTestCurrentWorkRow(relY int) int {
+	if len(m.CurrentWorkRows) == 0 {
+		return -1
+	}
+
+	offset := m.ScrollOffset[PanelCurrentWork]
+
+	// Account for "▲ more above" indicator
+	linePos := 0
+	if offset > 0 {
+		if relY == 0 {
+			return -1
+		}
+		linePos = 1
+	}
+
+	// Simple 1:1 mapping for current work (no headers)
+	rowIdx := relY - linePos + offset
+	if rowIdx >= 0 && rowIdx < len(m.CurrentWorkRows) {
+		return rowIdx
+	}
+	return -1
+}
+
+// hitTestActivityRow maps a y position to an Activity index
+func (m Model) hitTestActivityRow(relY int) int {
+	if len(m.Activity) == 0 {
+		return -1
+	}
+
+	offset := m.ScrollOffset[PanelActivity]
+
+	// Account for "▲ more above" indicator
+	linePos := 0
+	if offset > 0 {
+		if relY == 0 {
+			return -1
+		}
+		linePos = 1
+	}
+
+	// Simple 1:1 mapping for activity (no headers)
+	rowIdx := relY - linePos + offset
+	if rowIdx >= 0 && rowIdx < len(m.Activity) {
+		return rowIdx
+	}
+	return -1
+}
+
 // ActivityItem represents a unified activity item (log, action, or comment)
 type ActivityItem struct {
 	Timestamp time.Time
@@ -201,8 +354,15 @@ type Model struct {
 	StatusMessage string
 
 	// Version checking
-	Version       string // Current version
-	UpdateAvail   *version.UpdateAvailableMsg
+	Version     string // Current version
+	UpdateAvail *version.UpdateAvailableMsg
+
+	// Mouse support - panel bounds for hit-testing
+	PanelBounds    map[Panel]Rect
+	HoverPanel     Panel     // Panel currently under mouse cursor (-1 for none)
+	LastClickTime  time.Time // For double-click detection
+	LastClickPanel Panel     // Panel of last click
+	LastClickRow   int       // Row of last click
 }
 
 // MinWidth is the minimum terminal width for proper display
@@ -272,8 +432,12 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		SearchMode:      false,
 		SearchQuery:     "",
 		IncludeClosed:   false,
-		Keymap:          km,
-		Version:         ver,
+		Keymap:         km,
+		Version:        ver,
+		PanelBounds:    make(map[Panel]Rect),
+		HoverPanel:     -1,
+		LastClickPanel: -1,
+		LastClickRow:   -1,
 	}
 }
 
@@ -330,7 +494,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		m.updatePanelBounds()
 		return m, nil
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case TickMsg:
 		return m, tea.Batch(m.fetchData(), m.scheduleTick())
@@ -419,6 +587,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// CurrentContextString returns the current keymap context as a sidecar-formatted string.
+// This is used by sidecar's TD plugin to determine which shortcuts to display.
+func (m Model) CurrentContextString() string {
+	return keymap.ContextToSidecar(m.currentContext())
 }
 
 // currentContext returns the keymap context based on current UI state
@@ -1614,4 +1788,193 @@ func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
 	return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return ClearStatusMsg{}
 	})
+}
+
+// updatePanelBounds recalculates panel bounds based on current dimensions.
+// Called when window size changes to enable accurate mouse hit-testing.
+func (m *Model) updatePanelBounds() {
+	if m.Width == 0 || m.Height == 0 {
+		return
+	}
+
+	// Match layout calculation from renderView()
+	searchBarHeight := 0
+	if m.SearchMode || m.SearchQuery != "" {
+		searchBarHeight = 2
+	}
+	footerHeight := 3
+	if m.Embedded {
+		footerHeight = 0
+	}
+	availableHeight := m.Height - footerHeight - searchBarHeight
+	panelHeight := availableHeight / 3
+
+	// Calculate Y positions for each panel (stacked vertically)
+	// Order: search bar (optional) → Current Work → Task List → Activity → footer
+	y := searchBarHeight
+
+	m.PanelBounds[PanelCurrentWork] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
+	y += panelHeight
+
+	m.PanelBounds[PanelTaskList] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
+	y += panelHeight
+
+	m.PanelBounds[PanelActivity] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
+}
+
+// handleMouse processes mouse events for panel selection and row clicking
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Ignore mouse events when modals/overlays are open
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.ShowHelp || m.ShowTDQHelp {
+		return m, nil
+	}
+
+	switch msg.Action {
+	case tea.MouseActionPress:
+		if msg.Button == tea.MouseButtonLeft {
+			return m.handleMouseClick(msg.X, msg.Y)
+		}
+		// Handle mouse wheel (reported as button press)
+		if msg.Button == tea.MouseButtonWheelUp {
+			return m.handleMouseWheel(msg.X, msg.Y, -3)
+		}
+		if msg.Button == tea.MouseButtonWheelDown {
+			return m.handleMouseWheel(msg.X, msg.Y, 3)
+		}
+
+	case tea.MouseActionMotion:
+		// Track hover for visual feedback
+		panel := m.HitTestPanel(msg.X, msg.Y)
+		if panel != m.HoverPanel {
+			m.HoverPanel = panel
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleMouseWheel scrolls the panel under the cursor
+func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
+	panel := m.HitTestPanel(x, y)
+	if panel < 0 {
+		return m, nil
+	}
+
+	// Scroll the hovered panel (better UX than requiring active panel)
+	count := m.rowCount(panel)
+	if count == 0 {
+		return m, nil
+	}
+
+	// Update scroll offset
+	newOffset := m.ScrollOffset[panel] + delta
+	if newOffset < 0 {
+		newOffset = 0
+	}
+
+	// Calculate max offset - for TaskList, account for category headers
+	maxOffset := m.maxScrollOffset(panel)
+	if newOffset > maxOffset {
+		newOffset = maxOffset
+	}
+	m.ScrollOffset[panel] = newOffset
+
+	// Keep cursor visible within the scrolled view
+	m.ensureCursorVisible(panel)
+
+	return m, nil
+}
+
+// maxScrollOffset returns the maximum valid scroll offset for a panel
+func (m Model) maxScrollOffset(panel Panel) int {
+	count := m.rowCount(panel)
+	visibleHeight := m.visibleHeightForPanel(panel)
+
+	if panel == PanelTaskList {
+		// TaskList has category headers that consume extra lines
+		// Calculate total display lines including headers and separators
+		totalLines := m.taskListTotalLines()
+		maxOffset := count - 1 // Can scroll until last row is at top
+		// But also limit based on whether content fills the screen
+		if totalLines <= visibleHeight {
+			return 0 // No scrolling needed
+		}
+		// Allow scrolling until last items are visible
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		return maxOffset
+	}
+
+	// For other panels, simple calculation
+	maxOffset := count - visibleHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	return maxOffset
+}
+
+// taskListTotalLines calculates total display lines for TaskList including headers
+func (m Model) taskListTotalLines() int {
+	if len(m.TaskListRows) == 0 {
+		return 0
+	}
+
+	lines := 0
+	var currentCategory TaskListCategory
+	for i, row := range m.TaskListRows {
+		if row.Category != currentCategory {
+			if i > 0 {
+				lines++ // Blank separator
+			}
+			lines++ // Category header
+			currentCategory = row.Category
+		}
+		lines++ // The row itself
+	}
+	return lines
+}
+
+// handleMouseClick handles left-click events
+func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
+	panel := m.HitTestPanel(x, y)
+	if panel < 0 {
+		return m, nil
+	}
+
+	row := m.HitTestRow(panel, y)
+	now := time.Now()
+
+	// Check for double-click (same panel+row within 400ms)
+	isDoubleClick := panel == m.LastClickPanel &&
+		row == m.LastClickRow &&
+		row >= 0 &&
+		now.Sub(m.LastClickTime) < 400*time.Millisecond
+
+	// Update click tracking
+	m.LastClickTime = now
+	m.LastClickPanel = panel
+	m.LastClickRow = row
+
+	// Click on panel: activate it
+	if m.ActivePanel != panel {
+		m.ActivePanel = panel
+		m.clampCursor(panel)
+		m.ensureCursorVisible(panel)
+	}
+
+	// Select the clicked row
+	if row >= 0 && row != m.Cursor[panel] {
+		m.Cursor[panel] = row
+		m.saveSelectedID(panel)
+		m.ensureCursorVisible(panel)
+	}
+
+	// Double-click opens issue details
+	if isDoubleClick {
+		return m.openModal()
+	}
+
+	return m, nil
 }

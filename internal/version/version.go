@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -77,8 +78,15 @@ func IsDevelopmentVersion(v string) bool {
 	return false
 }
 
+// validVersionRegex matches valid semver versions (v1.2.3, v1.2.3-beta, etc.)
+var validVersionRegex = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$`)
+
 // UpdateCommand generates the go install command for updating.
+// Returns empty string if version is invalid (prevents shell injection).
 func UpdateCommand(version string) string {
+	if !validVersionRegex.MatchString(version) {
+		return ""
+	}
 	return fmt.Sprintf(
 		"go install -ldflags \"-X main.Version=%s\" github.com/marcus/td@%s",
 		version, version,

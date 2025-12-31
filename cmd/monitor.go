@@ -29,7 +29,12 @@ Key bindings:
   Esc            Close modal
   r              Force refresh
   ?              Toggle help
-  q              Quit`,
+  q              Quit
+
+Mouse support:
+  Click          Select panel/row
+  Double-click   Open issue details
+  Scroll wheel   Scroll hovered panel`,
 	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -54,7 +59,7 @@ Key bindings:
 
 		model := monitor.NewModel(database, sess.ID, interval, versionStr)
 
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("error running monitor: %w", err)
 		}

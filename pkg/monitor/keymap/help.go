@@ -106,6 +106,16 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nMOUSE:\n")
+	mouseBindings := []HelpBinding{
+		{Keys: "Click", Description: "Select panel/row"},
+		{Keys: "Double-click", Description: "Open issue details"},
+		{Keys: "Scroll wheel", Description: "Scroll hovered panel"},
+	}
+	for _, b := range mouseBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nPress ? to close help\n")
 
 	return sb.String()
