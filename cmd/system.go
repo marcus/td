@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -114,10 +116,49 @@ var infoCmd = &cobra.Command{
 
 var versionCmd = &cobra.Command{
 	Use:     "version",
-	Short:   "Show version",
+	Short:   "Show version and check for updates",
 	GroupID: "system",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("td version %s\n", version)
+		checkUpdates, _ := cmd.Flags().GetBool("check")
+
+		fmt.Printf("td version %s\n", versionStr)
+
+		// Skip check if dev version or --check=false
+		if !checkUpdates || version.IsDevelopmentVersion(versionStr) {
+			return
+		}
+
+		// Check cache first
+		if cached, err := version.LoadCache(); err == nil && version.IsCacheValid(cached, versionStr) {
+			if cached.HasUpdate {
+				fmt.Printf("\nUpdate available: %s → %s\n", versionStr, cached.LatestVersion)
+				fmt.Printf("Run: %s\n", version.UpdateCommand(cached.LatestVersion))
+			}
+			return
+		}
+
+		// Fetch from GitHub
+		result := version.Check(versionStr)
+
+		// Cache successful checks
+		if result.Error == nil {
+			_ = version.SaveCache(&version.CacheEntry{
+				LatestVersion:  result.LatestVersion,
+				CurrentVersion: versionStr,
+				CheckedAt:      time.Now(),
+				HasUpdate:      result.HasUpdate,
+			})
+		}
+
+		if result.Error != nil {
+			// Silently ignore network errors
+			return
+		}
+
+		if result.HasUpdate {
+			fmt.Printf("\nUpdate available: %s → %s\n", versionStr, result.LatestVersion)
+			fmt.Printf("Run: %s\n", version.UpdateCommand(result.LatestVersion))
+		}
 	},
 }
 
@@ -677,4 +718,6 @@ func init() {
 	importCmd.Flags().Bool("force", false, "Overwrite existing")
 
 	sessionNameCmd.Flags().Bool("new", false, "Force create a new session")
+
+	versionCmd.Flags().Bool("check", true, "Check for updates")
 }

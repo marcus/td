@@ -9,6 +9,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/version"
 	"github.com/marcus/td/pkg/monitor/keymap"
 )
 
@@ -198,6 +199,10 @@ type Model struct {
 
 	// Status message (temporary feedback, e.g., "Copied to clipboard")
 	StatusMessage string
+
+	// Version checking
+	Version       string // Current version
+	UpdateAvail   *version.UpdateAvailableMsg
 }
 
 // MinWidth is the minimum terminal width for proper display
@@ -250,7 +255,7 @@ type HandoffsDataMsg struct {
 type ClearStatusMsg struct{}
 
 // NewModel creates a new monitor model
-func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
+func NewModel(database *db.DB, sessionID string, interval time.Duration, ver string) Model {
 	// Initialize keymap with default bindings
 	km := keymap.NewRegistry()
 	keymap.RegisterDefaults(km)
@@ -268,13 +273,14 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		SearchQuery:     "",
 		IncludeClosed:   false,
 		Keymap:          km,
+		Version:         ver,
 	}
 }
 
 // NewEmbedded creates a monitor model for embedding in external applications.
 // It opens the database and creates/gets a session automatically.
 // The caller must call Close() when done to release resources.
-func NewEmbedded(baseDir string, interval time.Duration) (*Model, error) {
+func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, error) {
 	database, err := db.Open(baseDir)
 	if err != nil {
 		return nil, err
@@ -286,7 +292,7 @@ func NewEmbedded(baseDir string, interval time.Duration) (*Model, error) {
 		return nil, err
 	}
 
-	m := NewModel(database, sess.ID, interval)
+	m := NewModel(database, sess.ID, interval, ver)
 	m.Embedded = true
 	return &m, nil
 }
@@ -302,10 +308,17 @@ func (m *Model) Close() error {
 
 // Init implements tea.Model
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.fetchData(),
 		m.scheduleTick(),
-	)
+	}
+
+	// Start async version check (non-blocking)
+	if m.Version != "" && !version.IsDevelopmentVersion(m.Version) {
+		cmds = append(cmds, version.CheckAsync(m.Version))
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // Update implements tea.Model
@@ -398,6 +411,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ClearStatusMsg:
 		m.StatusMessage = ""
+		return m, nil
+
+	case version.UpdateAvailableMsg:
+		m.UpdateAvail = &msg
 		return m, nil
 	}
 

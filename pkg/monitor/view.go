@@ -1320,15 +1320,21 @@ func (m Model) renderFooter() string {
 		reviewAlert = reviewAlertStyle.Render(fmt.Sprintf(" [%d TO REVIEW] ", len(m.TaskList.Reviewable)))
 	}
 
+	// Show update available notification
+	updateNotif := ""
+	if m.UpdateAvail != nil {
+		updateNotif = updateAvailStyle.Render(fmt.Sprintf(" [UPDATE: %s] ", m.UpdateAvail.LatestVersion))
+	}
+
 	refresh := timestampStyle.Render(fmt.Sprintf("Last: %s", m.LastRefresh.Format("15:04:05")))
 
 	// Calculate spacing
-	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(sessionsIndicator) - lipgloss.Width(handoffAlert) - lipgloss.Width(reviewAlert) - lipgloss.Width(refresh) - 2
+	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(sessionsIndicator) - lipgloss.Width(handoffAlert) - lipgloss.Width(reviewAlert) - lipgloss.Width(updateNotif) - lipgloss.Width(refresh) - 2
 	if padding < 0 {
 		padding = 0
 	}
 
-	return fmt.Sprintf(" %s%s%s%s%s%s", keys, strings.Repeat(" ", padding), sessionsIndicator, handoffAlert, reviewAlert, refresh)
+	return fmt.Sprintf(" %s%s%s%s%s%s%s", keys, strings.Repeat(" ", padding), sessionsIndicator, handoffAlert, reviewAlert, updateNotif, refresh)
 }
 
 // renderHelp renders the help overlay
@@ -1482,4 +1488,10 @@ var (
 	// Style for active sessions indicator - cyan text
 	activeSessionStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("45"))
+
+	// Style for update available notification - yellow/gold
+	updateAvailStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("214"))
 )

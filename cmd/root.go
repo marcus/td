@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	version         string
+	versionStr      string
 	baseDir         string
 	baseDirOverride *string // For testing
 )
 
 // SetVersion sets the version string
 func SetVersion(v string) {
-	version = v
+	versionStr = v
 }
 
 var rootCmd = &cobra.Command{

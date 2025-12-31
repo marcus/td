@@ -52,7 +52,7 @@ Key bindings:
 			interval = 2 * time.Second
 		}
 
-		model := monitor.NewModel(database, sess.ID, interval)
+		model := monitor.NewModel(database, sess.ID, interval, versionStr)
 
 		p := tea.NewProgram(model, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
