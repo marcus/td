@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -30,8 +32,12 @@ Optimized for session continuity—capturing working state so new context window
 // Execute runs the root command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		// Check if this is an unknown command that we can provide workflow hints for
 		args := os.Args[1:]
+
+		// Log agent error for analysis
+		logAgentError(args, err.Error())
+
+		// Check if this is an unknown command that we can provide workflow hints for
 		if len(args) > 0 && handleWorkflowHint(args[0]) {
 			os.Exit(1)
 		}
@@ -39,6 +45,28 @@ func Execute() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// logAgentError logs a failed command for agent UX analysis
+func logAgentError(args []string, errMsg string) {
+	dir := getBaseDir()
+	if dir == "" {
+		// Fallback: get cwd directly (OnInitialize may not have run for unknown commands)
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			return
+		}
+	}
+
+	// Try to get session ID (may fail if not initialized)
+	var sessionID string
+	if sess, err := session.Get(dir); err == nil {
+		sessionID = sess.ID
+	}
+
+	// Log the error (silently fails if project not initialized)
+	db.LogAgentError(dir, args, errMsg, sessionID)
 }
 
 // handleWorkflowHint checks if the command is a common workflow alias and shows a hint
