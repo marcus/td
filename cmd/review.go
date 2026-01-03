@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -625,7 +626,7 @@ func cascadeUpParentStatus(database *db.DB, issueID string, targetStatus models.
 
 	parent.Status = targetStatus
 	if targetStatus == models.StatusClosed {
-		now := parent.UpdatedAt
+		now := time.Now()
 		parent.ClosedAt = &now
 	}
 

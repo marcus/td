@@ -2533,6 +2533,9 @@ func (m Model) updateDividerDrag(y int) (tea.Model, tea.Cmd) {
 		footerHeight = 0
 	}
 	availableHeight := m.Height - footerHeight - searchBarHeight
+	if availableHeight <= 0 {
+		return m, nil // Terminal too small for resize
+	}
 
 	// Calculate delta as a ratio
 	deltaY := y - m.DragStartY
@@ -2554,35 +2557,31 @@ func (m Model) updateDividerDrag(y int) (tea.Model, tea.Cmd) {
 		newHeights[2] = m.DragStartHeights[2] - deltaRatio
 	}
 
-	// Enforce minimum 10% per pane
+	// Enforce minimum 10% per pane (only check affected panes)
 	const minHeight = 0.1
-	for i := range newHeights {
+	p1, p2 := m.DraggingDivider, m.DraggingDivider+1
+	for _, i := range []int{p1, p2} {
 		if newHeights[i] < minHeight {
-			// Clamp and redistribute
 			deficit := minHeight - newHeights[i]
 			newHeights[i] = minHeight
-			// Take from the adjacent pane that was growing
-			if m.DraggingDivider == 0 {
-				if i == 0 {
-					newHeights[1] -= deficit
-				} else {
-					newHeights[0] -= deficit
-				}
-			} else {
-				if i == 1 {
-					newHeights[2] -= deficit
-				} else {
-					newHeights[1] -= deficit
-				}
+			// Take from the other affected pane
+			other := p2
+			if i == p2 {
+				other = p1
 			}
+			newHeights[other] -= deficit
 		}
 	}
 
-	// Re-clamp in case redistribution caused issues
+	// Re-check affected panes; abort if constraints can't be satisfied
+	if newHeights[p1] < minHeight || newHeights[p2] < minHeight {
+		return m, nil
+	}
+
+	// Normalize to ensure sum = 1.0
+	sum := newHeights[0] + newHeights[1] + newHeights[2]
 	for i := range newHeights {
-		if newHeights[i] < minHeight {
-			return m, nil // Abort if we can't satisfy constraints
-		}
+		newHeights[i] /= sum
 	}
 
 	m.PaneHeights = newHeights
