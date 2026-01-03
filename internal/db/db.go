@@ -1844,3 +1844,108 @@ func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
 	}
 	return comments, nil
 }
+
+// CascadeUpParentStatus checks if all children of a parent epic have reached the target status,
+// and if so, updates the parent to that status. Works recursively up the parent chain.
+// Returns the number of parents that were cascaded and the list of cascaded parent IDs.
+func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, sessionID string) (int, []string) {
+	cascadedCount := 0
+	var cascadedIDs []string
+
+	// Get the issue to find its parent
+	issue, err := db.GetIssue(issueID)
+	if err != nil || issue.ParentID == "" {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Get the parent issue
+	parent, err := db.GetIssue(issue.ParentID)
+	if err != nil {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Only cascade to epic parents
+	if parent.Type != models.TypeEpic {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Parent already at or beyond target status - nothing to do
+	if parent.Status == targetStatus || parent.Status == models.StatusClosed {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Get all direct children of the parent
+	children, err := db.GetDirectChildren(parent.ID)
+	if err != nil || len(children) == 0 {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Check if all children have reached the target status (or beyond)
+	allAtTarget := true
+	for _, child := range children {
+		if targetStatus == models.StatusInReview {
+			// For in_review, check if child is in_review or closed
+			if child.Status != models.StatusInReview && child.Status != models.StatusClosed {
+				allAtTarget = false
+				break
+			}
+		} else if targetStatus == models.StatusClosed {
+			// For closed, child must be closed
+			if child.Status != models.StatusClosed {
+				allAtTarget = false
+				break
+			}
+		}
+	}
+
+	if !allAtTarget {
+		return cascadedCount, cascadedIDs
+	}
+
+	// All children at target - update parent
+	prevData, _ := json.Marshal(parent)
+
+	parent.Status = targetStatus
+	if targetStatus == models.StatusClosed {
+		now := time.Now()
+		parent.ClosedAt = &now
+	}
+
+	if err := db.UpdateIssue(parent); err != nil {
+		return cascadedCount, cascadedIDs
+	}
+
+	// Log action for undo
+	newData, _ := json.Marshal(parent)
+	actionType := models.ActionReview
+	if targetStatus == models.StatusClosed {
+		actionType = models.ActionClose
+	}
+	db.LogAction(&models.ActionLog{
+		SessionID:    sessionID,
+		ActionType:   actionType,
+		EntityType:   "issue",
+		EntityID:     parent.ID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
+	})
+
+	// Add log entry
+	logMsg := fmt.Sprintf("Auto-cascaded to %s (all children complete)", targetStatus)
+	db.AddLog(&models.Log{
+		IssueID:   parent.ID,
+		SessionID: sessionID,
+		Message:   logMsg,
+		Type:      models.LogTypeProgress,
+	})
+
+	cascadedIDs = append(cascadedIDs, parent.ID)
+	cascadedCount++
+
+	// Recursively check parent's parent
+	moreCount, moreIDs := db.CascadeUpParentStatus(parent.ID, targetStatus, sessionID)
+	cascadedCount += moreCount
+	cascadedIDs = append(cascadedIDs, moreIDs...)
+
+	return cascadedCount, cascadedIDs
+}

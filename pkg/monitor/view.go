@@ -713,6 +713,17 @@ func (m Model) renderModal() string {
 		}
 	}
 
+	// Comments
+	if len(modal.Comments) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("COMMENTS (%d)", len(modal.Comments))))
+		for _, c := range modal.Comments {
+			line := timestampStyle.Render(c.CreatedAt.Format("01-02 15:04")) + " " +
+				subtleStyle.Render(truncateSession(c.SessionID)) + " " +
+				truncateString(c.Text, contentWidth-25)
+			lines = append(lines, line)
+		}
+	}
+
 	// Apply scroll offset
 	visibleHeight := modalHeight - 4 // Account for border and footer
 	totalLines := len(lines)

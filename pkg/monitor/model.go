@@ -381,6 +381,7 @@ type ModalEntry struct {
 	Issue        *models.Issue
 	Handoff      *models.Handoff
 	Logs         []models.Log
+	Comments     []models.Comment
 	BlockedBy    []models.Issue
 	Blocks       []models.Issue
 	DescRender   string
@@ -522,6 +523,7 @@ type IssueDetailsMsg struct {
 	Issue      *models.Issue
 	Handoff    *models.Handoff
 	Logs       []models.Log
+	Comments   []models.Comment
 	BlockedBy  []models.Issue // Dependencies (issues blocking this one)
 	Blocks     []models.Issue // Dependents (issues blocked by this one)
 	EpicTasks  []models.Issue // Child tasks (when issue is an epic)
@@ -691,6 +693,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.Issue = msg.Issue
 			modal.Handoff = msg.Handoff
 			modal.Logs = msg.Logs
+			modal.Comments = msg.Comments
 			modal.BlockedBy = msg.BlockedBy
 			modal.Blocks = msg.Blocks
 			modal.EpicTasks = msg.EpicTasks
@@ -1540,6 +1543,11 @@ func (m Model) estimateModalContentLines(modal *ModalEntry) int {
 		lines += 1 + len(modal.Logs) // Header + logs
 	}
 
+	// Comments
+	if len(modal.Comments) > 0 {
+		lines += 1 + len(modal.Comments) // Header + comments
+	}
+
 	return lines
 }
 
@@ -1701,6 +1709,10 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 		// Fetch recent logs (cap at 20)
 		logs, _ := m.DB.GetLogs(issueID, 20)
 		msg.Logs = logs
+
+		// Fetch comments
+		comments, _ := m.DB.GetComments(issueID)
+		msg.Comments = comments
 
 		// Fetch parent epic if this issue has a parent
 		if issue.ParentID != "" {
@@ -2071,6 +2083,9 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		EntityID:   issueID,
 	})
 
+	// Cascade up to parent epic if all siblings are ready
+	m.DB.CascadeUpParentStatus(issueID, models.StatusInReview, m.SessionID)
+
 	// If we're in a modal, close it since the issue moved to review
 	if m.ModalOpen() {
 		m.closeModal()
@@ -2191,6 +2206,9 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		EntityID:   issue.ID,
 	})
 
+	// Cascade up to parent epic if all siblings are closed
+	m.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, m.SessionID)
+
 	// Clear the saved ID so cursor stays at the same position after refresh
 	// The item will move to Closed, and we want cursor at same index for next item
 	m.SelectedID[PanelTaskList] = ""
@@ -2241,6 +2259,9 @@ func (m Model) closeIssue() (tea.Model, tea.Cmd) {
 		EntityType: "issue",
 		EntityID:   issueID,
 	})
+
+	// Cascade up to parent epic if all siblings are closed
+	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
 
 	// If we're in a modal, close it since the issue is now closed
 	if m.ModalOpen() {
