@@ -54,8 +54,8 @@ func (m Model) HitTestRow(panel Panel, y int) int {
 		return -1
 	}
 
-	// Content starts after top border (1 line), title (1 line), and title underline/gap (1 line)
-	contentY := bounds.Y + 3
+	// Content starts after top border (1 line) and title (1 line)
+	contentY := bounds.Y + 2
 	if y < contentY {
 		return -1
 	}
