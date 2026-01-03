@@ -631,7 +631,7 @@ func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
 	sessionID := "ses_test"
 
 	// First, cascade up should NOT update epic (child2 still in_progress)
-	cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+	database.CascadeUpParentStatus(child1.ID, models.StatusInReview, sessionID)
 
 	e, _ := database.GetIssue(epic.ID)
 	if e.Status != models.StatusOpen {
@@ -643,7 +643,7 @@ func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
 	database.UpdateIssue(child2)
 
 	// Cascade up should now update epic
-	cascaded := cascadeUpParentStatus(database, child2.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -695,7 +695,7 @@ func TestCascadeUpToClosedAllChildrenClosed(t *testing.T) {
 	sessionID := "ses_test"
 
 	// All children closed, cascade up should update epic
-	cascaded := cascadeUpParentStatus(database, child2.ID, models.StatusClosed, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusClosed, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -752,7 +752,7 @@ func TestCascadeUpRecursive(t *testing.T) {
 
 	// Child is only child of parent, parent is only child of grandparent
 	// Cascade up from child should update both parent and grandparent
-	cascaded := cascadeUpParentStatus(database, child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 2 {
 		t.Errorf("Expected 2 cascaded (parent + grandparent), got %d", cascaded)
@@ -800,7 +800,7 @@ func TestCascadeUpNoActionNonEpicParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up to non-epic parent
-	cascaded := cascadeUpParentStatus(database, child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (parent not epic), got %d", cascaded)
@@ -852,7 +852,7 @@ func TestCascadeUpNoActionNotAllChildrenReady(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up because child2 is still open
-	cascaded := cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (not all children ready), got %d", cascaded)
@@ -904,7 +904,7 @@ func TestCascadeUpReviewAllowsClosedSiblings(t *testing.T) {
 	sessionID := "ses_test"
 
 	// For in_review target, closed siblings should count as "ready"
-	cascaded := cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -937,7 +937,7 @@ func TestCascadeUpNoActionNoParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should return 0 since no parent
-	cascaded := cascadeUpParentStatus(database, task.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus( task.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (no parent), got %d", cascaded)
