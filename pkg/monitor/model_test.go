@@ -1381,6 +1381,183 @@ func TestNavigateModalClearsParentEpicState(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollDownInModal(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       5,
+				ContentLines: 50,
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	downMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+		X:      40,
+		Y:      15,
+	}
+	updated, _ := m.handleMouse(downMsg)
+	m2 := updated.(Model)
+
+	// Scroll should increase by 3 (delta)
+	if m2.CurrentModal().Scroll != 8 {
+		t.Errorf("Scroll down should increase scroll to 8, got %d", m2.CurrentModal().Scroll)
+	}
+}
+
+func TestMouseWheelScrollUpInModal(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       10,
+				ContentLines: 50,
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	upMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelUp,
+		X:      40,
+		Y:      15,
+	}
+	updated, _ := m.handleMouse(upMsg)
+	m2 := updated.(Model)
+
+	// Scroll should decrease by 3 (delta)
+	if m2.CurrentModal().Scroll != 7 {
+		t.Errorf("Scroll up should decrease scroll to 7, got %d", m2.CurrentModal().Scroll)
+	}
+}
+
+func TestMouseWheelScrollInModalClampsBounds(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       0,
+				ContentLines: 10, // Short content
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	// Scroll up at top should stay at 0
+	upMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelUp,
+		X:      40,
+		Y:      15,
+	}
+	updated, _ := m.handleMouse(upMsg)
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().Scroll != 0 {
+		t.Errorf("Scroll up at top should stay at 0, got %d", m2.CurrentModal().Scroll)
+	}
+}
+
+func TestMouseWheelScrollInEpicScrollsContent(t *testing.T) {
+	// Mouse wheel in epic modal should scroll content, not task cursor
+	// (task cursor is navigated with j/k keys)
+	m := Model{
+		Width:  80,
+		Height: 30,
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:            "td-epic",
+				Issue:              &models.Issue{ID: "td-epic", Type: models.TypeEpic},
+				EpicTasks:          []models.Issue{{ID: "td-1"}, {ID: "td-2"}, {ID: "td-3"}, {ID: "td-4"}, {ID: "td-5"}},
+				TaskSectionFocused: true,
+				EpicTasksCursor:    0,
+				Scroll:             0,
+				ContentLines:       50,
+				SourcePanel:        PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	// Scroll down should scroll modal content, not task cursor
+	downMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+		X:      40,
+		Y:      15,
+	}
+	updated, _ := m.handleMouse(downMsg)
+	m2 := updated.(Model)
+
+	// Task cursor should remain unchanged
+	if m2.CurrentModal().EpicTasksCursor != 0 {
+		t.Errorf("Mouse wheel should not move task cursor, got %d", m2.CurrentModal().EpicTasksCursor)
+	}
+	// Modal content should scroll
+	if m2.CurrentModal().Scroll == 0 {
+		t.Error("Mouse wheel should scroll modal content")
+	}
+}
+
+func TestModalContentWidth(t *testing.T) {
+	tests := []struct {
+		name        string
+		termWidth   int
+		expectWidth int
+	}{
+		{
+			name:        "normal terminal 100 chars",
+			termWidth:   100,
+			expectWidth: 76, // (100 * 80 / 100) - 4 = 76
+		},
+		{
+			name:        "wide terminal 150 chars",
+			termWidth:   150,
+			expectWidth: 96, // capped at 100, minus 4 = 96
+		},
+		{
+			name:        "narrow terminal 50 chars",
+			termWidth:   50,
+			expectWidth: 36, // (50 * 80 / 100) - 4 = 36
+		},
+		{
+			name:        "very narrow terminal 30 chars",
+			termWidth:   30,
+			expectWidth: 36, // modal min 40, content min 36
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{Width: tt.termWidth}
+			got := m.modalContentWidth()
+			if got != tt.expectWidth {
+				t.Errorf("modalContentWidth() = %d, want %d", got, tt.expectWidth)
+			}
+		})
+	}
+}
+
 // TestEpicAutoFocusTaskSection verifies that epics with tasks auto-focus the task section
 // This enables j/k navigation without requiring Tab to enter the task section
 func TestEpicAutoFocusTaskSection(t *testing.T) {

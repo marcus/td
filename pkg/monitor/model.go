@@ -709,6 +709,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Width = msg.Width
 		m.Height = msg.Height
 		m.updatePanelBounds()
+		// Re-render markdown if modal is open (width may have changed)
+		if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+			if modal.Issue.Description != "" || modal.Issue.Acceptance != "" {
+				width := m.modalContentWidth()
+				return m, m.renderMarkdownAsync(modal.IssueID, modal.Issue.Description, modal.Issue.Acceptance, width)
+			}
+		}
 		return m, nil
 
 	case tea.MouseMsg:
@@ -760,10 +767,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Trigger async markdown rendering (expensive)
 			if msg.Issue != nil && (msg.Issue.Description != "" || msg.Issue.Acceptance != "") {
-				width := m.Width - 20
-				if width < 40 {
-					width = 40
-				}
+				width := m.modalContentWidth()
 				return m, m.renderMarkdownAsync(msg.IssueID, msg.Issue.Description, msg.Issue.Acceptance, width)
 			}
 		}
@@ -1624,6 +1628,25 @@ func (m Model) modalMaxScroll(modal *ModalEntry) int {
 		maxScroll = 0
 	}
 	return maxScroll
+}
+
+// modalContentWidth returns the content width for modal text rendering.
+// This must match the width calculation in renderModal (view.go).
+func (m Model) modalContentWidth() int {
+	// Modal is 80% of terminal width, capped 40-100
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+	// Content width accounts for border (2) and padding (2) = 4
+	contentWidth := modalWidth - 4
+	if contentWidth < 30 {
+		contentWidth = 30
+	}
+	return contentWidth
 }
 
 // renderMarkdownAsync returns a command that renders markdown in background
@@ -2516,7 +2539,47 @@ func (m *Model) updatePanelBounds() {
 
 // handleMouse processes mouse events for panel selection and row clicking
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Ignore mouse events when modals/overlays are open
+	// Handle mouse wheel scroll in modals/overlays
+	if msg.Action == tea.MouseActionPress {
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			delta := 3
+			if msg.Button == tea.MouseButtonWheelUp {
+				delta = -3
+			}
+
+			// Route scroll to appropriate modal
+			if modal := m.CurrentModal(); modal != nil {
+				// Mouse wheel always scrolls modal content (use j/k for task list navigation)
+				modal.Scroll += delta
+				if modal.Scroll < 0 {
+					modal.Scroll = 0
+				}
+				maxScroll := m.modalMaxScroll(modal)
+				if modal.Scroll > maxScroll {
+					modal.Scroll = maxScroll
+				}
+				return m, nil
+			}
+
+			if m.StatsOpen {
+				m.StatsScroll += delta
+				if m.StatsScroll < 0 {
+					m.StatsScroll = 0
+				}
+				return m, nil
+			}
+
+			if m.HandoffsOpen {
+				m.HandoffsScroll += delta
+				if m.HandoffsScroll < 0 {
+					m.HandoffsScroll = 0
+				}
+				return m, nil
+			}
+		}
+	}
+
+	// Ignore other mouse events when modals/overlays are open
 	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.ShowHelp || m.ShowTDQHelp {
 		return m, nil
 	}
