@@ -33,6 +33,45 @@ func (m Model) renderView() string {
 		return m.renderTDQHelp()
 	}
 
+	// Render base view (panels + footer)
+	base := m.renderBaseView()
+
+	// Overlay form modal if open
+	if m.FormOpen && m.FormState != nil {
+		form := m.renderFormModal()
+		return OverlayModal(base, form, m.Width, m.Height)
+	}
+
+	// Overlay confirmation dialog if open
+	if m.ConfirmOpen {
+		confirm := m.renderConfirmation()
+		return OverlayModal(base, confirm, m.Width, m.Height)
+	}
+
+	// Overlay stats modal if open
+	if m.StatsOpen {
+		stats := m.renderStatsModal()
+		return OverlayModal(base, stats, m.Width, m.Height)
+	}
+
+	// Overlay handoffs modal if open
+	if m.HandoffsOpen {
+		handoffs := m.renderHandoffsModal()
+		return OverlayModal(base, handoffs, m.Width, m.Height)
+	}
+
+	// Overlay modal if open
+	if m.ModalOpen() {
+		modal := m.renderModal()
+		return OverlayModal(base, modal, m.Width, m.Height)
+	}
+
+	return base
+}
+
+// renderBaseView renders the panels and footer without any modal overlay.
+// This is the background content used for dimmed modal overlays.
+func (m Model) renderBaseView() string {
 	// Render search bar if active or has query
 	searchBar := m.renderSearchBar()
 	searchBarHeight := 0
@@ -77,55 +116,11 @@ func (m Model) renderView() string {
 	}
 
 	// Add footer (unless embedded in sidecar)
-	var base string
 	if m.Embedded {
-		base = content
-	} else {
-		footer := m.renderFooter()
-		base = lipgloss.JoinVertical(lipgloss.Left, content, footer)
+		return content
 	}
-
-	// Overlay form modal if open
-	if m.FormOpen && m.FormState != nil {
-		form := m.renderFormModal()
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, form,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
-	}
-
-	// Overlay confirmation dialog if open
-	if m.ConfirmOpen {
-		confirm := m.renderConfirmation()
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, confirm,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
-	}
-
-	// Overlay stats modal if open
-	if m.StatsOpen {
-		stats := m.renderStatsModal()
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, stats,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
-	}
-
-	// Overlay handoffs modal if open
-	if m.HandoffsOpen {
-		handoffs := m.renderHandoffsModal()
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, handoffs,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
-	}
-
-	// Overlay modal if open
-	if m.ModalOpen() {
-		modal := m.renderModal()
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, modal,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
-	}
-
-	return base
+	footer := m.renderFooter()
+	return lipgloss.JoinVertical(lipgloss.Left, content, footer)
 }
 
 // renderCompact renders a minimal view for small terminals
