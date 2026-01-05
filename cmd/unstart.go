@@ -12,8 +12,9 @@ import (
 )
 
 var unstartCmd = &cobra.Command{
-	Use:   "unstart [issue-id...]",
-	Short: "Revert issue(s) from in_progress to open",
+	Use:     "unstart [issue-id...]",
+	Aliases: []string{"stop"},
+	Short:   "Revert issue(s) from in_progress to open",
 	Long: `Reverts issue(s) back to open status. Clears implementer session.
 Useful for undoing accidental starts or when you need to release an issue.
 

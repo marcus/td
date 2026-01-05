@@ -916,6 +916,75 @@ func TestCascadeUpReviewAllowsClosedSiblings(t *testing.T) {
 	}
 }
 
+// Tests for new flags added to workflow commands
+
+func TestReviewMinorFlag(t *testing.T) {
+	// Test that --minor flag exists
+	if reviewCmd.Flags().Lookup("minor") == nil {
+		t.Error("Expected --minor flag to be defined on review command")
+	}
+
+	// Test that --minor flag can be set
+	if err := reviewCmd.Flags().Set("minor", "true"); err != nil {
+		t.Errorf("Failed to set --minor flag: %v", err)
+	}
+
+	minorValue, err := reviewCmd.Flags().GetBool("minor")
+	if err != nil {
+		t.Errorf("Failed to get --minor flag value: %v", err)
+	}
+	if !minorValue {
+		t.Error("Expected minor flag to be true")
+	}
+
+	// Reset
+	reviewCmd.Flags().Set("minor", "false")
+}
+
+func TestReviewReasonShorthand(t *testing.T) {
+	// Test that -m shorthand exists for --reason
+	if reviewCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --reason on review command")
+	}
+
+	// Test that -m flag can be set
+	if err := reviewCmd.Flags().Set("reason", "test message"); err != nil {
+		t.Errorf("Failed to set --reason flag: %v", err)
+	}
+
+	reasonValue, err := reviewCmd.Flags().GetString("reason")
+	if err != nil {
+		t.Errorf("Failed to get --reason flag value: %v", err)
+	}
+	if reasonValue != "test message" {
+		t.Errorf("Expected reason value 'test message', got %s", reasonValue)
+	}
+
+	// Reset
+	reviewCmd.Flags().Set("reason", "")
+}
+
+func TestApproveReasonShorthand(t *testing.T) {
+	// Test that -m shorthand exists for --reason on approve
+	if approveCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --reason on approve command")
+	}
+}
+
+func TestRejectReasonShorthand(t *testing.T) {
+	// Test that -m shorthand exists for --reason on reject
+	if rejectCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --reason on reject command")
+	}
+}
+
+func TestCloseReasonShorthand(t *testing.T) {
+	// Test that -m shorthand exists for --reason on close
+	if closeCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --reason on close command")
+	}
+}
+
 func TestCascadeUpNoActionNoParent(t *testing.T) {
 	dir := t.TempDir()
 

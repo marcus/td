@@ -84,6 +84,11 @@ Supports bulk operations:
 				continue
 			}
 
+			// Handle --minor flag
+			if minor, _ := cmd.Flags().GetBool("minor"); minor {
+				issue.Minor = true
+			}
+
 			// Capture previous state for undo
 			prevData, _ := json.Marshal(issue)
 
@@ -584,16 +589,17 @@ func init() {
 	rootCmd.AddCommand(rejectCmd)
 	rootCmd.AddCommand(closeCmd)
 
-	reviewCmd.Flags().String("reason", "", "Reason for submitting")
+	reviewCmd.Flags().StringP("reason", "m", "", "Reason for submitting")
 	reviewCmd.Flags().Bool("json", false, "JSON output")
-	approveCmd.Flags().String("reason", "", "Reason for approval")
+	reviewCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
+	approveCmd.Flags().StringP("reason", "m", "", "Reason for approval")
 	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("comment", "", "Reason for approval (alias for --message)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
-	rejectCmd.Flags().String("reason", "", "Reason for rejection")
+	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")
 	rejectCmd.Flags().Bool("json", false, "JSON output")
-	closeCmd.Flags().String("reason", "", "Reason for closing")
+	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
 }

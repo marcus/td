@@ -108,6 +108,11 @@ var createCmd = &cobra.Command{
 				issue.Description = body
 			}
 		}
+		if issue.Description == "" {
+			if notes, _ := cmd.Flags().GetString("notes"); notes != "" {
+				issue.Description = notes
+			}
+		}
 
 		// Acceptance
 		issue.Acceptance, _ = cmd.Flags().GetString("acceptance")
@@ -186,6 +191,7 @@ func init() {
 	createCmd.Flags().StringP("description", "d", "", "Description text")
 	createCmd.Flags().String("desc", "", "Alias for --description")
 	createCmd.Flags().String("body", "", "Alias for --description")
+	createCmd.Flags().String("notes", "", "Alias for --description")
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
 	createCmd.Flags().String("parent", "", "Parent issue ID")
 	createCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")

@@ -478,9 +478,12 @@ Examples:
 }
 
 var depAddCmd = &cobra.Command{
-	Use:   "add <issue> <depends-on>",
-	Short: "Add a dependency (issue depends on another)",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add <issue> <depends-on>...",
+	Short: "Add one or more dependencies (issue depends on others)",
+	Long: `Add dependencies to an issue. Supports batch operations:
+  td dep add td-abc td-xyz               # td-abc depends on td-xyz
+  td dep add td-abc td-xyz1 td-xyz2      # td-abc depends on both td-xyz1 and td-xyz2`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -491,7 +494,17 @@ var depAddCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		return addDependency(database, args[0], args[1])
+		issueID := args[0]
+		added := 0
+		for _, depID := range args[1:] {
+			if err := addDependency(database, issueID, depID); err == nil {
+				added++
+			}
+		}
+		if len(args) > 2 {
+			fmt.Printf("\nAdded %d dependencies\n", added)
+		}
+		return nil
 	},
 }
 

@@ -317,6 +317,35 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 	}
 }
 
+// TestHandoffNoteFlag tests that --note/-n flag exists
+func TestHandoffNoteFlag(t *testing.T) {
+	// Test that --note flag exists
+	if handoffCmd.Flags().Lookup("note") == nil {
+		t.Error("Expected --note flag to be defined on handoff command")
+	}
+
+	// Test that -n shorthand exists
+	if handoffCmd.Flags().ShorthandLookup("n") == nil {
+		t.Error("Expected -n shorthand to be defined for --note on handoff command")
+	}
+
+	// Test that --note flag can be set
+	if err := handoffCmd.Flags().Set("note", "quick note"); err != nil {
+		t.Errorf("Failed to set --note flag: %v", err)
+	}
+
+	noteValue, err := handoffCmd.Flags().GetString("note")
+	if err != nil {
+		t.Errorf("Failed to get --note flag value: %v", err)
+	}
+	if noteValue != "quick note" {
+		t.Errorf("Expected note value 'quick note', got %s", noteValue)
+	}
+
+	// Reset
+	handoffCmd.Flags().Set("note", "")
+}
+
 // TestGetLatestHandoff tests retrieving the most recent handoff
 func TestGetLatestHandoff(t *testing.T) {
 	dir := t.TempDir()

@@ -38,6 +38,11 @@ Or use flags with values, stdin (-), or file (@path):
 	GroupID: "workflow",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validate issue ID (catch empty strings)
+		if err := ValidateIssueID(args[0], "handoff <issue-id>"); err != nil {
+			output.Error("%v", err)
+			return err
+		}
 		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)
@@ -76,6 +81,11 @@ Or use flags with values, stdin (-), or file (@path):
 		handoff.Remaining, stdinUsed = input.ExpandFlagValues(remaining, stdinUsed)
 		handoff.Decisions, stdinUsed = input.ExpandFlagValues(decisions, stdinUsed)
 		handoff.Uncertain, stdinUsed = input.ExpandFlagValues(uncertain, stdinUsed)
+
+		// Handle --note/-n flag for simple handoffs
+		if note, _ := cmd.Flags().GetString("note"); note != "" {
+			handoff.Done = append(handoff.Done, note)
+		}
 
 		// Check if stdin has data (YAML format) - only if not already used by flag expansion
 		if !stdinUsed {
@@ -251,4 +261,5 @@ func init() {
 	handoffCmd.Flags().StringArray("remaining", nil, "Remaining item (repeatable)")
 	handoffCmd.Flags().StringArray("decision", nil, "Decision made (repeatable)")
 	handoffCmd.Flags().StringArray("uncertain", nil, "Uncertainty (repeatable)")
+	handoffCmd.Flags().StringP("note", "n", "", "Simple note for handoff (alternative to structured flags)")
 }

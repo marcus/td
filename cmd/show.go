@@ -23,6 +23,11 @@ Examples:
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validate issue IDs (catch empty strings)
+		if err := ValidateIssueIDs(args, "show <issue-id>"); err != nil {
+			output.Error("%v", err)
+			return err
+		}
 		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)

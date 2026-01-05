@@ -371,6 +371,30 @@ func TestCreateIssueTimestamps(t *testing.T) {
 	}
 }
 
+// TestCreateNotesFlagAlias tests that --notes is an alias for --description
+func TestCreateNotesFlagAlias(t *testing.T) {
+	// Test that --notes flag exists
+	if createCmd.Flags().Lookup("notes") == nil {
+		t.Error("Expected --notes flag to be defined")
+	}
+
+	// Test that --notes flag can be set
+	if err := createCmd.Flags().Set("notes", "test description via notes"); err != nil {
+		t.Errorf("Failed to set --notes flag: %v", err)
+	}
+
+	notesValue, err := createCmd.Flags().GetString("notes")
+	if err != nil {
+		t.Errorf("Failed to get --notes flag value: %v", err)
+	}
+	if notesValue != "test description via notes" {
+		t.Errorf("Expected notes value 'test description via notes', got %s", notesValue)
+	}
+
+	// Reset
+	createCmd.Flags().Set("notes", "")
+}
+
 // TestCreateTagFlagParsing tests that --tag and --tags flags are defined and work
 func TestCreateTagFlagParsing(t *testing.T) {
 	// Test that --tag flag exists

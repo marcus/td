@@ -172,6 +172,25 @@ func getBaseDir() string {
 	return baseDir
 }
 
+// ValidateIssueID checks if an issue ID is valid (non-empty, non-whitespace)
+// Returns an error with helpful usage info if invalid
+func ValidateIssueID(id string, cmdUsage string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("issue ID required. Usage: td %s", cmdUsage)
+	}
+	return nil
+}
+
+// ValidateIssueIDs validates multiple issue IDs
+func ValidateIssueIDs(ids []string, cmdUsage string) error {
+	for _, id := range ids {
+		if err := ValidateIssueID(id, cmdUsage); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // showWorkflowHint prints a helpful hint when a user tries an unknown workflow command
 func showWorkflowHint(attempted, suggested, hint string) {
 	fmt.Fprintf(os.Stderr, "\nUnknown command: '%s'\n\n", attempted)

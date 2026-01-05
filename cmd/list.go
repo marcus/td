@@ -33,23 +33,29 @@ var listCmd = &cobra.Command{
 		showAll, _ := cmd.Flags().GetBool("all")
 
 		// Parse status filter (supports both --status open --status closed and --status open,closed)
-		// Also accepts "review" as alias for "in_review"
+		// Also accepts "review" as alias for "in_review" and "all" to show all statuses
 		if statusStr, _ := cmd.Flags().GetStringArray("status"); len(statusStr) > 0 {
 			for _, s := range statusStr {
 				// Split on comma to support --status in_progress,in_review
 				for _, part := range strings.Split(s, ",") {
 					part = strings.TrimSpace(part)
 					if part != "" {
+						// Handle "all" as special value to show all statuses
+						if strings.EqualFold(part, "all") {
+							showAll = true
+							continue
+						}
 						status := models.NormalizeStatus(part)
 						if !models.IsValidStatus(status) {
-							output.Error("invalid status: %s (valid: open, in_progress, blocked, in_review, closed)", part)
+							output.Error("invalid status: %s (valid: open, in_progress, blocked, in_review, closed, all)", part)
 							return fmt.Errorf("invalid status: %s", part)
 						}
 						opts.Status = append(opts.Status, status)
 					}
 				}
 			}
-		} else if !showAll {
+		}
+		if !showAll && len(opts.Status) == 0 {
 			// Default: exclude closed issues unless --all is specified
 			opts.Status = []models.Status{
 				models.StatusOpen,
