@@ -25,7 +25,7 @@ func (m Model) renderView() string {
 		return m.renderError()
 	}
 
-	if m.ShowHelp {
+	if m.HelpOpen {
 		return m.renderHelp()
 	}
 

@@ -57,11 +57,26 @@ func (m Model) hitTestTaskListRow(relY int) int {
 
 	// Account for "▲ more above" indicator
 	linePos := 0
-	if offset > 0 {
+	hasTopIndicator := offset > 0
+	if hasTopIndicator {
 		if relY == 0 {
 			return -1 // Clicked on scroll indicator
 		}
 		linePos = 1
+	}
+
+	// Check for "▼ more below" indicator
+	// Calculate visible content lines and check if there's more content below
+	visibleLines := height
+	if hasTopIndicator {
+		visibleLines--
+	}
+	totalLinesFromOffset := m.taskListLinesFromOffset(offset)
+	hasBottomIndicator := totalLinesFromOffset > visibleLines
+
+	// If clicking on the bottom indicator line, return -1
+	if hasBottomIndicator && relY >= visibleLines {
+		return -1 // Clicked on bottom scroll indicator
 	}
 
 	// Walk through visible rows, tracking line position
@@ -589,7 +604,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.ShowHelp || m.ShowTDQHelp {
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.HelpOpen || m.ShowTDQHelp {
 		return m, nil
 	}
 

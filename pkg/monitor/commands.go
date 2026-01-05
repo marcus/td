@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -134,10 +135,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Show TDQ help when in search mode, regular help otherwise
 		if m.SearchMode {
 			m.ShowTDQHelp = !m.ShowTDQHelp
-			m.ShowHelp = false
+			m.HelpOpen = false
 		} else {
-			m.ShowHelp = !m.ShowHelp
+			m.HelpOpen = !m.HelpOpen
 			m.ShowTDQHelp = false
+			if m.HelpOpen {
+				// Initialize scroll position and calculate total lines
+				m.HelpScroll = 0
+				helpText := m.Keymap.GenerateHelp()
+				m.HelpTotalLines = strings.Count(helpText, "\n") + 1
+			}
 		}
 		return m, nil
 
@@ -394,9 +401,17 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Modal navigation
 	case keymap.CmdNavigatePrev:
+		// Check if epic tasks are focused - navigate within epic
+		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
+			return m.navigateEpicTask(-1)
+		}
 		return m.navigateModal(-1)
 
 	case keymap.CmdNavigateNext:
+		// Check if epic tasks are focused - navigate within epic
+		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
+			return m.navigateEpicTask(1)
+		}
 		return m.navigateModal(1)
 
 	case keymap.CmdClose:
@@ -589,7 +604,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.EpicTasksCursor < len(modal.EpicTasks) {
 				taskID := modal.EpicTasks[modal.EpicTasksCursor].ID
 				// Don't reset TaskSectionFocused - preserve parent modal state for when we return
-				return m.pushModal(taskID, m.ModalSourcePanel())
+				// Set navigation scope to epic's children for l/r navigation
+				return m.pushModalWithScope(taskID, m.ModalSourcePanel(), modal.EpicTasks)
 			}
 		}
 		return m, nil

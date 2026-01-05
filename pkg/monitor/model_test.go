@@ -2120,3 +2120,46 @@ func TestVisibleHeightUsesActualPanelHeight(t *testing.T) {
 		})
 	}
 }
+
+func TestHitTestTaskListRowBottomIndicator(t *testing.T) {
+	// Test that clicks on the bottom scroll indicator return -1
+	m := Model{
+		Width:  80,
+		Height: 30,
+		PaneHeights: [3]float64{0.333, 0.333, 0.334},
+		ScrollOffset: map[Panel]int{
+			PanelTaskList: 2, // Scrolled down, so top indicator is shown
+		},
+		// Create enough rows to require both scroll indicators
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "td-1"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-2"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-3"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-4"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-5"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-6"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-7"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-8"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-9"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "td-10"}, Category: CategoryReady},
+		},
+	}
+
+	// Click on top indicator (relY = 0) should return -1
+	if got := m.hitTestTaskListRow(0); got != -1 {
+		t.Errorf("hitTestTaskListRow(0) with top indicator = %d, want -1", got)
+	}
+
+	// Click on first visible row (relY = 1) should return the offset index (2)
+	if got := m.hitTestTaskListRow(1); got != 2 {
+		t.Errorf("hitTestTaskListRow(1) = %d, want 2 (first visible row)", got)
+	}
+
+	// Calculate where bottom indicator would be
+	visibleLines := m.visibleHeightForPanel(PanelTaskList) - 1 // -1 for top indicator
+
+	// Click at bottom indicator position should return -1
+	if got := m.hitTestTaskListRow(visibleLines); got != -1 {
+		t.Errorf("hitTestTaskListRow(%d) at bottom indicator = %d, want -1", visibleLines, got)
+	}
+}

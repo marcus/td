@@ -35,6 +35,8 @@ func DefaultBindings() []Binding {
 		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextMain, Description: "Full page up"},
 		{Key: "G", Command: CmdCursorBottom, Context: ContextMain, Description: "Go to bottom"},
 		{Key: "g g", Command: CmdCursorTop, Context: ContextMain, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextMain, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextMain, Description: "Go to bottom"},
 
 		// Actions
 		{Key: "enter", Command: CmdOpenDetails, Context: ContextMain, Description: "Open details"},
@@ -77,6 +79,8 @@ func DefaultBindings() []Binding {
 		{Key: "pgup", Command: CmdFullPageUp, Context: ContextModal, Description: "Page up"},
 		{Key: "G", Command: CmdCursorBottom, Context: ContextModal, Description: "Go to bottom"},
 		{Key: "g g", Command: CmdCursorTop, Context: ContextModal, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextModal, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextModal, Description: "Go to bottom"},
 
 		// Issue navigation
 		{Key: "h", Command: CmdNavigatePrev, Context: ContextModal, Description: "Previous issue"},
@@ -123,6 +127,8 @@ func DefaultBindings() []Binding {
 		{Key: "pgup", Command: CmdFullPageUp, Context: ContextStats, Description: "Page up"},
 		{Key: "G", Command: CmdCursorBottom, Context: ContextStats, Description: "Go to bottom"},
 		{Key: "g g", Command: CmdCursorTop, Context: ContextStats, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextStats, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextStats, Description: "Go to bottom"},
 
 		// Refresh
 		{Key: "r", Command: CmdRefresh, Context: ContextStats, Description: "Refresh"},
@@ -161,6 +167,10 @@ func DefaultBindings() []Binding {
 		{Key: "esc", Command: CmdClose, Context: ContextEpicTasks, Description: "Close modal"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextEpicTasks, Description: "Copy to clipboard"},
 		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextEpicTasks, Description: "Copy issue ID"},
+		{Key: "h", Command: CmdNavigatePrev, Context: ContextEpicTasks, Description: "Previous task"},
+		{Key: "left", Command: CmdNavigatePrev, Context: ContextEpicTasks, Description: "Previous task"},
+		{Key: "l", Command: CmdNavigateNext, Context: ContextEpicTasks, Description: "Next task"},
+		{Key: "right", Command: CmdNavigateNext, Context: ContextEpicTasks, Description: "Next task"},
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
@@ -221,6 +231,8 @@ func DefaultBindings() []Binding {
 		{Key: "ctrl+u", Command: CmdHalfPageUp, Context: ContextHandoffs, Description: "Half page up"},
 		{Key: "G", Command: CmdCursorBottom, Context: ContextHandoffs, Description: "Go to bottom"},
 		{Key: "g g", Command: CmdCursorTop, Context: ContextHandoffs, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextHandoffs, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextHandoffs, Description: "Go to bottom"},
 		{Key: "r", Command: CmdRefresh, Context: ContextHandoffs, Description: "Refresh"},
 
 		// ============================================================

@@ -35,8 +35,10 @@ type Model struct {
 	ScrollOffset map[Panel]int
 	Cursor       map[Panel]int    // Per-panel cursor position (selected row)
 	SelectedID   map[Panel]string // Per-panel selected issue ID (preserved across refresh)
-	ShowHelp     bool
-	ShowTDQHelp  bool // Show TDQ query syntax help (when in search mode)
+	HelpOpen       bool // Whether help modal is open
+	HelpScroll     int  // Current scroll position in help
+	HelpTotalLines int  // Cached total line count in help
+	ShowTDQHelp    bool // Show TDQ query syntax help (when in search mode)
 	LastRefresh  time.Time
 	StartedAt    time.Time // When monitor started, to track new handoffs
 	Err          error     // Last error, if any

@@ -243,6 +243,10 @@ type ModalEntry struct {
 	ParentEpic        *models.Issue
 	ParentEpicFocused bool
 
+	// Navigation scope - when set, l/r navigates within this list instead of source panel
+	// Used when opening issues from within an epic to scope navigation to siblings
+	NavigationScope []models.Issue
+
 	// Blocked-by section (dependencies blocking this issue)
 	BlockedBySectionFocused bool
 	BlockedByCursor         int

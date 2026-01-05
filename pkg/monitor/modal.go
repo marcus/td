@@ -79,35 +79,45 @@ func (m Model) ModalBreadcrumb() string {
 	return strings.Join(parts, " > ")
 }
 
-// navigateModal moves to the prev/next issue in the source panel's list
-// Only works at modal depth 1 (base modal)
+// navigateModal moves to the prev/next issue in the navigation scope or source panel's list
+// Works at depth 1 for panel lists, or at any depth when NavigationScope is set
 func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
-	// Only allow h/l navigation at depth 1
-	if m.ModalDepth() != 1 {
-		return m, nil
-	}
-
 	modal := m.CurrentModal()
 	if modal == nil {
 		return m, nil
 	}
 
-	// Get the list of issue IDs for the source panel (panel that opened the modal)
+	// Get the list of issue IDs to navigate through
 	var issueIDs []string
-	switch m.ModalSourcePanel() {
-	case PanelCurrentWork:
-		issueIDs = m.CurrentWorkRows
-	case PanelTaskList:
-		for _, row := range m.TaskListRows {
-			issueIDs = append(issueIDs, row.Issue.ID)
+	usingScopedNavigation := len(modal.NavigationScope) > 0
+
+	if usingScopedNavigation {
+		// Use scoped navigation (e.g., epic children)
+		for _, issue := range modal.NavigationScope {
+			issueIDs = append(issueIDs, issue.ID)
 		}
-	case PanelActivity:
-		// For activity, collect unique issue IDs
-		seen := make(map[string]bool)
-		for _, item := range m.Activity {
-			if item.IssueID != "" && !seen[item.IssueID] {
-				seen[item.IssueID] = true
-				issueIDs = append(issueIDs, item.IssueID)
+	} else {
+		// Only allow panel navigation at depth 1
+		if m.ModalDepth() != 1 {
+			return m, nil
+		}
+
+		// Get the list of issue IDs for the source panel
+		switch m.ModalSourcePanel() {
+		case PanelCurrentWork:
+			issueIDs = m.CurrentWorkRows
+		case PanelTaskList:
+			for _, row := range m.TaskListRows {
+				issueIDs = append(issueIDs, row.Issue.ID)
+			}
+		case PanelActivity:
+			// For activity, collect unique issue IDs
+			seen := make(map[string]bool)
+			for _, item := range m.Activity {
+				if item.IssueID != "" && !seen[item.IssueID] {
+					seen[item.IssueID] = true
+					issueIDs = append(issueIDs, item.IssueID)
+				}
 			}
 		}
 	}
@@ -137,6 +147,9 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 
 	// Navigate to new issue - replace the current modal entry
 	newIssueID := issueIDs[newIdx]
+	// Preserve NavigationScope when navigating within scope
+	savedScope := modal.NavigationScope
+
 	modal.IssueID = newIssueID
 	modal.Scroll = 0
 	modal.Loading = true
@@ -153,10 +166,13 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 	modal.ParentEpicFocused = false
 	modal.DescRender = ""
 	modal.AcceptRender = ""
+	modal.NavigationScope = savedScope
 
-	// Update cursor position to match in source panel
-	m.Cursor[m.ModalSourcePanel()] = newIdx
-	m.saveSelectedID(m.ModalSourcePanel())
+	// Update cursor position in source panel (only for non-scoped navigation at depth 1)
+	if !usingScopedNavigation {
+		m.Cursor[m.ModalSourcePanel()] = newIdx
+		m.saveSelectedID(m.ModalSourcePanel())
+	}
 
 	return m, m.fetchIssueDetails(newIssueID)
 }
@@ -376,6 +392,38 @@ func (m Model) openIssueFromHandoffs() (tea.Model, tea.Cmd) {
 	issueID := m.HandoffsData[m.HandoffsCursor].IssueID
 	m.closeHandoffsModal()
 	return m.pushModal(issueID, PanelCurrentWork)
+}
+
+// navigateEpicTask navigates to the prev/next task within the epic's task list
+func (m Model) navigateEpicTask(delta int) (tea.Model, tea.Cmd) {
+	modal := m.CurrentModal()
+	if modal == nil || !modal.TaskSectionFocused || len(modal.EpicTasks) == 0 {
+		return m, nil
+	}
+
+	// Calculate new cursor position
+	newIdx := modal.EpicTasksCursor + delta
+	if newIdx < 0 || newIdx >= len(modal.EpicTasks) {
+		return m, nil // At boundary, don't wrap
+	}
+
+	// Update cursor and open the task with navigation scope
+	modal.EpicTasksCursor = newIdx
+	taskID := modal.EpicTasks[newIdx].ID
+	return m.pushModalWithScope(taskID, m.ModalSourcePanel(), modal.EpicTasks)
+}
+
+// pushModalWithScope pushes a new modal with a navigation scope for l/r navigation
+func (m Model) pushModalWithScope(issueID string, sourcePanel Panel, scope []models.Issue) (tea.Model, tea.Cmd) {
+	entry := ModalEntry{
+		IssueID:         issueID,
+		SourcePanel:     sourcePanel,
+		Loading:         true,
+		NavigationScope: scope,
+	}
+	m.ModalStack = append(m.ModalStack, entry)
+
+	return m, m.fetchIssueDetails(issueID)
 }
 
 // handleModalClick handles left-click events within a modal
