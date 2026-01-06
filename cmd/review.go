@@ -286,7 +286,12 @@ Supports bulk operations:
 			}
 
 			// Check that reviewer was not involved with this issue (unless minor task)
-			wasInvolved, _ := database.WasSessionInvolved(issueID, sess.ID)
+			// Handle DB errors conservatively - assume involvement on error
+			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
+			if err != nil {
+				output.Warning("failed to check session history for %s: %v", issueID, err)
+				wasInvolved = true // Conservative: assume involvement on error
+			}
 			if wasInvolved && !issue.Minor {
 				if !all { // Only show error for explicit requests
 					errMsg := fmt.Sprintf("cannot approve: you were involved with %s (created, started, or previously worked on)", issueID)
@@ -533,20 +538,40 @@ Examples:
 			}
 
 			// Check if self-closing (comprehensive check using session history)
-			wasInvolved, _ := database.WasSessionInvolved(issueID, sess.ID)
+			// Handle DB errors conservatively - assume involvement on error
+			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
+			if err != nil {
+				output.Warning("failed to check session history for %s: %v", issueID, err)
+				wasInvolved = true // Conservative: assume involvement on error
+			}
+
 			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
 			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
 			hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
 
-			// Can close if: never involved OR (only created AND someone else implemented)
-			canClose := !wasInvolved || (isCreator && hasOtherImplementer)
+			// Was ever involved = in history OR creator OR implementer
+			wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+			// Can close if:
+			// 1. Never involved at all, OR
+			// 2. Only created it AND someone else implemented (not self)
+			var canClose bool
+			if !wasEverInvolved {
+				canClose = true
+			} else if isCreator && hasOtherImplementer && !isImplementer {
+				canClose = true
+			} else {
+				canClose = false
+			}
 
 			if !canClose {
 				if selfCloseException == "" {
 					if isImplementer {
 						output.Error("cannot close own implementation: %s", issueID)
-					} else {
+					} else if isCreator && !hasOtherImplementer {
 						output.Error("cannot close: you created %s and no one else implemented it", issueID)
+					} else {
+						output.Error("cannot close: you previously worked on %s", issueID)
 					}
 					output.Error("  Use `td review %s` to submit for review", issueID)
 					output.Error("  Or use `td close --self-close-exception \"reason\" %s`", issueID)
