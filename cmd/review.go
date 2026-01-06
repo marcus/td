@@ -21,8 +21,9 @@ func clearFocusIfNeeded(baseDir, issueID string) {
 }
 
 var reviewCmd = &cobra.Command{
-	Use:   "review [issue-id...]",
-	Short: "Submit one or more issues for review",
+	Use:     "review [issue-id...]",
+	Aliases: []string{"submit"},
+	Short:   "Submit one or more issues for review",
 	Long: `Submits the issue(s) for review. Requires a handoff to be recorded first.
 
 For epics/parent issues, automatically cascades to all open/in_progress
@@ -208,8 +209,8 @@ Supports bulk operations:
 }
 
 func approvalReason(cmd *cobra.Command) string {
-	// Precedence: explicit --reason, then --message, then --comment
-	for _, flag := range []string{"reason", "message", "comment"} {
+	// Precedence: --reason > --message > --note > --notes > --comment
+	for _, flag := range []string{"reason", "message", "note", "notes", "comment"} {
 		v, _ := cmd.Flags().GetString(flag)
 		if v != "" {
 			return v
@@ -622,6 +623,8 @@ func init() {
 	approveCmd.Flags().StringP("reason", "m", "", "Reason for approval")
 	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("comment", "", "Reason for approval (alias for --message)")
+	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
+	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")

@@ -383,3 +383,61 @@ func TestGetLatestHandoff(t *testing.T) {
 		t.Errorf("Expected latest session, got %q", latest.SessionID)
 	}
 }
+
+// TestHandoffPositionalMessage tests that positional message is accepted
+func TestHandoffPositionalMessage(t *testing.T) {
+	// Verify handoff accepts 1-2 args (issue-id and optional message)
+	args := handoffCmd.Args
+	if args == nil {
+		t.Fatal("Expected Args validator to be set")
+	}
+
+	// Test with 1 arg (should be valid)
+	if err := args(handoffCmd, []string{"td-test123"}); err != nil {
+		t.Errorf("Expected 1 arg to be valid: %v", err)
+	}
+
+	// Test with 2 args (should be valid)
+	if err := args(handoffCmd, []string{"td-test123", "quick message"}); err != nil {
+		t.Errorf("Expected 2 args to be valid: %v", err)
+	}
+
+	// Test with 0 args (should fail)
+	if err := args(handoffCmd, []string{}); err == nil {
+		t.Error("Expected 0 args to fail")
+	}
+
+	// Test with 3 args (should fail)
+	if err := args(handoffCmd, []string{"a", "b", "c"}); err == nil {
+		t.Error("Expected 3 args to fail")
+	}
+}
+
+// TestHandoffMessageFlag tests that --message/-m flag exists (agent-friendly alias)
+func TestHandoffMessageFlag(t *testing.T) {
+	// Test that --message flag exists
+	if handoffCmd.Flags().Lookup("message") == nil {
+		t.Error("Expected --message flag to be defined on handoff command")
+	}
+
+	// Test that -m shorthand exists
+	if handoffCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --message on handoff command")
+	}
+
+	// Test that --message flag can be set
+	if err := handoffCmd.Flags().Set("message", "quick message"); err != nil {
+		t.Errorf("Failed to set --message flag: %v", err)
+	}
+
+	messageValue, err := handoffCmd.Flags().GetString("message")
+	if err != nil {
+		t.Errorf("Failed to get --message flag value: %v", err)
+	}
+	if messageValue != "quick message" {
+		t.Errorf("Expected message value 'quick message', got %s", messageValue)
+	}
+
+	// Reset
+	handoffCmd.Flags().Set("message", "")
+}

@@ -1150,3 +1150,17 @@ func TestCascadeUpNoActionNoParent(t *testing.T) {
 		t.Errorf("Expected 0 cascaded (no parent), got %d", cascaded)
 	}
 }
+
+func TestReviewSubmitAlias(t *testing.T) {
+	// Test that "submit" is an alias for "review"
+	found := false
+	for _, alias := range reviewCmd.Aliases {
+		if alias == "submit" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'submit' to be an alias for review command")
+	}
+}

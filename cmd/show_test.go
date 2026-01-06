@@ -33,6 +33,25 @@ func TestShowFormatFlagParsing(t *testing.T) {
 	showCmd.Flags().Set("format", "")
 }
 
+// TestShowAcceptsZeroArgs tests that show can be called with no arguments
+func TestShowAcceptsZeroArgs(t *testing.T) {
+	// Test that show command accepts 0 arguments
+	args := showCmd.Args
+	if args == nil {
+		t.Fatal("Expected Args validator to be set")
+	}
+
+	// Test with 0 args (should be valid - will try to find current work)
+	if err := args(showCmd, []string{}); err != nil {
+		t.Errorf("Expected 0 args to be valid: %v", err)
+	}
+
+	// Test with 1 arg (should be valid)
+	if err := args(showCmd, []string{"td-test123"}); err != nil {
+		t.Errorf("Expected 1 arg to be valid: %v", err)
+	}
+}
+
 // TestShowJSONFlagStillWorks tests that --json flag is still available
 func TestShowJSONFlagStillWorks(t *testing.T) {
 	// Test that --json flag exists

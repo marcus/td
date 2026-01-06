@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/dependency"
@@ -482,8 +483,9 @@ var depAddCmd = &cobra.Command{
 	Short: "Add one or more dependencies (issue depends on others)",
 	Long: `Add dependencies to an issue. Supports batch operations:
   td dep add td-abc td-xyz               # td-abc depends on td-xyz
-  td dep add td-abc td-xyz1 td-xyz2      # td-abc depends on both td-xyz1 and td-xyz2`,
-	Args: cobra.MinimumNArgs(2),
+  td dep add td-abc td-xyz1 td-xyz2      # td-abc depends on both td-xyz1 and td-xyz2
+  td dep add td-abc --depends-on td-xyz  # flag-based syntax also supported`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -495,13 +497,33 @@ var depAddCmd = &cobra.Command{
 		defer database.Close()
 
 		issueID := args[0]
+
+		// Collect dependencies from positional args and --depends-on flag
+		var depIDs []string
+		depIDs = append(depIDs, args[1:]...)
+
+		// Also support --depends-on flag
+		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
+			for _, dep := range strings.Split(dependsOn, ",") {
+				dep = strings.TrimSpace(dep)
+				if dep != "" {
+					depIDs = append(depIDs, dep)
+				}
+			}
+		}
+
+		if len(depIDs) == 0 {
+			output.Error("no dependencies specified. Usage: td dep add <issue> <depends-on> or td dep add <issue> --depends-on <id>")
+			return fmt.Errorf("no dependencies specified")
+		}
+
 		added := 0
-		for _, depID := range args[1:] {
+		for _, depID := range depIDs {
 			if err := addDependency(database, issueID, depID); err == nil {
 				added++
 			}
 		}
-		if len(args) > 2 {
+		if len(depIDs) > 1 {
 			fmt.Printf("\nAdded %d dependencies\n", added)
 		}
 		return nil
@@ -670,6 +692,9 @@ func init() {
 	// Add subcommands to dep
 	depCmd.AddCommand(depAddCmd)
 	depCmd.AddCommand(depRmCmd)
+
+	// Flag-based syntax for dep add (for agent compatibility)
+	depAddCmd.Flags().String("depends-on", "", "Dependency ID(s) to add (comma-separated)")
 
 	blockedByCmd.Flags().Bool("direct", false, "Only show direct dependencies")
 	blockedByCmd.Flags().Bool("json", false, "JSON output")

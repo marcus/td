@@ -340,3 +340,27 @@ func TestBuildCriticalPathSkipsClosedIssues(t *testing.T) {
 		}
 	}
 }
+
+// TestDepAddDependsOnFlag tests that --depends-on flag exists on dep add command
+func TestDepAddDependsOnFlag(t *testing.T) {
+	// Test that --depends-on flag exists
+	if depAddCmd.Flags().Lookup("depends-on") == nil {
+		t.Error("Expected --depends-on flag to be defined on dep add command")
+	}
+
+	// Test that the flag can be set
+	if err := depAddCmd.Flags().Set("depends-on", "td-test123"); err != nil {
+		t.Errorf("Failed to set --depends-on flag: %v", err)
+	}
+
+	dependsOnValue, err := depAddCmd.Flags().GetString("depends-on")
+	if err != nil {
+		t.Errorf("Failed to get --depends-on flag value: %v", err)
+	}
+	if dependsOnValue != "td-test123" {
+		t.Errorf("Expected depends-on value 'td-test123', got %s", dependsOnValue)
+	}
+
+	// Reset
+	depAddCmd.Flags().Set("depends-on", "")
+}

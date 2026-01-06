@@ -537,3 +537,27 @@ func TestAppendToEmptyAcceptance(t *testing.T) {
 		t.Errorf("Acceptance not set: got %q", retrieved.Acceptance)
 	}
 }
+
+// TestUpdateCmdHasStatusFlag tests that --status flag exists on update command
+func TestUpdateCmdHasStatusFlag(t *testing.T) {
+	// Test that --status flag exists
+	if updateCmd.Flags().Lookup("status") == nil {
+		t.Error("Expected --status flag to be defined on update command")
+	}
+
+	// Test that the flag can be set
+	if err := updateCmd.Flags().Set("status", "open"); err != nil {
+		t.Errorf("Failed to set --status flag: %v", err)
+	}
+
+	statusValue, err := updateCmd.Flags().GetString("status")
+	if err != nil {
+		t.Errorf("Failed to get --status flag value: %v", err)
+	}
+	if statusValue != "open" {
+		t.Errorf("Expected status value 'open', got %s", statusValue)
+	}
+
+	// Reset
+	updateCmd.Flags().Set("status", "")
+}

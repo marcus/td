@@ -106,6 +106,16 @@ var updateCmd = &cobra.Command{
 				issue.ParentID = parent
 			}
 
+			// Handle --status flag for convenience
+			if status, _ := cmd.Flags().GetString("status"); status != "" {
+				newStatus := models.NormalizeStatus(status)
+				if !models.IsValidStatus(newStatus) {
+					output.Error("invalid status: %s (valid: open, in_progress, in_review, blocked, closed)", status)
+					continue
+				}
+				issue.Status = newStatus
+			}
+
 			// Update dependencies
 			if dependsOn, _ := cmd.Flags().GetString("depends-on"); cmd.Flags().Changed("depends-on") {
 				// Clear existing and set new
@@ -213,4 +223,5 @@ func init() {
 	updateCmd.Flags().String("depends-on", "", "Replace dependencies")
 	updateCmd.Flags().String("blocks", "", "Replace blocked issues")
 	updateCmd.Flags().Bool("append", false, "Append to text fields instead of replacing")
+	updateCmd.Flags().String("status", "", "New status (open, in_progress, in_review, blocked, closed)")
 }

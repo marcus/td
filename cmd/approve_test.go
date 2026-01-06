@@ -18,6 +18,8 @@ func TestApprovalReasonPrecedence(t *testing.T) {
 	cmd.Flags().String("reason", "", "")
 	cmd.Flags().String("message", "", "")
 	cmd.Flags().String("comment", "", "")
+	cmd.Flags().String("note", "", "")
+	cmd.Flags().String("notes", "", "")
 
 	// Lowest precedence: --comment
 	if err := cmd.Flags().Set("comment", "c"); err != nil {
@@ -49,8 +51,56 @@ func TestApprovalReasonEmpty(t *testing.T) {
 	cmd.Flags().String("reason", "", "")
 	cmd.Flags().String("message", "", "")
 	cmd.Flags().String("comment", "", "")
+	cmd.Flags().String("note", "", "")
+	cmd.Flags().String("notes", "", "")
 
 	if got := approvalReason(cmd); got != "" {
 		t.Fatalf("empty: got %q, want empty", got)
+	}
+}
+
+func TestApproveCmdHasNoteFlags(t *testing.T) {
+	// Test --note flag exists
+	if f := approveCmd.Flags().Lookup("note"); f == nil {
+		t.Error("expected approveCmd to have --note flag")
+	}
+
+	// Test --notes flag exists
+	if f := approveCmd.Flags().Lookup("notes"); f == nil {
+		t.Error("expected approveCmd to have --notes flag")
+	}
+}
+
+func TestApprovalReasonWithNoteFlags(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("reason", "", "")
+	cmd.Flags().String("message", "", "")
+	cmd.Flags().String("comment", "", "")
+	cmd.Flags().String("note", "", "")
+	cmd.Flags().String("notes", "", "")
+
+	// Test --note works
+	if err := cmd.Flags().Set("note", "my note"); err != nil {
+		t.Fatalf("set note: %v", err)
+	}
+	if got := approvalReason(cmd); got != "my note" {
+		t.Fatalf("note only: got %q, want %q", got, "my note")
+	}
+
+	// Reset and test --notes
+	cmd.Flags().Set("note", "")
+	if err := cmd.Flags().Set("notes", "my notes"); err != nil {
+		t.Fatalf("set notes: %v", err)
+	}
+	if got := approvalReason(cmd); got != "my notes" {
+		t.Fatalf("notes only: got %q, want %q", got, "my notes")
+	}
+
+	// --comment has lower priority than --note
+	cmd.Flags().Set("notes", "")
+	cmd.Flags().Set("comment", "c")
+	cmd.Flags().Set("note", "n")
+	if got := approvalReason(cmd); got != "n" {
+		t.Fatalf("note vs comment: got %q, want %q", got, "n")
 	}
 }

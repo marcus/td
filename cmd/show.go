@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
@@ -21,13 +22,8 @@ Examples:
   td show td-abc1 --children       # Show issue with child tasks
   td show td-abc1 td-abc2          # Show multiple issues`,
 	GroupID: "core",
-	Args:    cobra.MinimumNArgs(1),
+	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Validate issue IDs (catch empty strings)
-		if err := ValidateIssueIDs(args, "show <issue-id>"); err != nil {
-			output.Error("%v", err)
-			return err
-		}
 		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)
@@ -36,6 +32,43 @@ Examples:
 			return err
 		}
 		defer database.Close()
+
+		// If no args, try to show current work or provide helpful suggestions
+		if len(args) == 0 {
+			// Try focused issue first
+			focusedID, _ := config.GetFocus(baseDir)
+			if focusedID != "" {
+				args = []string{focusedID}
+			} else {
+				// Try to find in_progress issues
+				inProgress, _ := database.ListIssues(db.ListIssuesOptions{
+					Status: []models.Status{models.StatusInProgress},
+					Limit:  5,
+				})
+				if len(inProgress) == 1 {
+					args = []string{inProgress[0].ID}
+				} else if len(inProgress) > 1 {
+					output.Error("no issue ID specified. Multiple issues in progress:")
+					for _, issue := range inProgress {
+						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					}
+					fmt.Printf("\nUsage: td show <issue-id>\n")
+					return fmt.Errorf("issue ID required")
+				} else {
+					output.Error("no issue ID specified and no issues in progress")
+					fmt.Printf("\nUsage: td show <issue-id>\n")
+					fmt.Printf("Try: td list        # see all issues\n")
+					fmt.Printf("     td next        # see highest priority open issue\n")
+					return fmt.Errorf("issue ID required")
+				}
+			}
+		}
+
+		// Validate issue IDs (catch empty strings)
+		if err := ValidateIssueIDs(args, "show <issue-id>"); err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		// Handle multiple issues
 		if len(args) > 1 {

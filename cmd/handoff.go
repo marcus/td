@@ -17,7 +17,7 @@ import (
 )
 
 var handoffCmd = &cobra.Command{
-	Use:   "handoff [issue-id]",
+	Use:   "handoff <issue-id> [message]",
 	Short: "Capture structured working state",
 	Long: `Required before submitting for review. Captures git state automatically.
 
@@ -36,10 +36,10 @@ Or use flags with values, stdin (-), or file (@path):
   --done @done.txt       Items from file (one per line)
   echo "item" | td handoff ID --done -   Items from stdin`,
 	GroupID: "workflow",
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validate issue ID (catch empty strings)
-		if err := ValidateIssueID(args[0], "handoff <issue-id>"); err != nil {
+		if err := ValidateIssueID(args[0], "handoff <issue-id> [message]"); err != nil {
 			output.Error("%v", err)
 			return err
 		}
@@ -82,9 +82,19 @@ Or use flags with values, stdin (-), or file (@path):
 		handoff.Decisions, stdinUsed = input.ExpandFlagValues(decisions, stdinUsed)
 		handoff.Uncertain, stdinUsed = input.ExpandFlagValues(uncertain, stdinUsed)
 
-		// Handle --note/-n flag for simple handoffs
-		if note, _ := cmd.Flags().GetString("note"); note != "" {
+		// Handle --note/-n or --message/-m flag for simple handoffs
+		note, _ := cmd.Flags().GetString("note")
+		message, _ := cmd.Flags().GetString("message")
+		if note != "" {
 			handoff.Done = append(handoff.Done, note)
+		}
+		if message != "" {
+			handoff.Done = append(handoff.Done, message)
+		}
+
+		// Handle positional message argument: td handoff <id> "message"
+		if len(args) > 1 && args[1] != "" {
+			handoff.Done = append(handoff.Done, args[1])
 		}
 
 		// Check if stdin has data (YAML format) - only if not already used by flag expansion
@@ -262,4 +272,5 @@ func init() {
 	handoffCmd.Flags().StringArray("decision", nil, "Decision made (repeatable)")
 	handoffCmd.Flags().StringArray("uncertain", nil, "Uncertainty (repeatable)")
 	handoffCmd.Flags().StringP("note", "n", "", "Simple note for handoff (alternative to structured flags)")
+	handoffCmd.Flags().StringP("message", "m", "", "Simple message for handoff (alias for --note)")
 }
