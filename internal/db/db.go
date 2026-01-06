@@ -1966,6 +1966,7 @@ func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, 
 
 // RecordSessionAction logs a session's interaction with an issue
 func (db *DB) RecordSessionAction(issueID, sessionID string, action models.IssueSessionAction) error {
+	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
 		id, err := generateID()
 		if err != nil {
@@ -1982,6 +1983,7 @@ func (db *DB) RecordSessionAction(issueID, sessionID string, action models.Issue
 
 // WasSessionInvolved checks if a session ever interacted with an issue
 func (db *DB) WasSessionInvolved(issueID, sessionID string) (bool, error) {
+	issueID = NormalizeIssueID(issueID)
 	var count int
 	err := db.conn.QueryRow(`
 		SELECT COUNT(*) FROM issue_session_history
@@ -1992,6 +1994,7 @@ func (db *DB) WasSessionInvolved(issueID, sessionID string) (bool, error) {
 
 // GetSessionHistory returns all session interactions for an issue
 func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, error) {
+	issueID = NormalizeIssueID(issueID)
 	rows, err := db.conn.Query(`
 		SELECT id, issue_id, session_id, action, created_at
 		FROM issue_session_history
