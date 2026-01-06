@@ -212,7 +212,7 @@ var whoamiCmd = &cobra.Command{
 
 var sessionNameCmd = &cobra.Command{
 	Use:     "session [name]",
-	Short:   "Name/tag the current session, or create new session with --new",
+	Short:   "Name session, or --new at context start (not mid-work—bypasses review)",
 	GroupID: "session",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

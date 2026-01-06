@@ -240,7 +240,7 @@ var usageCmd = &cobra.Command{
 			fmt.Println("Use `td handoff` or `td ws handoff` before stopping work.")
 			fmt.Println()
 			fmt.Println("FOR LLMs: Run `td usage --new-session` at conversation start (or after /clear).")
-			fmt.Println("If you need to force a new session in the same context: `td session --new`.")
+			fmt.Println("  Do NOT start a new session mid-work—sessions track implementers for review.")
 			fmt.Println("Use `td ws start` when implementing multiple issues to group handoffs.")
 			fmt.Println("  - session = identity (always exists)  |  ws = work container (optional)")
 			fmt.Println()

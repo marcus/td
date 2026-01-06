@@ -8,6 +8,8 @@ Sessions are automatic (based on your terminal/agent context). Optional:
 - `td session "name"` to label the current session
 - `td session --new` to force a new session in the same context
 
+**Do NOT start a new session mid-work.** Sessions track implementers—new session = bypass review.
+
 Use `td usage -q` after first read.
 
 ## Build & Install
