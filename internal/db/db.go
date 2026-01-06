@@ -335,9 +335,9 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 		labels := strings.Join(issue.Labels, ",")
 
 		_, err = db.conn.Exec(`
-			INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch)
+			INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch, creator_session)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch, issue.CreatorSession)
 
 		return err
 	})
@@ -353,12 +353,12 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 		&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-		&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+		&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
 	)
 
 	if err == sql.ErrNoRows {
@@ -473,7 +473,7 @@ func (db *DB) HasChildren(issueID string) (bool, error) {
 func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 	rows, err := db.conn.Query(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
 		FROM issues WHERE parent_id = ? AND deleted_at IS NULL
 	`, issueID)
 	if err != nil {
@@ -490,7 +490,7 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
 		)
 		if err != nil {
 			return nil, err
@@ -571,7 +571,7 @@ type ListIssuesOptions struct {
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-                 implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+                 implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
           FROM issues WHERE 1=1`
 	var args []interface{}
 
@@ -760,7 +760,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
 		)
 		if err != nil {
 			return nil, err
@@ -1962,4 +1962,55 @@ func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, 
 	cascadedIDs = append(cascadedIDs, moreIDs...)
 
 	return cascadedCount, cascadedIDs
+}
+
+// RecordSessionAction logs a session's interaction with an issue
+func (db *DB) RecordSessionAction(issueID, sessionID string, action models.IssueSessionAction) error {
+	return db.withWriteLock(func() error {
+		id, err := generateID()
+		if err != nil {
+			return err
+		}
+
+		_, err = db.conn.Exec(`
+			INSERT INTO issue_session_history (id, issue_id, session_id, action, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, id, issueID, sessionID, action, time.Now())
+		return err
+	})
+}
+
+// WasSessionInvolved checks if a session ever interacted with an issue
+func (db *DB) WasSessionInvolved(issueID, sessionID string) (bool, error) {
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM issue_session_history
+		WHERE issue_id = ? AND session_id = ?
+	`, issueID, sessionID).Scan(&count)
+	return count > 0, err
+}
+
+// GetSessionHistory returns all session interactions for an issue
+func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, error) {
+	rows, err := db.conn.Query(`
+		SELECT id, issue_id, session_id, action, created_at
+		FROM issue_session_history
+		WHERE issue_id = ?
+		ORDER BY created_at ASC
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []models.IssueSessionHistory
+	for rows.Next() {
+		var h models.IssueSessionHistory
+		if err := rows.Scan(&h.ID, &h.IssueID, &h.SessionID, &h.Action, &h.CreatedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, h)
+	}
+
+	return history, nil
 }

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 5
+const SchemaVersion = 7
 
 const schema = `
 -- Issues table
@@ -204,5 +204,24 @@ CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
 		Version:     5,
 		Description: "Add created_branch to issues",
 		SQL:         `ALTER TABLE issues ADD COLUMN created_branch TEXT DEFAULT '';`,
+	},
+	{
+		Version:     6,
+		Description: "Add creator_session for review enforcement",
+		SQL:         `ALTER TABLE issues ADD COLUMN creator_session TEXT DEFAULT '';`,
+	},
+	{
+		Version:     7,
+		Description: "Add session history for review enforcement",
+		SQL: `CREATE TABLE IF NOT EXISTS issue_session_history (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ish_issue ON issue_session_history(issue_id);
+CREATE INDEX IF NOT EXISTS idx_ish_session ON issue_session_history(session_id);`,
 	},
 }

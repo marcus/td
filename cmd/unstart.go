@@ -62,6 +62,12 @@ Examples:
 			// Capture previous state for undo
 			prevData, _ := json.Marshal(issue)
 
+			// Record session action BEFORE clearing ImplementerSession (for bypass prevention)
+			// This tracks that this session touched the issue, even though it's being unstarted
+			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionUnstarted); err != nil {
+				output.Warning("failed to record session history: %v", err)
+			}
+
 			// Update issue
 			issue.Status = models.StatusOpen
 			issue.ImplementerSession = ""

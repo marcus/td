@@ -49,6 +49,16 @@ const (
 	LogTypeResult     LogType = "result"
 )
 
+// IssueSessionAction represents actions a session can take on an issue
+type IssueSessionAction string
+
+const (
+	ActionSessionCreated   IssueSessionAction = "created"
+	ActionSessionStarted   IssueSessionAction = "started"
+	ActionSessionUnstarted IssueSessionAction = "unstarted"
+	ActionSessionReviewed  IssueSessionAction = "reviewed"
+)
+
 // FileRole represents the role of a linked file
 type FileRole string
 
@@ -72,6 +82,7 @@ type Issue struct {
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
 	ImplementerSession string     `json:"implementer_session,omitempty"`
+	CreatorSession     string     `json:"creator_session,omitempty"`
 	ReviewerSession    string     `json:"reviewer_session,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
@@ -141,6 +152,15 @@ type WorkSession struct {
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 	StartSHA  string     `json:"start_sha,omitempty"`
 	EndSHA    string     `json:"end_sha,omitempty"`
+}
+
+// IssueSessionHistory tracks all sessions that touched an issue
+type IssueSessionHistory struct {
+	ID        string             `json:"id"`
+	IssueID   string             `json:"issue_id"`
+	SessionID string             `json:"session_id"`
+	Action    IssueSessionAction `json:"action"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 // WorkSessionIssue links a work session to an issue

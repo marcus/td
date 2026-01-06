@@ -285,10 +285,11 @@ Supports bulk operations:
 				continue
 			}
 
-			// Check that reviewer is different from implementer (unless minor task)
-			if issue.ImplementerSession == sess.ID && !issue.Minor {
+			// Check that reviewer was not involved with this issue (unless minor task)
+			wasInvolved, _ := database.WasSessionInvolved(issueID, sess.ID)
+			if wasInvolved && !issue.Minor {
 				if !all { // Only show error for explicit requests
-					errMsg := fmt.Sprintf("cannot approve own implementation: %s (use --minor on create for self-review)", issueID)
+					errMsg := fmt.Sprintf("cannot approve: you were involved with %s (created, started, or previously worked on)", issueID)
 					if jsonOutput {
 						output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
 					} else {
@@ -312,6 +313,11 @@ Supports bulk operations:
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
+			}
+
+			// Record session action for bypass prevention
+			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionReviewed); err != nil {
+				output.Warning("failed to record session history: %v", err)
 			}
 
 			// Log (supports --reason, --message, --comment)
@@ -526,11 +532,22 @@ Examples:
 				continue
 			}
 
-			// Check if self-closing implemented work
-			isSelfClosing := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
-			if isSelfClosing {
+			// Check if self-closing (comprehensive check using session history)
+			wasInvolved, _ := database.WasSessionInvolved(issueID, sess.ID)
+			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
+			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
+			hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+
+			// Can close if: never involved OR (only created AND someone else implemented)
+			canClose := !wasInvolved || (isCreator && hasOtherImplementer)
+
+			if !canClose {
 				if selfCloseException == "" {
-					output.Error("cannot close own implementation: %s", issueID)
+					if isImplementer {
+						output.Error("cannot close own implementation: %s", issueID)
+					} else {
+						output.Error("cannot close: you created %s and no one else implemented it", issueID)
+					}
 					output.Error("  Use `td review %s` to submit for review", issueID)
 					output.Error("  Or use `td close --self-close-exception \"reason\" %s`", issueID)
 					skipped++
@@ -570,7 +587,7 @@ Examples:
 			// Log (supports --reason, --comment, --message, and --self-close-exception)
 			reason := approvalReason(cmd)
 			logMsg := "Closed"
-			if isSelfClosing && selfCloseException != "" {
+			if !canClose && selfCloseException != "" {
 				logMsg = "Closed (SELF-CLOSE EXCEPTION: " + selfCloseException + ")"
 			} else if reason != "" {
 				logMsg = "Closed: " + reason
@@ -588,7 +605,7 @@ Examples:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			if isSelfClosing && selfCloseException != "" {
+			if !canClose && selfCloseException != "" {
 				fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
 			} else {
 				fmt.Printf("CLOSED %s\n", issueID)

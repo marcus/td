@@ -128,6 +128,14 @@ var createCmd = &cobra.Command{
 		// Minor (allows self-review)
 		issue.Minor, _ = cmd.Flags().GetBool("minor")
 
+		// Get session BEFORE creating issue (needed for CreatorSession)
+		sess, err := session.GetOrCreate(baseDir)
+		if err != nil {
+			output.Error("failed to create session: %v", err)
+			return fmt.Errorf("failed to create session: %w", err)
+		}
+		issue.CreatorSession = sess.ID
+
 		// Capture current git branch
 		gitState, _ := git.GetState()
 		if gitState != nil {
@@ -140,18 +148,20 @@ var createCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		sess, _ := session.GetOrCreate(baseDir)
-		if sess != nil {
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:  sess.ID,
-				ActionType: models.ActionCreate,
-				EntityType: "issue",
-				EntityID:   issue.ID,
-				NewData:    string(newData),
-			})
+		// Record session action for bypass prevention
+		if err := database.RecordSessionAction(issue.ID, sess.ID, models.ActionSessionCreated); err != nil {
+			output.Warning("failed to record session history: %v", err)
 		}
+
+		// Log action for undo
+		newData, _ := json.Marshal(issue)
+		database.LogAction(&models.ActionLog{
+			SessionID:  sess.ID,
+			ActionType: models.ActionCreate,
+			EntityType: "issue",
+			EntityID:   issue.ID,
+			NewData:    string(newData),
+		})
 
 		// Handle dependencies
 		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {

@@ -94,6 +94,11 @@ Examples:
 				continue
 			}
 
+			// Record session action for bypass prevention
+			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted); err != nil {
+				output.Warning("failed to record session history: %v", err)
+			}
+
 			// Log action for undo
 			newData, _ := json.Marshal(issue)
 			database.LogAction(&models.ActionLog{
