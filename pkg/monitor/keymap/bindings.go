@@ -243,6 +243,32 @@ func DefaultBindings() []Binding {
 		{Key: "esc", Command: CmdFormCancel, Context: ContextForm, Description: "Cancel form"},
 		{Key: "ctrl+x", Command: CmdFormToggleExtend, Context: ContextForm, Description: "Toggle extended fields"},
 		{Key: "ctrl+o", Command: CmdFormOpenEditor, Context: ContextForm, Description: "Open in external editor"},
+
+		// ============================================================
+		// HELP MODAL BINDINGS
+		// Active when the help modal is open
+		// ============================================================
+		{Key: "?", Command: CmdToggleHelp, Context: ContextHelp, Description: "Close help"},
+		{Key: "esc", Command: CmdToggleHelp, Context: ContextHelp, Description: "Close help"},
+		{Key: "q", Command: CmdToggleHelp, Context: ContextHelp, Description: "Close help"},
+
+		// Scrolling
+		{Key: "j", Command: CmdScrollDown, Context: ContextHelp, Description: "Scroll down"},
+		{Key: "down", Command: CmdScrollDown, Context: ContextHelp, Description: "Scroll down"},
+		{Key: "k", Command: CmdScrollUp, Context: ContextHelp, Description: "Scroll up"},
+		{Key: "up", Command: CmdScrollUp, Context: ContextHelp, Description: "Scroll up"},
+
+		// Vim-style page navigation
+		{Key: "ctrl+d", Command: CmdHalfPageDown, Context: ContextHelp, Description: "Half page down"},
+		{Key: "ctrl+u", Command: CmdHalfPageUp, Context: ContextHelp, Description: "Half page up"},
+		{Key: "ctrl+f", Command: CmdFullPageDown, Context: ContextHelp, Description: "Full page down"},
+		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextHelp, Description: "Full page up"},
+		{Key: "pgdown", Command: CmdFullPageDown, Context: ContextHelp, Description: "Page down"},
+		{Key: "pgup", Command: CmdFullPageUp, Context: ContextHelp, Description: "Page up"},
+		{Key: "G", Command: CmdCursorBottom, Context: ContextHelp, Description: "Go to bottom"},
+		{Key: "g g", Command: CmdCursorTop, Context: ContextHelp, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextHelp, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextHelp, Description: "Go to bottom"},
 	}
 }
 

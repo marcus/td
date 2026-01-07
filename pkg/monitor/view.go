@@ -26,11 +26,15 @@ func (m Model) renderView() string {
 	}
 
 	if m.HelpOpen {
-		return m.renderHelp()
+		base := m.renderBaseView()
+		helpModal := m.renderHelp()
+		return OverlayModal(base, helpModal, m.Width, m.Height)
 	}
 
 	if m.ShowTDQHelp {
-		return m.renderTDQHelp()
+		base := m.renderBaseView()
+		tdqModal := m.renderTDQHelp()
+		return OverlayModal(base, tdqModal, m.Width, m.Height)
 	}
 
 	// Render base view (panels + footer)
@@ -1552,9 +1556,96 @@ func (m Model) renderFooter() string {
 	return fmt.Sprintf(" %s%s%s%s%s%s%s%s", keys, strings.Repeat(" ", padding), sessionsIndicator, handoffAlert, reviewAlert, updateNotif, statusToast, refresh)
 }
 
-// renderHelp renders the help overlay
+// renderHelp renders the help modal with scrolling support
 func (m Model) renderHelp() string {
-	return helpStyle.Render(m.Keymap.GenerateHelp())
+	// Calculate modal dimensions (80% of terminal, clamped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 80 {
+		modalWidth = 80
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+
+	// Get help text and split into lines
+	helpText := m.Keymap.GenerateHelp()
+	allLines := strings.Split(helpText, "\n")
+
+	// Calculate visible area
+	visibleHeight := modalHeight - 4 // Account for border and footer
+	totalLines := len(allLines)
+	scroll := m.HelpScroll
+
+	// Clamp scroll
+	maxScroll := totalLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+
+	// Build visible content
+	var content strings.Builder
+
+	// Show up indicator if scrolled down
+	if scroll > 0 {
+		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ▲ %d more above\n", scroll)))
+		visibleHeight-- // Reduce visible lines for indicator
+	}
+
+	// Get visible lines
+	endIdx := scroll + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	if scroll < totalLines {
+		for i := scroll; i < endIdx; i++ {
+			content.WriteString(allLines[i])
+			if i < endIdx-1 {
+				content.WriteString("\n")
+			}
+		}
+	}
+
+	// Show down indicator if more content below
+	linesBelow := totalLines - endIdx
+	if linesBelow > 0 {
+		content.WriteString("\n")
+		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ▼ %d more below", linesBelow)))
+	}
+
+	// Build footer with scroll info
+	var footerParts []string
+	if totalLines > visibleHeight {
+		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		footerParts = append(footerParts, scrollInfo)
+	}
+	footerParts = append(footerParts, subtleStyle.Render("j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close"))
+	footer := strings.Join(footerParts, "  ")
+
+	// Combine content and footer
+	inner := lipgloss.JoinVertical(lipgloss.Left, content.String(), "", footer)
+
+	// Style the modal
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("141")). // Purple for help
+		Padding(1, 2).
+		Width(modalWidth).
+		Height(modalHeight)
+
+	return modalStyle.Render(inner)
 }
 
 // renderTDQHelp renders the TDQ query language help overlay

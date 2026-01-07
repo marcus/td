@@ -28,6 +28,7 @@ var contextToSidecar = map[Context]string{
 	ContextEpicTasks:         "td-epic-tasks",
 	ContextParentEpicFocused: "td-parent-epic",
 	ContextHandoffs:          "td-handoffs",
+	ContextHelp:              "td-help",
 }
 
 // commandMetadata defines display info and priority for each command.

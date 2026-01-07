@@ -612,6 +612,13 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				delta = -3
 			}
 
+			// Route scroll to help modal
+			if m.HelpOpen {
+				m.HelpScroll += delta
+				m.clampHelpScroll()
+				return m, nil
+			}
+
 			// Route scroll to appropriate modal
 			if modal := m.CurrentModal(); modal != nil {
 				// Mouse wheel always scrolls modal content (use j/k for task list navigation)

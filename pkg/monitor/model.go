@@ -195,6 +195,39 @@ func (m *Model) Close() error {
 	return nil
 }
 
+// helpVisibleHeight returns the number of visible lines for the help modal.
+// Calculates modal height as 80% of terminal height, clamped to 15-40, minus 4 for border and footer.
+func (m Model) helpVisibleHeight() int {
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+	return modalHeight - 4 // Subtract border and footer
+}
+
+// helpMaxScroll returns the maximum scroll offset for the help modal.
+func (m Model) helpMaxScroll() int {
+	maxScroll := m.HelpTotalLines - m.helpVisibleHeight()
+	if maxScroll < 0 {
+		return 0
+	}
+	return maxScroll
+}
+
+// clampHelpScroll ensures HelpScroll is within valid bounds [0, helpMaxScroll()].
+func (m *Model) clampHelpScroll() {
+	if m.HelpScroll < 0 {
+		m.HelpScroll = 0
+	}
+	maxScroll := m.helpMaxScroll()
+	if m.HelpScroll > maxScroll {
+		m.HelpScroll = maxScroll
+	}
+}
+
 // Init implements tea.Model
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{

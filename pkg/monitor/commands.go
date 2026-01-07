@@ -12,6 +12,9 @@ import (
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
+	if m.HelpOpen {
+		return keymap.ContextHelp
+	}
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}
@@ -183,6 +186,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Cursor movement
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
+		if m.HelpOpen {
+			m.HelpScroll++
+			m.clampHelpScroll()
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			if modal.ParentEpicFocused {
 				// Unfocus parent epic, move past epic zone so next j scrolls
@@ -236,6 +244,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorUp, keymap.CmdScrollUp:
+		if m.HelpOpen {
+			m.HelpScroll--
+			m.clampHelpScroll()
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			if modal.ParentEpicFocused {
 				// Already at top, stay focused on epic
@@ -277,6 +290,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorTop:
+		if m.HelpOpen {
+			m.HelpScroll = 0
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = 0
 		} else if m.HandoffsOpen {
@@ -292,6 +309,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorBottom:
+		if m.HelpOpen {
+			m.HelpScroll = m.helpMaxScroll()
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = m.modalMaxScroll(modal)
 		} else if m.HandoffsOpen {
@@ -314,6 +335,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		pageSize := m.visibleHeightForPanel(m.ActivePanel) / 2
 		if pageSize < 1 {
 			pageSize = 5
+		}
+		if m.HelpOpen {
+			pageSize = m.helpVisibleHeight() / 2
+			if pageSize < 1 {
+				pageSize = 5
+			}
+			m.HelpScroll += pageSize
+			m.clampHelpScroll()
+			return m, nil
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			maxScroll := m.modalMaxScroll(modal)
@@ -343,6 +373,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 5
 		}
+		if m.HelpOpen {
+			pageSize = m.helpVisibleHeight() / 2
+			if pageSize < 1 {
+				pageSize = 5
+			}
+			m.HelpScroll -= pageSize
+			m.clampHelpScroll()
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll -= pageSize
 			if modal.Scroll < 0 {
@@ -370,6 +409,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 10
 		}
+		if m.HelpOpen {
+			pageSize = m.helpVisibleHeight()
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			m.HelpScroll += pageSize
+			m.clampHelpScroll()
+			return m, nil
+		}
 		if modal := m.CurrentModal(); modal != nil {
 			maxScroll := m.modalMaxScroll(modal)
 			modal.Scroll += pageSize
@@ -389,6 +437,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		pageSize := m.visibleHeightForPanel(m.ActivePanel)
 		if pageSize < 1 {
 			pageSize = 10
+		}
+		if m.HelpOpen {
+			pageSize = m.helpVisibleHeight()
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			m.HelpScroll -= pageSize
+			m.clampHelpScroll()
+			return m, nil
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll -= pageSize

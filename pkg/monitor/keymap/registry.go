@@ -26,6 +26,7 @@ const (
 	ContextBlocksFocused     Context = "blocks-focused"      // When blocks section is focused
 	ContextHandoffs          Context = "handoffs"            // When handoffs modal is open
 	ContextForm              Context = "form"                // When form modal is open
+	ContextHelp              Context = "help"                // When help modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
