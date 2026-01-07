@@ -1906,6 +1906,187 @@ func TestSortModeToSortClause(t *testing.T) {
 	}
 }
 
+// TestSortModeUpdatesPanelBounds verifies that cycling sort mode updates panel bounds
+// when the search bar appears (SearchQuery changes from empty to non-empty)
+func TestSortModeUpdatesPanelBounds(t *testing.T) {
+	m := Model{
+		Width:           80,
+		Height:          30,
+		SortMode:        SortByPriority,
+		SearchQuery:     "", // Empty initially - no search bar
+		PaneHeights:     config.DefaultPaneHeights(),
+		PanelBounds:     make(map[Panel]Rect),
+		DividerBounds:   [2]Rect{},
+		Cursor:          make(map[Panel]int),
+		ScrollOffset:    make(map[Panel]int),
+		SelectedID:      make(map[Panel]string),
+		Keymap:          newTestKeymap(),
+		SearchInput:     textinput.New(),
+	}
+	m.updatePanelBounds()
+
+	// Record initial panel bounds (no search bar)
+	initialCurrentWorkY := m.PanelBounds[PanelCurrentWork].Y
+
+	// Simulate cycling sort mode which sets SearchQuery
+	m.SortMode = (m.SortMode + 1) % 3
+	oldQuery := m.SearchQuery
+	m.SearchQuery = updateQuerySort(m.SearchQuery, m.SortMode)
+	if (oldQuery == "") != (m.SearchQuery == "") {
+		m.updatePanelBounds()
+	}
+
+	// SearchQuery should now be non-empty (sort clause added)
+	if m.SearchQuery == "" {
+		t.Fatal("SearchQuery should be non-empty after cycling sort mode")
+	}
+
+	// Panel Y should have moved down to accommodate search bar
+	if m.PanelBounds[PanelCurrentWork].Y <= initialCurrentWorkY {
+		t.Errorf("CurrentWork panel Y should have moved down; got %d, initial was %d",
+			m.PanelBounds[PanelCurrentWork].Y, initialCurrentWorkY)
+	}
+
+	// The difference should be searchBarHeight (2)
+	expectedOffset := 2 // Search bar height
+	actualOffset := m.PanelBounds[PanelCurrentWork].Y - initialCurrentWorkY
+	if actualOffset != expectedOffset {
+		t.Errorf("Panel offset should be %d (search bar height), got %d",
+			expectedOffset, actualOffset)
+	}
+}
+
+// TestTypeFilterUpdatesPanelBounds verifies that cycling type filter updates panel bounds
+// when the search bar appears/disappears
+func TestTypeFilterUpdatesPanelBounds(t *testing.T) {
+	m := Model{
+		Width:          80,
+		Height:         30,
+		TypeFilterMode: TypeFilterNone,
+		SearchQuery:    "", // Empty initially - no search bar
+		PaneHeights:    config.DefaultPaneHeights(),
+		PanelBounds:    make(map[Panel]Rect),
+		DividerBounds:  [2]Rect{},
+		Cursor:         make(map[Panel]int),
+		ScrollOffset:   make(map[Panel]int),
+		SelectedID:     make(map[Panel]string),
+		Keymap:         newTestKeymap(),
+		SearchInput:    textinput.New(),
+	}
+	m.updatePanelBounds()
+
+	// Record initial panel bounds (no search bar)
+	initialCurrentWorkY := m.PanelBounds[PanelCurrentWork].Y
+
+	// Simulate cycling type filter which sets SearchQuery
+	m.TypeFilterMode = (m.TypeFilterMode + 1) % 6
+	oldQuery := m.SearchQuery
+	m.SearchQuery = updateQueryType(m.SearchQuery, m.TypeFilterMode)
+	if (oldQuery == "") != (m.SearchQuery == "") {
+		m.updatePanelBounds()
+	}
+
+	// SearchQuery should now be non-empty (type clause added)
+	if m.SearchQuery == "" {
+		t.Fatal("SearchQuery should be non-empty after cycling type filter to epic")
+	}
+
+	// Panel Y should have moved down to accommodate search bar
+	if m.PanelBounds[PanelCurrentWork].Y <= initialCurrentWorkY {
+		t.Errorf("CurrentWork panel Y should have moved down; got %d, initial was %d",
+			m.PanelBounds[PanelCurrentWork].Y, initialCurrentWorkY)
+	}
+
+	// Record Y position with search bar
+	withSearchBarY := m.PanelBounds[PanelCurrentWork].Y
+
+	// Cycle back to TypeFilterNone - search bar should disappear
+	for m.TypeFilterMode != TypeFilterNone {
+		m.TypeFilterMode = (m.TypeFilterMode + 1) % 6
+	}
+	oldQuery = m.SearchQuery
+	m.SearchQuery = updateQueryType(m.SearchQuery, m.TypeFilterMode)
+	if (oldQuery == "") != (m.SearchQuery == "") {
+		m.updatePanelBounds()
+	}
+
+	// SearchQuery should be empty again
+	if m.SearchQuery != "" {
+		t.Errorf("SearchQuery should be empty after cycling back to TypeFilterNone, got %q", m.SearchQuery)
+	}
+
+	// Panel Y should be back to original position
+	if m.PanelBounds[PanelCurrentWork].Y != initialCurrentWorkY {
+		t.Errorf("CurrentWork panel Y should be back to %d, got %d",
+			initialCurrentWorkY, m.PanelBounds[PanelCurrentWork].Y)
+	}
+
+	// Verify the Y changed by exactly search bar height
+	if withSearchBarY-initialCurrentWorkY != 2 {
+		t.Errorf("Search bar height offset should be 2, got %d", withSearchBarY-initialCurrentWorkY)
+	}
+}
+
+// TestMouseClickWithSortFilterActive verifies mouse clicks work correctly
+// when sort/filter has caused search bar to appear
+func TestMouseClickWithSortFilterActive(t *testing.T) {
+	m := Model{
+		Width:          80,
+		Height:         30,
+		SortMode:       SortByPriority,
+		SearchQuery:    "", // Empty initially
+		PaneHeights:    config.DefaultPaneHeights(),
+		PanelBounds:    make(map[Panel]Rect),
+		DividerBounds:  [2]Rect{},
+		Cursor:         make(map[Panel]int),
+		ScrollOffset:   make(map[Panel]int),
+		SelectedID:     make(map[Panel]string),
+		Keymap:         newTestKeymap(),
+		SearchInput:    textinput.New(),
+		ActivePanel:    PanelCurrentWork,
+		CurrentWorkRows: []string{"issue-1", "issue-2", "issue-3"},
+	}
+	m.updatePanelBounds()
+
+	// Click at a specific Y coordinate and record what row is selected
+	testY := m.PanelBounds[PanelCurrentWork].Y + 3 // Click in content area
+	result, _ := m.handleMouseClick(10, testY)
+	m = result.(Model)
+	initialRow := m.Cursor[PanelCurrentWork]
+
+	// Now activate sort mode (which adds search bar)
+	m.SortMode = SortByCreatedDesc
+	oldQuery := m.SearchQuery
+	m.SearchQuery = updateQuerySort(m.SearchQuery, m.SortMode)
+	if (oldQuery == "") != (m.SearchQuery == "") {
+		m.updatePanelBounds()
+	}
+
+	// Reset cursor
+	m.Cursor[PanelCurrentWork] = 0
+
+	// Click at the SAME screen Y coordinate
+	// With search bar, this should select a different row (because panels shifted down)
+	result, _ = m.handleMouseClick(10, testY)
+	m = result.(Model)
+
+	// The row should be different because the panel content shifted down by 2
+	// Actually, we need to click at testY+2 to get the same row as before
+	// Let's verify that clicking at testY now gives a different/invalid result
+	// or that clicking at testY+2 gives the same row
+
+	// Reset and click at adjusted position (original Y + search bar height)
+	m.Cursor[PanelCurrentWork] = 0
+	result, _ = m.handleMouseClick(10, testY+2)
+	m = result.(Model)
+	adjustedRow := m.Cursor[PanelCurrentWork]
+
+	// The adjusted click should select the same row as before
+	if adjustedRow != initialRow {
+		t.Errorf("Click at adjusted Y should select row %d, got %d", initialRow, adjustedRow)
+	}
+}
+
 // =============================================================================
 // Pane Resize Tests
 // =============================================================================

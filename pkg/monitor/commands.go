@@ -516,12 +516,22 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdCycleSortMode:
 		m.SortMode = (m.SortMode + 1) % 3
+		oldQuery := m.SearchQuery
 		m.SearchQuery = updateQuerySort(m.SearchQuery, m.SortMode)
+		// Recalc bounds if search bar visibility changed
+		if (oldQuery == "") != (m.SearchQuery == "") {
+			m.updatePanelBounds()
+		}
 		return m, m.fetchData()
 
 	case keymap.CmdCycleTypeFilter:
 		m.TypeFilterMode = (m.TypeFilterMode + 1) % 6 // 6 modes: none + 5 types
+		oldQuery := m.SearchQuery
 		m.SearchQuery = updateQueryType(m.SearchQuery, m.TypeFilterMode)
+		// Recalc bounds if search bar visibility changed
+		if (oldQuery == "") != (m.SearchQuery == "") {
+			m.updatePanelBounds()
+		}
 		if m.TypeFilterMode == TypeFilterNone {
 			m.StatusMessage = "Type filter: all"
 		} else {
@@ -584,6 +594,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		m.SearchQuery = ""
 		m.SearchInput.SetValue("")
+		// Recalc bounds since search bar disappears when query is empty
+		if !m.SearchMode {
+			m.updatePanelBounds()
+		}
 		return m, m.fetchData()
 
 	// Confirmation commands
