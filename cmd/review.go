@@ -595,8 +595,7 @@ Examples:
 					} else {
 						output.Error("cannot close: you previously worked on %s", issueID)
 					}
-					output.Error("  Use `td review %s` to submit for review", issueID)
-					output.Error("  Or use `td close --self-close-exception \"reason\" %s`", issueID)
+					output.Error("  Submit for review: td review %s", issueID)
 					skipped++
 					continue
 				}
