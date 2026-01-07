@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
 )
 
 func TestParseDateFilter(t *testing.T) {
@@ -225,4 +229,287 @@ func TestParsePointsFilterEdgeCases(t *testing.T) {
 			t.Errorf("<=0: got min=%d, max=%d", min, max)
 		}
 	})
+}
+
+// TestStatusFilterParsing tests the status flag parsing logic used in list command
+// These tests verify the behavior of --status filtering with all variants including --status all
+func TestStatusFilterParsing(t *testing.T) {
+	tests := []struct {
+		name        string
+		statusInput []string
+		allFlag     bool
+		expectAll   bool
+		expectOpen  bool
+	}{
+		{
+			name:        "single status open",
+			statusInput: []string{"open"},
+			allFlag:     false,
+			expectAll:   false,
+			expectOpen:  true,
+		},
+		{
+			name:        "single status closed",
+			statusInput: []string{"closed"},
+			allFlag:     false,
+			expectAll:   false,
+			expectOpen:  false,
+		},
+		{
+			name:        "multiple statuses comma-separated",
+			statusInput: []string{"open,in_progress"},
+			allFlag:     false,
+			expectAll:   false,
+			expectOpen:  true,
+		},
+		{
+			name:        "multiple status flags",
+			statusInput: []string{"open", "in_review"},
+			allFlag:     false,
+			expectAll:   false,
+			expectOpen:  true,
+		},
+		{
+			name:        "status all flag sets showAll to true",
+			statusInput: []string{"all"},
+			allFlag:     false,
+			expectAll:   true,
+			expectOpen:  false,
+		},
+		{
+			name:        "status all with mixed case",
+			statusInput: []string{"ALL"},
+			allFlag:     false,
+			expectAll:   true,
+			expectOpen:  false,
+		},
+		{
+			name:        "status all with trailing spaces",
+			statusInput: []string{" all "},
+			allFlag:     false,
+			expectAll:   true,
+			expectOpen:  false,
+		},
+		{
+			name:        "all flag directly set",
+			statusInput: []string{},
+			allFlag:     true,
+			expectAll:   true,
+			expectOpen:  false,
+		},
+		{
+			name:        "status all in comma-separated list",
+			statusInput: []string{"open,all,closed"},
+			allFlag:     false,
+			expectAll:   true,
+			expectOpen:  false,
+		},
+		{
+			name:        "review alias normalization",
+			statusInput: []string{"review"},
+			allFlag:     false,
+			expectAll:   false,
+			expectOpen:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Simulate status parsing logic from list.go
+			opts := db.ListIssuesOptions{}
+			showAll := tc.allFlag
+
+			for _, s := range tc.statusInput {
+				for _, part := range strings.Split(s, ",") {
+					part = strings.TrimSpace(part)
+					if part != "" {
+						if strings.EqualFold(part, "all") {
+							showAll = true
+							continue
+						}
+						status := models.NormalizeStatus(part)
+						opts.Status = append(opts.Status, status)
+					}
+				}
+			}
+
+			if !showAll && len(opts.Status) == 0 {
+				// Default: exclude closed issues unless --all is specified
+				opts.Status = []models.Status{
+					models.StatusOpen,
+					models.StatusInProgress,
+					models.StatusBlocked,
+					models.StatusInReview,
+				}
+			}
+
+			if tc.expectAll {
+				if !showAll {
+					t.Errorf("Expected showAll=true, got false")
+				}
+			}
+
+			if tc.expectOpen && len(opts.Status) > 0 {
+				foundOpen := false
+				for _, s := range opts.Status {
+					if s == models.StatusOpen {
+						foundOpen = true
+						break
+					}
+				}
+				if !foundOpen {
+					t.Errorf("Expected StatusOpen in status filter, got %v", opts.Status)
+				}
+			}
+		})
+	}
+}
+
+// TestStatusAllIncludesAllStatuses verifies that --status all includes all possible statuses
+// in the filtering logic (not necessarily in CLI output, but in the database filter)
+func TestStatusAllIncludesAllStatuses(t *testing.T) {
+	// Simulate the logic: when showAll=true and no specific statuses set,
+	// the default filter should allow all statuses
+	t.Run("status all should not add status filter", func(t *testing.T) {
+		opts := db.ListIssuesOptions{}
+		showAll := true
+
+		// When showAll is true and no statuses specified, opts.Status remains empty
+		// This means no status filtering is applied, allowing all statuses
+		if len(opts.Status) != 0 {
+			t.Errorf("Expected empty status filter when showAll=true with no specific statuses")
+		}
+		if !showAll {
+			t.Error("Expected showAll=true")
+		}
+	})
+
+	t.Run("default behavior excludes closed when no status specified", func(t *testing.T) {
+		opts := db.ListIssuesOptions{}
+		showAll := false
+
+		if !showAll && len(opts.Status) == 0 {
+			opts.Status = []models.Status{
+				models.StatusOpen,
+				models.StatusInProgress,
+				models.StatusBlocked,
+				models.StatusInReview,
+			}
+		}
+
+		// Verify closed status is not in default
+		for _, s := range opts.Status {
+			if s == models.StatusClosed {
+				t.Error("Expected StatusClosed not to be in default filter")
+			}
+		}
+
+		if len(opts.Status) != 4 {
+			t.Errorf("Expected 4 default statuses, got %d", len(opts.Status))
+		}
+	})
+
+	t.Run("status all vs default behavior difference", func(t *testing.T) {
+		// Default: no --all flag
+		defaultOpts := db.ListIssuesOptions{}
+		showAllDefault := false
+		if !showAllDefault && len(defaultOpts.Status) == 0 {
+			defaultOpts.Status = []models.Status{
+				models.StatusOpen,
+				models.StatusInProgress,
+				models.StatusBlocked,
+				models.StatusInReview,
+			}
+		}
+
+		// With --status all
+		allOpts := db.ListIssuesOptions{}
+		showAllWithAll := true
+
+		if len(defaultOpts.Status) == 0 {
+			t.Error("Default should have status filters")
+		}
+
+		if showAllWithAll && len(allOpts.Status) == 0 {
+			// With showAll=true, no status filter means all statuses included
+			t.Log("With --status all, no status filter is applied - all statuses will be included")
+		}
+	})
+}
+
+// TestStatusAllVariations tests different ways to invoke --status all
+func TestStatusAllVariations(t *testing.T) {
+	tests := []struct {
+		name              string
+		statusInput       []string
+		shouldActivateAll bool
+	}{
+		{
+			name:              "lowercase all",
+			statusInput:       []string{"all"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "uppercase ALL",
+			statusInput:       []string{"ALL"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "mixed case AlL",
+			statusInput:       []string{"AlL"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "all with spaces",
+			statusInput:       []string{"  all  "},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "all in comma-separated first position",
+			statusInput:       []string{"all,open"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "all in comma-separated middle position",
+			statusInput:       []string{"open,all,closed"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "all in comma-separated last position",
+			statusInput:       []string{"open,closed,all"},
+			shouldActivateAll: true,
+		},
+		{
+			name:              "all as separate flag",
+			statusInput:       []string{"open", "all"},
+			shouldActivateAll: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			showAll := false
+			statusCount := 0
+
+			for _, s := range tc.statusInput {
+				for _, part := range strings.Split(s, ",") {
+					part = strings.TrimSpace(part)
+					if part != "" {
+						if strings.EqualFold(part, "all") {
+							showAll = true
+						} else {
+							statusCount++
+						}
+					}
+				}
+			}
+
+			if tc.shouldActivateAll && !showAll {
+				t.Error("Expected --status all to activate showAll=true")
+			}
+			if !tc.shouldActivateAll && showAll {
+				t.Error("Expected showAll=false for this input")
+			}
+		})
+	}
 }

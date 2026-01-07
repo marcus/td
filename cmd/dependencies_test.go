@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/marcus/td/internal/db"
@@ -363,4 +364,456 @@ func TestDepAddDependsOnFlag(t *testing.T) {
 
 	// Reset
 	depAddCmd.Flags().Set("depends-on", "")
+}
+
+// TestAddDependencySingle tests adding a single dependency
+func TestAddDependencySingle(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create two issues
+	issue1 := &models.Issue{Title: "Setup Database", Status: models.StatusOpen}
+	issue2 := &models.Issue{Title: "Implement API", Status: models.StatusOpen}
+	database.CreateIssue(issue1)
+	database.CreateIssue(issue2)
+
+	// Add dependency: issue2 depends on issue1
+	err = addDependency(database, issue2.ID, issue1.ID)
+	if err != nil {
+		t.Errorf("Failed to add dependency: %v", err)
+	}
+
+	// Verify dependency was added
+	deps, _ := database.GetDependencies(issue2.ID)
+	if len(deps) != 1 || deps[0] != issue1.ID {
+		t.Errorf("Expected issue2 to depend on issue1, got deps: %v", deps)
+	}
+}
+
+// TestAddDependencyMultiple tests adding multiple dependencies to same issue
+func TestAddDependencyMultiple(t *testing.T) {
+	tests := []struct {
+		name       string
+		numDeps    int
+		wantError  bool
+		description string
+	}{
+		{
+			name:        "two dependencies",
+			numDeps:     2,
+			wantError:   false,
+			description: "issue depends on two separate issues",
+		},
+		{
+			name:        "three dependencies",
+			numDeps:     3,
+			wantError:   false,
+			description: "issue depends on three separate issues",
+		},
+		{
+			name:        "five dependencies",
+			numDeps:     5,
+			wantError:   false,
+			description: "issue depends on five separate issues (parallel work)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer database.Close()
+
+			// Create main issue and dependency issues
+			mainIssue := &models.Issue{Title: "Integrations", Status: models.StatusOpen}
+			database.CreateIssue(mainIssue)
+
+			depIssueIDs := make([]string, tt.numDeps)
+			for i := 0; i < tt.numDeps; i++ {
+				issue := &models.Issue{
+					Title:  fmt.Sprintf("Dependency %d", i+1),
+					Status: models.StatusOpen,
+				}
+				database.CreateIssue(issue)
+				depIssueIDs[i] = issue.ID
+			}
+
+			// Add all dependencies
+			for _, depID := range depIssueIDs {
+				err := addDependency(database, mainIssue.ID, depID)
+				if (err != nil) != tt.wantError {
+					t.Errorf("addDependency() error = %v, wantError %v", err, tt.wantError)
+				}
+			}
+
+			// Verify all dependencies were added
+			deps, _ := database.GetDependencies(mainIssue.ID)
+			if len(deps) != tt.numDeps {
+				t.Errorf("Expected %d dependencies, got %d", tt.numDeps, len(deps))
+			}
+
+			// Verify each dependency is present
+			for _, expectedDepID := range depIssueIDs {
+				found := false
+				for _, actualDepID := range deps {
+					if actualDepID == expectedDepID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected dependency %s not found in %v", expectedDepID, deps)
+				}
+			}
+		})
+	}
+}
+
+// TestAddDependencyCircularDetection tests circular dependency detection
+func TestAddDependencyCircularDetection(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupChain  func(db *db.DB, issues []*models.Issue)
+		cycleFrom   int
+		cycleTo     int
+		shouldError bool
+		description string
+	}{
+		{
+			name: "simple cycle",
+			setupChain: func(database *db.DB, issues []*models.Issue) {
+				// issue1 -> issue2
+				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
+			},
+			cycleFrom:   0,  // Try to add: issue1 depends on issue2
+			cycleTo:     1,
+			shouldError: true,
+			description: "issue1 -> issue2 -> issue1",
+		},
+		{
+			name: "transitive cycle",
+			setupChain: func(database *db.DB, issues []*models.Issue) {
+				// issue2 -> issue1, issue3 -> issue2
+				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
+				database.AddDependency(issues[2].ID, issues[1].ID, "depends_on")
+			},
+			cycleFrom:   0,  // Try to add: issue1 depends on issue3
+			cycleTo:     2,
+			shouldError: true,
+			description: "issue1 -> issue3 -> issue2 -> issue1",
+		},
+		{
+			name: "self reference",
+			setupChain: func(database *db.DB, issues []*models.Issue) {
+				// No setup needed
+			},
+			cycleFrom:   0,  // Try to add: issue1 depends on issue1
+			cycleTo:     0,
+			shouldError: true,
+			description: "issue1 -> issue1",
+		},
+		{
+			name: "no cycle valid dep",
+			setupChain: func(database *db.DB, issues []*models.Issue) {
+				// issue2 -> issue1
+				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
+			},
+			cycleFrom:   2,  // Try to add: issue3 depends on issue1 (valid)
+			cycleTo:     0,
+			shouldError: false,
+			description: "valid: issue3 -> issue1 (no cycle)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer database.Close()
+
+			// Create 4 issues
+			issues := make([]*models.Issue, 4)
+			for i := 0; i < 4; i++ {
+				issues[i] = &models.Issue{
+					Title:  fmt.Sprintf("Issue %d", i+1),
+					Status: models.StatusOpen,
+				}
+				database.CreateIssue(issues[i])
+			}
+
+			// Setup the dependency chain
+			tt.setupChain(database, issues)
+
+			// Try to create the cycle
+			err = addDependency(database, issues[tt.cycleFrom].ID, issues[tt.cycleTo].ID)
+
+			if (err != nil) != tt.shouldError {
+				t.Errorf("addDependency() error = %v, wantError %v. Description: %s", err, tt.shouldError, tt.description)
+			}
+		})
+	}
+}
+
+// TestAddDependencyValidation tests dependency validation rules
+func TestAddDependencyValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		setup       func(db *db.DB) (string, string)
+		wantError   bool
+		description string
+	}{
+		{
+			name: "issue not found source",
+			setup: func(database *db.DB) (string, string) {
+				issue := &models.Issue{Title: "Exists", Status: models.StatusOpen}
+				database.CreateIssue(issue)
+				return "nonexistent", issue.ID
+			},
+			wantError:   true,
+			description: "source issue does not exist",
+		},
+		{
+			name: "issue not found target",
+			setup: func(database *db.DB) (string, string) {
+				issue := &models.Issue{Title: "Exists", Status: models.StatusOpen}
+				database.CreateIssue(issue)
+				return issue.ID, "nonexistent"
+			},
+			wantError:   true,
+			description: "target issue does not exist",
+		},
+		{
+			name: "duplicate dependency",
+			setup: func(database *db.DB) (string, string) {
+				issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
+				issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
+				database.CreateIssue(issue1)
+				database.CreateIssue(issue2)
+				// Add dependency first time
+				addDependency(database, issue1.ID, issue2.ID)
+				return issue1.ID, issue2.ID
+			},
+			wantError:   false, // addDependency returns nil for duplicates (with warning)
+			description: "adding same dependency twice",
+		},
+		{
+			name: "valid dependency open issues",
+			setup: func(database *db.DB) (string, string) {
+				issue1 := &models.Issue{Title: "Backend", Status: models.StatusOpen}
+				issue2 := &models.Issue{Title: "Database", Status: models.StatusOpen}
+				database.CreateIssue(issue1)
+				database.CreateIssue(issue2)
+				return issue1.ID, issue2.ID
+			},
+			wantError:   false,
+			description: "valid dependency between two open issues",
+		},
+		{
+			name: "depends on closed issue allowed",
+			setup: func(database *db.DB) (string, string) {
+				issue1 := &models.Issue{Title: "Resolved API", Status: models.StatusClosed}
+				issue2 := &models.Issue{Title: "New Feature", Status: models.StatusOpen}
+				database.CreateIssue(issue1)
+				database.CreateIssue(issue2)
+				return issue2.ID, issue1.ID
+			},
+			wantError:   false,
+			description: "issue can depend on closed issue (already resolved)",
+		},
+		{
+			name: "mixed statuses allowed",
+			setup: func(database *db.DB) (string, string) {
+				issue1 := &models.Issue{Title: "In Progress", Status: models.StatusInProgress}
+				issue2 := &models.Issue{Title: "Blocked", Status: models.StatusBlocked}
+				database.CreateIssue(issue1)
+				database.CreateIssue(issue2)
+				return issue2.ID, issue1.ID
+			},
+			wantError:   false,
+			description: "dependencies allowed for any status combination",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer database.Close()
+
+			issueID, depID := tt.setup(database)
+			err = addDependency(database, issueID, depID)
+
+			if (err != nil) != tt.wantError {
+				t.Errorf("addDependency() error = %v, wantError %v. Description: %s", err, tt.wantError, tt.description)
+			}
+		})
+	}
+}
+
+// TestAddDependencyPersistence tests that dependencies persist in database
+func TestAddDependencyPersistence(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	issue1 := &models.Issue{Title: "Step 1", Status: models.StatusOpen}
+	issue2 := &models.Issue{Title: "Step 2", Status: models.StatusOpen}
+	issue3 := &models.Issue{Title: "Step 3", Status: models.StatusOpen}
+	database.CreateIssue(issue1)
+	database.CreateIssue(issue2)
+	database.CreateIssue(issue3)
+
+	// Add dependencies
+	addDependency(database, issue2.ID, issue1.ID)
+	addDependency(database, issue3.ID, issue2.ID)
+
+	database.Close()
+
+	// Reopen database and verify dependencies persist
+	database, err = db.Open(dir)
+	if err != nil {
+		t.Fatalf("Failed to reopen database: %v", err)
+	}
+	defer database.Close()
+
+	// Check issue2 depends on issue1
+	deps2, _ := database.GetDependencies(issue2.ID)
+	if len(deps2) != 1 || deps2[0] != issue1.ID {
+		t.Errorf("Expected issue2 to depend on issue1, got: %v", deps2)
+	}
+
+	// Check issue3 depends on issue2
+	deps3, _ := database.GetDependencies(issue3.ID)
+	if len(deps3) != 1 || deps3[0] != issue2.ID {
+		t.Errorf("Expected issue3 to depend on issue2, got: %v", deps3)
+	}
+}
+
+// TestAddDependencyComplexGraph tests complex dependency graphs
+func TestAddDependencyComplexGraph(t *testing.T) {
+	tests := []struct {
+		name        string
+		buildGraph  func(db *db.DB, issues map[string]*models.Issue)
+		checkFunc   func(*testing.T, *db.DB, map[string]*models.Issue)
+		description string
+	}{
+		{
+			name: "diamond pattern",
+			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
+				// A -> B, A -> C, B -> D, C -> D
+				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["D"].ID, issues["B"].ID, "depends_on")
+				database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on")
+			},
+			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
+				// D should have 2 dependencies
+				depsD, _ := database.GetDependencies(issues["D"].ID)
+				if len(depsD) != 2 {
+					t.Errorf("Expected D to have 2 dependencies, got %d", len(depsD))
+				}
+				// B and C should each have 1 dependency
+				depsB, _ := database.GetDependencies(issues["B"].ID)
+				depsC, _ := database.GetDependencies(issues["C"].ID)
+				if len(depsB) != 1 || len(depsC) != 1 {
+					t.Errorf("Expected B and C to have 1 dependency each, got %d and %d", len(depsB), len(depsC))
+				}
+			},
+			description: "diamond dependency pattern (A blocks B and C, both block D)",
+		},
+		{
+			name: "multi-level chain",
+			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
+				// A -> B -> C -> D -> E
+				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["C"].ID, issues["B"].ID, "depends_on")
+				database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on")
+				database.AddDependency(issues["E"].ID, issues["D"].ID, "depends_on")
+			},
+			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
+				// Each should have exactly 1 direct dependency
+				for _, key := range []string{"B", "C", "D", "E"} {
+					deps, _ := database.GetDependencies(issues[key].ID)
+					if len(deps) != 1 {
+						t.Errorf("Expected %s to have 1 dependency, got %d", key, len(deps))
+					}
+				}
+				// A should have no dependencies
+				depsA, _ := database.GetDependencies(issues["A"].ID)
+				if len(depsA) != 0 {
+					t.Errorf("Expected A to have 0 dependencies, got %d", len(depsA))
+				}
+			},
+			description: "linear chain of 5 issues",
+		},
+		{
+			name: "fan-out pattern",
+			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
+				// A blocks B, C, D, E, F
+				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["D"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["E"].ID, issues["A"].ID, "depends_on")
+				database.AddDependency(issues["F"].ID, issues["A"].ID, "depends_on")
+			},
+			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
+				// Each of B-F should have exactly 1 dependency on A
+				for _, key := range []string{"B", "C", "D", "E", "F"} {
+					deps, _ := database.GetDependencies(issues[key].ID)
+					if len(deps) != 1 || deps[0] != issues["A"].ID {
+						t.Errorf("Expected %s to depend only on A, got deps: %v", key, deps)
+					}
+				}
+				// A should have no dependencies
+				depsA, _ := database.GetDependencies(issues["A"].ID)
+				if len(depsA) != 0 {
+					t.Errorf("Expected A to have 0 dependencies, got %d", len(depsA))
+				}
+			},
+			description: "one issue blocks many (fan-out)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer database.Close()
+
+			// Create 6 issues labeled A-F
+			issues := make(map[string]*models.Issue)
+			for _, label := range []string{"A", "B", "C", "D", "E", "F"} {
+				issue := &models.Issue{
+					Title:  fmt.Sprintf("Issue %s", label),
+					Status: models.StatusOpen,
+				}
+				database.CreateIssue(issue)
+				issues[label] = issue
+			}
+
+			// Build the dependency graph
+			tt.buildGraph(database, issues)
+
+			// Verify the graph structure
+			tt.checkFunc(t, database, issues)
+		})
+	}
 }

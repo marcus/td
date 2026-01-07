@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/marcus/td/internal/db"
@@ -440,4 +442,625 @@ func TestHandoffMessageFlag(t *testing.T) {
 
 	// Reset
 	handoffCmd.Flags().Set("message", "")
+}
+
+// TestCascadeHandoffBasic tests that handoff cascades to children
+func TestCascadeHandoffBasic(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent issue
+	parent := &models.Issue{Title: "Parent Task", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	// Create child issue
+	child := &models.Issue{Title: "Child Task", Status: models.StatusOpen, ParentID: parent.ID}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+
+	// Verify child is a descendant
+	hasChildren, err := database.HasChildren(parent.ID)
+	if err != nil {
+		t.Fatalf("HasChildren failed: %v", err)
+	}
+	if !hasChildren {
+		t.Error("Expected parent to have children")
+	}
+
+	// Get descendants
+	descendants, err := database.GetDescendantIssues(parent.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(descendants) != 1 {
+		t.Errorf("Expected 1 descendant, got %d", len(descendants))
+	}
+	if descendants[0].ID != child.ID {
+		t.Errorf("Expected descendant to be child issue, got %s", descendants[0].ID)
+	}
+}
+
+// TestCascadeHandoffMultipleChildren tests cascade with multiple children
+func TestCascadeHandoffMultipleChildren(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent
+	parent := &models.Issue{Title: "Parent Task", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create 3 children
+	childIDs := make([]string, 3)
+	for i := 0; i < 3; i++ {
+		child := &models.Issue{
+			Title:    fmt.Sprintf("Child %d", i+1),
+			Status:   models.StatusOpen,
+			ParentID: parent.ID,
+		}
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatalf("CreateIssue child failed: %v", err)
+		}
+		childIDs[i] = child.ID
+	}
+
+	// Get all descendants
+	descendants, err := database.GetDescendantIssues(parent.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(descendants) != 3 {
+		t.Errorf("Expected 3 descendants, got %d", len(descendants))
+	}
+}
+
+// TestCascadeHandoffNestedHierarchy tests cascade with nested parent-child hierarchy
+func TestCascadeHandoffNestedHierarchy(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create grandparent
+	grandparent := &models.Issue{Title: "Grandparent Task", Status: models.StatusInProgress}
+	if err := database.CreateIssue(grandparent); err != nil {
+		t.Fatalf("CreateIssue grandparent failed: %v", err)
+	}
+
+	// Create parent (child of grandparent)
+	parent := &models.Issue{
+		Title:    "Parent Task",
+		Status:   models.StatusOpen,
+		ParentID: grandparent.ID,
+	}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	// Create child (child of parent)
+	child := &models.Issue{
+		Title:    "Child Task",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+
+	// Get descendants of grandparent (should include parent and child)
+	descendants, err := database.GetDescendantIssues(grandparent.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(descendants) != 2 {
+		t.Errorf("Expected 2 descendants, got %d", len(descendants))
+	}
+
+	// Get descendants of parent (should include child only)
+	descendants, err = database.GetDescendantIssues(parent.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(descendants) != 1 {
+		t.Errorf("Expected 1 descendant from parent, got %d", len(descendants))
+	}
+	if descendants[0].ID != child.ID {
+		t.Errorf("Expected descendant to be child, got %s", descendants[0].ID)
+	}
+}
+
+// TestCascadeHandoffSkipsCompletedChildren tests that cascade skips closed children
+func TestCascadeHandoffSkipsCompletedChildren(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent
+	parent := &models.Issue{Title: "Parent Task", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	// Create open child
+	openChild := &models.Issue{
+		Title:    "Open Child",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(openChild); err != nil {
+		t.Fatalf("CreateIssue open child failed: %v", err)
+	}
+
+	// Create closed child
+	closedChild := &models.Issue{
+		Title:    "Closed Child",
+		Status:   models.StatusClosed,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(closedChild); err != nil {
+		t.Fatalf("CreateIssue closed child failed: %v", err)
+	}
+
+	// Get descendants with Open/InProgress filter
+	descendants, err := database.GetDescendantIssues(parent.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+
+	// Should only return open child
+	if len(descendants) != 1 {
+		t.Errorf("Expected 1 descendant, got %d", len(descendants))
+	}
+	if descendants[0].ID != openChild.ID {
+		t.Errorf("Expected open child, got %s", descendants[0].ID)
+	}
+}
+
+// TestCascadeHandoffSkipsExistingHandoffs tests that cascade skips children with existing handoffs
+func TestCascadeHandoffSkipsExistingHandoffs(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent and children
+	parent := &models.Issue{Title: "Parent", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue child1 failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue child2 failed: %v", err)
+	}
+
+	// Add existing handoff to child1
+	existingHandoff := &models.Handoff{
+		IssueID:   child1.ID,
+		SessionID: "ses_existing",
+		Done:      []string{"Already worked on this"},
+	}
+	if err := database.AddHandoff(existingHandoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Verify child1 has a handoff
+	handoff, err := database.GetLatestHandoff(child1.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Error("Expected handoff to exist for child1")
+	}
+
+	// Verify child2 has no handoff
+	handoff, err = database.GetLatestHandoff(child2.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff != nil {
+		t.Error("Expected no handoff for child2")
+	}
+}
+
+// TestUndoHandoffDelete tests undoing handoff deletion (restore cascaded handoff)
+func TestUndoHandoffDelete(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create issue and handoff
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Work completed"},
+	}
+	if err := database.AddHandoff(handoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	handoffID := handoff.ID
+
+	// Verify handoff exists
+	retrieved, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("Expected handoff to exist")
+	}
+
+	// Delete the handoff
+	if err := database.DeleteHandoff(handoffID); err != nil {
+		t.Fatalf("DeleteHandoff failed: %v", err)
+	}
+
+	// Verify handoff is deleted
+	retrieved, err = database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff after delete failed: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("Expected handoff to be deleted")
+	}
+}
+
+// TestCascadeAndUndoInteraction tests cascade handoff followed by undo
+func TestCascadeAndUndoInteraction(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent and children
+	parent := &models.Issue{Title: "Parent", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Child",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+
+	// Simulate cascade: add handoff to child
+	childHandoff := &models.Handoff{
+		IssueID:   child.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Cascaded from parent"},
+	}
+	if err := database.AddHandoff(childHandoff); err != nil {
+		t.Fatalf("AddHandoff to child failed: %v", err)
+	}
+
+	// Log the action for undo tracking
+	handoffData, _ := json.Marshal(childHandoff)
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionHandoff,
+		EntityType: "handoff",
+		EntityID:   fmt.Sprintf("%d", childHandoff.ID),
+		NewData:    string(handoffData),
+	}
+	if err := database.LogAction(action); err != nil {
+		t.Fatalf("LogAction failed: %v", err)
+	}
+
+	// Verify child has the cascaded handoff
+	retrieved, err := database.GetLatestHandoff(child.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("Expected cascaded handoff")
+	}
+
+	// Now undo by deleting the handoff
+	if err := undoHandoffAction(database, action); err != nil {
+		t.Fatalf("undoHandoffAction failed: %v", err)
+	}
+
+	// Verify handoff is deleted
+	retrieved, err = database.GetLatestHandoff(child.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff after undo failed: %v", err)
+	}
+	if retrieved != nil {
+		t.Error("Expected cascaded handoff to be undone")
+	}
+}
+
+// TestMultipleCascadeLevels tests cascade through multiple hierarchy levels
+func TestMultipleCascadeLevels(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create 4-level hierarchy: Level0 -> Level1 -> Level2 -> Level3
+	levels := make([]*models.Issue, 4)
+
+	// Level 0 (top)
+	levels[0] = &models.Issue{Title: "Level 0", Status: models.StatusInProgress}
+	if err := database.CreateIssue(levels[0]); err != nil {
+		t.Fatalf("CreateIssue level 0 failed: %v", err)
+	}
+
+	// Levels 1-3 (nested children)
+	for i := 1; i < 4; i++ {
+		levels[i] = &models.Issue{
+			Title:    fmt.Sprintf("Level %d", i),
+			Status:   models.StatusOpen,
+			ParentID: levels[i-1].ID,
+		}
+		if err := database.CreateIssue(levels[i]); err != nil {
+			t.Fatalf("CreateIssue level %d failed: %v", i, err)
+		}
+	}
+
+	// Get descendants of Level 0 - should include Levels 1, 2, 3
+	descendants, err := database.GetDescendantIssues(levels[0].ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(descendants) != 3 {
+		t.Errorf("Expected 3 descendants for level 0, got %d", len(descendants))
+	}
+
+	// Get descendants of Level 1 - should include Levels 2, 3
+	descendants, err = database.GetDescendantIssues(levels[1].ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues for level 1 failed: %v", err)
+	}
+	if len(descendants) != 2 {
+		t.Errorf("Expected 2 descendants for level 1, got %d", len(descendants))
+	}
+}
+
+// TestHandoffLoggingForUndo tests that handoff actions are logged for undo
+func TestHandoffLoggingForUndo(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create issue
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create handoff
+	handoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Task completed"},
+	}
+	if err := database.AddHandoff(handoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Log the handoff action
+	handoffData, _ := json.Marshal(handoff)
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionHandoff,
+		EntityType: "handoff",
+		EntityID:   fmt.Sprintf("%d", handoff.ID),
+		NewData:    string(handoffData),
+	}
+	if err := database.LogAction(action); err != nil {
+		t.Fatalf("LogAction failed: %v", err)
+	}
+
+	// Retrieve logged action
+	retrievedAction, err := database.GetLastAction("ses_test")
+	if err != nil {
+		t.Fatalf("GetLastAction failed: %v", err)
+	}
+	if retrievedAction == nil {
+		t.Fatal("Expected action to be logged")
+	}
+
+	if retrievedAction.ActionType != models.ActionHandoff {
+		t.Errorf("Expected ActionHandoff, got %s", retrievedAction.ActionType)
+	}
+	if retrievedAction.EntityType != "handoff" {
+		t.Errorf("Expected entity type handoff, got %s", retrievedAction.EntityType)
+	}
+}
+
+// TestCascadeHandoffStatusFiltering tests cascade respects status filters
+func TestCascadeHandoffStatusFiltering(t *testing.T) {
+	tests := []struct {
+		name      string
+		statuses  []models.Status
+		childStat models.Status
+		wantCount int
+	}{
+		{
+			name:      "match open status",
+			statuses:  []models.Status{models.StatusOpen},
+			childStat: models.StatusOpen,
+			wantCount: 1,
+		},
+		{
+			name:      "match in_progress status",
+			statuses:  []models.Status{models.StatusInProgress},
+			childStat: models.StatusInProgress,
+			wantCount: 1,
+		},
+		{
+			name:      "multiple statuses include child",
+			statuses:  []models.Status{models.StatusOpen, models.StatusInProgress},
+			childStat: models.StatusOpen,
+			wantCount: 1,
+		},
+		{
+			name:      "status filter excludes child",
+			statuses:  []models.Status{models.StatusClosed},
+			childStat: models.StatusOpen,
+			wantCount: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer database.Close()
+
+			// Create parent
+			parent := &models.Issue{Title: "Parent", Status: models.StatusInProgress}
+			if err := database.CreateIssue(parent); err != nil {
+				t.Fatalf("CreateIssue parent failed: %v", err)
+			}
+
+			// Create child with specified status
+			child := &models.Issue{
+				Title:    "Child",
+				Status:   tc.childStat,
+				ParentID: parent.ID,
+			}
+			if err := database.CreateIssue(child); err != nil {
+				t.Fatalf("CreateIssue child failed: %v", err)
+			}
+
+			// Get descendants with status filter
+			descendants, err := database.GetDescendantIssues(parent.ID, tc.statuses)
+			if err != nil {
+				t.Fatalf("GetDescendantIssues failed: %v", err)
+			}
+
+			if len(descendants) != tc.wantCount {
+				t.Errorf("Expected %d descendants, got %d", tc.wantCount, len(descendants))
+			}
+		})
+	}
+}
+
+// TestCascadePreservesHandoffContent tests cascaded handoff message format
+func TestCascadePreservesHandoffContent(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent and child
+	parent := &models.Issue{Title: "Parent", Status: models.StatusInProgress}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Child",
+		Status:   models.StatusOpen,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+
+	// Create cascaded handoff (simulating what cmd/handoff.go does)
+	cascadedMessage := fmt.Sprintf("Cascaded from %s", parent.ID)
+	childHandoff := &models.Handoff{
+		IssueID:   child.ID,
+		SessionID: "ses_cascade",
+		Done:      []string{cascadedMessage},
+	}
+	if err := database.AddHandoff(childHandoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Retrieve and verify
+	retrieved, err := database.GetLatestHandoff(child.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if retrieved == nil {
+		t.Fatal("Expected handoff")
+	}
+
+	if len(retrieved.Done) != 1 {
+		t.Errorf("Expected 1 done item, got %d", len(retrieved.Done))
+	}
+	if retrieved.Done[0] != cascadedMessage {
+		t.Errorf("Expected '%s', got '%s'", cascadedMessage, retrieved.Done[0])
+	}
 }

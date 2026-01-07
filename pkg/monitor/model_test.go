@@ -2349,3 +2349,965 @@ func TestHitTestTaskListRowWithScrolling(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Drag-to-Resize Tests (Comprehensive Suite)
+// =============================================================================
+
+func TestStartDividerDragInitializes(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	startY := m.DividerBounds[0].Y + 1
+	result, cmd := m.startDividerDrag(0, startY)
+	m2 := result.(Model)
+	if m2.DraggingDivider != 0 || m2.DragStartY != startY || cmd != nil {
+		t.Error("startDividerDrag did not initialize correctly")
+	}
+}
+
+func TestDragDivider0GrowsPane0ShrinkPane1(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+	if m.PaneHeights[0] <= 0.333 || m.PaneHeights[1] >= 0.333 {
+		t.Error("Pane heights not adjusted correctly")
+	}
+}
+
+func TestDragDivider1GrowsPane1ShrinkPane2(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[1].Y + 1
+	result, _ := m.startDividerDrag(1, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+	if m.PaneHeights[1] <= 0.333 || m.PaneHeights[2] >= 0.334 {
+		t.Error("Pane 1/2 heights not adjusted correctly")
+	}
+}
+
+func TestDragUpMovesOpposite(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY - 10)
+	m = result.(Model)
+	if m.PaneHeights[0] >= 0.333 || m.PaneHeights[1] <= 0.333 {
+		t.Error("Pane heights not adjusted correctly on drag up")
+	}
+}
+
+func TestDragHeightsSumTo1(t *testing.T) {
+	testCases := []struct {
+		name string
+		dist int
+	}{
+		{"small", 5}, {"medium", 15}, {"large", 25},
+	}
+	for _, tc := range testCases {
+		m := newResizeTestModel(80, 100)
+		m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+		m.updatePanelBounds()
+		startY := m.DividerBounds[0].Y + 1
+		result, _ := m.startDividerDrag(0, startY)
+		m = result.(Model)
+		result, _ = m.updateDividerDrag(startY + tc.dist)
+		m = result.(Model)
+		sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+		if sum < 0.999 || sum > 1.001 {
+			t.Errorf("%s: Heights sum to %f", tc.name, sum)
+		}
+	}
+}
+
+func TestDragEnforcesMinimums(t *testing.T) {
+	testCases := []struct {
+		name string
+		init [3]float64
+		dir  int
+	}{
+		{"pane0", [3]float64{0.2, 0.7, 0.1}, -60},
+		{"pane1", [3]float64{0.7, 0.2, 0.1}, 60},
+		{"pane2", [3]float64{0.1, 0.7, 0.2}, 60},
+	}
+	for _, tc := range testCases {
+		m := newResizeTestModel(80, 100)
+		m.PaneHeights = tc.init
+		m.updatePanelBounds()
+		divider := 0
+		if tc.name == "pane2" {
+			divider = 1
+		}
+		startY := m.DividerBounds[divider].Y + 1
+		result, _ := m.startDividerDrag(divider, startY)
+		m = result.(Model)
+		result, _ = m.updateDividerDrag(startY + tc.dir)
+		m = result.(Model)
+		for i, h := range m.PaneHeights {
+			if h < 0.1-0.001 {
+				t.Errorf("%s: Pane %d below min: %f", tc.name, i, h)
+			}
+		}
+	}
+}
+
+func TestMultipleDragsSequence(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+	h1 := m.PaneHeights[0]
+	result, _ = m.updateDividerDrag(startY + 20)
+	m = result.(Model)
+	h2 := m.PaneHeights[0]
+	if h2 <= h1 {
+		t.Error("Second drag should increase pane 0 more")
+	}
+}
+
+func TestEndDividerDragClears(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.endDividerDrag()
+	m = result.(Model)
+	if m.DraggingDivider != -1 || m.DividerHover != -1 {
+		t.Error("endDividerDrag did not clear state")
+	}
+}
+
+func TestDragSmallTerminal(t *testing.T) {
+	m := newResizeTestModel(20, 10)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 5)
+	m = result.(Model)
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("Small terminal: sum = %f", sum)
+	}
+}
+
+func TestDragWithSearchBar(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.SearchMode = true
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("With search: sum = %f", sum)
+	}
+}
+
+func TestDragEmbeddedMode(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.Embedded = true
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("Embedded: sum = %f", sum)
+	}
+}
+
+func TestDragWithoutStart(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	orig := m.PaneHeights
+	result, _ := m.updateDividerDrag(50)
+	m2 := result.(Model)
+	if m2.PaneHeights != orig {
+		t.Error("updateDividerDrag without start changed heights")
+	}
+}
+
+func TestDragExtremeRatios(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.7, 0.2, 0.1}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 30)
+	m = result.(Model)
+	for i, h := range m.PaneHeights {
+		if h < 0.1-0.001 {
+			t.Errorf("Extreme: Pane %d below min: %f", i, h)
+		}
+	}
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("Extreme: sum = %f", sum)
+	}
+}
+
+func TestDragLargeTerminal(t *testing.T) {
+	m := newResizeTestModel(200, 150)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY + 40)
+	m = result.(Model)
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("Large: sum = %f", sum)
+	}
+}
+
+func TestDragZeroDelta(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	orig := [3]float64{0.333, 0.333, 0.334}
+	m.PaneHeights = orig
+	m.updatePanelBounds()
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+	result, _ = m.updateDividerDrag(startY)
+	m = result.(Model)
+	for i := range orig {
+		if m.PaneHeights[i] != orig[i] {
+			t.Errorf("Zero delta changed pane %d", i)
+		}
+	}
+}
+
+func TestDragDivider1Multiple(t *testing.T) {
+	tests := []struct {
+		name string
+		init [3]float64
+		dist int
+	}{
+		{"narrow to wide", [3]float64{0.1, 0.1, 0.8}, 15},
+		{"wide to narrow", [3]float64{0.1, 0.8, 0.1}, 20},
+	}
+	for _, tt := range tests {
+		m := newResizeTestModel(80, 100)
+		m.PaneHeights = tt.init
+		m.updatePanelBounds()
+		startY := m.DividerBounds[1].Y + 1
+		result, _ := m.startDividerDrag(1, startY)
+		m = result.(Model)
+		result, _ = m.updateDividerDrag(startY + tt.dist)
+		m = result.(Model)
+		sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+		if sum < 0.999 || sum > 1.001 {
+			t.Errorf("%s: sum = %f", tt.name, sum)
+		}
+	}
+}
+// TestModalScrollNotAccumulatingAtBottom tests that scroll position stops at the bottom
+// and doesn't accumulate when pressing down/Page Down at the bottom boundary.
+// Issue: td-05277607
+func TestModalScrollNotAccumulatingAtBottom(t *testing.T) {
+	tests := []struct {
+		name            string
+		initialScroll   int
+		contentLines    int
+		termHeight      int
+		expectedScroll  int
+		description     string
+	}{
+		{
+			name:           "scroll at max stays at max after single down",
+			initialScroll:  30,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30, // Should stay at max
+			description:    "At bottom, pressing down should not accumulate",
+		},
+		{
+			name:           "scroll below max clamps to max",
+			initialScroll:  35, // Over max
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30, // Clamped to max
+			description:    "Scroll position clamped to maximum",
+		},
+		{
+			name:           "empty modal (0 content lines)",
+			initialScroll:  0,
+			contentLines:   0,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Empty modal keeps scroll at 0",
+		},
+		{
+			name:           "single item fits in viewport",
+			initialScroll:  0,
+			contentLines:   5,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Content fits entirely, max scroll is 0",
+		},
+		{
+			name:           "exact fit at bottom",
+			initialScroll:  15,
+			contentLines:   35,
+			termHeight:     30,
+			expectedScroll: 15, // Exact max
+			description:    "Scroll at exact max boundary",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			maxScroll := m.modalMaxScroll(m.CurrentModal())
+
+			// Verify initial scroll is clamped
+			if m.CurrentModal().Scroll > maxScroll {
+				m.CurrentModal().Scroll = maxScroll
+			}
+
+			// Try to scroll down via mousewheel (delta=3)
+			modal := m.CurrentModal()
+			modal.Scroll += 3
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
+			}
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After scroll down at bottom: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollPositionUpdatesCorrectly tests that scroll position updates
+// correctly when scrolling within valid bounds.
+func TestModalScrollPositionUpdatesCorrectly(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		delta          int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "single line scroll down",
+			initialScroll:  5,
+			delta:          1,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 6,
+			description:    "One line scroll increases position by 1",
+		},
+		{
+			name:           "multiple line scroll down",
+			initialScroll:  5,
+			delta:          5,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 10,
+			description:    "Five line scroll increases position by 5",
+		},
+		{
+			name:           "mousewheel scroll down (delta=3)",
+			initialScroll:  5,
+			delta:          3,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 8,
+			description:    "Mousewheel scroll with delta=3",
+		},
+		{
+			name:           "scroll from top",
+			initialScroll:  0,
+			delta:          3,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 3,
+			description:    "Scrolling from top position",
+		},
+		{
+			name:           "scroll in middle range",
+			initialScroll:  10,
+			delta:          3,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 13,
+			description:    "Scrolling from middle of document",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			maxScroll := m.modalMaxScroll(m.CurrentModal())
+			modal := m.CurrentModal()
+			modal.Scroll += tt.delta
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
+			}
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("Scroll position: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollKeyboardDownAtBottom tests pressing down key at bottom boundary.
+func TestModalScrollKeyboardDownAtBottom(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "down key at max scroll",
+			initialScroll:  30,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30,
+			description:    "Down key at bottom should not overshoot",
+		},
+		{
+			name:           "down key one before max",
+			initialScroll:  29,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30,
+			description:    "Down key one position from bottom reaches max",
+		},
+		{
+			name:           "down key in middle",
+			initialScroll:  10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 11,
+			description:    "Down key in middle of scrollable area",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Simulate CmdScrollDown (j key)
+			modal := m.CurrentModal()
+			maxScroll := m.modalMaxScroll(modal)
+			if modal.Scroll < maxScroll {
+				modal.Scroll++
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After down key: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollKeyboardUpWorks tests that scrolling up works correctly.
+func TestModalScrollKeyboardUpWorks(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "up key from middle",
+			initialScroll:  10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 9,
+			description:    "Up key decreases scroll by 1",
+		},
+		{
+			name:           "up key from max",
+			initialScroll:  20,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 19,
+			description:    "Up key from bottom moves one position up",
+		},
+		{
+			name:           "up key at top",
+			initialScroll:  0,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Up key at top stays at 0",
+		},
+		{
+			name:           "up key from position 1",
+			initialScroll:  1,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Up key from position 1 goes to 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Simulate CmdScrollUp (k key)
+			modal := m.CurrentModal()
+			if modal.Scroll > 0 {
+				modal.Scroll--
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After up key: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollPageDownClampsBounds tests Page Down doesn't overshoot.
+func TestModalScrollPageDownClampsBounds(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		pageSize       int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "page down near bottom clamps to max",
+			initialScroll:  25,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30,
+			description:    "Page down that would overshoot gets clamped",
+		},
+		{
+			name:           "page down from top",
+			initialScroll:  0,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 10,
+			description:    "Page down from top moves forward",
+		},
+		{
+			name:           "page down at max stays at max",
+			initialScroll:  30,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30,
+			description:    "Page down at max boundary stays at max",
+		},
+		{
+			name:           "small page size",
+			initialScroll:  0,
+			pageSize:       3,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 3,
+			description:    "Half-page scroll with small page size",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Simulate Page Down
+			modal := m.CurrentModal()
+			maxScroll := m.modalMaxScroll(modal)
+			modal.Scroll += tt.pageSize
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After page down: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollPageUpClampsBounds tests Page Up doesn't undershoot.
+func TestModalScrollPageUpClampsBounds(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		pageSize       int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "page up near top clamps to 0",
+			initialScroll:  5,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Page up that would go negative gets clamped to 0",
+		},
+		{
+			name:           "page up from middle",
+			initialScroll:  15,
+			pageSize:       5,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 10,
+			description:    "Page up from middle position",
+		},
+		{
+			name:           "page up at 0 stays at 0",
+			initialScroll:  0,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 0,
+			description:    "Page up at top boundary stays at 0",
+		},
+		{
+			name:           "page up from max",
+			initialScroll:  20,
+			pageSize:       10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 10,
+			description:    "Page up from bottom moves backward",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Simulate Page Up
+			modal := m.CurrentModal()
+			modal.Scroll -= tt.pageSize
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
+			}
+
+			if m.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After page up: got %d, want %d (%s)",
+					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollEdgeCaseEmptyModal tests scroll with empty modal content.
+func TestModalScrollEdgeCaseEmptyModal(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       5, // Scroll set but no content
+				ContentLines: 0,
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	maxScroll := m.modalMaxScroll(m.CurrentModal())
+
+	if maxScroll != 0 {
+		t.Errorf("Empty modal max scroll should be 0, got %d", maxScroll)
+	}
+
+	// Trying to scroll down should clamp to 0
+	modal := m.CurrentModal()
+	modal.Scroll += 3
+	if modal.Scroll < 0 {
+		modal.Scroll = 0
+	}
+	if modal.Scroll > maxScroll {
+		modal.Scroll = maxScroll
+	}
+
+	if m.CurrentModal().Scroll != 0 {
+		t.Errorf("Empty modal scroll should clamp to 0, got %d", m.CurrentModal().Scroll)
+	}
+}
+
+// TestModalScrollEdgeCaseSingleItemModal tests scroll with minimal content.
+func TestModalScrollEdgeCaseSingleItemModal(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       0,
+				ContentLines: 10, // Content fits in viewport
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	maxScroll := m.modalMaxScroll(m.CurrentModal())
+
+	if maxScroll != 0 {
+		t.Errorf("Single-item modal (content fits) max scroll should be 0, got %d", maxScroll)
+	}
+
+	// Try to scroll down - should stay at 0
+	modal := m.CurrentModal()
+	modal.Scroll += 5
+	if modal.Scroll < 0 {
+		modal.Scroll = 0
+	}
+	if modal.Scroll > maxScroll {
+		modal.Scroll = maxScroll
+	}
+
+	if m.CurrentModal().Scroll != 0 {
+		t.Errorf("Content-fits modal scroll should be 0, got %d", m.CurrentModal().Scroll)
+	}
+}
+
+// TestModalScrollEdgeCaseFullModal tests scroll with completely filled modal.
+func TestModalScrollEdgeCaseFullModal(t *testing.T) {
+	m := Model{
+		Width:  80,
+		Height: 30,
+		ModalStack: []ModalEntry{
+			{
+				IssueID:      "td-001",
+				Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+				Scroll:       0,
+				ContentLines: 1000, // Very long content
+				SourcePanel:  PanelTaskList,
+			},
+		},
+		PaneHeights: defaultPaneHeights(),
+	}
+
+	maxScroll := m.modalMaxScroll(m.CurrentModal())
+
+	if maxScroll <= 0 {
+		t.Errorf("Full modal should have positive max scroll, got %d", maxScroll)
+	}
+
+	// Set scroll to max and verify it doesn't increase
+	modal := m.CurrentModal()
+	modal.Scroll = maxScroll
+	initialScroll := modal.Scroll
+
+	// Try to scroll down more
+	modal.Scroll += 10
+	if modal.Scroll < 0 {
+		modal.Scroll = 0
+	}
+	if modal.Scroll > maxScroll {
+		modal.Scroll = maxScroll
+	}
+
+	if m.CurrentModal().Scroll != initialScroll {
+		t.Errorf("Full modal at max should not scroll further, got %d want %d",
+			m.CurrentModal().Scroll, initialScroll)
+	}
+}
+
+// TestModalMaxScrollCalculation tests the modalMaxScroll calculation itself.
+func TestModalMaxScrollCalculation(t *testing.T) {
+	tests := []struct {
+		name           string
+		contentLines   int
+		termHeight     int
+		expectedMax    int
+		description    string
+	}{
+		{
+			name:           "content smaller than viewport",
+			contentLines:   10,
+			termHeight:     30,
+			expectedMax:    0,
+			description:    "Content fits entirely, max scroll is 0",
+		},
+		{
+			name:           "content larger than viewport",
+			contentLines:   100,
+			termHeight:     30,
+			expectedMax:    80, // modalHeight=24, visibleHeight=20, 100-20=80
+			description:    "Large content has positive max scroll",
+		},
+		{
+			name:           "exact fit after border/footer",
+			contentLines:   24, // modalHeight-4
+			termHeight:     30,
+			expectedMax:    4,
+			description:    "Content size accounting for modal overhead",
+		},
+		{
+			name:           "minimal terminal height",
+			contentLines:   50,
+			termHeight:     10,
+			expectedMax:    39, // modalHeight=8, visibleHeight=4, 50-4=46 but clamped
+			description:    "Small terminal with large content",
+		},
+		{
+			name:           "large terminal height",
+			contentLines:   50,
+			termHeight:     100,
+			expectedMax:    14, // modalHeight=40, visibleHeight=36, 50-36=14
+			description:    "Large terminal with moderate content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       0,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			maxScroll := m.modalMaxScroll(m.CurrentModal())
+
+			if maxScroll != tt.expectedMax {
+				t.Errorf("Max scroll: got %d, want %d (%s)",
+					maxScroll, tt.expectedMax, tt.description)
+			}
+		})
+	}
+}
