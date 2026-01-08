@@ -12,5 +12,6 @@
       "Bash(ls:*)",
       "Bash(go test:*)"
     ]
-  }
+  },
+  "outputStyle": "default"
 }

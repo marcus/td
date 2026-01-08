@@ -4,16 +4,19 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
 	versionStr      string
 	baseDir         string
 	baseDirOverride *string // For testing
+	cmdStartTime    time.Time
 )
 
 // SetVersion sets the version string
@@ -27,15 +30,45 @@ var rootCmd = &cobra.Command{
 	Long: `td - A minimalist local task and session management CLI designed for AI-assisted development workflows.
 
 Optimized for session continuity—capturing working state so new context windows can resume where previous ones stopped.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		cmdStartTime = time.Now()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if !db.AnalyticsEnabled() {
+			return
+		}
+		dir := getBaseDir()
+		if dir == "" {
+			return
+		}
+		event := buildCommandEvent(cmd, nil)
+		_ = db.LogCommandUsage(dir, event) // Sync for now to debug
+	},
 }
 
 // Execute runs the root command
 func Execute() {
+	cmdStartTime = time.Now()
 	if err := rootCmd.Execute(); err != nil {
 		args := os.Args[1:]
 
 		// Log agent error for analysis
 		logAgentError(args, err.Error())
+
+		// Log failed command analytics
+		if db.AnalyticsEnabled() {
+			dir := getBaseDir()
+			if dir == "" {
+				dir, _ = os.Getwd()
+			}
+			if dir != "" {
+				event := buildCommandEvent(nil, err)
+				if len(args) > 0 {
+					event.Command = args[0]
+				}
+				_ = db.LogCommandUsage(dir, event)
+			}
+		}
 
 		// Check if this is an unknown command that we can provide workflow hints for
 		if len(args) > 0 && handleWorkflowHint(args[0]) {
@@ -202,4 +235,48 @@ func showWorkflowHint(attempted, suggested, hint string) {
 	fmt.Fprintf(os.Stderr, "  4. td approve <id>   - Complete (different session)\n\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", hint)
 	fmt.Fprintf(os.Stderr, "Run 'td usage -q' for full reference.\n")
+}
+
+// buildCommandEvent creates a CommandUsageEvent from the current command state
+func buildCommandEvent(cmd *cobra.Command, err error) db.CommandUsageEvent {
+	event := db.CommandUsageEvent{
+		Timestamp:  cmdStartTime,
+		DurationMs: time.Since(cmdStartTime).Milliseconds(),
+		Success:    err == nil,
+	}
+
+	if err != nil {
+		event.Error = err.Error()
+	}
+
+	if cmd != nil {
+		event.Command = cmd.Name()
+		// Check for subcommand (parent is not "td")
+		if cmd.Parent() != nil && cmd.Parent().Name() != "td" {
+			event.Subcommand = cmd.Name()
+			event.Command = cmd.Parent().Name()
+		}
+		event.Flags = extractFlags(cmd)
+	}
+
+	// Try to get session ID
+	dir := getBaseDir()
+	if dir != "" {
+		if sess, err := session.Get(dir); err == nil {
+			event.SessionID = sess.ID
+		}
+	}
+
+	return event
+}
+
+// extractFlags extracts changed flags from a command and sanitizes them
+func extractFlags(cmd *cobra.Command) map[string]string {
+	flags := make(map[string]string)
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			flags[f.Name] = f.Value.String()
+		}
+	})
+	return db.SanitizeFlags(flags)
 }

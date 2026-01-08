@@ -2,6 +2,21 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.7.0] - 2026-01-08
+
+### Features
+- Add local CLI analytics tracking (`td stats analytics`)
+  - Track command usage, flags, duration, success/failure
+  - Bar charts for most used commands and flags
+  - List of least used and never used commands
+  - Daily activity visualization
+  - Session activity tracking
+  - Toggle with `TD_ANALYTICS=false` env var
+- Add unified `td stats` command with subcommands:
+  - `td stats analytics` - Command usage statistics
+  - `td stats security` - Security exception audit log
+  - `td stats errors` - Failed command attempts
+
 ## [v0.6.0] - 2026-01-07
 
 ### Features

@@ -1,6 +1,8 @@
 package monitor
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -327,7 +329,7 @@ func TestFormatIssueAsMarkdownEdgeCases(t *testing.T) {
 			},
 			validates: func(result string) error {
 				if !strings.Contains(result, "Fix [bug] & issue's \"error\"") {
-					return nil
+					return fmt.Errorf("expected title with special chars")
 				}
 				return nil
 			},
@@ -343,7 +345,7 @@ func TestFormatIssueAsMarkdownEdgeCases(t *testing.T) {
 			},
 			validates: func(result string) error {
 				if !strings.Contains(result, "## Acceptance Criteria") {
-					return nil
+					return fmt.Errorf("expected acceptance criteria section")
 				}
 				return nil
 			},
@@ -358,7 +360,7 @@ func TestFormatIssueAsMarkdownEdgeCases(t *testing.T) {
 			},
 			validates: func(result string) error {
 				if !strings.Contains(result, "td-parent-123") {
-					return nil
+					return fmt.Errorf("expected parent ID in output")
 				}
 				return nil
 			},
@@ -393,7 +395,7 @@ func TestFormatEpicAsMarkdownEdgeCases(t *testing.T) {
 			children: []models.Issue{},
 			validates: func(result string) error {
 				if strings.Contains(result, "## Stories") {
-					return nil
+					return fmt.Errorf("empty children should not have Stories section")
 				}
 				return nil
 			},
@@ -415,7 +417,7 @@ func TestFormatEpicAsMarkdownEdgeCases(t *testing.T) {
 			},
 			validates: func(result string) error {
 				if !strings.Contains(result, "- [ ] **Task** `td-1`") {
-					return nil
+					return fmt.Errorf("expected task checkbox line in output")
 				}
 				return nil
 			},
@@ -437,10 +439,10 @@ func TestFormatEpicAsMarkdownEdgeCases(t *testing.T) {
 			},
 			validates: func(result string) error {
 				if !strings.Contains(result, "Line 1") {
-					return nil
+					return fmt.Errorf("expected Line 1 in output")
 				}
 				if !strings.Contains(result, "Line 3") {
-					return nil
+					return fmt.Errorf("expected Line 3 in output")
 				}
 				return nil
 			},
@@ -584,8 +586,8 @@ func BenchmarkFormatEpicAsMarkdown(b *testing.B) {
 	children := make([]models.Issue, 20)
 	for i := 0; i < 20; i++ {
 		children[i] = models.Issue{
-			ID:          "td-child-" + string(rune('0'+i%10)),
-			Title:       "Story " + string(rune('0'+i%10)),
+			ID:          "td-child-" + strconv.Itoa(i),
+			Title:       "Story " + strconv.Itoa(i),
 			Status:      models.StatusOpen,
 			Description: "Description line 1\nDescription line 2",
 		}
