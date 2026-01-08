@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.6.0] - 2026-01-07
+
+### Features
+- Auto-handoff when submitting issues for review
+
+### Bug Fixes
+- Fix mouse offset issue when filtering or sorting in td monitor
+- Remove self-close from close guidance
+
+### Tests
+- Additional test coverage
+
 ## [v0.5.0] - 2026-01-07
 
 ### Features
