@@ -140,6 +140,18 @@ func (sm *StateMachine) GetTransition(from, to models.Status) *Transition {
 
 // Validate checks if a transition is allowed and returns any guard results
 func (sm *StateMachine) Validate(ctx *TransitionContext) ([]GuardResult, error) {
+	// Validate context
+	if ctx == nil {
+		return nil, &TransitionError{Reason: "nil context"}
+	}
+	if ctx.Issue == nil {
+		return nil, &TransitionError{
+			From:   ctx.FromStatus,
+			To:     ctx.ToStatus,
+			Reason: "nil issue in context",
+		}
+	}
+
 	// First check if the transition path exists
 	transition := sm.GetTransition(ctx.FromStatus, ctx.ToStatus)
 	if transition == nil {

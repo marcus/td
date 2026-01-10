@@ -40,11 +40,6 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Only allow marking in_progress or open issues for review
-	if issue.Status != models.StatusInProgress && issue.Status != models.StatusOpen {
-		return m, nil
-	}
-
 	// Update status
 	issue.Status = models.StatusInReview
 	if err := m.DB.UpdateIssue(issue); err != nil {
@@ -335,15 +330,6 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 	sm := workflow.DefaultMachine()
 	if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
 		m.StatusMessage = "Cannot reopen from " + string(issue.Status)
-		m.StatusIsError = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return ClearStatusMsg{}
-		})
-	}
-
-	// Can only reopen closed issues
-	if issue.Status != models.StatusClosed {
-		m.StatusMessage = "Issue is not closed"
 		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}

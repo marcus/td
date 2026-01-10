@@ -418,3 +418,34 @@ func TestValidationError(t *testing.T) {
 		t.Errorf("Multiple errors message: %q", ve.Error())
 	}
 }
+
+func TestValidateNilContext(t *testing.T) {
+	sm := DefaultMachine()
+
+	// Test nil context
+	_, err := sm.Validate(nil)
+	if err == nil {
+		t.Error("Expected error for nil context")
+	}
+	if te, ok := err.(*TransitionError); !ok {
+		t.Errorf("Expected TransitionError, got %T", err)
+	} else if te.Reason != "nil context" {
+		t.Errorf("Expected 'nil context' reason, got %q", te.Reason)
+	}
+
+	// Test nil issue in context
+	ctx := &TransitionContext{
+		Issue:      nil,
+		FromStatus: models.StatusOpen,
+		ToStatus:   models.StatusInProgress,
+	}
+	_, err = sm.Validate(ctx)
+	if err == nil {
+		t.Error("Expected error for nil issue")
+	}
+	if te, ok := err.(*TransitionError); !ok {
+		t.Errorf("Expected TransitionError, got %T", err)
+	} else if te.Reason != "nil issue in context" {
+		t.Errorf("Expected 'nil issue in context' reason, got %q", te.Reason)
+	}
+}
