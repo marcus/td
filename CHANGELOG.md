@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.9.0] - 2026-01-10
+
+### Features
+- Add `rework()` query function for finding rejected issues awaiting rework
+  - Query with `td query "rework()"` to find issues needing fixes
+  - Efficient caching - fetches rework IDs once before filtering
+- Show full log text in monitor task modal
+  - No more truncation - long messages wrap properly
+  - Uses cellbuf.Wrap for correct display-width handling
+- Add Submit and Cancel buttons to form modal
+  - Tab/Shift+Tab navigation between form fields and buttons
+  - Mouse hover and click support for buttons
+
 ## [v0.8.0] - 2026-01-10
 
 ### Features
