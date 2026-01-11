@@ -254,7 +254,11 @@ func (m Model) estimateModalContentLines(modal *ModalEntry) int {
 
 	// Logs
 	if len(modal.Logs) > 0 {
-		lines += 1 + len(modal.Logs) // Header + logs
+		lines++ // Header
+		contentWidth := m.modalContentWidth()
+		for _, log := range modal.Logs {
+			lines += len(renderLogLines(log, contentWidth))
+		}
 	}
 
 	// Comments

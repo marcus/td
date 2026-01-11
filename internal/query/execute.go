@@ -109,11 +109,20 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 		return issues, nil
 	}
 
+	// Pre-fetch rework IDs if needed (for efficiency - call once, not per issue)
+	var reworkIDs map[string]bool
+	for _, filter := range crossFilters {
+		if filter.field == "rework" {
+			reworkIDs, _ = database.GetRejectedInProgressIssueIDs()
+			break
+		}
+	}
+
 	var result []models.Issue
 	for _, issue := range issues {
 		matches := true
 		for _, filter := range crossFilters {
-			match, err := applyCrossEntityFilter(database, issue, filter, ctx)
+			match, err := applyCrossEntityFilter(database, issue, filter, ctx, reworkIDs)
 			if err != nil {
 				return nil, err
 			}
@@ -159,7 +168,7 @@ func extractCrossEntityConditions(n Node) []crossEntityFilter {
 			}
 		}
 	case *FunctionCall:
-		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" {
+		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" {
 			filters = append(filters, crossEntityFilter{
 				entity:   "function",
 				field:    node.Name,
@@ -172,7 +181,7 @@ func extractCrossEntityConditions(n Node) []crossEntityFilter {
 	return filters
 }
 
-func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext) (bool, error) {
+func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs map[string]bool) (bool, error) {
 	switch filter.entity {
 	case "log":
 		logs, err := database.GetLogs(issue.ID, 0) // 0 = no limit
@@ -207,7 +216,7 @@ func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEnt
 		return matchFiles(files, filter, ctx), nil
 
 	case "function":
-		return applyFunctionFilter(database, issue, filter)
+		return applyFunctionFilter(database, issue, filter, reworkIDs)
 
 	default:
 		return true, nil
@@ -314,7 +323,12 @@ func matchValue(fieldValue, operator string, value interface{}, ctx *EvalContext
 	}
 }
 
-func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter) (bool, error) {
+func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, reworkIDs map[string]bool) (bool, error) {
+	// Handle rework() which takes no args
+	if filter.field == "rework" {
+		return reworkIDs[issue.ID], nil
+	}
+
 	args, ok := filter.value.([]interface{})
 	if !ok || len(args) == 0 {
 		return false, nil

@@ -63,6 +63,7 @@ FUNCTIONS:
   blocks(id)             Issues that block given id
   blocked_by(id)         Issues blocked by given id
   descendant_of(id)      All children of epic (recursive)
+  rework()               Issues rejected and awaiting rework
 
 SPECIAL VALUES:
   @me                    Current session ID
@@ -78,7 +79,8 @@ EXAMPLES:
   td query "created >= -7d"
   td query "implementer = @me AND is(in_progress)"
   td query "log.type = blocker"
-  td query "title ~ auth OR description ~ auth"`,
+  td query "title ~ auth OR description ~ auth"
+  td query "rework()"`,
 	GroupID: "query",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -220,6 +222,7 @@ func printQueryExamples() {
 		{"is(blocked)", "Blocked issues"},
 		{"any(type, bug, feature)", "Bugs or features"},
 		{"descendant_of(td-epic1)", "All tasks in epic"},
+		{"rework()", "Issues rejected and awaiting rework"},
 
 		// Cross-entity queries
 		{"log.type = blocker", "Issues with blocker logs"},

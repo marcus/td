@@ -222,6 +222,7 @@ var KnownFunctions = map[string]struct {
 	"child_of":      {1, 1, "child_of(id) - direct children of issue"},
 	"descendant_of": {1, 1, "descendant_of(id) - all descendants (recursive)"},
 	"linked_to":     {1, 1, "linked_to(path) - issues linked to file path"},
+	"rework":        {0, 0, "rework() - issues rejected and awaiting rework"},
 }
 
 // SortClause represents a sort specification

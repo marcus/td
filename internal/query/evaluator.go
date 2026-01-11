@@ -127,7 +127,7 @@ func (e *Evaluator) hasCrossEntity(n Node) bool {
 		}
 		return false
 	case *FunctionCall:
-		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of"
+		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework"
 	default:
 		return false
 	}
@@ -738,7 +738,7 @@ func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bo
 		// Return placeholder that allows issue through (will be filtered in Execute)
 		return func(models.Issue) bool { return true }, nil
 
-	case "blocks", "blocked_by", "linked_to":
+	case "blocks", "blocked_by", "linked_to", "rework":
 		// These require database lookups, handled via cross-entity filter
 		return func(models.Issue) bool { return true }, nil
 

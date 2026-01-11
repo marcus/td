@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -802,10 +803,7 @@ func (m Model) renderModal() string {
 	if len(modal.Logs) > 0 {
 		lines = append(lines, sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(modal.Logs))))
 		for _, log := range modal.Logs {
-			logLine := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
-				subtleStyle.Render(truncateSession(log.SessionID)) + " " +
-				truncateString(log.Message, contentWidth-25)
-			lines = append(lines, logLine)
+			lines = append(lines, renderLogLines(log, contentWidth)...)
 		}
 	}
 
@@ -1484,6 +1482,31 @@ func wrapText(text string, maxWidth int) []string {
 	}
 	if currentLine != "" {
 		lines = append(lines, currentLine)
+	}
+
+	return lines
+}
+
+func renderLogLines(log models.Log, contentWidth int) []string {
+	prefix := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
+		subtleStyle.Render(truncateSession(log.SessionID)) + " "
+	prefixWidth := lipgloss.Width(prefix)
+	messageWidth := contentWidth - prefixWidth
+	if messageWidth < 1 {
+		messageWidth = 1
+	}
+
+	wrappedMessage := cellbuf.Wrap(log.Message, messageWidth, "")
+	messageLines := strings.Split(wrappedMessage, "\n")
+
+	indent := strings.Repeat(" ", prefixWidth)
+	lines := make([]string, 0, len(messageLines))
+	for i, line := range messageLines {
+		if i == 0 {
+			lines = append(lines, prefix+line)
+		} else {
+			lines = append(lines, indent+line)
+		}
 	}
 
 	return lines

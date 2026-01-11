@@ -328,6 +328,71 @@ func TestQuickSearch(t *testing.T) {
 	})
 }
 
+func TestReworkFunction(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create test issues: all in_progress
+	issue1 := createTestIssue(t, database, "td-rework1", "Rejected no resubmit", models.StatusInProgress, models.TypeTask, models.PriorityP2)
+	issue2 := createTestIssue(t, database, "td-rework2", "Rejected then resubmitted", models.StatusInProgress, models.TypeTask, models.PriorityP2)
+	createTestIssue(t, database, "td-rework3", "Never rejected", models.StatusInProgress, models.TypeTask, models.PriorityP2)
+	createTestIssue(t, database, "td-rework4", "Rejected but closed", models.StatusClosed, models.TypeTask, models.PriorityP2)
+
+	// issue1: rejected, no subsequent review (should be detected by rework())
+	database.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue1.ID,
+	})
+
+	// issue2: rejected, then re-submitted (should NOT be detected)
+	database.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue2.ID,
+	})
+	database.LogAction(&models.ActionLog{
+		SessionID:  "ses_implementer",
+		ActionType: models.ActionReview,
+		EntityType: "issue",
+		EntityID:   issue2.ID,
+	})
+
+	// issue3: never rejected (should NOT be detected)
+	// issue4: rejected but closed status (should NOT be detected)
+	database.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   "td-rework4",
+	})
+
+	t.Run("rework() returns rejected in_progress issues", func(t *testing.T) {
+		results, err := Execute(database, "rework()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Execute() returned %d results, want 1", len(results))
+		}
+		if len(results) > 0 && results[0].ID != issue1.ID {
+			t.Errorf("Expected %s, got %s", issue1.ID, results[0].ID)
+		}
+	})
+
+	t.Run("rework() combined with other conditions", func(t *testing.T) {
+		results, err := Execute(database, "rework() AND status = in_progress", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("Execute() returned %d results, want 1", len(results))
+		}
+	})
+}
+
 func TestMain(m *testing.M) {
 	// Run tests
 	code := m.Run()
