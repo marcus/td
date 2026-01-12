@@ -27,6 +27,8 @@ const (
 	ContextHandoffs          Context = "handoffs"            // When handoffs modal is open
 	ContextForm              Context = "form"                // When form modal is open
 	ContextHelp              Context = "help"                // When help modal is open
+	ContextBoardPicker       Context = "board-picker"        // When board picker is open
+	ContextBoard             Context = "board"               // When board mode is active
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -113,6 +115,16 @@ const (
 	// Button navigation (for confirmation dialogs and forms)
 	CmdNextButton Command = "next-button"
 	CmdPrevButton Command = "prev-button"
+
+	// Board commands
+	CmdOpenBoardPicker       Command = "open-board-picker"
+	CmdSelectBoard           Command = "select-board"
+	CmdCloseBoardPicker      Command = "close-board-picker"
+	CmdMoveIssueUp           Command = "move-issue-up"
+	CmdMoveIssueDown         Command = "move-issue-down"
+	CmdExitBoardMode         Command = "exit-board-mode"
+	CmdToggleBoardClosed     Command = "toggle-board-closed"
+	CmdCycleBoardStatusFilter Command = "cycle-board-status-filter"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

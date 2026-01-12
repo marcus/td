@@ -5,8 +5,8 @@ Transforms boards from manual membership to query-based views (like Jira). Issue
 ## Key Decisions
 
 1. **Query-Based**: Each board has a TDQ query defining which issues appear
-2. **Sparse Ordering**: Issues with explicit positions first, then unpositioned by priority
-3. **Built-in "All Issues"**: Default board with `status != closed`, cannot be deleted
+2. **Sparse Ordering**: `board_issue_positions` stores only explicit positions; issues without a row are unpositioned. Order is positioned (by `position`), then unpositioned (by query sort or default `priority`, `updated_at`, `id`).
+3. **Built-in "All Issues"**: Default board uses empty query (TDQ empty = matches all issues), with closed hidden by default via status filter. Cannot be deleted or have name/query edited.
 4. **Sprint Field**: Add `sprint` column to issues for future sprint support
 
 ---
@@ -14,6 +14,8 @@ Transforms boards from manual membership to query-based views (like Jira). Issue
 ## 1. Schema Changes (Migration v10)
 
 **File**: `internal/db/schema.go`
+
+Note: v1 boards were never shipped, so no legacy data migration is expected; `board_issue_positions` should be empty in practice.
 
 ```sql
 -- Add to boards table
@@ -24,17 +26,20 @@ ALTER TABLE boards ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0;
 DROP INDEX IF EXISTS idx_board_issues_position;
 ALTER TABLE board_issues RENAME TO board_issue_positions;
 
--- Recreate index as partial (allows NULL for unpositioned issues)
+-- Recreate index (positions are explicit only; no NULL positions stored)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_board_positions_position
-    ON board_issue_positions(board_id, position)
-    WHERE position IS NOT NULL;
+    ON board_issue_positions(board_id, position);
 
 -- Add sprint field to issues
 ALTER TABLE issues ADD COLUMN sprint TEXT DEFAULT '';
 
--- Create built-in "All Issues" board (use deterministic ID to avoid collision)
-INSERT OR IGNORE INTO boards (id, name, query, is_builtin, created_at, updated_at)
-VALUES ('bd-all-issues', 'All Issues', 'status != closed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+-- Create built-in "All Issues" board (empty query = all issues)
+INSERT INTO boards (id, name, query, is_builtin, created_at, updated_at)
+VALUES ('bd-all-issues', 'All Issues', '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(name) DO UPDATE SET
+    query = excluded.query,
+    is_builtin = 1,
+    updated_at = CURRENT_TIMESTAMP;
 ```
 
 Update `SchemaVersion` from 9 to 10.
@@ -64,8 +69,8 @@ Update BoardIssueView:
 ```go
 type BoardIssueView struct {
     BoardID     string    `json:"board_id"`
-    Position    int       `json:"position"`
-    HasPosition bool      `json:"has_position"`  // NEW: true if explicitly positioned
+    Position    int       `json:"position"`       // Valid only when HasPosition is true
+    HasPosition bool      `json:"has_position"`   // NEW: true if explicitly positioned
     Issue       Issue     `json:"issue"`
 }
 ```
@@ -93,14 +98,17 @@ ActionBoardUnposition  ActionType = "board_unposition"
 ### Board CRUD
 
 - `CreateBoard(name, query string) (*Board, error)` - validates query syntax
-  - Empty query: allowed (board shows no issues)
+  - Empty query: allowed and matches all issues (TDQ semantics)
   - Invalid TDQ syntax: returns error, board not created
-  - Query validated via `query.Parse()` before storage
+  - Query validated via `query.Parse()` + `Validate()` before storage
+  - If a "no results" board is needed, use an impossible query (e.g., `id = "no-such-id"`)
 - `GetBoard(id string) (*Board, error)`
 - `GetBoardByName(name string) (*Board, error)`
 - `ResolveBoardRef(ref string) (*Board, error)` - accepts name or ID
 - `ListBoards() ([]Board, error)` - sorted by last_viewed_at DESC
 - `UpdateBoard(board *Board) error` - update name/query
+  - Reject updates to `name`/`query` for `is_builtin=1`
+  - Validate query via `query.Parse()` + `Validate()`
 - `DeleteBoard(id string) error` - fails for is_builtin=1
 - `GetLastViewedBoard() (*Board, error)`
 - `UpdateBoardLastViewed(boardID string) error`
@@ -108,6 +116,8 @@ ActionBoardUnposition  ActionType = "board_unposition"
 ### Position Functions
 
 - `SetIssuePosition(boardID, issueID string, position int) error`
+  - Transactional: remove existing position for issue, then insert at target
+  - If target position is occupied, shift positions >= target by +1
 - `RemoveIssuePosition(boardID, issueID string) error`
 - `GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, error)`
 - `SwapIssuePositions(boardID, id1, id2 string) error` - for J/K reordering
@@ -116,10 +126,10 @@ ActionBoardUnposition  ActionType = "board_unposition"
 
 - `GetBoardIssues(boardID, sessionID string, statusFilter []Status) ([]BoardIssueView, error)`
   1. Get board and its query
-  2. Execute TDQ query via `query.Execute()`
+  2. Execute TDQ query via `query.Execute()`; use query sort if provided, else default to `priority` ASC, `updated_at` DESC, `id` ASC
   3. Apply optional status filter
-  4. Get explicit positions from board_issue_positions
-  5. Return: positioned issues (by position), then unpositioned (by priority)
+  4. Get explicit positions from board_issue_positions (ignore rows for issues not in query+filter)
+  5. Return: positioned issues (by `position`), then unpositioned (preserving query order). Positions persist even if issues temporarily leave the query.
 
 ---
 
@@ -146,10 +156,10 @@ Add sprint field getter and column mapping.
 ```
 td board                              # Show help
 td board list [--json]                # List all boards
-td board create <name> -q "query"     # Create board with query
+td board create <name> [-q "query"]   # Create board (empty query matches all)
 td board delete <board>               # Delete (fails for All Issues)
-td board show <board> [--status ...] [--json]  # Show issues in order
-td board edit <board> [-q "..."] [-n "..."]  # Edit query/name
+td board show <board> [--status ...] [--json]  # Show issues in order (default: open/in_progress/blocked/in_review)
+td board edit <board> [-q "..."] [-n "..."]  # Edit query/name (fails for All Issues)
 td board move <board> <id> <position> # Set explicit position
 td board unposition <board> <id>      # Remove explicit position
 ```
@@ -184,7 +194,7 @@ AllBoards          []models.Board
 | `B`     | Main/Board         | Open board picker                   |
 | `j/k`   | Board              | Navigate                            |
 | `J/K`   | Board              | Move issue up/down (swap positions) |
-| `c`     | Board (All Issues) | Toggle closed visibility            |
+| `c`     | Board              | Toggle closed visibility            |
 | `F`     | Board              | Cycle status filter                 |
 | `Esc`   | Board              | Exit to All Issues                  |
 | `Enter` | Board              | Open issue modal                    |
@@ -201,12 +211,12 @@ AllBoards          []models.Board
 - `openBoardPicker()` - fetch boards, show picker
 - `selectBoard()` - activate board, update last_viewed_at
 - `exitBoardMode()` - return to All Issues
-- `moveIssueInBoard(direction)` - swap with adjacent positioned issue
-- `toggleBoardClosed()` - for All Issues, toggle closed in status filter
+- `moveIssueInBoard(direction)` - swap with adjacent positioned issue; if current issue is unpositioned, insert it just above/below the nearest positioned neighbor (or at position 1 if none)
+- `toggleBoardClosed()` - toggle closed in status filter (default closed hidden)
 
 ### Init (`pkg/monitor/model.go`)
 
-On launch, restore last viewed board via `GetLastViewedBoard()`.
+On launch, restore last viewed board via `GetLastViewedBoard()` and initialize status filter to open/in_progress/blocked/in_review (closed false).
 
 ---
 
@@ -240,7 +250,7 @@ On launch, restore last viewed board via `GetLastViewedBoard()`.
 
 13. Last-viewed persistence in Init()
 14. J/K reordering
-15. 'c' toggle for All Issues
+15. 'c' toggle closed in board mode
 16. Help text updates
 
 ---
@@ -278,7 +288,8 @@ td board create "High Pri Bugs" -q 'type = bug AND priority <= P1'
 # List and show
 td board list
 td board show "Sprint 1"
-td board show bd-all-issues  # All Issues
+td board show bd-all-issues  # All Issues (closed hidden by default)
+td board show bd-all-issues --status closed  # Closed only
 
 # Positioning
 td board move "Sprint 1" td-abc123 1
@@ -305,6 +316,6 @@ td monitor
 | -------------- | ------------------------------- | ------------------------------------------ |
 | Membership     | Manual `td board add <id>`      | Automatic via TDQ query                    |
 | Default view   | Separate from boards            | Built-in "All Issues" board                |
-| Ordering       | All issues positioned           | Sparse: positioned first, rest by priority |
+| Ordering       | All issues positioned           | Sparse: positioned first, rest by query sort/default |
 | Sprints        | Not addressed                   | Sprint field on issues, queryable          |
 | CLI add/remove | `board add`, `board remove`     | `board move`, `board unposition`           |

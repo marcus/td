@@ -96,6 +96,15 @@ type Model struct {
 	FormOpen  bool
 	FormState *FormState
 
+	// Board picker state
+	BoardPickerOpen   bool
+	BoardPickerCursor int
+	AllBoards         []models.Board
+
+	// Board mode state
+	BoardMode            BoardMode          // Active board mode state
+	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
+
 	// Configuration
 	RefreshInterval time.Duration
 
@@ -237,6 +246,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.fetchData(),
 		m.scheduleTick(),
+		m.restoreLastViewedBoard(),
 	}
 
 	// Start async version check (non-blocking)
@@ -245,6 +255,22 @@ func (m Model) Init() tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// restoreLastViewedBoard returns a command that restores the last viewed board on launch
+func (m Model) restoreLastViewedBoard() tea.Cmd {
+	return func() tea.Msg {
+		board, err := m.DB.GetLastViewedBoard()
+		if err != nil || board == nil {
+			return nil // No last viewed board, stay in panel mode
+		}
+		return RestoreLastBoardMsg{Board: board}
+	}
+}
+
+// RestoreLastBoardMsg is sent when restoring the last viewed board on launch
+type RestoreLastBoardMsg struct {
+	Board *models.Board
 }
 
 // Update implements tea.Model
@@ -452,6 +478,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PaneHeightsSavedMsg:
 		// Pane heights saved (or failed) - just ignore errors silently
 		return m, nil
+
+	case BoardsDataMsg:
+		m.AllBoards = msg.Boards
+		if msg.Error != nil {
+			m.StatusMessage = "Error loading boards: " + msg.Error.Error()
+			m.StatusIsError = true
+		}
+		return m, nil
+
+	case BoardIssuesMsg:
+		if m.BoardMode.Board != nil && m.BoardMode.Board.ID == msg.BoardID {
+			m.BoardMode.Issues = msg.Issues
+			if msg.Error != nil {
+				m.StatusMessage = "Error loading board issues: " + msg.Error.Error()
+				m.StatusIsError = true
+			}
+		}
+		return m, nil
+
+	case RestoreLastBoardMsg:
+		if msg.Board != nil {
+			m.BoardMode.Active = true
+			m.BoardMode.Board = msg.Board
+			m.BoardMode.Cursor = 0
+			m.BoardMode.ScrollOffset = 0
+			m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+			return m, m.fetchBoardIssues(msg.Board.ID)
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -574,5 +629,34 @@ func (m Model) fetchHandoffs() tea.Cmd {
 	return func() tea.Msg {
 		handoffs, err := m.DB.GetRecentHandoffs(50, time.Time{})
 		return HandoffsDataMsg{Data: handoffs, Error: err}
+	}
+}
+
+// ensureBoardCursorVisible adjusts the board scroll offset to keep the cursor visible
+func (m *Model) ensureBoardCursorVisible() {
+	// Estimate visible height (will be calculated more precisely in view)
+	visibleHeight := m.Height - 6 // Rough estimate: header + footer + borders
+	if visibleHeight < 1 {
+		visibleHeight = 10
+	}
+
+	// Ensure cursor is within visible range
+	if m.BoardMode.Cursor < m.BoardMode.ScrollOffset {
+		m.BoardMode.ScrollOffset = m.BoardMode.Cursor
+	}
+	if m.BoardMode.Cursor >= m.BoardMode.ScrollOffset+visibleHeight {
+		m.BoardMode.ScrollOffset = m.BoardMode.Cursor - visibleHeight + 1
+	}
+
+	// Clamp scroll offset to valid range
+	maxScroll := len(m.BoardMode.Issues) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.BoardMode.ScrollOffset > maxScroll {
+		m.BoardMode.ScrollOffset = maxScroll
+	}
+	if m.BoardMode.ScrollOffset < 0 {
+		m.BoardMode.ScrollOffset = 0
 	}
 }

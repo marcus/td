@@ -566,6 +566,8 @@ func (e *Evaluator) getFieldGetter(field string) func(models.Issue) interface{} 
 		return func(i models.Issue) interface{} { return i.ReviewerSession }
 	case "branch", "created_branch":
 		return func(i models.Issue) interface{} { return i.CreatedBranch }
+	case "sprint":
+		return func(i models.Issue) interface{} { return i.Sprint }
 	case "minor":
 		return func(i models.Issue) interface{} { return i.Minor }
 	case "created", "created_at":

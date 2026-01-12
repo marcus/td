@@ -71,6 +71,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, handoffs, m.Width, m.Height)
 	}
 
+	// Overlay board picker if open
+	if m.BoardPickerOpen {
+		picker := m.renderBoardPicker()
+		return OverlayModal(base, picker, m.Width, m.Height)
+	}
+
 	// Overlay modal if open
 	if m.ModalOpen() {
 		modal := m.renderModal()
@@ -83,6 +89,11 @@ func (m Model) renderView() string {
 // renderBaseView renders the panels and footer without any modal overlay.
 // This is the background content used for dimmed modal overlays.
 func (m Model) renderBaseView() string {
+	// If board mode is active, render the board panel instead of 3-panel layout
+	if m.BoardMode.Active {
+		return m.renderBoardPanel()
+	}
+
 	// Render search bar if active or has query
 	searchBar := m.renderSearchBar()
 	searchBarHeight := 0
@@ -1123,6 +1134,229 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	return modalStyle.Render(inner)
+}
+
+// renderBoardPicker renders the board picker modal
+func (m Model) renderBoardPicker() string {
+	// Calculate modal dimensions (60% of terminal, capped)
+	modalWidth := m.Width * 60 / 100
+	if modalWidth > 80 {
+		modalWidth = 80
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+	modalHeight := m.Height * 60 / 100
+	if modalHeight > 30 {
+		modalHeight = 30
+	}
+	if modalHeight < 10 {
+		modalHeight = 10
+	}
+
+	contentWidth := modalWidth - 4 // Account for border and padding
+
+	var content strings.Builder
+
+	// Empty state
+	if len(m.AllBoards) == 0 {
+		content.WriteString(subtleStyle.Render("No boards found"))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Create a board with: td board create <name>"))
+		return m.wrapBoardPickerModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Build content lines
+	var lines []string
+	lines = append(lines, titleStyle.Render(fmt.Sprintf("SELECT BOARD (%d)", len(m.AllBoards))))
+	lines = append(lines, "")
+
+	for i, b := range m.AllBoards {
+		// Format board line
+		name := b.Name
+		if b.IsBuiltin {
+			name += " (builtin)"
+		}
+		if b.Query != "" {
+			queryPreview := b.Query
+			if len(queryPreview) > 30 {
+				queryPreview = queryPreview[:27] + "..."
+			}
+			name += " • " + subtleStyle.Render(queryPreview)
+		}
+
+		line := "  " + name
+
+		if i == m.BoardPickerCursor {
+			line = highlightRow(line, contentWidth)
+		}
+
+		lines = append(lines, truncateString(line, contentWidth))
+	}
+
+	content.WriteString(strings.Join(lines, "\n"))
+	return m.wrapBoardPickerModal(content.String(), modalWidth, modalHeight)
+}
+
+// wrapBoardPickerModal wraps board picker content in a styled modal
+func (m Model) wrapBoardPickerModal(content string, width, height int) string {
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("212")). // Purple
+		Padding(1, 2).
+		Width(width).
+		Height(height)
+
+	footer := subtleStyle.Render("↑↓:select  Enter:open  Esc:close")
+	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	return modalStyle.Render(inner)
+}
+
+// renderBoardPanel renders the board mode view (full screen, replaces 3-panel layout)
+func (m Model) renderBoardPanel() string {
+	// Calculate dimensions
+	footerHeight := 3
+	if m.Embedded {
+		footerHeight = 0
+	}
+	panelHeight := m.Height - footerHeight
+	contentWidth := m.Width - 4 // Account for border and padding
+
+	var content strings.Builder
+
+	// Empty state
+	if len(m.BoardMode.Issues) == 0 {
+		content.WriteString(subtleStyle.Render("No issues match the board query"))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Try adjusting the status filter with 'c' or 'F'"))
+	} else {
+		// Calculate visible area
+		maxLines := panelHeight - 4 // Account for title + border + footer hints
+		if maxLines < 1 {
+			maxLines = 10
+		}
+
+		// Determine scroll indicators
+		totalRows := len(m.BoardMode.Issues)
+		offset := m.BoardMode.ScrollOffset
+		needsScroll := totalRows > maxLines
+		showUpIndicator := needsScroll && offset > 0
+
+		// Adjust for scroll indicators
+		effectiveMaxLines := maxLines
+		if showUpIndicator {
+			effectiveMaxLines--
+		}
+		if needsScroll && offset+effectiveMaxLines < totalRows {
+			effectiveMaxLines--
+		}
+
+		// Show up indicator if needed
+		if showUpIndicator {
+			content.WriteString(subtleStyle.Render(fmt.Sprintf("  ↑ %d more above", offset)))
+			content.WriteString("\n")
+		}
+
+		// Render visible issues
+		endIdx := offset + effectiveMaxLines
+		if endIdx > totalRows {
+			endIdx = totalRows
+		}
+
+		for i := offset; i < endIdx; i++ {
+			biv := m.BoardMode.Issues[i]
+			issue := biv.Issue
+
+			// Position indicator
+			var posIndicator string
+			if biv.HasPosition {
+				posIndicator = fmt.Sprintf("%3d ", biv.Position)
+			} else {
+				posIndicator = "  • "
+			}
+
+			// Status, type, priority
+			statusStr := formatStatus(issue.Status)
+			typeStr := formatTypeIcon(issue.Type)
+			priStr := formatPriority(issue.Priority)
+
+			// Title (truncated)
+			title := issue.Title
+			maxTitleLen := contentWidth - 30 // Leave room for indicators
+			if maxTitleLen < 10 {
+				maxTitleLen = 10
+			}
+			if len(title) > maxTitleLen {
+				title = title[:maxTitleLen-3] + "..."
+			}
+
+			// Build line
+			line := fmt.Sprintf("%s%s %s %s %s",
+				posIndicator,
+				statusStr,
+				typeStr,
+				priStr,
+				title,
+			)
+
+			// Highlight if cursor is on this row
+			if i == m.BoardMode.Cursor {
+				line = lipgloss.NewStyle().
+					Background(lipgloss.Color("236")).
+					Foreground(lipgloss.Color("255")).
+					Render(line)
+			}
+
+			content.WriteString(line)
+			content.WriteString("\n")
+		}
+
+		// Show down indicator if more items below
+		if needsScroll && endIdx < totalRows {
+			content.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more below", totalRows-endIdx)))
+			content.WriteString("\n")
+		}
+	}
+
+	// Build title with board name and count
+	boardName := "Board"
+	if m.BoardMode.Board != nil {
+		boardName = m.BoardMode.Board.Name
+	}
+	title := fmt.Sprintf("BOARD: %s (%d)", boardName, len(m.BoardMode.Issues))
+
+	// Build key hints footer
+	hints := []string{"j/k:nav", "J/K:move", "Enter:open", "c:closed", "F:filter", "b:boards", "Esc:exit"}
+	footer := subtleStyle.Render(strings.Join(hints, "  "))
+
+	// Wrap in panel style
+	panelStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("99")). // Purple for board mode
+		Padding(0, 1).
+		Width(m.Width - 2).
+		Height(panelHeight)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212")) // Purple
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(title),
+		"",
+		content.String(),
+		"",
+		footer,
+	)
+
+	panel := panelStyle.Render(inner)
+
+	// Add footer if not embedded
+	if m.Embedded {
+		return panel
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, panel, m.renderFooter())
 }
 
 // renderFormModal renders the form modal using huh form

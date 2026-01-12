@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/keymap"
 )
 
@@ -18,6 +19,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}
+	if m.BoardPickerOpen {
+		return keymap.ContextBoardPicker
+	}
 	if m.FormOpen {
 		return keymap.ContextForm
 	}
@@ -26,6 +30,9 @@ func (m Model) currentContext() keymap.Context {
 	}
 	if m.StatsOpen {
 		return keymap.ContextStats
+	}
+	if m.BoardMode.Active {
+		return keymap.ContextBoard
 	}
 	if m.ModalOpen() {
 		if modal := m.CurrentModal(); modal != nil {
@@ -282,6 +289,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					modal.Scroll++
 				}
 			}
+		} else if m.BoardPickerOpen {
+			if m.BoardPickerCursor < len(m.AllBoards)-1 {
+				m.BoardPickerCursor++
+			}
+		} else if m.BoardMode.Active {
+			if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
+				m.BoardMode.Cursor++
+				m.ensureBoardCursorVisible()
+			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor < len(m.HandoffsData)-1 {
 				m.HandoffsCursor++
@@ -326,6 +342,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else if modal.Scroll > 0 {
 				modal.Scroll--
 			}
+		} else if m.BoardPickerOpen {
+			if m.BoardPickerCursor > 0 {
+				m.BoardPickerCursor--
+			}
+		} else if m.BoardMode.Active {
+			if m.BoardMode.Cursor > 0 {
+				m.BoardMode.Cursor--
+				m.ensureBoardCursorVisible()
+			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor > 0 {
 				m.HandoffsCursor--
@@ -346,6 +371,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = 0
+		} else if m.BoardPickerOpen {
+			m.BoardPickerCursor = 0
+		} else if m.BoardMode.Active {
+			m.BoardMode.Cursor = 0
+			m.BoardMode.ScrollOffset = 0
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor = 0
 			m.HandoffsScroll = 0
@@ -365,6 +395,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = m.modalMaxScroll(modal)
+		} else if m.BoardPickerOpen {
+			if len(m.AllBoards) > 0 {
+				m.BoardPickerCursor = len(m.AllBoards) - 1
+			}
+		} else if m.BoardMode.Active {
+			if len(m.BoardMode.Issues) > 0 {
+				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+				m.ensureBoardCursorVisible()
+			}
 		} else if m.HandoffsOpen {
 			if len(m.HandoffsData) > 0 {
 				m.HandoffsCursor = len(m.HandoffsData) - 1
@@ -401,6 +440,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll > maxScroll {
 				modal.Scroll = maxScroll
 			}
+		} else if m.BoardMode.Active {
+			m.BoardMode.Cursor += pageSize
+			if m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+			}
+			if m.BoardMode.Cursor < 0 {
+				m.BoardMode.Cursor = 0
+			}
+			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor += pageSize
 			if m.HandoffsCursor >= len(m.HandoffsData) {
@@ -437,6 +485,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll < 0 {
 				modal.Scroll = 0
 			}
+		} else if m.BoardMode.Active {
+			m.BoardMode.Cursor -= pageSize
+			if m.BoardMode.Cursor < 0 {
+				m.BoardMode.Cursor = 0
+			}
+			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor -= pageSize
 			if m.HandoffsCursor < 0 {
@@ -543,6 +597,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdOpenDetails:
 		if m.HandoffsOpen {
 			return m.openIssueFromHandoffs()
+		}
+		if m.BoardMode.Active {
+			return m.openIssueFromBoard()
 		}
 		return m.openModal()
 
@@ -864,7 +921,262 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdFormOpenEditor:
 		return m.openExternalEditor()
+
+	// Board commands
+	case keymap.CmdOpenBoardPicker:
+		return m.openBoardPicker()
+
+	case keymap.CmdSelectBoard:
+		return m.selectBoard()
+
+	case keymap.CmdCloseBoardPicker:
+		m.BoardPickerOpen = false
+		return m, nil
+
+	// Board mode commands
+	case keymap.CmdExitBoardMode:
+		return m.exitBoardMode()
+
+	case keymap.CmdToggleBoardClosed:
+		return m.toggleBoardClosed()
+
+	case keymap.CmdCycleBoardStatusFilter:
+		return m.cycleBoardStatusFilter()
+
+	case keymap.CmdMoveIssueUp:
+		return m.moveIssueInBoard(-1)
+
+	case keymap.CmdMoveIssueDown:
+		return m.moveIssueInBoard(1)
 	}
 
 	return m, nil
+}
+
+// openBoardPicker opens the board picker modal
+func (m Model) openBoardPicker() (Model, tea.Cmd) {
+	m.BoardPickerOpen = true
+	m.BoardPickerCursor = 0
+	return m, m.fetchBoards()
+}
+
+// selectBoard selects the currently highlighted board and activates board mode
+func (m Model) selectBoard() (Model, tea.Cmd) {
+	if !m.BoardPickerOpen || len(m.AllBoards) == 0 {
+		return m, nil
+	}
+	if m.BoardPickerCursor >= len(m.AllBoards) {
+		return m, nil
+	}
+
+	board := m.AllBoards[m.BoardPickerCursor]
+	m.BoardMode.Active = true
+	m.BoardMode.Board = &board
+	m.BoardMode.Cursor = 0
+	m.BoardMode.ScrollOffset = 0
+	if m.BoardMode.StatusFilter == nil {
+		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+	}
+	m.BoardPickerOpen = false
+
+	// Update last viewed
+	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+	}
+
+	return m, m.fetchBoardIssues(board.ID)
+}
+
+// openIssueFromBoard opens the issue modal for the currently selected board issue
+func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
+	if !m.BoardMode.Active || len(m.BoardMode.Issues) == 0 {
+		return m, nil
+	}
+	if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+		return m, nil
+	}
+
+	issueID := m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	return m.pushModal(issueID, PanelTaskList) // Use TaskList as source panel for board mode
+}
+
+// exitBoardMode switches back to the All Issues board
+func (m Model) exitBoardMode() (Model, tea.Cmd) {
+	// Get the built-in All Issues board
+	board, err := m.DB.GetBoard("bd-all-issues")
+	if err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+
+	m.BoardMode.Active = true
+	m.BoardMode.Board = board
+	m.BoardMode.Cursor = 0
+	m.BoardMode.ScrollOffset = 0
+	if m.BoardMode.StatusFilter == nil {
+		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+	}
+
+	// Update last viewed
+	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+	}
+
+	return m, m.fetchBoardIssues(board.ID)
+}
+
+// toggleBoardClosed toggles the closed status in the board status filter
+func (m Model) toggleBoardClosed() (Model, tea.Cmd) {
+	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	if m.BoardMode.StatusFilter == nil {
+		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+	}
+	m.BoardMode.StatusFilter[models.StatusClosed] = !m.BoardMode.StatusFilter[models.StatusClosed]
+
+	if m.BoardMode.StatusFilter[models.StatusClosed] {
+		m.StatusMessage = "Showing closed issues"
+	} else {
+		m.StatusMessage = "Hiding closed issues"
+	}
+
+	return m, tea.Batch(
+		m.fetchBoardIssues(m.BoardMode.Board.ID),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+	)
+}
+
+// cycleBoardStatusFilter cycles through status filter presets
+func (m Model) cycleBoardStatusFilter() (Model, tea.Cmd) {
+	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	// Cycle to next preset
+	m.BoardStatusPreset = (m.BoardStatusPreset + 1) % 7 // 7 presets
+	m.BoardMode.StatusFilter = m.BoardStatusPreset.ToFilter()
+
+	m.StatusMessage = "Filter: " + m.BoardStatusPreset.Name()
+
+	return m, tea.Batch(
+		m.fetchBoardIssues(m.BoardMode.Board.ID),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+	)
+}
+
+// moveIssueInBoard moves the current issue up or down in the board
+func (m Model) moveIssueInBoard(direction int) (Model, tea.Cmd) {
+	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+		return m, nil
+	}
+	if len(m.BoardMode.Issues) == 0 {
+		return m, nil
+	}
+
+	cursor := m.BoardMode.Cursor
+	if cursor < 0 || cursor >= len(m.BoardMode.Issues) {
+		return m, nil
+	}
+
+	currentIssue := m.BoardMode.Issues[cursor]
+
+	// Determine target index
+	targetIdx := cursor + direction
+	if targetIdx < 0 || targetIdx >= len(m.BoardMode.Issues) {
+		return m, nil // Can't move beyond bounds
+	}
+
+	targetIssue := m.BoardMode.Issues[targetIdx]
+
+	// Both must be positioned for swap, or we need to position the current issue
+	if currentIssue.HasPosition && targetIssue.HasPosition {
+		// Both positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.Cursor = targetIdx
+	} else if !currentIssue.HasPosition {
+		// Current issue is unpositioned - insert at target position
+		var insertPos int
+		if targetIssue.HasPosition {
+			if direction < 0 {
+				// Moving up: insert just above target
+				insertPos = targetIssue.Position
+			} else {
+				// Moving down: insert just below target
+				insertPos = targetIssue.Position + 1
+			}
+		} else {
+			// Target also unpositioned, find nearest positioned neighbor or use 1
+			insertPos = 1
+			for i := targetIdx; i >= 0; i-- {
+				if m.BoardMode.Issues[i].HasPosition {
+					if direction < 0 {
+						insertPos = m.BoardMode.Issues[i].Position
+					} else {
+						insertPos = m.BoardMode.Issues[i].Position + 1
+					}
+					break
+				}
+			}
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.Cursor = targetIdx
+	} else {
+		// Current is positioned but target is not - can't swap with unpositioned
+		return m, nil
+	}
+
+	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+}
+
+// fetchBoards returns a command that fetches all boards
+func (m Model) fetchBoards() tea.Cmd {
+	return func() tea.Msg {
+		boards, err := m.DB.ListBoards()
+		return BoardsDataMsg{Boards: boards, Error: err}
+	}
+}
+
+// fetchBoardIssues returns a command that fetches issues for a board
+func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
+	return func() tea.Msg {
+		// Get the board to check if it has a query
+		board, err := m.DB.GetBoard(boardID)
+		if err != nil {
+			return BoardIssuesMsg{BoardID: boardID, Error: err}
+		}
+
+		var issues []models.BoardIssueView
+		if board.Query != "" {
+			// Execute TDQ query, then apply positions
+			queryResults, err := query.Execute(m.DB, board.Query, m.SessionID, query.ExecuteOptions{})
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+			issues, err = m.DB.ApplyBoardPositions(boardID, queryResults)
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+		} else {
+			// Empty query - use GetBoardIssues which handles this case
+			issues, err = m.DB.GetBoardIssues(boardID, m.SessionID, nil)
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+		}
+
+		return BoardIssuesMsg{BoardID: boardID, Issues: issues}
+	}
 }

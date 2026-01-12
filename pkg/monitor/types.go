@@ -333,3 +333,126 @@ type EditorFinishedMsg struct {
 	Content string
 	Error   error
 }
+
+// BoardsDataMsg carries fetched boards data
+type BoardsDataMsg struct {
+	Boards []models.Board
+	Error  error
+}
+
+// BoardIssuesMsg carries issues for the current board
+type BoardIssuesMsg struct {
+	BoardID string
+	Issues  []models.BoardIssueView
+	Error   error
+}
+
+// BoardMode holds state for board mode view
+type BoardMode struct {
+	Active       bool                    // Whether board mode is active
+	Board        *models.Board           // Currently active board
+	Issues       []models.BoardIssueView // Issues in the board
+	Cursor       int                     // Selected issue index
+	ScrollOffset int                     // Scroll offset for long lists
+	StatusFilter map[models.Status]bool  // Status filter (true = visible)
+}
+
+// DefaultBoardStatusFilter returns the default status filter (closed hidden)
+func DefaultBoardStatusFilter() map[models.Status]bool {
+	return map[models.Status]bool{
+		models.StatusOpen:       true,
+		models.StatusInProgress: true,
+		models.StatusBlocked:    true,
+		models.StatusInReview:   true,
+		models.StatusClosed:     false,
+	}
+}
+
+// StatusFilterPreset represents a status filter preset for cycling
+type StatusFilterPreset int
+
+const (
+	StatusPresetDefault StatusFilterPreset = iota // open/in_progress/blocked/in_review
+	StatusPresetAll                               // all statuses
+	StatusPresetOpen                              // only open
+	StatusPresetInProgress                        // only in_progress
+	StatusPresetBlocked                           // only blocked
+	StatusPresetInReview                          // only in_review
+	StatusPresetClosed                            // only closed
+)
+
+// StatusFilterPresetName returns the display name for a preset
+func (p StatusFilterPreset) Name() string {
+	switch p {
+	case StatusPresetAll:
+		return "All"
+	case StatusPresetOpen:
+		return "Open"
+	case StatusPresetInProgress:
+		return "In Progress"
+	case StatusPresetBlocked:
+		return "Blocked"
+	case StatusPresetInReview:
+		return "In Review"
+	case StatusPresetClosed:
+		return "Closed"
+	default:
+		return "Default"
+	}
+}
+
+// ToFilter converts a preset to a status filter map
+func (p StatusFilterPreset) ToFilter() map[models.Status]bool {
+	switch p {
+	case StatusPresetAll:
+		return map[models.Status]bool{
+			models.StatusOpen:       true,
+			models.StatusInProgress: true,
+			models.StatusBlocked:    true,
+			models.StatusInReview:   true,
+			models.StatusClosed:     true,
+		}
+	case StatusPresetOpen:
+		return map[models.Status]bool{
+			models.StatusOpen:       true,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetInProgress:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: true,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetBlocked:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    true,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetInReview:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   true,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetClosed:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     true,
+		}
+	default:
+		return DefaultBoardStatusFilter()
+	}
+}

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 const schema = `
 -- Issues table
@@ -255,6 +255,34 @@ CREATE TABLE IF NOT EXISTS board_issues (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_board_issues_position ON board_issues(board_id, position);
+`,
+	},
+	{
+		Version:     10,
+		Description: "Query-based boards with sparse ordering and sprint field",
+		SQL: `
+-- Add query and is_builtin columns to boards
+ALTER TABLE boards ADD COLUMN query TEXT NOT NULL DEFAULT '';
+ALTER TABLE boards ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0;
+
+-- Rename board_issues to board_issue_positions for semantic clarity
+DROP INDEX IF EXISTS idx_board_issues_position;
+ALTER TABLE board_issues RENAME TO board_issue_positions;
+
+-- Recreate index on positions
+CREATE UNIQUE INDEX IF NOT EXISTS idx_board_positions_position
+    ON board_issue_positions(board_id, position);
+
+-- Add sprint field to issues
+ALTER TABLE issues ADD COLUMN sprint TEXT DEFAULT '';
+
+-- Create built-in "All Issues" board (empty query = all issues)
+INSERT INTO boards (id, name, query, is_builtin, created_at, updated_at)
+VALUES ('bd-all-issues', 'All Issues', '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT(name) DO UPDATE SET
+    query = excluded.query,
+    is_builtin = 1,
+    updated_at = CURRENT_TIMESTAMP;
 `,
 	},
 }

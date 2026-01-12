@@ -82,6 +82,7 @@ type Issue struct {
 	Labels             []string   `json:"labels,omitempty"`
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
+	Sprint             string     `json:"sprint,omitempty"`
 	ImplementerSession string     `json:"implementer_session,omitempty"`
 	CreatorSession     string     `json:"creator_session,omitempty"`
 	ReviewerSession    string     `json:"reviewer_session,omitempty"`
@@ -175,6 +176,8 @@ type WorkSessionIssue struct {
 type Board struct {
 	ID           string     `json:"id"`
 	Name         string     `json:"name"`
+	Query        string     `json:"query"`      // TDQ query defining which issues appear
+	IsBuiltin    bool       `json:"is_builtin"` // Cannot delete builtin boards
 	LastViewedAt *time.Time `json:"last_viewed_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -190,10 +193,10 @@ type BoardIssue struct {
 
 // BoardIssueView joins BoardIssue with Issue data
 type BoardIssueView struct {
-	BoardID  string    `json:"board_id"`
-	Position int       `json:"position"`
-	AddedAt  time.Time `json:"added_at"`
-	Issue    Issue     `json:"issue"`
+	BoardID     string `json:"board_id"`
+	Position    int    `json:"position"`     // Valid only when HasPosition is true
+	HasPosition bool   `json:"has_position"` // True if explicitly positioned
+	Issue       Issue  `json:"issue"`
 }
 
 // Comment represents a comment on an issue
@@ -235,9 +238,12 @@ const (
 	ActionHandoff    ActionType = "handoff"
 	ActionBoardCreate      ActionType = "board_create"
 	ActionBoardDelete      ActionType = "board_delete"
+	ActionBoardUpdate      ActionType = "board_update"
 	ActionBoardAddIssue    ActionType = "board_add_issue"
 	ActionBoardRemoveIssue ActionType = "board_remove_issue"
 	ActionBoardMoveIssue   ActionType = "board_move_issue"
+	ActionBoardSetPosition ActionType = "board_set_position"
+	ActionBoardUnposition  ActionType = "board_unposition"
 )
 
 // ActionLog represents a logged action that can be undone
