@@ -1409,3 +1409,193 @@ func TestGetBoardIssues(t *testing.T) {
 		}
 	})
 }
+
+// TestSetIssuePosition_Shifting tests that inserting at an occupied position shifts others
+func TestSetIssuePosition_Shifting(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Shift Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	// Set initial positions: issue1=1, issue2=2
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	db.SetIssuePosition(board.ID, issue2.ID, 2)
+
+	// Insert issue3 at position 1 - should shift issue1 to 2 and issue2 to 3
+	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
+	if err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	positions, _ := db.GetBoardIssuePositions(board.ID)
+	posMap := make(map[string]int)
+	for _, p := range positions {
+		posMap[p.IssueID] = p.Position
+	}
+
+	if posMap[issue3.ID] != 1 {
+		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
+	}
+	if posMap[issue1.ID] != 2 {
+		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	}
+	if posMap[issue2.ID] != 3 {
+		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	}
+}
+
+// TestSetIssuePosition_Reposition tests moving an already-positioned issue
+func TestSetIssuePosition_Reposition(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Reposition Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	// Set initial positions: issue1=1, issue2=2, issue3=3
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	db.SetIssuePosition(board.ID, issue2.ID, 2)
+	db.SetIssuePosition(board.ID, issue3.ID, 3)
+
+	// Move issue3 from position 3 to position 1
+	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
+	if err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	positions, _ := db.GetBoardIssuePositions(board.ID)
+	posMap := make(map[string]int)
+	for _, p := range positions {
+		posMap[p.IssueID] = p.Position
+	}
+
+	if posMap[issue3.ID] != 1 {
+		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
+	}
+	if posMap[issue1.ID] != 2 {
+		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	}
+	if posMap[issue2.ID] != 3 {
+		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	}
+}
+
+// TestApplyBoardPositions_Ordering verifies positioned-first semantics
+func TestApplyBoardPositions_Ordering(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Ordering Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue4 := &models.Issue{Title: "Issue 4", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+	db.CreateIssue(issue4)
+
+	// Only position issue2 at 1 and issue4 at 2
+	db.SetIssuePosition(board.ID, issue2.ID, 1)
+	db.SetIssuePosition(board.ID, issue4.ID, 2)
+
+	// Apply positions - positioned should come first, then unpositioned in original order
+	issues := []models.Issue{*issue1, *issue2, *issue3, *issue4}
+	result, err := db.ApplyBoardPositions(board.ID, issues)
+	if err != nil {
+		t.Fatalf("ApplyBoardPositions failed: %v", err)
+	}
+
+	if len(result) != 4 {
+		t.Fatalf("Expected 4 results, got %d", len(result))
+	}
+
+	// First should be issue2 (position 1)
+	if result[0].Issue.ID != issue2.ID {
+		t.Errorf("result[0] = %s, want %s (positioned first)", result[0].Issue.ID, issue2.ID)
+	}
+	if !result[0].HasPosition || result[0].Position != 1 {
+		t.Errorf("result[0] HasPosition=%v Position=%d, want true/1", result[0].HasPosition, result[0].Position)
+	}
+
+	// Second should be issue4 (position 2)
+	if result[1].Issue.ID != issue4.ID {
+		t.Errorf("result[1] = %s, want %s (positioned second)", result[1].Issue.ID, issue4.ID)
+	}
+	if !result[1].HasPosition || result[1].Position != 2 {
+		t.Errorf("result[1] HasPosition=%v Position=%d, want true/2", result[1].HasPosition, result[1].Position)
+	}
+
+	// Third and fourth should be unpositioned issues (issue1 and issue3) in original order
+	if result[2].HasPosition || result[3].HasPosition {
+		t.Error("result[2] and result[3] should be unpositioned")
+	}
+	if result[2].Issue.ID != issue1.ID {
+		t.Errorf("result[2] = %s, want %s (unpositioned, original order)", result[2].Issue.ID, issue1.ID)
+	}
+	if result[3].Issue.ID != issue3.ID {
+		t.Errorf("result[3] = %s, want %s (unpositioned, original order)", result[3].Issue.ID, issue3.ID)
+	}
+}
+
+// TestSwapIssuePositions_UnpositionedError verifies error handling for unpositioned issues
+func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Swap Error Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+
+	// Only position issue1
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+
+	// Try to swap with unpositioned issue2 - should fail
+	err = db.SwapIssuePositions(board.ID, issue1.ID, issue2.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when second issue is unpositioned")
+	}
+
+	// Try to swap with issue2 first (unpositioned) - should fail
+	err = db.SwapIssuePositions(board.ID, issue2.ID, issue1.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when first issue is unpositioned")
+	}
+
+	// Both unpositioned - should also fail
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue3)
+	err = db.SwapIssuePositions(board.ID, issue2.ID, issue3.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when both issues are unpositioned")
+	}
+}

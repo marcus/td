@@ -127,6 +127,42 @@ func TestToMatcher(t *testing.T) {
 			matches: true,
 		},
 		{
+			name:  "sprint equals",
+			query: `sprint = "v1.0"`,
+			issue: models.Issue{
+				ID:     "td-013",
+				Sprint: "v1.0",
+			},
+			matches: true,
+		},
+		{
+			name:  "sprint not equals",
+			query: `sprint = "v1.0"`,
+			issue: models.Issue{
+				ID:     "td-014",
+				Sprint: "v2.0",
+			},
+			matches: false,
+		},
+		{
+			name:  "sprint contains",
+			query: `sprint ~ "v1"`,
+			issue: models.Issue{
+				ID:     "td-015",
+				Sprint: "v1.0-beta",
+			},
+			matches: true,
+		},
+		{
+			name:  "sprint empty check",
+			query: `sprint = ""`,
+			issue: models.Issue{
+				ID:     "td-016",
+				Sprint: "",
+			},
+			matches: true,
+		},
+		{
 			name:  "empty query matches all",
 			query: "",
 			issue: models.Issue{

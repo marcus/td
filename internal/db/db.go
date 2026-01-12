@@ -16,6 +16,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// QueryValidator is set by main to validate TDQ queries without import cycle.
+// Returns nil if valid, error describing parse failure otherwise.
+var QueryValidator func(queryStr string) error
+
 const (
 	dbFile        = ".todos/issues.db"
 	idPrefix      = "td-"
@@ -2219,11 +2223,9 @@ func (db *DB) CreateBoard(name, queryStr string) (*models.Board, error) {
 	err := db.withWriteLock(func() error {
 		// Validate query syntax if not empty
 		if queryStr != "" {
-			parsed, err := parseAndValidateQuery(queryStr)
-			if err != nil {
+			if err := parseAndValidateQuery(queryStr); err != nil {
 				return fmt.Errorf("invalid query: %w", err)
 			}
-			_ = parsed // Validated
 		}
 
 		id, err := generateBoardID()
@@ -2251,16 +2253,15 @@ func (db *DB) CreateBoard(name, queryStr string) (*models.Board, error) {
 	return board, err
 }
 
-// parseAndValidateQuery is a helper to validate TDQ syntax
-func parseAndValidateQuery(queryStr string) (interface{}, error) {
-	// Import query package functions via internal package
-	// For now, we do basic validation; full validation happens in query package
+// parseAndValidateQuery validates TDQ syntax using the registered QueryValidator
+func parseAndValidateQuery(queryStr string) error {
 	if queryStr == "" {
-		return nil, nil
+		return nil
 	}
-	// The actual parsing/validation will be done when the query is executed
-	// This is a placeholder that will be enhanced with actual query.Parse() call
-	return queryStr, nil
+	if QueryValidator == nil {
+		return nil // No validator registered, skip validation
+	}
+	return QueryValidator(queryStr)
 }
 
 // GetBoard retrieves a board by ID
@@ -2382,8 +2383,7 @@ func (db *DB) UpdateBoard(board *models.Board) error {
 
 		// Validate query if provided
 		if board.Query != "" {
-			_, err := parseAndValidateQuery(board.Query)
-			if err != nil {
+			if err := parseAndValidateQuery(board.Query); err != nil {
 				return fmt.Errorf("invalid query: %w", err)
 			}
 		}
@@ -2497,11 +2497,23 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		}
 
 		// Shift positions >= target by +1 to make room
+		// Use two-step approach to avoid unique constraint violations:
+		// 1. Add large offset to positions being shifted (moves them out of conflict range)
+		// 2. Subtract offset-1 to get final positions (large+offset -> position+1)
+		const shiftOffset = 1000000
 		_, err = tx.Exec(`
 			UPDATE board_issue_positions
-			SET position = position + 1
+			SET position = position + ?
 			WHERE board_id = ? AND position >= ?
-		`, boardID, position)
+		`, shiftOffset, boardID, position)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			UPDATE board_issue_positions
+			SET position = position - ? + 1
+			WHERE board_id = ? AND position >= ?
+		`, shiftOffset, boardID, shiftOffset)
 		if err != nil {
 			return err
 		}
