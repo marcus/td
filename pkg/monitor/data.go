@@ -561,11 +561,24 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 
 // filterBoardIssuesByQuery filters BoardIssueView slices by search query.
 // Matches against issue ID, title, and type (case-insensitive).
+// Sort clauses (sort:xxx) and type filters (type=xxx) are stripped before filtering.
 func filterBoardIssuesByQuery(issues []models.BoardIssueView, query string) []models.BoardIssueView {
 	if query == "" {
 		return issues
 	}
-	query = strings.ToLower(query)
+	// Strip sort clauses and type filters from query - they're not search terms
+	words := strings.Fields(query)
+	var searchTerms []string
+	for _, word := range words {
+		lower := strings.ToLower(word)
+		if !strings.HasPrefix(lower, "sort:") && !strings.HasPrefix(lower, "type=") {
+			searchTerms = append(searchTerms, word)
+		}
+	}
+	if len(searchTerms) == 0 {
+		return issues // No actual search terms, return all issues
+	}
+	query = strings.ToLower(strings.Join(searchTerms, " "))
 	var filtered []models.BoardIssueView
 	for _, biv := range issues {
 		if strings.Contains(strings.ToLower(biv.Issue.ID), query) ||

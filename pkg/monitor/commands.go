@@ -679,6 +679,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if (oldQuery == "") != (m.SearchQuery == "") {
 			m.updatePanelBounds()
 		}
+		// In board mode, also refresh board issues to apply new sort
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
 		return m, m.fetchData()
 
 	case keymap.CmdCycleTypeFilter:
@@ -694,9 +698,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusMessage = "Type filter: " + m.TypeFilterMode.String()
 		}
-		return m, tea.Batch(m.fetchData(), tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return ClearStatusMsg{}
-		}))
+		cmds := []tea.Cmd{
+			m.fetchData(),
+			tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+		}
+		// In board mode, also refresh board issues to apply type filter
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
+		return m, tea.Batch(cmds...)
 
 	case keymap.CmdMarkForReview:
 		// Mark for review works from modal, TaskList, or CurrentWork panel
@@ -1082,8 +1092,32 @@ func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
 	return m.pushModal(issueID, PanelTaskList) // Use TaskList as source panel for board mode
 }
 
-// exitBoardMode returns to the categorized Task List view
+// exitBoardMode returns to the categorized Task List view, but first clears
+// any active search/sort/type filters. Only exits if no filters are active.
 func (m Model) exitBoardMode() (Model, tea.Cmd) {
+	// If there's an active search query or non-default sort/type filter, clear it first
+	hasSearchQuery := m.SearchQuery != ""
+	hasNonDefaultSort := m.SortMode != SortByPriority
+	hasTypeFilter := m.TypeFilterMode != TypeFilterNone
+
+	if hasSearchQuery || hasNonDefaultSort || hasTypeFilter {
+		// Clear filters instead of exiting
+		m.SearchQuery = ""
+		m.SortMode = SortByPriority
+		m.TypeFilterMode = TypeFilterNone
+		m.updatePanelBounds()
+		m.StatusMessage = "Filters cleared"
+		// Refresh board issues with cleared filters
+		if m.BoardMode.Board != nil {
+			return m, tea.Batch(
+				m.fetchBoardIssues(m.BoardMode.Board.ID),
+				tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+			)
+		}
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+
+	// No filters active, exit board mode
 	m.TaskListMode = TaskListModeCategorized
 	m.BoardMode.Board = nil
 	m.BoardMode.Issues = nil

@@ -185,6 +185,90 @@ func TestGetSortFuncWithPosition(t *testing.T) {
 	}
 }
 
+func TestFilterBoardIssuesByQuery(t *testing.T) {
+	issues := []models.BoardIssueView{
+		{Issue: models.Issue{ID: "td-abc123", Title: "Fix login bug", Type: models.TypeBug}},
+		{Issue: models.Issue{ID: "td-def456", Title: "Add feature", Type: models.TypeFeature}},
+		{Issue: models.Issue{ID: "td-ghi789", Title: "Refactor code", Type: models.TypeTask}},
+	}
+
+	tests := []struct {
+		name    string
+		query   string
+		wantIDs []string
+	}{
+		{
+			name:    "empty query returns all",
+			query:   "",
+			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+		},
+		{
+			name:    "sort clause only returns all",
+			query:   "sort:priority",
+			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+		},
+		{
+			name:    "sort clause with minus returns all",
+			query:   "sort:-updated",
+			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+		},
+		{
+			name:    "type filter only returns all",
+			query:   "type=bug",
+			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+		},
+		{
+			name:    "sort and type combined returns all",
+			query:   "sort:priority type=task",
+			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+		},
+		{
+			name:    "search term filters correctly",
+			query:   "login",
+			wantIDs: []string{"td-abc123"},
+		},
+		{
+			name:    "search term with sort clause",
+			query:   "login sort:priority",
+			wantIDs: []string{"td-abc123"},
+		},
+		{
+			name:    "search term with type filter",
+			query:   "feature type=bug",
+			wantIDs: []string{"td-def456"},
+		},
+		{
+			name:    "search by ID",
+			query:   "td-def",
+			wantIDs: []string{"td-def456"},
+		},
+		{
+			name:    "no matches",
+			query:   "nonexistent",
+			wantIDs: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a copy to avoid mutation
+			issuesCopy := make([]models.BoardIssueView, len(issues))
+			copy(issuesCopy, issues)
+
+			result := filterBoardIssuesByQuery(issuesCopy, tt.query)
+
+			gotIDs := make([]string, len(result))
+			for i, biv := range result {
+				gotIDs[i] = biv.Issue.ID
+			}
+
+			if !reflect.DeepEqual(gotIDs, tt.wantIDs) {
+				t.Errorf("filterBoardIssuesByQuery(%q) = %v, want %v", tt.query, gotIDs, tt.wantIDs)
+			}
+		})
+	}
+}
+
 func TestComputeBoardIssueCategoriesClosedDepUnblocks(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
