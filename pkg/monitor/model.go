@@ -651,8 +651,8 @@ func (m *Model) ensureBoardCursorVisible() {
 		return
 	}
 
-	// Estimate visible height (will be calculated more precisely in view)
-	visibleHeight := m.Height - 6 // Rough estimate: header + footer + borders
+	// Use proper panel height calculation
+	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
 	if visibleHeight < 1 {
 		visibleHeight = 10
 	}
@@ -680,8 +680,8 @@ func (m *Model) ensureBoardCursorVisible() {
 
 // ensureSwimlaneCursorVisible adjusts the swimlane scroll offset to keep the cursor visible
 func (m *Model) ensureSwimlaneCursorVisible() {
-	// Estimate visible height (will be calculated more precisely in view)
-	visibleHeight := m.Height - 6 // Rough estimate: header + footer + borders
+	// Use proper panel height calculation
+	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
 	if visibleHeight < 1 {
 		visibleHeight = 10
 	}

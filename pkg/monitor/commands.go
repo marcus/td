@@ -294,11 +294,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.BoardPickerCursor < len(m.AllBoards)-1 {
 				m.BoardPickerCursor++
 			}
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				if m.BoardMode.SwimlaneCursor < len(m.BoardMode.SwimlaneRows)-1 {
 					m.BoardMode.SwimlaneCursor++
-					m.ensureBoardCursorVisible()
+					m.ensureSwimlaneCursorVisible()
 				}
 			} else {
 				if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
@@ -354,11 +354,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.BoardPickerCursor > 0 {
 				m.BoardPickerCursor--
 			}
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				if m.BoardMode.SwimlaneCursor > 0 {
 					m.BoardMode.SwimlaneCursor--
-					m.ensureBoardCursorVisible()
+					m.ensureSwimlaneCursorVisible()
 				}
 			} else {
 				if m.BoardMode.Cursor > 0 {

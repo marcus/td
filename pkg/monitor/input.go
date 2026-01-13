@@ -148,14 +148,24 @@ func (m Model) hitTestTaskListRow(relY int) int {
 	return -1
 }
 
-// hitTestBoardRow maps a y position to a BoardMode.Issues index (simple 1:1 mapping)
+// hitTestBoardRow maps a y position to a board row index (simple 1:1 mapping)
+// Handles both swimlanes view (SwimlaneRows) and backlog view (Issues)
 func (m Model) hitTestBoardRow(relY int) int {
-	if len(m.BoardMode.Issues) == 0 {
-		return -1
-	}
+	var offset, totalRows int
 
-	offset := m.BoardMode.ScrollOffset
-	totalRows := len(m.BoardMode.Issues)
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		if len(m.BoardMode.SwimlaneRows) == 0 {
+			return -1
+		}
+		offset = m.BoardMode.SwimlaneScroll
+		totalRows = len(m.BoardMode.SwimlaneRows)
+	} else {
+		if len(m.BoardMode.Issues) == 0 {
+			return -1
+		}
+		offset = m.BoardMode.ScrollOffset
+		totalRows = len(m.BoardMode.Issues)
+	}
 
 	// Calculate maxLines same as renderTaskListBoardView
 	bounds := m.PanelBounds[PanelTaskList]
@@ -894,17 +904,36 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// For Task List in board mode, use BoardMode.ScrollOffset
+	// For Task List in board mode, use appropriate scroll offset based on view mode
 	if panel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
-		newOffset := m.BoardMode.ScrollOffset + delta
-		if newOffset < 0 {
-			newOffset = 0
+		if m.BoardMode.ViewMode == BoardViewSwimlanes {
+			// Swimlanes view uses SwimlaneScroll
+			newOffset := m.BoardMode.SwimlaneScroll + delta
+			if newOffset < 0 {
+				newOffset = 0
+			}
+			// Calculate max offset for swimlanes
+			visibleHeight := m.visibleHeightForPanel(panel)
+			maxOffset := len(m.BoardMode.SwimlaneRows) - visibleHeight
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if newOffset > maxOffset {
+				newOffset = maxOffset
+			}
+			m.BoardMode.SwimlaneScroll = newOffset
+		} else {
+			// Backlog view uses ScrollOffset
+			newOffset := m.BoardMode.ScrollOffset + delta
+			if newOffset < 0 {
+				newOffset = 0
+			}
+			maxOffset := m.maxScrollOffset(panel)
+			if newOffset > maxOffset {
+				newOffset = maxOffset
+			}
+			m.BoardMode.ScrollOffset = newOffset
 		}
-		maxOffset := m.maxScrollOffset(panel)
-		if newOffset > maxOffset {
-			newOffset = maxOffset
-		}
-		m.BoardMode.ScrollOffset = newOffset
 		return m, nil
 	}
 
@@ -1054,10 +1083,19 @@ func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 
 	// Select the clicked row
 	if row >= 0 {
-		// In board mode, update BoardMode.Cursor
+		// In board mode, update the appropriate cursor based on view mode
 		if panel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
-			if row != m.BoardMode.Cursor {
-				m.BoardMode.Cursor = row
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				// Swimlanes view uses SwimlaneCursor
+				if row != m.BoardMode.SwimlaneCursor {
+					m.BoardMode.SwimlaneCursor = row
+					m.ensureSwimlaneCursorVisible()
+				}
+			} else {
+				// Backlog view uses Cursor
+				if row != m.BoardMode.Cursor {
+					m.BoardMode.Cursor = row
+				}
 			}
 		} else if row != m.Cursor[panel] {
 			m.Cursor[panel] = row

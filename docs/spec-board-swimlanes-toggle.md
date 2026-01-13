@@ -13,13 +13,13 @@ Both views show only issues matching the board's TDQ query. The `b` key toggles 
 
 ## Key Behaviors
 
-| Aspect | Swimlanes View | Backlog View |
-|--------|----------------|--------------|
-| Layout | Grouped by status category | Flat ordered list |
-| Sort order | Within each lane: board sort (priority/created/updated) | By explicit position, then unpositioned |
-| J/K reorder | Reorders within current lane | Reorders in full list |
-| Panel title | `BOARD: Sprint 1 [swimlanes] (12)` | `BOARD: Sprint 1 [backlog] (12)` |
-| Default | Yes | No |
+| Aspect      | Swimlanes View                                          | Backlog View                            |
+| ----------- | ------------------------------------------------------- | --------------------------------------- |
+| Layout      | Grouped by status category                              | Flat ordered list                       |
+| Sort order  | Within each lane: board sort (priority/created/updated) | By explicit position, then unpositioned |
+| J/K reorder | Reorders within current lane                            | Reorders in full list                   |
+| Panel title | `BOARD: Sprint 1 [swimlanes] (12)`                      | `BOARD: Sprint 1 [backlog] (12)`        |
+| Default     | Yes                                                     | No                                      |
 
 ---
 
@@ -62,6 +62,7 @@ func (v BoardViewMode) String() string {
 ```
 
 Add to `BoardMode` struct:
+
 ```go
 type BoardMode struct {
     // ... existing fields ...
@@ -80,6 +81,7 @@ type BoardMode struct {
 **File**: `internal/models/models.go`
 
 Add `ViewMode` field to Board struct:
+
 ```go
 type Board struct {
     // ... existing fields ...
@@ -164,6 +166,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 ### Update `renderTaskListBoardView()`
 
 Update panel title to include view mode indicator:
+
 ```go
 panelTitle = fmt.Sprintf("BOARD: %s [backlog] (%d)", boardName, totalRows)
 ```
@@ -175,18 +178,21 @@ panelTitle = fmt.Sprintf("BOARD: %s [backlog] (%d)", boardName, totalRows)
 **File**: `pkg/monitor/keymap/bindings.go`
 
 Add command:
+
 ```go
 CmdToggleBoardView Command = "toggle_board_view"
 ```
 
 Add binding in board context:
+
 ```go
-{Key: "b", Command: CmdToggleBoardView, Description: "Toggle swimlanes/backlog view"},
+{Key: "v", Command: CmdToggleBoardView, Description: "Toggle swimlanes/backlog view"},
 ```
 
 **File**: `pkg/monitor/actions.go`
 
 Add handler:
+
 ```go
 func (m *Model) toggleBoardViewMode() tea.Cmd {
     if m.BoardMode.Board == nil {
@@ -230,6 +236,7 @@ When in swimlanes view, J/K (Shift+j/k) reorders the issue within its current st
 **File**: `pkg/monitor/commands.go`
 
 Update `moveIssueInBoard()`:
+
 ```go
 func (m *Model) moveIssueInBoard(direction int) tea.Cmd {
     if m.BoardMode.ViewMode == BoardViewSwimlanes {
@@ -256,6 +263,7 @@ Each view mode maintains separate cursor and scroll state:
 - **Swimlanes view**: `BoardMode.SwimlaneCursor`, `BoardMode.SwimlaneScroll`
 
 When toggling views:
+
 1. Save current issue ID
 2. Switch view mode
 3. Find same issue in new view, set cursor there
@@ -265,19 +273,19 @@ When toggling views:
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| `internal/db/schema.go` | Migration v11: add view_mode column |
-| `internal/db/db.go` | UpdateBoardViewMode, include view_mode in queries |
-| `internal/models/models.go` | Add ViewMode field to Board |
-| `pkg/monitor/types.go` | Add BoardViewMode enum, extend BoardMode struct |
-| `pkg/monitor/model.go` | Add swimlane row building, cursor management |
-| `pkg/monitor/data.go` | Add CategorizeBoardIssues function |
-| `pkg/monitor/view.go` | Add renderBoardSwimlanesView, update routing |
-| `pkg/monitor/keymap/bindings.go` | Add CmdToggleBoardView, bind 'b' key |
-| `pkg/monitor/actions.go` | Add toggleBoardViewMode handler |
-| `pkg/monitor/commands.go` | Update moveIssueInBoard for swimlane support |
-| `pkg/monitor/keymap/help.go` | Update help text |
+| File                             | Changes                                           |
+| -------------------------------- | ------------------------------------------------- |
+| `internal/db/schema.go`          | Migration v11: add view_mode column               |
+| `internal/db/db.go`              | UpdateBoardViewMode, include view_mode in queries |
+| `internal/models/models.go`      | Add ViewMode field to Board                       |
+| `pkg/monitor/types.go`           | Add BoardViewMode enum, extend BoardMode struct   |
+| `pkg/monitor/model.go`           | Add swimlane row building, cursor management      |
+| `pkg/monitor/data.go`            | Add CategorizeBoardIssues function                |
+| `pkg/monitor/view.go`            | Add renderBoardSwimlanesView, update routing      |
+| `pkg/monitor/keymap/bindings.go` | Add CmdToggleBoardView, bind 'b' key              |
+| `pkg/monitor/actions.go`         | Add toggleBoardViewMode handler                   |
+| `pkg/monitor/commands.go`        | Update moveIssueInBoard for swimlane support      |
+| `pkg/monitor/keymap/help.go`     | Update help text                                  |
 
 ---
 
