@@ -504,6 +504,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Build swimlane data using filtered issues
 			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode)
 			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
+
+			// Restore selection if we have a pending selection ID (from move operations)
+			if m.BoardMode.PendingSelectionID != "" {
+				// Find the issue in the backlog view
+				for i, biv := range m.BoardMode.Issues {
+					if biv.Issue.ID == m.BoardMode.PendingSelectionID {
+						m.BoardMode.Cursor = i
+						m.ensureBoardCursorVisible()
+						break
+					}
+				}
+				// Find the issue in swimlanes view
+				for i, row := range m.BoardMode.SwimlaneRows {
+					if row.Issue.ID == m.BoardMode.PendingSelectionID {
+						m.BoardMode.SwimlaneCursor = i
+						m.ensureSwimlaneCursorVisible()
+						break
+					}
+				}
+				m.BoardMode.PendingSelectionID = "" // Clear after use
+			}
 		}
 		return m, nil
 

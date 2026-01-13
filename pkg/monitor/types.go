@@ -397,6 +397,9 @@ type BoardMode struct {
 	SwimlaneRows   []TaskListRow  // Flattened rows for swimlanes view
 	SwimlaneCursor int            // Cursor position in swimlanes view
 	SwimlaneScroll int            // Scroll offset in swimlanes view
+
+	// Selection restoration after move operations
+	PendingSelectionID string // Issue ID to select after refresh (cleared after use)
 }
 
 // DefaultBoardStatusFilter returns the default status filter (closed hidden)

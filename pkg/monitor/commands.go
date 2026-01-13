@@ -1276,7 +1276,8 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.Cursor = targetIdx
+		// Track the issue we want selected after refresh (positions change sort order)
+		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	} else {
 		// Both now positioned - swap positions
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
@@ -1284,7 +1285,8 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.Cursor = targetIdx
+		// Track the issue we want selected after refresh
+		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
 
 	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
@@ -1370,7 +1372,8 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.SwimlaneCursor = targetIdx
+		// Track the issue we want selected after refresh (positions change sort order)
+		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	} else {
 		// Both now positioned - swap positions
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
@@ -1378,7 +1381,8 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.SwimlaneCursor = targetIdx
+		// Track the issue we want selected after refresh
+		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
 
 	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
