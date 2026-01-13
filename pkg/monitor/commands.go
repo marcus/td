@@ -429,7 +429,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				if len(m.BoardMode.SwimlaneRows) > 0 {
 					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
-					m.ensureBoardCursorVisible()
+					m.ensureSwimlaneCursorVisible()
 				}
 			} else {
 				if len(m.BoardMode.Issues) > 0 {
@@ -1088,6 +1088,10 @@ func (m Model) exitBoardMode() (Model, tea.Cmd) {
 	m.BoardMode.Issues = nil
 	m.BoardMode.Cursor = 0
 	m.BoardMode.ScrollOffset = 0
+	m.BoardMode.SwimlaneCursor = 0
+	m.BoardMode.SwimlaneScroll = 0
+	m.BoardMode.SwimlaneData = TaskListData{}
+	m.BoardMode.SwimlaneRows = nil
 	return m, m.fetchData()
 }
 
@@ -1263,9 +1267,9 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 		// Current is unpositioned - insert relative to target
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetIssue.Position + 1 // Current goes after target (moving up means current ends below target)
+			insertPos = targetIssue.Position // Moving up: current takes target's position
 		} else {
-			insertPos = targetIssue.Position // Current goes at target's position (moving down)
+			insertPos = targetIssue.Position + 1 // Moving down: current goes after target
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1357,9 +1361,9 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		// Current is unpositioned - insert relative to target
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetBIV.Position + 1 // Current goes after target (moving up means current ends below target)
+			insertPos = targetBIV.Position // Moving up: current takes target's position
 		} else {
-			insertPos = targetBIV.Position // Current goes at target's position (moving down)
+			insertPos = targetBIV.Position + 1 // Moving down: current goes after target
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()

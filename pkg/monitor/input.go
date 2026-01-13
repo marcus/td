@@ -517,6 +517,9 @@ func (m Model) rowCount(panel Panel) int {
 		return len(m.Activity)
 	case PanelTaskList:
 		if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				return len(m.BoardMode.SwimlaneRows)
+			}
 			return len(m.BoardMode.Issues)
 		}
 		return len(m.TaskListRows)
@@ -696,9 +699,16 @@ func (m Model) SelectedIssueID(panel Panel) string {
 		}
 	case PanelTaskList:
 		if m.TaskListMode == TaskListModeBoard {
-			cursor := m.BoardMode.Cursor
-			if cursor >= 0 && cursor < len(m.BoardMode.Issues) {
-				return m.BoardMode.Issues[cursor].Issue.ID
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				cursor := m.BoardMode.SwimlaneCursor
+				if cursor >= 0 && cursor < len(m.BoardMode.SwimlaneRows) {
+					return m.BoardMode.SwimlaneRows[cursor].Issue.ID
+				}
+			} else {
+				cursor := m.BoardMode.Cursor
+				if cursor >= 0 && cursor < len(m.BoardMode.Issues) {
+					return m.BoardMode.Issues[cursor].Issue.ID
+				}
 			}
 			return ""
 		}
