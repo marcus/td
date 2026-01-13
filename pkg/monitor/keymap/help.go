@@ -131,6 +131,21 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nBOARDS:\n")
+	boardBindings := []HelpBinding{
+		{Keys: "b", Description: "Open board picker"},
+		{Keys: "Enter", Description: "Select board"},
+		{Keys: "Esc / q", Description: "Close picker / exit board"},
+		{Keys: "← / →", Description: "Switch columns (swimlanes)"},
+		{Keys: "J / K", Description: "Move issue down/up in column"},
+		{Keys: "v", Description: "Toggle swimlanes/backlog view"},
+		{Keys: "c", Description: "Toggle closed issues"},
+		{Keys: "F", Description: "Cycle status filter"},
+	}
+	for _, b := range boardBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nSEARCH (TDQ Query Language):\n")
 	searchBindings := []HelpBinding{
 		{Keys: "Enter", Description: "Confirm search"},
@@ -348,6 +363,24 @@ func CommandHelp(cmd Command) string {
 		return "Close the selected issue"
 	case CmdReopenIssue:
 		return "Reopen a closed issue"
+	case CmdOpenBoardPicker:
+		return "Open board picker to select a board"
+	case CmdSelectBoard:
+		return "Select the highlighted board"
+	case CmdCloseBoardPicker:
+		return "Close board picker"
+	case CmdMoveIssueUp:
+		return "Move issue up in column"
+	case CmdMoveIssueDown:
+		return "Move issue down in column"
+	case CmdExitBoardMode:
+		return "Exit board mode to All Issues"
+	case CmdToggleBoardClosed:
+		return "Toggle closed issues in board"
+	case CmdCycleBoardStatusFilter:
+		return "Cycle status filter in board"
+	case CmdToggleBoardView:
+		return "Toggle swimlanes/backlog view"
 	default:
 		return string(cmd)
 	}
@@ -418,6 +451,10 @@ func AllCommands() []Command {
 		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard, CmdCopyIDToClipboard,
 		CmdNewIssue, CmdEditIssue, CmdFormSubmit, CmdFormCancel, CmdFormToggleExtend, CmdFormOpenEditor,
 		CmdCloseIssue, CmdReopenIssue,
+		// Board commands
+		CmdOpenBoardPicker, CmdSelectBoard, CmdCloseBoardPicker,
+		CmdMoveIssueUp, CmdMoveIssueDown, CmdExitBoardMode,
+		CmdToggleBoardClosed, CmdCycleBoardStatusFilter, CmdToggleBoardView,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {

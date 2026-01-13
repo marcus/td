@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/keymap"
 )
 
@@ -18,6 +19,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}
+	if m.BoardPickerOpen {
+		return keymap.ContextBoardPicker
+	}
 	if m.FormOpen {
 		return keymap.ContextForm
 	}
@@ -27,6 +31,11 @@ func (m Model) currentContext() keymap.Context {
 	if m.StatsOpen {
 		return keymap.ContextStats
 	}
+	// Search mode takes priority - it's an overlay that captures input
+	if m.SearchMode {
+		return keymap.ContextSearch
+	}
+	// Modal takes priority over board mode - ESC should close modal, not exit board
 	if m.ModalOpen() {
 		if modal := m.CurrentModal(); modal != nil {
 			// Check if parent epic row is focused
@@ -48,8 +57,9 @@ func (m Model) currentContext() keymap.Context {
 		}
 		return keymap.ContextModal
 	}
-	if m.SearchMode {
-		return keymap.ContextSearch
+	// Board mode context when Task List is active and in board mode
+	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
+		return keymap.ContextBoard
 	}
 	return keymap.ContextMain
 }
@@ -170,7 +180,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newQuery := m.SearchInput.Value()
 		if newQuery != m.SearchQuery {
 			m.SearchQuery = newQuery
-			return m, tea.Batch(inputCmd, m.fetchData())
+			cmds := []tea.Cmd{inputCmd, m.fetchData()}
+			// Also refresh board issues if in board mode
+			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+				cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+			}
+			return m, tea.Batch(cmds...)
 		}
 		return m, inputCmd
 	}
@@ -282,6 +297,22 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					modal.Scroll++
 				}
 			}
+		} else if m.BoardPickerOpen {
+			if m.BoardPickerCursor < len(m.AllBoards)-1 {
+				m.BoardPickerCursor++
+			}
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if m.BoardMode.SwimlaneCursor < len(m.BoardMode.SwimlaneRows)-1 {
+					m.BoardMode.SwimlaneCursor++
+					m.ensureSwimlaneCursorVisible()
+				}
+			} else {
+				if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
+					m.BoardMode.Cursor++
+					m.ensureBoardCursorVisible()
+				}
+			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor < len(m.HandoffsData)-1 {
 				m.HandoffsCursor++
@@ -326,6 +357,22 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else if modal.Scroll > 0 {
 				modal.Scroll--
 			}
+		} else if m.BoardPickerOpen {
+			if m.BoardPickerCursor > 0 {
+				m.BoardPickerCursor--
+			}
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if m.BoardMode.SwimlaneCursor > 0 {
+					m.BoardMode.SwimlaneCursor--
+					m.ensureSwimlaneCursorVisible()
+				}
+			} else {
+				if m.BoardMode.Cursor > 0 {
+					m.BoardMode.Cursor--
+					m.ensureBoardCursorVisible()
+				}
+			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor > 0 {
 				m.HandoffsCursor--
@@ -346,6 +393,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = 0
+		} else if m.BoardPickerOpen {
+			m.BoardPickerCursor = 0
+		} else if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor = 0
+				m.BoardMode.SwimlaneScroll = 0
+			} else {
+				m.BoardMode.Cursor = 0
+				m.BoardMode.ScrollOffset = 0
+			}
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor = 0
 			m.HandoffsScroll = 0
@@ -365,6 +422,22 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if modal := m.CurrentModal(); modal != nil {
 			modal.Scroll = m.modalMaxScroll(modal)
+		} else if m.BoardPickerOpen {
+			if len(m.AllBoards) > 0 {
+				m.BoardPickerCursor = len(m.AllBoards) - 1
+			}
+		} else if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if len(m.BoardMode.SwimlaneRows) > 0 {
+					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
+					m.ensureSwimlaneCursorVisible()
+				}
+			} else {
+				if len(m.BoardMode.Issues) > 0 {
+					m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+					m.ensureBoardCursorVisible()
+				}
+			}
 		} else if m.HandoffsOpen {
 			if len(m.HandoffsData) > 0 {
 				m.HandoffsCursor = len(m.HandoffsData) - 1
@@ -401,6 +474,25 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll > maxScroll {
 				modal.Scroll = maxScroll
 			}
+		} else if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor += pageSize
+				if m.BoardMode.SwimlaneCursor >= len(m.BoardMode.SwimlaneRows) {
+					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
+				}
+				if m.BoardMode.SwimlaneCursor < 0 {
+					m.BoardMode.SwimlaneCursor = 0
+				}
+			} else {
+				m.BoardMode.Cursor += pageSize
+				if m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+					m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+				}
+				if m.BoardMode.Cursor < 0 {
+					m.BoardMode.Cursor = 0
+				}
+			}
+			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor += pageSize
 			if m.HandoffsCursor >= len(m.HandoffsData) {
@@ -437,6 +529,19 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll < 0 {
 				modal.Scroll = 0
 			}
+		} else if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor -= pageSize
+				if m.BoardMode.SwimlaneCursor < 0 {
+					m.BoardMode.SwimlaneCursor = 0
+				}
+			} else {
+				m.BoardMode.Cursor -= pageSize
+				if m.BoardMode.Cursor < 0 {
+					m.BoardMode.Cursor = 0
+				}
+			}
+			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor -= pageSize
 			if m.HandoffsCursor < 0 {
@@ -544,6 +649,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if m.HandoffsOpen {
 			return m.openIssueFromHandoffs()
 		}
+		if m.TaskListMode == TaskListModeBoard {
+			return m.openIssueFromBoard()
+		}
 		return m.openModal()
 
 	case keymap.CmdOpenStats:
@@ -556,9 +664,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.SearchMode = true
 		m.SearchQuery = ""
 		m.SearchInput.SetValue("")
-		m.SearchInput.Focus()
 		m.updatePanelBounds() // Recalc bounds for search bar
-		return m, m.SearchInput.Cursor.BlinkCmd()
+		return m, m.SearchInput.Focus()
 
 	case keymap.CmdToggleClosed:
 		m.IncludeClosed = !m.IncludeClosed
@@ -571,6 +678,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Recalc bounds if search bar visibility changed
 		if (oldQuery == "") != (m.SearchQuery == "") {
 			m.updatePanelBounds()
+		}
+		// In board mode, also refresh board issues to apply new sort
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
 		}
 		return m, m.fetchData()
 
@@ -587,9 +698,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusMessage = "Type filter: " + m.TypeFilterMode.String()
 		}
-		return m, tea.Batch(m.fetchData(), tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return ClearStatusMsg{}
-		}))
+		cmds := []tea.Cmd{
+			m.fetchData(),
+			tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+		}
+		// In board mode, also refresh board issues to apply type filter
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
+		return m, tea.Batch(cmds...)
 
 	case keymap.CmdMarkForReview:
 		// Mark for review works from modal, TaskList, or CurrentWork panel
@@ -636,6 +753,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.SearchInput.SetValue("")
 		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
+		// Refresh appropriate data based on mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+		}
 		return m, m.fetchData()
 
 	case keymap.CmdSearchClear:
@@ -647,6 +768,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Recalc bounds since search bar disappears when query is empty
 		if !m.SearchMode {
 			m.updatePanelBounds()
+		}
+		// Refresh appropriate data based on mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
 		}
 		return m, m.fetchData()
 
@@ -864,7 +989,490 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdFormOpenEditor:
 		return m.openExternalEditor()
+
+	// Board commands
+	case keymap.CmdOpenBoardPicker:
+		return m.openBoardPicker()
+
+	case keymap.CmdSelectBoard:
+		return m.selectBoard()
+
+	case keymap.CmdCloseBoardPicker:
+		m.BoardPickerOpen = false
+		return m, nil
+
+	// Board mode commands
+	case keymap.CmdExitBoardMode:
+		return m.exitBoardMode()
+
+	case keymap.CmdToggleBoardClosed:
+		return m.toggleBoardClosed()
+
+	case keymap.CmdCycleBoardStatusFilter:
+		return m.cycleBoardStatusFilter()
+
+	case keymap.CmdMoveIssueUp:
+		return m.moveIssueInBoard(-1)
+
+	case keymap.CmdMoveIssueDown:
+		return m.moveIssueInBoard(1)
+
+	case keymap.CmdToggleBoardView:
+		return m.toggleBoardView()
 	}
 
 	return m, nil
+}
+
+// openBoardPicker opens the board picker modal
+func (m Model) openBoardPicker() (Model, tea.Cmd) {
+	m.BoardPickerOpen = true
+	m.BoardPickerCursor = 0
+	return m, m.fetchBoards()
+}
+
+// selectBoard selects the currently highlighted board and activates board mode
+func (m Model) selectBoard() (Model, tea.Cmd) {
+	if !m.BoardPickerOpen || len(m.AllBoards) == 0 {
+		return m, nil
+	}
+	if m.BoardPickerCursor >= len(m.AllBoards) {
+		return m, nil
+	}
+
+	board := m.AllBoards[m.BoardPickerCursor]
+	m.TaskListMode = TaskListModeBoard
+	m.ActivePanel = PanelTaskList // Focus the Task List panel
+	m.BoardMode.Board = &board
+	m.BoardMode.Cursor = 0
+	m.BoardMode.ScrollOffset = 0
+	m.BoardMode.SwimlaneCursor = 0
+	m.BoardMode.SwimlaneScroll = 0
+	m.BoardMode.ViewMode = BoardViewModeFromString(board.ViewMode)
+	if m.BoardMode.StatusFilter == nil {
+		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+	}
+	m.BoardPickerOpen = false
+
+	// Update last viewed
+	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+	}
+
+	return m, m.fetchBoardIssues(board.ID)
+}
+
+// openIssueFromBoard opens the issue modal for the currently selected board issue
+func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard {
+		return m, nil
+	}
+
+	var issueID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		// Swimlanes view: get issue from SwimlaneRows
+		if len(m.BoardMode.SwimlaneRows) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.SwimlaneCursor < 0 || m.BoardMode.SwimlaneCursor >= len(m.BoardMode.SwimlaneRows) {
+			return m, nil
+		}
+		issueID = m.BoardMode.SwimlaneRows[m.BoardMode.SwimlaneCursor].Issue.ID
+	} else {
+		// Backlog view: get issue from Issues
+		if len(m.BoardMode.Issues) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+			return m, nil
+		}
+		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	}
+	return m.pushModal(issueID, PanelTaskList) // Use TaskList as source panel for board mode
+}
+
+// exitBoardMode returns to the categorized Task List view, but first clears
+// any active search/sort/type filters. Only exits if no filters are active.
+func (m Model) exitBoardMode() (Model, tea.Cmd) {
+	// If there's an active search query or non-default sort/type filter, clear it first
+	hasSearchQuery := m.SearchQuery != ""
+	hasNonDefaultSort := m.SortMode != SortByPriority
+	hasTypeFilter := m.TypeFilterMode != TypeFilterNone
+
+	if hasSearchQuery || hasNonDefaultSort || hasTypeFilter {
+		// Clear filters instead of exiting
+		m.SearchQuery = ""
+		m.SortMode = SortByPriority
+		m.TypeFilterMode = TypeFilterNone
+		m.updatePanelBounds()
+		m.StatusMessage = "Filters cleared"
+		// Refresh board issues with cleared filters
+		if m.BoardMode.Board != nil {
+			return m, tea.Batch(
+				m.fetchBoardIssues(m.BoardMode.Board.ID),
+				tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+			)
+		}
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+
+	// No filters active, exit board mode
+	m.TaskListMode = TaskListModeCategorized
+	m.BoardMode.Board = nil
+	m.BoardMode.Issues = nil
+	m.BoardMode.Cursor = 0
+	m.BoardMode.ScrollOffset = 0
+	m.BoardMode.SwimlaneCursor = 0
+	m.BoardMode.SwimlaneScroll = 0
+	m.BoardMode.SwimlaneData = TaskListData{}
+	m.BoardMode.SwimlaneRows = nil
+	return m, m.fetchData()
+}
+
+// toggleBoardClosed toggles the closed status in the board status filter
+func (m Model) toggleBoardClosed() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	if m.BoardMode.StatusFilter == nil {
+		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+	}
+	m.BoardMode.StatusFilter[models.StatusClosed] = !m.BoardMode.StatusFilter[models.StatusClosed]
+
+	if m.BoardMode.StatusFilter[models.StatusClosed] {
+		m.StatusMessage = "Showing closed issues"
+	} else {
+		m.StatusMessage = "Hiding closed issues"
+	}
+
+	return m, tea.Batch(
+		m.fetchBoardIssues(m.BoardMode.Board.ID),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+	)
+}
+
+// cycleBoardStatusFilter cycles through status filter presets
+func (m Model) cycleBoardStatusFilter() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	// Cycle to next preset
+	m.BoardStatusPreset = (m.BoardStatusPreset + 1) % 7 // 7 presets
+	m.BoardMode.StatusFilter = m.BoardStatusPreset.ToFilter()
+
+	m.StatusMessage = "Filter: " + m.BoardStatusPreset.Name()
+
+	return m, tea.Batch(
+		m.fetchBoardIssues(m.BoardMode.Board.ID),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+	)
+}
+
+// toggleBoardView toggles between swimlanes and backlog view modes
+func (m Model) toggleBoardView() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	// Get currently selected issue ID before toggling
+	var selectedID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		if m.BoardMode.SwimlaneCursor >= 0 && m.BoardMode.SwimlaneCursor < len(m.BoardMode.SwimlaneRows) {
+			selectedID = m.BoardMode.SwimlaneRows[m.BoardMode.SwimlaneCursor].Issue.ID
+		}
+	} else {
+		if m.BoardMode.Cursor >= 0 && m.BoardMode.Cursor < len(m.BoardMode.Issues) {
+			selectedID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+		}
+	}
+
+	// Toggle view mode
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		m.BoardMode.ViewMode = BoardViewBacklog
+		m.StatusMessage = "Switched to backlog view"
+	} else {
+		m.BoardMode.ViewMode = BoardViewSwimlanes
+		m.StatusMessage = "Switched to swimlanes view"
+	}
+
+	// Try to preserve selection by finding the same issue in the new view
+	if selectedID != "" {
+		if m.BoardMode.ViewMode == BoardViewSwimlanes {
+			// Find issue in swimlane rows
+			for i, row := range m.BoardMode.SwimlaneRows {
+				if row.Issue.ID == selectedID {
+					m.BoardMode.SwimlaneCursor = i
+					break
+				}
+			}
+		} else {
+			// Find issue in backlog issues
+			for i, biv := range m.BoardMode.Issues {
+				if biv.Issue.ID == selectedID {
+					m.BoardMode.Cursor = i
+					break
+				}
+			}
+		}
+	}
+
+	// Persist view mode to database
+	viewModeStr := m.BoardMode.ViewMode.String()
+	if err := m.DB.UpdateBoardViewMode(m.BoardMode.Board.ID, viewModeStr); err != nil {
+		// Non-fatal, just show error
+		m.StatusMessage = "View switched (save failed: " + err.Error() + ")"
+		m.StatusIsError = true
+	}
+
+	// Update the board struct too for consistency
+	m.BoardMode.Board.ViewMode = viewModeStr
+
+	return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+}
+
+// moveIssueInBoard moves the current issue up or down in the board
+func (m Model) moveIssueInBoard(direction int) (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		return m.moveIssueInSwimlane(direction)
+	}
+	return m.moveIssueInBacklog(direction)
+}
+
+// moveIssueInBacklog moves the current issue up or down in the backlog view
+func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
+	if len(m.BoardMode.Issues) == 0 {
+		return m, nil
+	}
+
+	cursor := m.BoardMode.Cursor
+	if cursor < 0 || cursor >= len(m.BoardMode.Issues) {
+		return m, nil
+	}
+
+	currentIssue := m.BoardMode.Issues[cursor]
+
+	// Determine target index
+	targetIdx := cursor + direction
+	if targetIdx < 0 || targetIdx >= len(m.BoardMode.Issues) {
+		return m, nil // Can't move beyond bounds
+	}
+
+	targetIssue := m.BoardMode.Issues[targetIdx]
+
+	// Position-on-demand: ensure both issues are positioned before swapping
+	// First, position target if needed
+	if !targetIssue.HasPosition {
+		var targetPos int
+		if currentIssue.HasPosition {
+			// Place target relative to current's position
+			if direction < 0 {
+				targetPos = currentIssue.Position // Target goes at current's position (will shift current down)
+			} else {
+				targetPos = currentIssue.Position + 1
+			}
+		} else {
+			// Neither positioned - find nearest positioned neighbor or use 1
+			targetPos = 1
+			for i := targetIdx; i >= 0; i-- {
+				if m.BoardMode.Issues[i].HasPosition {
+					targetPos = m.BoardMode.Issues[i].Position + 1
+					break
+				}
+			}
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.Issues[targetIdx].HasPosition = true
+		m.BoardMode.Issues[targetIdx].Position = targetPos
+		targetIssue = m.BoardMode.Issues[targetIdx] // Refresh local variable
+	}
+
+	// Now handle current issue
+	if !currentIssue.HasPosition {
+		// Current is unpositioned - insert relative to target
+		var insertPos int
+		if direction < 0 {
+			insertPos = targetIssue.Position // Moving up: current takes target's position
+		} else {
+			insertPos = targetIssue.Position + 1 // Moving down: current goes after target
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		// Track the issue we want selected after refresh (positions change sort order)
+		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
+	} else {
+		// Both now positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		// Track the issue we want selected after refresh
+		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
+	}
+
+	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+}
+
+// moveIssueInSwimlane moves the current issue up or down within its swimlane (category)
+func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
+	if len(m.BoardMode.SwimlaneRows) == 0 {
+		return m, nil
+	}
+
+	cursor := m.BoardMode.SwimlaneCursor
+	if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+		return m, nil
+	}
+
+	currentRow := m.BoardMode.SwimlaneRows[cursor]
+	currentCategory := currentRow.Category
+
+	// Find target index within the same category
+	targetIdx := cursor + direction
+	if targetIdx < 0 || targetIdx >= len(m.BoardMode.SwimlaneRows) {
+		return m, nil // Can't move beyond bounds
+	}
+
+	targetRow := m.BoardMode.SwimlaneRows[targetIdx]
+
+	// Only allow moves within the same category
+	if targetRow.Category != currentCategory {
+		return m, nil // Can't cross lane boundaries
+	}
+
+	// Find the BoardIssueView for both issues to get position info
+	var currentBIV, targetBIV *models.BoardIssueView
+	for i := range m.BoardMode.Issues {
+		if m.BoardMode.Issues[i].Issue.ID == currentRow.Issue.ID {
+			currentBIV = &m.BoardMode.Issues[i]
+		}
+		if m.BoardMode.Issues[i].Issue.ID == targetRow.Issue.ID {
+			targetBIV = &m.BoardMode.Issues[i]
+		}
+	}
+
+	if currentBIV == nil || targetBIV == nil {
+		return m, nil
+	}
+
+	// Position-on-demand: ensure both issues are positioned before swapping
+	// First, position target if needed
+	if !targetBIV.HasPosition {
+		var targetPos int
+		if currentBIV.HasPosition {
+			// Place target relative to current's position
+			if direction < 0 {
+				targetPos = currentBIV.Position // Target goes at current's position (will shift current down)
+			} else {
+				targetPos = currentBIV.Position + 1
+			}
+		} else {
+			// Neither positioned - start fresh
+			targetPos = 1
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		targetBIV.HasPosition = true
+		targetBIV.Position = targetPos
+	}
+
+	// Now handle current issue
+	if !currentBIV.HasPosition {
+		// Current is unpositioned - insert relative to target
+		var insertPos int
+		if direction < 0 {
+			insertPos = targetBIV.Position // Moving up: current takes target's position
+		} else {
+			insertPos = targetBIV.Position + 1 // Moving down: current goes after target
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		// Track the issue we want selected after refresh (positions change sort order)
+		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
+	} else {
+		// Both now positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		// Track the issue we want selected after refresh
+		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
+	}
+
+	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+}
+
+// fetchBoards returns a command that fetches all boards
+func (m Model) fetchBoards() tea.Cmd {
+	return func() tea.Msg {
+		boards, err := m.DB.ListBoards()
+		return BoardsDataMsg{Boards: boards, Error: err}
+	}
+}
+
+// fetchBoardIssues returns a command that fetches issues for a board
+func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
+	// Capture status filter at call time (closure captures by value)
+	statusFilter := m.BoardMode.StatusFilter
+	if statusFilter == nil {
+		statusFilter = DefaultBoardStatusFilter()
+	}
+
+	return func() tea.Msg {
+		// Get the board to check if it has a query
+		board, err := m.DB.GetBoard(boardID)
+		if err != nil {
+			return BoardIssuesMsg{BoardID: boardID, Error: err}
+		}
+
+		var issues []models.BoardIssueView
+		if board.Query != "" {
+			// Execute TDQ query, then apply positions
+			queryResults, err := query.Execute(m.DB, board.Query, m.SessionID, query.ExecuteOptions{})
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+			// Filter by status (query.Execute doesn't filter by status)
+			var filtered []models.Issue
+			for _, issue := range queryResults {
+				if statusFilter[issue.Status] {
+					filtered = append(filtered, issue)
+				}
+			}
+			issues, err = m.DB.ApplyBoardPositions(boardID, filtered)
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+		} else {
+			// Empty query - use GetBoardIssues with status filter
+			statusSlice := StatusFilterMapToSlice(statusFilter)
+			issues, err = m.DB.GetBoardIssues(boardID, m.SessionID, statusSlice)
+			if err != nil {
+				return BoardIssuesMsg{BoardID: boardID, Error: err}
+			}
+		}
+
+		return BoardIssuesMsg{BoardID: boardID, Issues: issues}
+	}
 }

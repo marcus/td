@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -307,6 +308,15 @@ func renderButtonPair(leftLabel, rightLabel string, leftFocused, rightFocused, l
 // highlightRow applies selection highlight to entire row width, preserving text colors
 func highlightRow(line string, width int) string {
 	bgCode := "\x1b[48;5;237m" // Background color 237
+	reset := "\x1b[0m"
+
+	// First, truncate if line is too wide (ANSI-aware truncation)
+	lineWidth := lipgloss.Width(line)
+	if lineWidth > width {
+		// Truncate with ellipsis, leaving room for "..."
+		line = ansi.Truncate(line, width-3, "...")
+		lineWidth = lipgloss.Width(line)
+	}
 
 	// Inject background after every ANSI escape sequence
 	line = ansiPattern.ReplaceAllString(line, "${0}"+bgCode)
@@ -314,11 +324,10 @@ func highlightRow(line string, width int) string {
 	// Prepend background at start
 	line = bgCode + line
 
-	// Pad to width
-	lineWidth := lipgloss.Width(line)
+	// Pad to width if needed
 	if lineWidth < width {
 		line = line + strings.Repeat(" ", width-lineWidth)
 	}
 
-	return line + "\x1b[0m" // Reset at end
+	return line + reset
 }

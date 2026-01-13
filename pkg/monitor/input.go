@@ -49,6 +49,11 @@ func (m Model) HitTestRow(panel Panel, y int) int {
 
 // hitTestTaskListRow maps a y position to a TaskListRows index, accounting for headers
 func (m Model) hitTestTaskListRow(relY int) int {
+	// In board mode, use simpler 1:1 mapping (no category headers)
+	if m.TaskListMode == TaskListModeBoard {
+		return m.hitTestBoardRow(relY)
+	}
+
 	if len(m.TaskListRows) == 0 {
 		return -1
 	}
@@ -117,6 +122,145 @@ func (m Model) hitTestTaskListRow(relY int) int {
 		row := m.TaskListRows[i]
 
 		// Category header takes lines
+		if row.Category != currentCategory {
+			if i > offset {
+				linePos++ // Blank separator line
+			}
+			if relY == linePos {
+				return -1 // Clicked on header
+			}
+			linePos++ // Header line
+			currentCategory = row.Category
+		}
+
+		// Check if this row matches
+		if relY == linePos {
+			return i
+		}
+		linePos++
+
+		// Stop if we've gone past visible area
+		if linePos >= maxLines {
+			break
+		}
+	}
+
+	return -1
+}
+
+// hitTestBoardRow maps a y position to a board row index
+// Handles both swimlanes view (with category headers) and backlog view (simple 1:1)
+func (m Model) hitTestBoardRow(relY int) int {
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		return m.hitTestSwimlaneRow(relY)
+	}
+	return m.hitTestBacklogRow(relY)
+}
+
+// hitTestBacklogRow maps a y position to a BoardMode.Issues index (simple 1:1 mapping)
+func (m Model) hitTestBacklogRow(relY int) int {
+	if len(m.BoardMode.Issues) == 0 {
+		return -1
+	}
+
+	offset := m.BoardMode.ScrollOffset
+	totalRows := len(m.BoardMode.Issues)
+
+	// Calculate maxLines same as renderTaskListBoardView
+	bounds := m.PanelBounds[PanelTaskList]
+	maxLines := bounds.H - 3 // Account for title + border
+
+	// Determine scroll indicators
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Account for scroll indicator at top
+	linePos := 0
+	if showUpIndicator {
+		if relY == 0 {
+			return -1 // Clicked on scroll indicator
+		}
+		linePos = 1
+	}
+
+	// Simple 1:1 mapping for backlog rows (no category headers)
+	rowIdx := relY - linePos + offset
+	if rowIdx >= 0 && rowIdx < totalRows {
+		return rowIdx
+	}
+	return -1
+}
+
+// hitTestSwimlaneRow maps a y position to a BoardMode.SwimlaneRows index
+// Accounts for category headers and separator lines (matches renderBoardSwimlanesView)
+func (m Model) hitTestSwimlaneRow(relY int) int {
+	if len(m.BoardMode.SwimlaneRows) == 0 {
+		return -1
+	}
+
+	offset := m.BoardMode.SwimlaneScroll
+	totalRows := len(m.BoardMode.SwimlaneRows)
+
+	// Calculate maxLines same as renderBoardSwimlanesView
+	bounds := m.PanelBounds[PanelTaskList]
+	maxLines := bounds.H - 3 // Account for title + border
+
+	// Determine scroll indicators (matches view logic)
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset (matches view logic)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Recalculate indicators after clamping
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasBottomIndicator := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasBottomIndicator {
+		effectiveMaxLines--
+	}
+
+	// Account for "▲ more above" indicator
+	linePos := 0
+	if showUpIndicator {
+		if relY == 0 {
+			return -1 // Clicked on scroll indicator
+		}
+		linePos = 1
+	}
+
+	// If clicking on the bottom indicator line, return -1
+	if hasBottomIndicator && relY >= maxLines-1 {
+		return -1 // Clicked on bottom scroll indicator
+	}
+
+	// Walk through visible rows, tracking line position (matches view rendering)
+	var currentCategory TaskListCategory
+	if offset > 0 && offset <= len(m.BoardMode.SwimlaneRows) {
+		currentCategory = m.BoardMode.SwimlaneRows[offset-1].Category
+	}
+
+	for i := offset; i < len(m.BoardMode.SwimlaneRows); i++ {
+		row := m.BoardMode.SwimlaneRows[i]
+
+		// Category header takes lines (blank separator + header)
 		if row.Category != currentCategory {
 			if i > offset {
 				linePos++ // Blank separator line
@@ -372,6 +516,12 @@ func (m Model) rowCount(panel Panel) int {
 	case PanelActivity:
 		return len(m.Activity)
 	case PanelTaskList:
+		if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				return len(m.BoardMode.SwimlaneRows)
+			}
+			return len(m.BoardMode.Issues)
+		}
 		return len(m.TaskListRows)
 	}
 	return 0
@@ -548,6 +698,20 @@ func (m Model) SelectedIssueID(panel Panel) string {
 			return m.CurrentWorkRows[m.Cursor[panel]]
 		}
 	case PanelTaskList:
+		if m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				cursor := m.BoardMode.SwimlaneCursor
+				if cursor >= 0 && cursor < len(m.BoardMode.SwimlaneRows) {
+					return m.BoardMode.SwimlaneRows[cursor].Issue.ID
+				}
+			} else {
+				cursor := m.BoardMode.Cursor
+				if cursor >= 0 && cursor < len(m.BoardMode.Issues) {
+					return m.BoardMode.Issues[cursor].Issue.ID
+				}
+			}
+			return ""
+		}
 		if m.Cursor[panel] < len(m.TaskListRows) {
 			return m.TaskListRows[m.Cursor[panel]].Issue.ID
 		}
@@ -845,6 +1009,39 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// For Task List in board mode, use appropriate scroll offset based on view mode
+	if panel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
+		if m.BoardMode.ViewMode == BoardViewSwimlanes {
+			// Swimlanes view uses SwimlaneScroll
+			newOffset := m.BoardMode.SwimlaneScroll + delta
+			if newOffset < 0 {
+				newOffset = 0
+			}
+			// Calculate max offset for swimlanes
+			visibleHeight := m.visibleHeightForPanel(panel)
+			maxOffset := len(m.BoardMode.SwimlaneRows) - visibleHeight
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			if newOffset > maxOffset {
+				newOffset = maxOffset
+			}
+			m.BoardMode.SwimlaneScroll = newOffset
+		} else {
+			// Backlog view uses ScrollOffset
+			newOffset := m.BoardMode.ScrollOffset + delta
+			if newOffset < 0 {
+				newOffset = 0
+			}
+			maxOffset := m.maxScrollOffset(panel)
+			if newOffset > maxOffset {
+				newOffset = maxOffset
+			}
+			m.BoardMode.ScrollOffset = newOffset
+		}
+		return m, nil
+	}
+
 	// Update scroll offset
 	newOffset := m.ScrollOffset[panel] + delta
 	if newOffset < 0 {
@@ -874,6 +1071,15 @@ func (m Model) maxScrollOffset(panel Panel) int {
 	visibleHeight := m.visibleHeightForPanel(panel)
 
 	if panel == PanelTaskList {
+		// In board mode, use simple calculation (no category headers)
+		if m.TaskListMode == TaskListModeBoard {
+			maxOffset := count - visibleHeight
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			return maxOffset
+		}
+
 		// TaskList has category headers that consume extra lines
 		// Calculate total display lines including headers and separators
 		totalLines := m.taskListTotalLines()
@@ -981,15 +1187,35 @@ func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 
 	// Select the clicked row
-	if row >= 0 && row != m.Cursor[panel] {
-		m.Cursor[panel] = row
-		m.ScrollIndependent[panel] = false
-		m.saveSelectedID(panel)
-		m.ensureCursorVisible(panel)
+	if row >= 0 {
+		// In board mode, update the appropriate cursor based on view mode
+		if panel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				// Swimlanes view uses SwimlaneCursor
+				if row != m.BoardMode.SwimlaneCursor {
+					m.BoardMode.SwimlaneCursor = row
+					m.ensureSwimlaneCursorVisible()
+				}
+			} else {
+				// Backlog view uses Cursor
+				if row != m.BoardMode.Cursor {
+					m.BoardMode.Cursor = row
+				}
+			}
+		} else if row != m.Cursor[panel] {
+			m.Cursor[panel] = row
+			m.ScrollIndependent[panel] = false
+			m.saveSelectedID(panel)
+			m.ensureCursorVisible(panel)
+		}
 	}
 
 	// Double-click opens issue details
 	if isDoubleClick {
+		// In board mode, use board-specific open
+		if panel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
+			return m.openIssueFromBoard()
+		}
 		return m.openModal()
 	}
 

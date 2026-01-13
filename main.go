@@ -5,11 +5,21 @@ import (
 	"strings"
 
 	"github.com/marcus/td/cmd"
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/query"
 )
 
 // Version may be set at build time via -ldflags "-X main.Version=...".
 // If left as "dev", we will attempt to derive a version from Go build info.
 var Version = "dev"
+
+func init() {
+	// Wire up TDQ validator to break import cycle between db and query packages
+	db.QueryValidator = func(queryStr string) error {
+		_, err := query.Parse(queryStr)
+		return err
+	}
+}
 
 func effectiveVersion(v string) string {
 	// If the build injected a real version, prefer it.

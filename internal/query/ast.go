@@ -155,6 +155,7 @@ var KnownFields = map[string]string{
 	"reviewer":    "string",
 	"minor":       "bool",
 	"branch":      "string",
+	"sprint":      "string",
 	"created":     "date",
 	"updated":     "date",
 	"closed":      "date",
@@ -249,6 +250,7 @@ var SortFieldToColumn = map[string]string{
 	"title":    "title",
 	"status":   "status",
 	"points":   "points",
+	"sprint":   "sprint",
 }
 
 // Query represents a parsed TDQ query

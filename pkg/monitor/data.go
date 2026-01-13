@@ -436,3 +436,221 @@ func FetchStats(database *db.DB) StatsDataMsg {
 		Data: &StatsData{ExtendedStats: stats},
 	}
 }
+
+// ComputeBoardIssueCategories sets the Category field on each BoardIssueView.
+// This is the single source of truth for issue categorization, considering
+// dependency blocking, rejection status, and reviewability.
+func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView, sessionID string) {
+	if len(issues) == 0 {
+		return
+	}
+
+	// Get rejected in_progress issue IDs for "needs rework" detection
+	rejectedIDs, err := database.GetRejectedInProgressIssueIDs()
+	if err != nil {
+		rejectedIDs = make(map[string]bool)
+	}
+
+	// Batch load all dependencies and their statuses
+	allDeps, _ := database.GetAllDependencies()
+	var allDepIDs []string
+	for _, deps := range allDeps {
+		allDepIDs = append(allDepIDs, deps...)
+	}
+	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
+
+	// Helper to check if issue is blocked by unclosed dependencies
+	isBlockedByDeps := func(issueID string) bool {
+		deps := allDeps[issueID]
+		for _, depID := range deps {
+			if status, ok := depStatuses[depID]; ok && status != models.StatusClosed {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Set category on each issue
+	for i := range issues {
+		issue := &issues[i].Issue
+		var category TaskListCategory
+
+		switch issue.Status {
+		case models.StatusOpen:
+			if isBlockedByDeps(issue.ID) {
+				category = CategoryBlocked
+			} else {
+				category = CategoryReady
+			}
+		case models.StatusInProgress:
+			if rejectedIDs[issue.ID] {
+				category = CategoryNeedsRework
+			} else {
+				category = CategoryReady
+			}
+		case models.StatusBlocked:
+			category = CategoryBlocked
+		case models.StatusInReview:
+			if issue.ImplementerSession != sessionID {
+				category = CategoryReviewable
+			} else {
+				category = CategoryReady // Own issues in review show as ready
+			}
+		case models.StatusClosed:
+			category = CategoryClosed
+		default:
+			category = CategoryReady
+		}
+
+		issues[i].Category = string(category)
+	}
+}
+
+// CategorizeBoardIssues takes board issues and groups them by status category
+// for the swimlanes view. Issues are sorted within each category respecting
+// backlog positions: positioned issues first (by position), then unpositioned
+// (by sortMode). Also sets Category on each BoardIssueView.
+func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
+	var data TaskListData
+
+	if len(issues) == 0 {
+		return data
+	}
+
+	// Compute categories (sets Category field on each issue)
+	ComputeBoardIssueCategories(database, issues, sessionID)
+
+	// Group by category (preserve BoardIssueView for position-aware sorting)
+	categories := map[TaskListCategory][]models.BoardIssueView{
+		CategoryReady:       {},
+		CategoryNeedsRework: {},
+		CategoryBlocked:     {},
+		CategoryReviewable:  {},
+		CategoryClosed:      {},
+	}
+	for _, biv := range issues {
+		cat := TaskListCategory(biv.Category)
+		categories[cat] = append(categories[cat], biv)
+	}
+
+	// Sort each category with position awareness
+	sortFunc := getSortFuncWithPosition(sortMode)
+	for cat := range categories {
+		sort.Slice(categories[cat], sortFunc(categories[cat]))
+	}
+
+	// Extract Issues into TaskListData
+	for _, biv := range categories[CategoryReady] {
+		data.Ready = append(data.Ready, biv.Issue)
+	}
+	for _, biv := range categories[CategoryReviewable] {
+		data.Reviewable = append(data.Reviewable, biv.Issue)
+	}
+	for _, biv := range categories[CategoryNeedsRework] {
+		data.NeedsRework = append(data.NeedsRework, biv.Issue)
+	}
+	for _, biv := range categories[CategoryBlocked] {
+		data.Blocked = append(data.Blocked, biv.Issue)
+	}
+	for _, biv := range categories[CategoryClosed] {
+		data.Closed = append(data.Closed, biv.Issue)
+	}
+
+	return data
+}
+
+// filterBoardIssuesByQuery filters BoardIssueView slices by search query.
+// Matches against issue ID, title, and type (case-insensitive).
+// Sort clauses (sort:xxx) and type filters (type=xxx) are stripped before filtering.
+func filterBoardIssuesByQuery(issues []models.BoardIssueView, query string) []models.BoardIssueView {
+	if query == "" {
+		return issues
+	}
+	// Strip sort clauses and type filters from query - they're not search terms
+	words := strings.Fields(query)
+	var searchTerms []string
+	for _, word := range words {
+		lower := strings.ToLower(word)
+		if !strings.HasPrefix(lower, "sort:") && !strings.HasPrefix(lower, "type=") {
+			searchTerms = append(searchTerms, word)
+		}
+	}
+	if len(searchTerms) == 0 {
+		return issues // No actual search terms, return all issues
+	}
+	query = strings.ToLower(strings.Join(searchTerms, " "))
+	var filtered []models.BoardIssueView
+	for _, biv := range issues {
+		if strings.Contains(strings.ToLower(biv.Issue.ID), query) ||
+			strings.Contains(strings.ToLower(biv.Issue.Title), query) ||
+			strings.Contains(strings.ToLower(string(biv.Issue.Type)), query) {
+			filtered = append(filtered, biv)
+		}
+	}
+	return filtered
+}
+
+// getSortFuncWithPosition returns a sort function that respects backlog positions.
+// Positioned issues come first (by position ASC), then unpositioned (by sortMode).
+func getSortFuncWithPosition(sortMode SortMode) func(issues []models.BoardIssueView) func(i, j int) bool {
+	return func(issues []models.BoardIssueView) func(i, j int) bool {
+		return func(i, j int) bool {
+			// Positioned issues come before unpositioned
+			if issues[i].HasPosition && !issues[j].HasPosition {
+				return true
+			}
+			if !issues[i].HasPosition && issues[j].HasPosition {
+				return false
+			}
+			// Both positioned: sort by position ASC
+			if issues[i].HasPosition && issues[j].HasPosition {
+				return issues[i].Position < issues[j].Position
+			}
+			// Both unpositioned: use SortMode
+			switch sortMode {
+			case SortByCreatedDesc:
+				return issues[i].Issue.CreatedAt.After(issues[j].Issue.CreatedAt)
+			case SortByUpdatedDesc:
+				return issues[i].Issue.UpdatedAt.After(issues[j].Issue.UpdatedAt)
+			default: // SortByPriority
+				if issues[i].Issue.Priority != issues[j].Issue.Priority {
+					return issues[i].Issue.Priority < issues[j].Issue.Priority
+				}
+				return issues[i].Issue.UpdatedAt.After(issues[j].Issue.UpdatedAt)
+			}
+		}
+	}
+}
+
+// BuildSwimlaneRows flattens categorized TaskListData into TaskListRow slice
+// for cursor navigation in swimlanes view
+func BuildSwimlaneRows(data TaskListData) []TaskListRow {
+	var rows []TaskListRow
+
+	// Add reviewable issues
+	for _, issue := range data.Reviewable {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReviewable})
+	}
+
+	// Add needs rework issues
+	for _, issue := range data.NeedsRework {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryNeedsRework})
+	}
+
+	// Add ready issues
+	for _, issue := range data.Ready {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReady})
+	}
+
+	// Add blocked issues
+	for _, issue := range data.Blocked {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryBlocked})
+	}
+
+	// Add closed issues
+	for _, issue := range data.Closed {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryClosed})
+	}
+
+	return rows
+}

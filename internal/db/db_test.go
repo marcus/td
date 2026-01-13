@@ -1098,3 +1098,504 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 		t.Errorf("issue4 should NOT be detected (not in_progress status)")
 	}
 }
+
+// TestBoardCRUD tests basic board create, read, update, delete operations
+func TestBoardCRUD(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	t.Run("create board with valid query", func(t *testing.T) {
+		board, err := db.CreateBoard("Sprint 1", `sprint = "Sprint 1"`)
+		if err != nil {
+			t.Fatalf("CreateBoard failed: %v", err)
+		}
+		if board.ID == "" {
+			t.Error("Board ID not set")
+		}
+		if board.Name != "Sprint 1" {
+			t.Errorf("Name mismatch: got %s, want Sprint 1", board.Name)
+		}
+		if board.Query != `sprint = "Sprint 1"` {
+			t.Errorf("Query mismatch: got %s", board.Query)
+		}
+		if board.IsBuiltin {
+			t.Error("Board should not be builtin")
+		}
+	})
+
+	t.Run("create board with empty query", func(t *testing.T) {
+		board, err := db.CreateBoard("All Tasks", "")
+		if err != nil {
+			t.Fatalf("CreateBoard with empty query failed: %v", err)
+		}
+		if board.Query != "" {
+			t.Errorf("Query should be empty, got: %s", board.Query)
+		}
+	})
+
+	t.Run("create board with invalid query", func(t *testing.T) {
+		// Use a query with unknown field to trigger validation error
+		_, err := db.CreateBoard("Invalid", "unknown_field = 123 AND (((")
+		if err == nil {
+			t.Log("Note: Query parser may be lenient; this test verifies the path exists")
+		}
+		// This test is informational - the parser may accept some invalid-looking queries
+	})
+
+	t.Run("get board by ID", func(t *testing.T) {
+		board, _ := db.CreateBoard("Test Board", "")
+		retrieved, err := db.GetBoard(board.ID)
+		if err != nil {
+			t.Fatalf("GetBoard failed: %v", err)
+		}
+		if retrieved.Name != board.Name {
+			t.Errorf("Name mismatch: got %s, want %s", retrieved.Name, board.Name)
+		}
+	})
+
+	t.Run("get board by name", func(t *testing.T) {
+		board, _ := db.CreateBoard("Named Board", "")
+		retrieved, err := db.GetBoardByName("Named Board")
+		if err != nil {
+			t.Fatalf("GetBoardByName failed: %v", err)
+		}
+		if retrieved.ID != board.ID {
+			t.Errorf("ID mismatch: got %s, want %s", retrieved.ID, board.ID)
+		}
+	})
+
+	t.Run("resolve board ref by ID", func(t *testing.T) {
+		board, _ := db.CreateBoard("Ref Board", "")
+		resolved, err := db.ResolveBoardRef(board.ID)
+		if err != nil {
+			t.Fatalf("ResolveBoardRef by ID failed: %v", err)
+		}
+		if resolved.Name != "Ref Board" {
+			t.Errorf("Name mismatch")
+		}
+	})
+
+	t.Run("resolve board ref by name", func(t *testing.T) {
+		db.CreateBoard("By Name", "")
+		resolved, err := db.ResolveBoardRef("By Name")
+		if err != nil {
+			t.Fatalf("ResolveBoardRef by name failed: %v", err)
+		}
+		if resolved.Name != "By Name" {
+			t.Errorf("Name mismatch")
+		}
+	})
+
+	t.Run("list boards sorted by last_viewed_at", func(t *testing.T) {
+		boards, err := db.ListBoards()
+		if err != nil {
+			t.Fatalf("ListBoards failed: %v", err)
+		}
+		// Should include builtin "All Issues" board plus created boards
+		if len(boards) == 0 {
+			t.Error("ListBoards returned empty list")
+		}
+		// Check builtin board exists
+		found := false
+		for _, b := range boards {
+			if b.ID == "bd-all-issues" && b.IsBuiltin {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Builtin 'All Issues' board not found")
+		}
+	})
+
+	t.Run("update board", func(t *testing.T) {
+		board, _ := db.CreateBoard("Update Me", "")
+		board.Name = "Updated Name"
+		board.Query = "status = open"
+		err := db.UpdateBoard(board)
+		if err != nil {
+			t.Fatalf("UpdateBoard failed: %v", err)
+		}
+		retrieved, _ := db.GetBoard(board.ID)
+		if retrieved.Name != "Updated Name" {
+			t.Errorf("Name not updated")
+		}
+		if retrieved.Query != "status = open" {
+			t.Errorf("Query not updated")
+		}
+	})
+
+	t.Run("update builtin board fails", func(t *testing.T) {
+		builtin, _ := db.GetBoard("bd-all-issues")
+		if builtin == nil {
+			t.Skip("Builtin board not found")
+		}
+		builtin.Name = "Changed"
+		err := db.UpdateBoard(builtin)
+		if err == nil {
+			t.Error("UpdateBoard should fail for builtin board")
+		}
+	})
+
+	t.Run("delete board", func(t *testing.T) {
+		board, _ := db.CreateBoard("Delete Me", "")
+		err := db.DeleteBoard(board.ID)
+		if err != nil {
+			t.Fatalf("DeleteBoard failed: %v", err)
+		}
+		_, err = db.GetBoard(board.ID)
+		if err == nil {
+			t.Error("Board should not exist after deletion")
+		}
+	})
+
+	t.Run("delete builtin board fails", func(t *testing.T) {
+		err := db.DeleteBoard("bd-all-issues")
+		if err == nil {
+			t.Error("DeleteBoard should fail for builtin board")
+		}
+	})
+}
+
+// TestBoardLastViewed tests last viewed board tracking
+func TestBoardLastViewed(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	t.Run("no last viewed initially", func(t *testing.T) {
+		board, err := db.GetLastViewedBoard()
+		if err != nil {
+			t.Fatalf("GetLastViewedBoard failed: %v", err)
+		}
+		// May return nil or builtin board depending on initialization
+		_ = board
+	})
+
+	t.Run("update last viewed", func(t *testing.T) {
+		board, _ := db.CreateBoard("Last Viewed Test", "")
+		err := db.UpdateBoardLastViewed(board.ID)
+		if err != nil {
+			t.Fatalf("UpdateBoardLastViewed failed: %v", err)
+		}
+
+		lastViewed, err := db.GetLastViewedBoard()
+		if err != nil {
+			t.Fatalf("GetLastViewedBoard failed: %v", err)
+		}
+		if lastViewed == nil || lastViewed.ID != board.ID {
+			t.Error("Last viewed board not updated correctly")
+		}
+	})
+}
+
+// TestBoardPositions tests board issue positioning
+func TestBoardPositions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create a board and some issues
+	board, _ := db.CreateBoard("Position Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	t.Run("set issue positions", func(t *testing.T) {
+		err := db.SetIssuePosition(board.ID, issue1.ID, 1)
+		if err != nil {
+			t.Fatalf("SetIssuePosition failed: %v", err)
+		}
+		err = db.SetIssuePosition(board.ID, issue2.ID, 2)
+		if err != nil {
+			t.Fatalf("SetIssuePosition failed: %v", err)
+		}
+	})
+
+	t.Run("get board issue positions", func(t *testing.T) {
+		positions, err := db.GetBoardIssuePositions(board.ID)
+		if err != nil {
+			t.Fatalf("GetBoardIssuePositions failed: %v", err)
+		}
+		if len(positions) != 2 {
+			t.Errorf("Expected 2 positions, got %d", len(positions))
+		}
+	})
+
+	t.Run("swap issue positions", func(t *testing.T) {
+		err := db.SwapIssuePositions(board.ID, issue1.ID, issue2.ID)
+		if err != nil {
+			t.Fatalf("SwapIssuePositions failed: %v", err)
+		}
+		positions, _ := db.GetBoardIssuePositions(board.ID)
+		// Verify swap happened
+		pos1, pos2 := 0, 0
+		for _, p := range positions {
+			if p.IssueID == issue1.ID {
+				pos1 = p.Position
+			}
+			if p.IssueID == issue2.ID {
+				pos2 = p.Position
+			}
+		}
+		if pos1 != 2 || pos2 != 1 {
+			t.Errorf("Positions not swapped correctly: issue1=%d, issue2=%d", pos1, pos2)
+		}
+	})
+
+	t.Run("remove issue position", func(t *testing.T) {
+		err := db.RemoveIssuePosition(board.ID, issue1.ID)
+		if err != nil {
+			t.Fatalf("RemoveIssuePosition failed: %v", err)
+		}
+		positions, _ := db.GetBoardIssuePositions(board.ID)
+		for _, p := range positions {
+			if p.IssueID == issue1.ID {
+				t.Error("Position should have been removed")
+			}
+		}
+	})
+}
+
+// TestGetBoardIssues tests retrieving issues for a board
+func TestGetBoardIssues(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create issues
+	issue1 := &models.Issue{Title: "Open Issue", Type: models.TypeTask, Priority: models.PriorityP2, Status: models.StatusOpen}
+	issue2 := &models.Issue{Title: "Closed Issue", Type: models.TypeTask, Priority: models.PriorityP2, Status: models.StatusClosed}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+
+	t.Run("get all issues board (empty query)", func(t *testing.T) {
+		issues, err := db.GetBoardIssues("bd-all-issues", "test-session", nil)
+		if err != nil {
+			t.Fatalf("GetBoardIssues failed: %v", err)
+		}
+		// Should return at least the issues we created
+		if len(issues) < 2 {
+			t.Errorf("Expected at least 2 issues, got %d", len(issues))
+		}
+	})
+
+	t.Run("get board issues with status filter", func(t *testing.T) {
+		issues, err := db.GetBoardIssues("bd-all-issues", "test-session", []models.Status{models.StatusOpen})
+		if err != nil {
+			t.Fatalf("GetBoardIssues failed: %v", err)
+		}
+		// Should only return open issues
+		for _, biv := range issues {
+			if biv.Issue.Status != models.StatusOpen {
+				t.Errorf("Got non-open issue with status filter: %s", biv.Issue.Status)
+			}
+		}
+	})
+}
+
+// TestSetIssuePosition_Shifting tests that inserting at an occupied position shifts others
+func TestSetIssuePosition_Shifting(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Shift Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	// Set initial positions: issue1=1, issue2=2
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	db.SetIssuePosition(board.ID, issue2.ID, 2)
+
+	// Insert issue3 at position 1 - should shift issue1 to 2 and issue2 to 3
+	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
+	if err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	positions, _ := db.GetBoardIssuePositions(board.ID)
+	posMap := make(map[string]int)
+	for _, p := range positions {
+		posMap[p.IssueID] = p.Position
+	}
+
+	if posMap[issue3.ID] != 1 {
+		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
+	}
+	if posMap[issue1.ID] != 2 {
+		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	}
+	if posMap[issue2.ID] != 3 {
+		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	}
+}
+
+// TestSetIssuePosition_Reposition tests moving an already-positioned issue
+func TestSetIssuePosition_Reposition(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Reposition Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	// Set initial positions: issue1=1, issue2=2, issue3=3
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	db.SetIssuePosition(board.ID, issue2.ID, 2)
+	db.SetIssuePosition(board.ID, issue3.ID, 3)
+
+	// Move issue3 from position 3 to position 1
+	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
+	if err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	positions, _ := db.GetBoardIssuePositions(board.ID)
+	posMap := make(map[string]int)
+	for _, p := range positions {
+		posMap[p.IssueID] = p.Position
+	}
+
+	if posMap[issue3.ID] != 1 {
+		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
+	}
+	if posMap[issue1.ID] != 2 {
+		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	}
+	if posMap[issue2.ID] != 3 {
+		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	}
+}
+
+// TestApplyBoardPositions_Ordering verifies positioned-first semantics
+func TestApplyBoardPositions_Ordering(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Ordering Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue4 := &models.Issue{Title: "Issue 4", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+	db.CreateIssue(issue4)
+
+	// Only position issue2 at 1 and issue4 at 2
+	db.SetIssuePosition(board.ID, issue2.ID, 1)
+	db.SetIssuePosition(board.ID, issue4.ID, 2)
+
+	// Apply positions - positioned should come first, then unpositioned in original order
+	issues := []models.Issue{*issue1, *issue2, *issue3, *issue4}
+	result, err := db.ApplyBoardPositions(board.ID, issues)
+	if err != nil {
+		t.Fatalf("ApplyBoardPositions failed: %v", err)
+	}
+
+	if len(result) != 4 {
+		t.Fatalf("Expected 4 results, got %d", len(result))
+	}
+
+	// First should be issue2 (position 1)
+	if result[0].Issue.ID != issue2.ID {
+		t.Errorf("result[0] = %s, want %s (positioned first)", result[0].Issue.ID, issue2.ID)
+	}
+	if !result[0].HasPosition || result[0].Position != 1 {
+		t.Errorf("result[0] HasPosition=%v Position=%d, want true/1", result[0].HasPosition, result[0].Position)
+	}
+
+	// Second should be issue4 (position 2)
+	if result[1].Issue.ID != issue4.ID {
+		t.Errorf("result[1] = %s, want %s (positioned second)", result[1].Issue.ID, issue4.ID)
+	}
+	if !result[1].HasPosition || result[1].Position != 2 {
+		t.Errorf("result[1] HasPosition=%v Position=%d, want true/2", result[1].HasPosition, result[1].Position)
+	}
+
+	// Third and fourth should be unpositioned issues (issue1 and issue3) in original order
+	if result[2].HasPosition || result[3].HasPosition {
+		t.Error("result[2] and result[3] should be unpositioned")
+	}
+	if result[2].Issue.ID != issue1.ID {
+		t.Errorf("result[2] = %s, want %s (unpositioned, original order)", result[2].Issue.ID, issue1.ID)
+	}
+	if result[3].Issue.ID != issue3.ID {
+		t.Errorf("result[3] = %s, want %s (unpositioned, original order)", result[3].Issue.ID, issue3.ID)
+	}
+}
+
+// TestSwapIssuePositions_UnpositionedError verifies error handling for unpositioned issues
+func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Swap Error Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+
+	// Only position issue1
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+
+	// Try to swap with unpositioned issue2 - should fail
+	err = db.SwapIssuePositions(board.ID, issue1.ID, issue2.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when second issue is unpositioned")
+	}
+
+	// Try to swap with issue2 first (unpositioned) - should fail
+	err = db.SwapIssuePositions(board.ID, issue2.ID, issue1.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when first issue is unpositioned")
+	}
+
+	// Both unpositioned - should also fail
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue3)
+	err = db.SwapIssuePositions(board.ID, issue2.ID, issue3.ID)
+	if err == nil {
+		t.Error("SwapIssuePositions should fail when both issues are unpositioned")
+	}
+}

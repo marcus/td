@@ -534,6 +534,8 @@ Shortcuts are context-aware. Each binding specifies which context it applies to:
 | `ContextParentEpicFocused` | Parent epic row focused in modal |
 | `ContextHandoffs` | Handoffs modal open |
 | `ContextForm` | Form modal (create/edit) open |
+| `ContextBoard` | Board mode active (swimlanes/backlog view) |
+| `ContextBoardPicker` | Board picker modal open |
 
 ## Implementing a New Shortcut
 
@@ -751,3 +753,97 @@ if cursor < len(m.TaskListRows) {
     issueID = m.TaskListRows[cursor].Issue.ID
 }
 ```
+
+---
+
+## Exporting Shortcuts to Sidecar
+
+The monitor TUI can export its keyboard shortcuts to external tools (like sidecar) for command palette integration and context-aware keybindings.
+
+### Export Architecture
+
+Key files:
+| Location | Purpose |
+|----------|---------|
+| `pkg/monitor/keymap/export.go` | Export functions and metadata |
+| `pkg/monitor/keymap/registry.go` | Command constants |
+| `pkg/monitor/keymap/bindings.go` | Key-to-command mappings |
+
+### Adding a Command to Sidecar Export
+
+When creating new shortcuts, ensure they're visible to sidecar by following these steps:
+
+#### Step 1: Add to commandMetadata
+
+In `pkg/monitor/keymap/export.go`, add an entry to the `commandMetadata` map:
+
+```go
+var commandMetadata = map[Command]struct {
+    Name        string
+    Description string
+    Priority    int
+}{
+    // Priority levels:
+    // 1-3 = footer visible (shown in UI footer)
+    // 4+  = palette only (command palette access)
+
+    // High priority (P1) - always in footer
+    CmdOpenDetails:   {"Details", "Open issue details", 1},
+
+    // Medium priority (P2) - footer when space allows
+    CmdToggleBoardView: {"View", "Toggle swimlanes/backlog view", 2},
+
+    // Lower priority (P3) - palette only
+    CmdToggleHelp: {"Help", "Toggle help overlay", 3},
+
+    // Navigation (P4-5) - usually palette only
+    CmdCursorDown: {"Down", "Move cursor down", 5},
+}
+```
+
+#### Step 2: Add Context Mapping (if needed)
+
+If your command uses a new context, add it to `contextToSidecar`:
+
+```go
+var contextToSidecar = map[Context]string{
+    ContextMain:        "td-monitor",
+    ContextModal:       "td-modal",
+    ContextBoard:       "td-board",        // Board mode (swimlanes/backlog)
+    ContextBoardPicker: "td-board-picker", // Board selection modal
+    // Add new contexts here
+}
+```
+
+### Priority Guidelines
+
+| Priority | Usage | Visibility |
+|----------|-------|------------|
+| 1 | Core actions (open, approve, search) | Always in footer |
+| 2 | Common operations (sort, filter, toggle) | Footer when space allows |
+| 3 | Utility commands (help, copy, quit) | Palette only |
+| 4-5 | Navigation, context-specific | Palette only |
+
+### Using the Export Functions
+
+The Registry provides two export functions:
+
+```go
+// Get all key bindings for sidecar
+bindings := registry.ExportBindings()
+// Returns: []ExportedBinding{Key, Command, Context}
+
+// Get command metadata for command palette
+commands := registry.ExportCommands()
+// Returns: []ExportedCommand{ID, Name, Description, Context, Priority}
+```
+
+### Checklist for Sidecar Visibility
+
+When adding a new shortcut:
+
+1. **Add to bindings.go**: Define the key binding with context
+2. **Add to registry.go**: Define the command constant
+3. **Add to export.go commandMetadata**: Set name, description, priority
+4. **Add context to contextToSidecar** (if using new context)
+5. **Verify**: Run `td monitor` and check sidecar receives the binding

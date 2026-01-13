@@ -96,6 +96,16 @@ type Model struct {
 	FormOpen  bool
 	FormState *FormState
 
+	// Board picker state
+	BoardPickerOpen   bool
+	BoardPickerCursor int
+	AllBoards         []models.Board
+
+	// Board mode state
+	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
+	BoardMode            BoardMode          // Active board mode state
+	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
+
 	// Configuration
 	RefreshInterval time.Duration
 
@@ -237,6 +247,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.fetchData(),
 		m.scheduleTick(),
+		m.restoreLastViewedBoard(),
 	}
 
 	// Start async version check (non-blocking)
@@ -245,6 +256,22 @@ func (m Model) Init() tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// restoreLastViewedBoard returns a command that restores the last viewed board on launch
+func (m Model) restoreLastViewedBoard() tea.Cmd {
+	return func() tea.Msg {
+		board, err := m.DB.GetLastViewedBoard()
+		if err != nil || board == nil {
+			return nil // No last viewed board, stay in panel mode
+		}
+		return RestoreLastBoardMsg{Board: board}
+	}
+}
+
+// RestoreLastBoardMsg is sent when restoring the last viewed board on launch
+type RestoreLastBoardMsg struct {
+	Board *models.Board
 }
 
 // Update implements tea.Model
@@ -339,6 +366,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		cmds := []tea.Cmd{m.fetchData(), m.scheduleTick()}
+		// Also refresh board issues if in board mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
 		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
 			cmds = append(cmds, modalCmd)
 		}
@@ -451,6 +482,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PaneHeightsSavedMsg:
 		// Pane heights saved (or failed) - just ignore errors silently
+		return m, nil
+
+	case BoardsDataMsg:
+		m.AllBoards = msg.Boards
+		if msg.Error != nil {
+			m.StatusMessage = "Error loading boards: " + msg.Error.Error()
+			m.StatusIsError = true
+		}
+		return m, nil
+
+	case BoardIssuesMsg:
+		if m.BoardMode.Board != nil && m.BoardMode.Board.ID == msg.BoardID {
+			if msg.Error != nil {
+				m.StatusMessage = "Error loading board issues: " + msg.Error.Error()
+				m.StatusIsError = true
+			}
+			// Apply search filter to board issues (for both backlog and swimlanes)
+			filteredIssues := filterBoardIssuesByQuery(msg.Issues, m.SearchQuery)
+			m.BoardMode.Issues = filteredIssues
+			// Build swimlane data using filtered issues
+			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode)
+			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
+
+			// Restore selection if we have a pending selection ID (from move operations)
+			if m.BoardMode.PendingSelectionID != "" {
+				// Find the issue in the backlog view
+				for i, biv := range m.BoardMode.Issues {
+					if biv.Issue.ID == m.BoardMode.PendingSelectionID {
+						m.BoardMode.Cursor = i
+						m.ensureBoardCursorVisible()
+						break
+					}
+				}
+				// Find the issue in swimlanes view
+				for i, row := range m.BoardMode.SwimlaneRows {
+					if row.Issue.ID == m.BoardMode.PendingSelectionID {
+						m.BoardMode.SwimlaneCursor = i
+						m.ensureSwimlaneCursorVisible()
+						break
+					}
+				}
+				m.BoardMode.PendingSelectionID = "" // Clear after use
+			}
+		}
+		return m, nil
+
+	case RestoreLastBoardMsg:
+		if msg.Board != nil {
+			m.TaskListMode = TaskListModeBoard
+			m.ActivePanel = PanelTaskList // Focus the Task List panel
+			m.BoardMode.Board = msg.Board
+			m.BoardMode.Cursor = 0
+			m.BoardMode.ScrollOffset = 0
+			m.BoardMode.SwimlaneCursor = 0
+			m.BoardMode.SwimlaneScroll = 0
+			m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+			m.BoardMode.ViewMode = BoardViewModeFromString(msg.Board.ViewMode)
+			return m, m.fetchBoardIssues(msg.Board.ID)
+		}
 		return m, nil
 	}
 
@@ -574,5 +664,68 @@ func (m Model) fetchHandoffs() tea.Cmd {
 	return func() tea.Msg {
 		handoffs, err := m.DB.GetRecentHandoffs(50, time.Time{})
 		return HandoffsDataMsg{Data: handoffs, Error: err}
+	}
+}
+
+// ensureBoardCursorVisible adjusts the board scroll offset to keep the cursor visible
+func (m *Model) ensureBoardCursorVisible() {
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		m.ensureSwimlaneCursorVisible()
+		return
+	}
+
+	// Use proper panel height calculation
+	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
+	if visibleHeight < 1 {
+		visibleHeight = 10
+	}
+
+	// Ensure cursor is within visible range
+	if m.BoardMode.Cursor < m.BoardMode.ScrollOffset {
+		m.BoardMode.ScrollOffset = m.BoardMode.Cursor
+	}
+	if m.BoardMode.Cursor >= m.BoardMode.ScrollOffset+visibleHeight {
+		m.BoardMode.ScrollOffset = m.BoardMode.Cursor - visibleHeight + 1
+	}
+
+	// Clamp scroll offset to valid range
+	maxScroll := len(m.BoardMode.Issues) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.BoardMode.ScrollOffset > maxScroll {
+		m.BoardMode.ScrollOffset = maxScroll
+	}
+	if m.BoardMode.ScrollOffset < 0 {
+		m.BoardMode.ScrollOffset = 0
+	}
+}
+
+// ensureSwimlaneCursorVisible adjusts the swimlane scroll offset to keep the cursor visible
+func (m *Model) ensureSwimlaneCursorVisible() {
+	// Use proper panel height calculation
+	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
+	if visibleHeight < 1 {
+		visibleHeight = 10
+	}
+
+	// Ensure cursor is within visible range
+	if m.BoardMode.SwimlaneCursor < m.BoardMode.SwimlaneScroll {
+		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor
+	}
+	if m.BoardMode.SwimlaneCursor >= m.BoardMode.SwimlaneScroll+visibleHeight {
+		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor - visibleHeight + 1
+	}
+
+	// Clamp scroll offset to valid range
+	maxScroll := len(m.BoardMode.SwimlaneRows) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.BoardMode.SwimlaneScroll > maxScroll {
+		m.BoardMode.SwimlaneScroll = maxScroll
+	}
+	if m.BoardMode.SwimlaneScroll < 0 {
+		m.BoardMode.SwimlaneScroll = 0
 	}
 }

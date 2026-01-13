@@ -16,6 +16,40 @@ const (
 	PanelActivity
 )
 
+// TaskListMode represents the display mode of the Task List panel
+type TaskListMode int
+
+const (
+	TaskListModeCategorized TaskListMode = iota // Default categorized view (Reviewable, Ready, Blocked, etc.)
+	TaskListModeBoard                           // Board view with flat list and ordering
+)
+
+// BoardViewMode represents the display mode within a board
+type BoardViewMode int
+
+const (
+	BoardViewSwimlanes BoardViewMode = iota // Default: grouped by status categories
+	BoardViewBacklog                        // Flat list with position ordering
+)
+
+// String returns the display name for the view mode
+func (v BoardViewMode) String() string {
+	switch v {
+	case BoardViewBacklog:
+		return "backlog"
+	default:
+		return "swimlanes"
+	}
+}
+
+// FromString parses a view mode string (from database)
+func BoardViewModeFromString(s string) BoardViewMode {
+	if s == "backlog" {
+		return BoardViewBacklog
+	}
+	return BoardViewSwimlanes
+}
+
 // Rect represents a rectangular region for hit-testing
 type Rect struct {
 	X, Y, W, H int
@@ -332,4 +366,152 @@ type EditorFinishedMsg struct {
 	Field   EditorField
 	Content string
 	Error   error
+}
+
+// BoardsDataMsg carries fetched boards data
+type BoardsDataMsg struct {
+	Boards []models.Board
+	Error  error
+}
+
+// BoardIssuesMsg carries issues for the current board
+type BoardIssuesMsg struct {
+	BoardID string
+	Issues  []models.BoardIssueView
+	Error   error
+}
+
+// BoardMode holds state for board mode view (when Task List is in board mode)
+type BoardMode struct {
+	Board        *models.Board           // Currently active board
+	Issues       []models.BoardIssueView // Issues in the board (for backlog view)
+	Cursor       int                     // Selected issue index (backlog view)
+	ScrollOffset int                     // Scroll offset for long lists (backlog view)
+	StatusFilter map[models.Status]bool  // Status filter (true = visible)
+
+	// View mode toggle (swimlanes vs backlog)
+	ViewMode BoardViewMode // Current view mode
+
+	// Swimlanes view state (separate cursor/scroll from backlog)
+	SwimlaneData   TaskListData   // Categorized data for swimlanes view
+	SwimlaneRows   []TaskListRow  // Flattened rows for swimlanes view
+	SwimlaneCursor int            // Cursor position in swimlanes view
+	SwimlaneScroll int            // Scroll offset in swimlanes view
+
+	// Selection restoration after move operations
+	PendingSelectionID string // Issue ID to select after refresh (cleared after use)
+}
+
+// DefaultBoardStatusFilter returns the default status filter (closed hidden)
+func DefaultBoardStatusFilter() map[models.Status]bool {
+	return map[models.Status]bool{
+		models.StatusOpen:       true,
+		models.StatusInProgress: true,
+		models.StatusBlocked:    true,
+		models.StatusInReview:   true,
+		models.StatusClosed:     false,
+	}
+}
+
+// StatusFilterPreset represents a status filter preset for cycling
+type StatusFilterPreset int
+
+const (
+	StatusPresetDefault StatusFilterPreset = iota // open/in_progress/blocked/in_review
+	StatusPresetAll                               // all statuses
+	StatusPresetOpen                              // only open
+	StatusPresetInProgress                        // only in_progress
+	StatusPresetBlocked                           // only blocked
+	StatusPresetInReview                          // only in_review
+	StatusPresetClosed                            // only closed
+)
+
+// StatusFilterPresetName returns the display name for a preset
+func (p StatusFilterPreset) Name() string {
+	switch p {
+	case StatusPresetAll:
+		return "All"
+	case StatusPresetOpen:
+		return "Open"
+	case StatusPresetInProgress:
+		return "In Progress"
+	case StatusPresetBlocked:
+		return "Blocked"
+	case StatusPresetInReview:
+		return "In Review"
+	case StatusPresetClosed:
+		return "Closed"
+	default:
+		return "Default"
+	}
+}
+
+// StatusFilterMapToSlice converts a map[Status]bool to []Status for DB calls
+func StatusFilterMapToSlice(filter map[models.Status]bool) []models.Status {
+	if filter == nil {
+		return nil
+	}
+	var result []models.Status
+	for status, visible := range filter {
+		if visible {
+			result = append(result, status)
+		}
+	}
+	return result
+}
+
+// ToFilter converts a preset to a status filter map
+func (p StatusFilterPreset) ToFilter() map[models.Status]bool {
+	switch p {
+	case StatusPresetAll:
+		return map[models.Status]bool{
+			models.StatusOpen:       true,
+			models.StatusInProgress: true,
+			models.StatusBlocked:    true,
+			models.StatusInReview:   true,
+			models.StatusClosed:     true,
+		}
+	case StatusPresetOpen:
+		return map[models.Status]bool{
+			models.StatusOpen:       true,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetInProgress:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: true,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetBlocked:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    true,
+			models.StatusInReview:   false,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetInReview:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   true,
+			models.StatusClosed:     false,
+		}
+	case StatusPresetClosed:
+		return map[models.Status]bool{
+			models.StatusOpen:       false,
+			models.StatusInProgress: false,
+			models.StatusBlocked:    false,
+			models.StatusInReview:   false,
+			models.StatusClosed:     true,
+		}
+	default:
+		return DefaultBoardStatusFilter()
+	}
 }

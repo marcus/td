@@ -272,6 +272,71 @@ func DefaultBindings() []Binding {
 		{Key: "g g", Command: CmdCursorTop, Context: ContextHelp, Description: "Go to top"},
 		{Key: "home", Command: CmdCursorTop, Context: ContextHelp, Description: "Go to top"},
 		{Key: "end", Command: CmdCursorBottom, Context: ContextHelp, Description: "Go to bottom"},
+
+		// ============================================================
+		// BOARD PICKER BINDINGS
+		// Active when board picker is open
+		// ============================================================
+		{Key: "b", Command: CmdOpenBoardPicker, Context: ContextMain, Description: "Open board picker"},
+		{Key: "j", Command: CmdCursorDown, Context: ContextBoardPicker, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextBoardPicker, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextBoardPicker, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextBoardPicker, Description: "Move up"},
+		{Key: "enter", Command: CmdSelectBoard, Context: ContextBoardPicker, Description: "Select board"},
+		{Key: "esc", Command: CmdCloseBoardPicker, Context: ContextBoardPicker, Description: "Close picker"},
+		{Key: "q", Command: CmdCloseBoardPicker, Context: ContextBoardPicker, Description: "Close picker"},
+
+		// ============================================================
+		// BOARD MODE BINDINGS
+		// Active when viewing a board (board mode is active)
+		// ============================================================
+		{Key: "j", Command: CmdCursorDown, Context: ContextBoard, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextBoard, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextBoard, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextBoard, Description: "Move up"},
+		{Key: "J", Command: CmdMoveIssueDown, Context: ContextBoard, Description: "Move issue down"},
+		{Key: "K", Command: CmdMoveIssueUp, Context: ContextBoard, Description: "Move issue up"},
+		{Key: "enter", Command: CmdOpenDetails, Context: ContextBoard, Description: "Open issue"},
+		{Key: "c", Command: CmdToggleBoardClosed, Context: ContextBoard, Description: "Toggle closed"},
+		{Key: "F", Command: CmdCycleBoardStatusFilter, Context: ContextBoard, Description: "Cycle status filter"},
+		{Key: "esc", Command: CmdExitBoardMode, Context: ContextBoard, Description: "Exit to All Issues"},
+		{Key: "b", Command: CmdOpenBoardPicker, Context: ContextBoard, Description: "Open board picker"},
+		{Key: "G", Command: CmdCursorBottom, Context: ContextBoard, Description: "Go to bottom"},
+		{Key: "g g", Command: CmdCursorTop, Context: ContextBoard, Description: "Go to top"},
+		{Key: "ctrl+d", Command: CmdHalfPageDown, Context: ContextBoard, Description: "Half page down"},
+		{Key: "ctrl+u", Command: CmdHalfPageUp, Context: ContextBoard, Description: "Half page up"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextBoard, Description: "Copy issue as markdown"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextBoard, Description: "Copy issue ID"},
+		{Key: "r", Command: CmdRefresh, Context: ContextBoard, Description: "Refresh"},
+		{Key: "v", Command: CmdToggleBoardView, Context: ContextBoard, Description: "Toggle swimlanes/backlog view"},
+
+		// Panel navigation (same as ContextMain)
+		{Key: "tab", Command: CmdNextPanel, Context: ContextBoard, Description: "Next panel"},
+		{Key: "shift+tab", Command: CmdPrevPanel, Context: ContextBoard, Description: "Previous panel"},
+
+		// Search (same as ContextMain)
+		{Key: "/", Command: CmdSearch, Context: ContextBoard, Description: "Search"},
+
+		// Issue actions (same as ContextMain)
+		{Key: "C", Command: CmdCloseIssue, Context: ContextBoard, Description: "Close issue"},
+		{Key: "O", Command: CmdReopenIssue, Context: ContextBoard, Description: "Reopen issue"},
+		{Key: "n", Command: CmdNewIssue, Context: ContextBoard, Description: "New issue"},
+		{Key: "e", Command: CmdEditIssue, Context: ContextBoard, Description: "Edit issue"},
+		{Key: "x", Command: CmdDelete, Context: ContextBoard, Description: "Delete issue"},
+		{Key: "a", Command: CmdApprove, Context: ContextBoard, Description: "Approve issue"},
+		{Key: "R", Command: CmdMarkForReview, Context: ContextBoard, Description: "Submit for review"},
+
+		// Other actions (same as ContextMain)
+		{Key: "s", Command: CmdOpenStats, Context: ContextBoard, Description: "Open statistics"},
+		{Key: "h", Command: CmdOpenHandoffs, Context: ContextBoard, Description: "Open handoffs"},
+		{Key: "S", Command: CmdCycleSortMode, Context: ContextBoard, Description: "Cycle sort mode"},
+		{Key: "T", Command: CmdCycleTypeFilter, Context: ContextBoard, Description: "Cycle type filter"},
+
+		// Additional navigation (same as ContextMain)
+		{Key: "ctrl+f", Command: CmdFullPageDown, Context: ContextBoard, Description: "Full page down"},
+		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextBoard, Description: "Full page up"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextBoard, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextBoard, Description: "Go to bottom"},
 	}
 }
 
