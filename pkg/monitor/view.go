@@ -617,14 +617,15 @@ func (m Model) renderTaskListBoardView(height int) string {
 			posIndicator = timestampStyle.Render("  •") + " "
 		}
 
-		// Status, type, priority
-		statusStr := formatStatus(issue.Status)
+		// Status tag, type, ID, priority (matching swimlanes format)
+		tag := m.formatCategoryTag(statusToCategory(issue.Status))
 		typeStr := formatTypeIcon(issue.Type)
+		idStr := subtleStyle.Render(issue.ID)
 		priStr := formatPriority(issue.Priority)
 
 		// Title (truncated)
 		title := issue.Title
-		maxTitleLen := contentWidth - 30 // Leave room for indicators
+		maxTitleLen := contentWidth - 38 // Leave room for indicators + ID
 		if maxTitleLen < 10 {
 			maxTitleLen = 10
 		}
@@ -632,11 +633,12 @@ func (m Model) renderTaskListBoardView(height int) string {
 			title = title[:maxTitleLen-3] + "..."
 		}
 
-		// Build line
-		line := fmt.Sprintf("%s%s %s %s %s",
+		// Build line: position + tag + type + id + priority + title
+		line := fmt.Sprintf("%s%s %s %s %s %s",
 			posIndicator,
-			statusStr,
+			tag,
 			typeStr,
+			idStr,
 			priStr,
 			title,
 		)
@@ -865,6 +867,21 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 		return subtleStyle.Render("[CLS]")
 	}
 	return ""
+}
+
+// statusToCategory maps issue status to TaskListCategory for display
+func statusToCategory(status models.Status) TaskListCategory {
+	switch status {
+	case models.StatusOpen, models.StatusInProgress:
+		return CategoryReady
+	case models.StatusInReview:
+		return CategoryReviewable
+	case models.StatusBlocked:
+		return CategoryBlocked
+	case models.StatusClosed:
+		return CategoryClosed
+	}
+	return CategoryReady
 }
 
 // renderModal renders the centered issue details modal
