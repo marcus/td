@@ -35,10 +35,7 @@ func (m Model) currentContext() keymap.Context {
 	if m.SearchMode {
 		return keymap.ContextSearch
 	}
-	// Board mode context when Task List is active and in board mode
-	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
-		return keymap.ContextBoard
-	}
+	// Modal takes priority over board mode - ESC should close modal, not exit board
 	if m.ModalOpen() {
 		if modal := m.CurrentModal(); modal != nil {
 			// Check if parent epic row is focused
@@ -59,6 +56,10 @@ func (m Model) currentContext() keymap.Context {
 			}
 		}
 		return keymap.ContextModal
+	}
+	// Board mode context when Task List is active and in board mode
+	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
+		return keymap.ContextBoard
 	}
 	return keymap.ContextMain
 }
