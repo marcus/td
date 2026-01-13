@@ -424,6 +424,37 @@ When adding mouse support to a modal:
 6. **Update render** to apply hover styles (focus > hover > normal)
 7. **Initialize hover state** when opening modal (set to 0 or -1)
 
+### Custom Renderer Vertical Padding
+
+**Critical for embedded mode:** When using a custom `ModalRenderer` (e.g., in Sidecar), you must manually add vertical padding to match lipgloss `Padding(1, 2)` behavior.
+
+The custom renderer only handles horizontal padding. Without vertical padding, mouse click/hover coordinates will be off by 1 row when embedded.
+
+```go
+// In your modal wrapper function:
+if m.ModalRenderer != nil {
+    // Add vertical padding (blank lines) for top/bottom padding
+    // Custom renderer only handles horizontal padding
+    paddedInner := "\n" + inner + "\n"
+    return m.ModalRenderer(paddedInner, width+2, height+2, ModalType, depth)
+}
+
+// Default lipgloss rendering handles padding automatically
+modalStyle := lipgloss.NewStyle().
+    Padding(1, 2).  // 1 line top/bottom, 2 char left/right
+    ...
+```
+
+**Why this matters for mouse support:**
+- Lipgloss: content starts at row 2 (border + padding)
+- Custom renderer without vertical padding: content starts at row 1 (border only)
+- This 1-row difference causes mouse Y calculations to be off
+
+**Symptoms of missing vertical padding:**
+- Mouse hover highlights the row below the cursor
+- Clicks activate the item below where clicked
+- Issue only appears in embedded mode (custom renderer), works in standalone
+
 ## Core Functions
 
 ### renderBaseView()

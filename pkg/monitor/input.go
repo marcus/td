@@ -816,6 +816,19 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+
+			if m.BoardPickerOpen {
+				// Scroll wheel moves cursor through board list
+				newCursor := m.BoardPickerCursor + delta
+				if newCursor < 0 {
+					newCursor = 0
+				}
+				if newCursor >= len(m.AllBoards) {
+					newCursor = len(m.AllBoards) - 1
+				}
+				m.BoardPickerCursor = newCursor
+				return m, nil
+			}
 		}
 	}
 
@@ -834,6 +847,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.FormOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleFormDialogClick(msg.X, msg.Y)
 	}
+	if m.BoardPickerOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		return m.handleBoardPickerClick(msg.X, msg.Y)
+	}
 
 	// Handle mouse motion for hover states on confirmation dialogs
 	if m.ConfirmOpen && msg.Action == tea.MouseActionMotion {
@@ -845,9 +861,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.FormOpen && msg.Action == tea.MouseActionMotion {
 		return m.handleFormDialogHover(msg.X, msg.Y)
 	}
+	if m.BoardPickerOpen && msg.Action == tea.MouseActionMotion {
+		return m.handleBoardPickerHover(msg.X, msg.Y)
+	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.HelpOpen || m.ShowTDQHelp {
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.HelpOpen || m.ShowTDQHelp {
 		return m, nil
 	}
 
@@ -1529,6 +1548,98 @@ func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
 		m.FormState.ButtonHover = 1
 	} else if x >= cancelStartX && x < cancelEndX {
 		m.FormState.ButtonHover = 2
+	}
+
+	return m, nil
+}
+
+// boardPickerBounds calculates the actual modal bounds matching OverlayModal's positioning.
+// Returns modalX, modalY, modalWidth, modalHeight, and boardStartY (first board row Y).
+func (m Model) boardPickerBounds() (modalX, modalY, modalWidth, modalHeight, boardStartY int) {
+	// Calculate lipgloss content dimensions (must match renderBoardPicker in view.go)
+	contentWidth := m.Width * 60 / 100
+	if contentWidth > 80 {
+		contentWidth = 80
+	}
+	if contentWidth < 40 {
+		contentWidth = 40
+	}
+	contentHeight := m.Height * 60 / 100
+	if contentHeight > 30 {
+		contentHeight = 30
+	}
+	if contentHeight < 10 {
+		contentHeight = 10
+	}
+
+	// Calculate actual rendered height (matching OverlayModal's len(modalLines))
+	// Inner content: title + blank + boards + blank + footer = len(boards) + 4
+	// Padding adds 2 lines (1 top, 1 bottom) inside the lipgloss Height
+	// Border adds 2 lines (1 top, 1 bottom) outside
+	innerContentLines := len(m.AllBoards) + 4 // title, blank, boards, blank, footer
+	paddedHeight := innerContentLines + 2     // Add padding (1 top, 1 bottom)
+	if paddedHeight < contentHeight {
+		paddedHeight = contentHeight // lipgloss Height is a minimum
+	}
+	actualHeight := paddedHeight + 2 // Add border (1 top, 1 bottom)
+	actualWidth := contentWidth + 2  // Add border (1 left, 1 right)
+
+	// Center modal (same calculation as OverlayModal)
+	modalX = (m.Width - actualWidth) / 2
+	modalY = (m.Height - actualHeight) / 2
+	if modalX < 0 {
+		modalX = 0
+	}
+	if modalY < 0 {
+		modalY = 0
+	}
+
+	// Board rows start after: border(1) + padding(1) + title(1) + blank(1) = 4
+	boardStartY = modalY + 4
+
+	return modalX, modalY, actualWidth, actualHeight, boardStartY
+}
+
+// handleBoardPickerClick handles mouse clicks in the board picker modal
+func (m Model) handleBoardPickerClick(x, y int) (Model, tea.Cmd) {
+	modalX, modalY, modalWidth, modalHeight, boardStartY := m.boardPickerBounds()
+
+	// Click outside modal closes it
+	if x < modalX || x >= modalX+modalWidth || y < modalY || y >= modalY+modalHeight {
+		m.BoardPickerOpen = false
+		m.BoardPickerHover = -1
+		return m, nil
+	}
+
+	// Convert click Y to board index
+	clickedIdx := y - boardStartY
+	if clickedIdx >= 0 && clickedIdx < len(m.AllBoards) {
+		// Select and activate - close picker and switch to board
+		m.BoardPickerCursor = clickedIdx
+		m.BoardPickerOpen = false
+		m.BoardPickerHover = -1
+		return m.selectBoard()
+	}
+
+	return m, nil
+}
+
+// handleBoardPickerHover updates hover state for board picker
+func (m Model) handleBoardPickerHover(x, y int) (Model, tea.Cmd) {
+	modalX, modalY, modalWidth, modalHeight, boardStartY := m.boardPickerBounds()
+
+	// Outside modal - no hover
+	if x < modalX || x >= modalX+modalWidth || y < modalY || y >= modalY+modalHeight {
+		m.BoardPickerHover = -1
+		return m, nil
+	}
+
+	// Convert Y to board index
+	hoveredIdx := y - boardStartY
+	if hoveredIdx >= 0 && hoveredIdx < len(m.AllBoards) {
+		m.BoardPickerHover = hoveredIdx
+	} else {
+		m.BoardPickerHover = -1
 	}
 
 	return m, nil

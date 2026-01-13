@@ -1028,6 +1028,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 func (m Model) openBoardPicker() (Model, tea.Cmd) {
 	m.BoardPickerOpen = true
 	m.BoardPickerCursor = 0
+	m.BoardPickerHover = -1 // No hover initially
 	return m, m.fetchBoards()
 }
 

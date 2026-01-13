@@ -1528,7 +1528,11 @@ func (m Model) renderBoardPicker() string {
 		line := "  " + name
 
 		if i == m.BoardPickerCursor {
+			// Selected (keyboard cursor) - highest priority
 			line = highlightRow(line, contentWidth)
+		} else if i == m.BoardPickerHover {
+			// Hovered (mouse) - subtle highlight
+			line = hoverRow(line, contentWidth)
 		}
 
 		lines = append(lines, truncateString(line, contentWidth))
@@ -1545,8 +1549,12 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedInner := "\n" + inner + "\n"
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(inner, width+2, height+2, ModalTypeBoardPicker, 1)
+		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeBoardPicker, 1)
 	}
 
 	// Default lipgloss rendering

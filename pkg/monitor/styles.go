@@ -331,3 +331,29 @@ func highlightRow(line string, width int) string {
 
 	return line + reset
 }
+
+// hoverRow applies a subtle hover highlight to a row (for mouse hover)
+func hoverRow(line string, width int) string {
+	bgCode := "\x1b[48;5;236m" // Background color 236 (slightly darker than highlight)
+	reset := "\x1b[0m"
+
+	// First, truncate if line is too wide (ANSI-aware truncation)
+	lineWidth := lipgloss.Width(line)
+	if lineWidth > width {
+		line = ansi.Truncate(line, width-3, "...")
+		lineWidth = lipgloss.Width(line)
+	}
+
+	// Inject background after every ANSI escape sequence
+	line = ansiPattern.ReplaceAllString(line, "${0}"+bgCode)
+
+	// Prepend background at start
+	line = bgCode + line
+
+	// Pad to width if needed
+	if lineWidth < width {
+		line = line + strings.Repeat(" ", width-lineWidth)
+	}
+
+	return line + reset
+}

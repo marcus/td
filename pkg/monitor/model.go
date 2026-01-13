@@ -99,6 +99,7 @@ type Model struct {
 	// Board picker state
 	BoardPickerOpen   bool
 	BoardPickerCursor int
+	BoardPickerHover  int // -1=none, 0+=hovered board index
 	AllBoards         []models.Board
 
 	// Board mode state
