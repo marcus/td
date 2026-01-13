@@ -2,6 +2,16 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.11.0] - 2026-01-13
+
+### Features
+- Add gradient borders to sidecar panel
+
+### Bug Fixes
+- Fix session action recording and file locking for analytics
+- Apply type filter correctly in board/backlog view
+- Fix gradient border rendering issues
+
 ## [v0.10.0] - 2026-01-13
 
 ### Features
