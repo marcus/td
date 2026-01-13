@@ -2,6 +2,27 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.10.0] - 2026-01-13
+
+### Features
+- Add board view with swimlanes in `td monitor`
+  - New `td board` command for board operations
+  - Toggle between swimlanes and backlog views
+  - Keyboard navigation for board mode
+  - Status-based swimlane organization
+- Configurable keymap bindings system
+- Improved blocked issue calculation and display
+
+### Bug Fixes
+- Fix line truncation issue in monitor view
+- Fix mode switching in td monitor
+- Respect sort order in swimlanes view
+- Fix board movement issues
+- Fix keyboard shortcuts in center panel
+
+### Documentation
+- Add board swimlanes and issue boards v2 specifications
+
 ## [v0.9.0] - 2026-01-10
 
 ### Features
