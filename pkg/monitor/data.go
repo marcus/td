@@ -507,8 +507,9 @@ func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView
 }
 
 // CategorizeBoardIssues takes board issues and groups them by status category
-// for the swimlanes view. Issues are sorted within each category by the
-// provided sort mode (not by position). Also sets Category on each BoardIssueView.
+// for the swimlanes view. Issues are sorted within each category respecting
+// backlog positions: positioned issues first (by position), then unpositioned
+// (by sortMode). Also sets Category on each BoardIssueView.
 func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
 	var data TaskListData
 
@@ -519,29 +520,41 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	// Compute categories (sets Category field on each issue)
 	ComputeBoardIssueCategories(database, issues, sessionID)
 
-	// Group by category
+	// Group by category (preserve BoardIssueView for position-aware sorting)
+	categories := map[TaskListCategory][]models.BoardIssueView{
+		CategoryReady:       {},
+		CategoryNeedsRework: {},
+		CategoryBlocked:     {},
+		CategoryReviewable:  {},
+		CategoryClosed:      {},
+	}
 	for _, biv := range issues {
-		switch TaskListCategory(biv.Category) {
-		case CategoryReady:
-			data.Ready = append(data.Ready, biv.Issue)
-		case CategoryNeedsRework:
-			data.NeedsRework = append(data.NeedsRework, biv.Issue)
-		case CategoryBlocked:
-			data.Blocked = append(data.Blocked, biv.Issue)
-		case CategoryReviewable:
-			data.Reviewable = append(data.Reviewable, biv.Issue)
-		case CategoryClosed:
-			data.Closed = append(data.Closed, biv.Issue)
-		}
+		cat := TaskListCategory(biv.Category)
+		categories[cat] = append(categories[cat], biv)
 	}
 
-	// Sort each category by the specified sort mode
-	sortFunc := getSortFunc(sortMode)
-	sort.Slice(data.Ready, sortFunc(data.Ready))
-	sort.Slice(data.Reviewable, sortFunc(data.Reviewable))
-	sort.Slice(data.NeedsRework, sortFunc(data.NeedsRework))
-	sort.Slice(data.Blocked, sortFunc(data.Blocked))
-	sort.Slice(data.Closed, sortFunc(data.Closed))
+	// Sort each category with position awareness
+	sortFunc := getSortFuncWithPosition(sortMode)
+	for cat := range categories {
+		sort.Slice(categories[cat], sortFunc(categories[cat]))
+	}
+
+	// Extract Issues into TaskListData
+	for _, biv := range categories[CategoryReady] {
+		data.Ready = append(data.Ready, biv.Issue)
+	}
+	for _, biv := range categories[CategoryReviewable] {
+		data.Reviewable = append(data.Reviewable, biv.Issue)
+	}
+	for _, biv := range categories[CategoryNeedsRework] {
+		data.NeedsRework = append(data.NeedsRework, biv.Issue)
+	}
+	for _, biv := range categories[CategoryBlocked] {
+		data.Blocked = append(data.Blocked, biv.Issue)
+	}
+	for _, biv := range categories[CategoryClosed] {
+		data.Closed = append(data.Closed, biv.Issue)
+	}
 
 	return data
 }
@@ -564,26 +577,33 @@ func filterBoardIssuesByQuery(issues []models.BoardIssueView, query string) []mo
 	return filtered
 }
 
-// getSortFunc returns a sort.Slice less function for the given sort mode
-func getSortFunc(sortMode SortMode) func(issues []models.Issue) func(i, j int) bool {
-	return func(issues []models.Issue) func(i, j int) bool {
-		switch sortMode {
-		case SortByCreatedDesc:
-			return func(i, j int) bool {
-				return issues[i].CreatedAt.After(issues[j].CreatedAt)
+// getSortFuncWithPosition returns a sort function that respects backlog positions.
+// Positioned issues come first (by position ASC), then unpositioned (by sortMode).
+func getSortFuncWithPosition(sortMode SortMode) func(issues []models.BoardIssueView) func(i, j int) bool {
+	return func(issues []models.BoardIssueView) func(i, j int) bool {
+		return func(i, j int) bool {
+			// Positioned issues come before unpositioned
+			if issues[i].HasPosition && !issues[j].HasPosition {
+				return true
 			}
-		case SortByUpdatedDesc:
-			return func(i, j int) bool {
-				return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
+			if !issues[i].HasPosition && issues[j].HasPosition {
+				return false
 			}
-		default: // SortByPriority
-			return func(i, j int) bool {
-				// Priority sort: P0 < P1 < P2 < P3 < P4 (ascending)
-				if issues[i].Priority != issues[j].Priority {
-					return issues[i].Priority < issues[j].Priority
+			// Both positioned: sort by position ASC
+			if issues[i].HasPosition && issues[j].HasPosition {
+				return issues[i].Position < issues[j].Position
+			}
+			// Both unpositioned: use SortMode
+			switch sortMode {
+			case SortByCreatedDesc:
+				return issues[i].Issue.CreatedAt.After(issues[j].Issue.CreatedAt)
+			case SortByUpdatedDesc:
+				return issues[i].Issue.UpdatedAt.After(issues[j].Issue.UpdatedAt)
+			default: // SortByPriority
+				if issues[i].Issue.Priority != issues[j].Issue.Priority {
+					return issues[i].Issue.Priority < issues[j].Issue.Priority
 				}
-				// Secondary sort by updated_at descending
-				return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
+				return issues[i].Issue.UpdatedAt.After(issues[j].Issue.UpdatedAt)
 			}
 		}
 	}
