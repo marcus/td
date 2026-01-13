@@ -515,3 +515,34 @@ func (p StatusFilterPreset) ToFilter() map[models.Status]bool {
 		return DefaultBoardStatusFilter()
 	}
 }
+
+// PanelState represents the visual state of a panel for theming
+type PanelState int
+
+const (
+	PanelStateNormal PanelState = iota
+	PanelStateActive
+	PanelStateHover
+	PanelStateDividerHover
+	PanelStateDividerActive
+)
+
+// ModalType represents the type of modal for styling
+type ModalType int
+
+const (
+	ModalTypeIssue ModalType = iota
+	ModalTypeHandoffs
+	ModalTypeBoardPicker
+	ModalTypeForm
+	ModalTypeConfirmation
+	ModalTypeStats
+)
+
+// PanelRenderer renders content in a bordered panel
+// Used by embedders to inject custom panel styling (e.g., gradient borders)
+type PanelRenderer func(content string, width, height int, state PanelState) string
+
+// ModalRenderer renders content in a modal box
+// Used by embedders to inject custom modal styling (e.g., gradient borders)
+type ModalRenderer func(content string, width, height int, modalType ModalType, depth int) string

@@ -135,6 +135,10 @@ type Model struct {
 	DragStartY       int        // Y position when drag started
 	DragStartHeights [3]float64 // Pane heights when drag started
 	BaseDir          string     // Base directory for config persistence
+
+	// Custom renderers (for embedding with custom theming)
+	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
+	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)
 }
 
 // NewModel creates a new monitor model
@@ -197,6 +201,37 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 
 	m := NewModel(database, sess.ID, interval, ver, baseDir)
 	m.Embedded = true
+	return &m, nil
+}
+
+// EmbeddedOptions configures an embedded monitor model.
+type EmbeddedOptions struct {
+	BaseDir       string        // Base directory for database and config
+	Interval      time.Duration // Refresh interval
+	Version       string        // Version string for display
+	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
+	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)
+}
+
+// NewEmbeddedWithOptions creates a monitor model with custom options.
+// It opens the database and creates/gets a session automatically.
+// The caller must call Close() when done to release resources.
+func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
+	database, err := db.Open(opts.BaseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sess, err := session.GetOrCreate(opts.BaseDir)
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+
+	m := NewModel(database, sess.ID, opts.Interval, opts.Version, opts.BaseDir)
+	m.Embedded = true
+	m.PanelRenderer = opts.PanelRenderer
+	m.ModalRenderer = opts.ModalRenderer
 	return &m, nil
 }
 

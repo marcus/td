@@ -1177,6 +1177,24 @@ func (m Model) renderModal() string {
 	return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 }
 
+// wrapStatsModal wraps stats content in a modal box
+func (m Model) wrapStatsModal(content string, width, height int) string {
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(content, width, height, ModalTypeStats, 1)
+	}
+
+	// Default lipgloss rendering
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Width(width).
+		Height(height)
+
+	return modalStyle.Render(content)
+}
+
 // renderStatsModal renders the stats modal with statistics and bar charts
 func (m Model) renderStatsModal() string {
 	// Calculate modal dimensions (80% of terminal, capped)
@@ -1202,7 +1220,7 @@ func (m Model) renderStatsModal() string {
 	// Loading state
 	if m.StatsLoading {
 		content.WriteString(subtleStyle.Render("Loading statistics..."))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	// Error state
@@ -1218,12 +1236,12 @@ func (m Model) renderStatsModal() string {
 		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %s", errMsg)))
 		content.WriteString("\n\n")
 		content.WriteString(subtleStyle.Render("Press esc to close"))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	if m.StatsData == nil || m.StatsData.ExtendedStats == nil {
 		content.WriteString(subtleStyle.Render("No stats available"))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	stats := m.StatsData.ExtendedStats
@@ -1323,7 +1341,7 @@ func (m Model) renderStatsModal() string {
 		content.WriteString(scrollInfo)
 	}
 
-	return m.wrapModal(content.String(), modalWidth, modalHeight)
+	return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
 }
 
 // renderHandoffsModal renders the handoffs modal
@@ -1437,15 +1455,21 @@ func (m Model) renderHandoffsModal() string {
 
 // wrapHandoffsModal wraps content in a modal box with green border
 func (m Model) wrapHandoffsModal(content string, width, height int) string {
+	footer := subtleStyle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
+	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(inner, width, height, ModalTypeHandoffs, 1)
+	}
+
+	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("42")). // Green for handoffs
 		Padding(1, 2).
 		Width(width).
 		Height(height)
-
-	footer := subtleStyle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
-	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	return modalStyle.Render(inner)
 }
@@ -1514,15 +1538,21 @@ func (m Model) renderBoardPicker() string {
 
 // wrapBoardPickerModal wraps board picker content in a styled modal
 func (m Model) wrapBoardPickerModal(content string, width, height int) string {
+	footer := subtleStyle.Render("↑↓:select  Enter:open  Esc:close")
+	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(inner, width, height, ModalTypeBoardPicker, 1)
+	}
+
+	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("212")). // Purple
 		Padding(1, 2).
 		Width(width).
 		Height(height)
-
-	footer := subtleStyle.Render("↑↓:select  Enter:open  Esc:close")
-	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	return modalStyle.Render(inner)
 }
@@ -1559,6 +1589,12 @@ func (m Model) renderFormModal() string {
 	// Combine form and footer
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons, "", footer)
 
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(inner, modalWidth, modalHeight, ModalTypeForm, 1)
+	}
+
+	// Default lipgloss rendering
 	// Select border color - cyan for forms (different from issue modals)
 	borderColor := lipgloss.Color("45") // Cyan
 
@@ -1686,24 +1722,6 @@ func (m Model) wrapModal(content string, width, height int) string {
 func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	depth := m.ModalDepth()
 
-	// Select border color based on depth
-	var borderColor lipgloss.Color
-	switch depth {
-	case 1:
-		borderColor = primaryColor // Purple/Magenta (212)
-	case 2:
-		borderColor = lipgloss.Color("45") // Cyan
-	default:
-		borderColor = lipgloss.Color("214") // Orange for depth 3+
-	}
-
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(1, 2).
-		Width(width).
-		Height(height)
-
 	// Build footer with breadcrumb if depth > 1
 	var footerParts []string
 
@@ -1735,11 +1753,41 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	footer := strings.Join(footerParts, "\n")
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(inner, width, height, ModalTypeIssue, depth)
+	}
+
+	// Default lipgloss rendering
+	// Select border color based on depth
+	var borderColor lipgloss.Color
+	switch depth {
+	case 1:
+		borderColor = primaryColor // Purple/Magenta (212)
+	case 2:
+		borderColor = lipgloss.Color("45") // Cyan
+	default:
+		borderColor = lipgloss.Color("214") // Orange for depth 3+
+	}
+
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(width).
+		Height(height)
+
 	return modalStyle.Render(inner)
 }
 
 // wrapConfirmationModal wraps content in a confirmation modal box with standard styling
-func wrapConfirmationModal(content string, width int) string {
+func (m Model) wrapConfirmationModal(content string, width int) string {
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer(content, width, 0, ModalTypeConfirmation, 1)
+	}
+
+	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(errorColor).
@@ -1799,7 +1847,7 @@ func (m Model) renderConfirmation() string {
 	// Shortcut hints
 	content.WriteString(subtleStyle.Render("Tab:switch  Y/N:quick  Esc:cancel"))
 
-	return wrapConfirmationModal(content.String(), width)
+	return m.wrapConfirmationModal(content.String(), width)
 }
 
 // renderCloseConfirmation renders the close confirmation dialog with optional reason input and interactive buttons
@@ -1859,7 +1907,7 @@ func (m Model) renderCloseConfirmation() string {
 	// Shortcut hints
 	content.WriteString(subtleStyle.Render("Tab:switch  Enter:confirm  Esc:cancel"))
 
-	return wrapConfirmationModal(content.String(), width)
+	return m.wrapConfirmationModal(content.String(), width)
 }
 
 // wrapText wraps text to fit within maxWidth
@@ -2109,8 +2157,67 @@ func (m Model) renderTDQHelp() string {
 	return helpStyle.Render(m.Keymap.GenerateTDQHelp())
 }
 
+// determinePanelState determines the visual state of a panel for theming
+func (m Model) determinePanelState(panel Panel) PanelState {
+	// Check divider states first (more specific)
+	dividerForPanel := -1
+	if panel == PanelCurrentWork {
+		dividerForPanel = 0
+	} else if panel == PanelTaskList {
+		dividerForPanel = 1
+	}
+
+	if dividerForPanel >= 0 {
+		if m.DraggingDivider == dividerForPanel {
+			return PanelStateDividerActive
+		}
+		if m.DividerHover == dividerForPanel && m.DraggingDivider < 0 {
+			return PanelStateDividerHover
+		}
+	}
+
+	// Then check panel states
+	if m.ActivePanel == panel {
+		return PanelStateActive
+	}
+	if m.HoverPanel == panel {
+		return PanelStateHover
+	}
+	return PanelStateNormal
+}
+
 // wrapPanel wraps content in a panel with title and border
 func (m Model) wrapPanel(title, content string, height int, panel Panel) string {
+	// Use custom renderer if provided (for embedded mode with custom theming)
+	if m.PanelRenderer != nil {
+		state := m.determinePanelState(panel)
+		// Render title
+		titleStr := panelTitleStyle.Render(title)
+		// Calculate content width
+		contentWidth := m.Width - 4 // Account for border and padding
+		// Truncate/pad content to fit
+		lines := strings.Split(content, "\n")
+		contentHeight := height - 3 // Title + border
+		// Pad or truncate lines
+		for len(lines) < contentHeight {
+			lines = append(lines, "")
+		}
+		if len(lines) > contentHeight {
+			lines = lines[:contentHeight]
+		}
+		// Ensure each line fits width
+		for i, line := range lines {
+			if lipgloss.Width(line) > contentWidth {
+				lines[i] = truncateString(line, contentWidth)
+			}
+		}
+		body := strings.Join(lines, "\n")
+		// Combine title and body
+		inner := lipgloss.JoinVertical(lipgloss.Left, titleStr, body)
+		return m.PanelRenderer(inner, m.Width-2, height, state)
+	}
+
+	// Default lipgloss rendering
 	style := panelStyle
 	if m.ActivePanel == panel {
 		style = activePanelStyle
