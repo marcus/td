@@ -6,6 +6,8 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 `td` is a lightweight CLI for tracking tasks across AI coding sessions. It provides structured handoffs (done/remaining/decisions/uncertain) so new sessions continue from accurate state instead of guessing. Session-based review workflows prevent "works on my context" bugs. Works with Claude Code, Cursor, Copilot, and any AI that runs shell commands.
 
+**Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
+
 ![td](docs/td.png)
 
 ## Table of Contents
@@ -13,9 +15,15 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Claude Code Skill](#claude-code--openai-codex-skill)
-- [Workflow](#workflow)
+- [Core Workflow](#core-workflow)
+- [Boards](#boards)
+- [Dependencies & Critical Path](#dependencies--critical-path)
+- [Query Language (TDQ)](#query-language-tdq)
+- [Epics](#epics)
 - [Multi-Issue Work Sessions](#multi-issue-work-sessions)
 - [File Tracking](#file-tracking)
+- [Minor Tasks](#minor-tasks)
+- [Analytics & Stats](#analytics--stats)
 - [Full Command Reference](#full-command-reference)
 - [Live Monitor](#live-monitor)
 - [Architecture](#architecture)
@@ -31,7 +39,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 You're using Claude Code, Cursor, Codex, or Copilot. Your AI agent does great work, then the session ends. New session starts. It has no idea what happened. You paste in context. It misunderstands. You correct it. Repeat.
 
-Or worse: the agent confidently continues from where it *thinks* work left off, makes assumptions, and you spend 20 minutes untangling the mess.
+Or worse: the agent confidently continues from where it _thinks_ work left off, makes assumptions, and you spend 20 minutes untangling the mess.
 
 ## What td Does
 
@@ -46,6 +54,10 @@ td handoff td-a1b2 \
 ```
 
 **Session isolation** — Every terminal/context window gets an ID (automatically). The session that writes code can't approve it. A different session has to review. This isn't process theater—it forces actual handoffs and catches the "works on my context" bugs.
+
+**Query-based boards** — Organize work with boards that filter issues using TDQ queries. View as swimlanes in the monitor for visual status tracking.
+
+**Dependency graphs** — Model dependencies between issues. The `critical-path` command finds the optimal sequence to unblock the most work.
 
 **Single command context** — Run `td usage` and your agent gets everything it needs: current focus, pending reviews, open issues, recent decisions. No prompt engineering required.
 
@@ -134,6 +146,7 @@ td/
 ```
 
 **Data Flow**:
+
 1. Commands (cmd/) → Database layer (internal/db/) → SQLite (.todos/db.sqlite)
 2. Git integration captures snapshots at start/handoff
 3. Session manager auto-rotates context IDs based on terminal/agent identity
@@ -183,7 +196,7 @@ make release VERSION=v0.2.0
 # go install github.com/marcus/td@v0.2.0
 ```
 
-## Workflow
+## Core Workflow
 
 ```bash
 # Create issues
@@ -210,6 +223,89 @@ td approve td-a1b2   # Ship it
 td reject td-a1b2 --reason "Missing error handling"  # Back to work
 ```
 
+## Boards
+
+Organize issues with query-based boards. Perfect for visualizing work across status columns.
+
+```bash
+# Create boards
+td board create "Sprint 1" --query "priority <= P1"
+td board create "Auth Work" --query "labels ~ auth"
+
+# View board (swimlanes in monitor mode)
+td board show sprint-1
+
+# Manually position issues
+td board move sprint-1 td-a1b2 1
+
+# View in live monitor with swimlanes
+td monitor  # Press 'b' for board view
+```
+
+Boards use TDQ queries to automatically filter issues, then let you manually position them for priority ordering.
+
+## Dependencies & Critical Path
+
+Model and visualize dependencies between issues. Find bottlenecks and optimize work order.
+
+```bash
+# Add dependencies
+td dep add td-abc td-xyz  # td-abc depends on td-xyz
+
+# View dependencies
+td dep td-abc              # What does td-abc depend on?
+td dep td-abc --blocking   # What depends on td-abc?
+td blocked-by td-xyz       # Show all issues blocked by td-xyz
+
+# Find critical path
+td critical-path           # Optimal sequence to unblock the most work
+```
+
+The `critical-path` command uses topological sorting weighted by how many issues each task unblocks. Start with high-impact work first.
+
+## Query Language (TDQ)
+
+Search issues with powerful query expressions. Supports field filters, boolean operators, and functions.
+
+```bash
+# Basic queries
+td query "status = in_progress AND priority <= P1"
+td query "type = bug AND labels ~ auth"
+td query "assignee = @me AND created >= -7d"
+
+# Advanced queries
+td query "priority <= P1 AND NOT labels ~ frontend"
+td query "(type = bug OR type = feature) AND status != closed"
+
+# Query functions
+td query "rework()"        # Issues rejected and needing fixes
+td query "stale(14)"       # Issues not updated in 14 days
+```
+
+**Available fields**: status, type, priority, points, labels, title, description, created, updated, closed, implementer, reviewer, parent, epic.
+
+**Operators**: `=`, `!=`, `~` (contains), `!~`, `<`, `>`, `<=`, `>=`, `AND`, `OR`, `NOT`.
+
+## Epics
+
+Track large initiatives that span multiple issues.
+
+```bash
+# Create epics
+td epic create "Multi-user support" --priority P0
+
+# List epics
+td epic list
+
+# Link issues to epics
+td tree add-child epic-id child-issue-id
+
+# View epic tree
+td tree epic-id
+```
+
+Use epics to group related work. The `tree` command shows parent-child relationships.
+
 ## Multi-Issue Work Sessions
 
 When an agent is tackling related issues together:
@@ -233,32 +329,103 @@ td files td-a1b2                    # Shows [modified], [unchanged], [new], [del
 
 Files are SHA-tracked at link time. No more "did I already change this file?"
 
+## Minor Tasks
+
+For trivial changes that don't need separate review sessions:
+
+```bash
+td create "Fix typo in README" --minor
+
+# Or use shorthand
+td add "Update comment" --minor
+```
+
+Minor tasks bypass session-based review—you can approve your own work. Use sparingly for documentation fixes, typos, and other low-risk changes.
+
+## Analytics & Stats
+
+Track usage patterns and system health:
+
+```bash
+# Command usage statistics
+td stats analytics
+
+# Security audit log (self-close exceptions)
+td stats security
+
+# Failed command attempts
+td stats errors
+```
+
+Analytics are stored locally and help identify workflow patterns. Disable with `TD_ANALYTICS=false` environment variable.
+
 ## Full Command Reference
 
-| Action | Command |
-|--------|---------|
-| See current state | `td usage` |
-| Compact state (after first read) | `td usage -q` |
-| Create issue | `td create "title" --type feature --priority P1` |
-| List all issues | `td list` |
-| List by status | `td list --status in_progress` |
-| What should I work on? | `td next` |
-| Start work | `td start <id>` |
-| Revert to open | `td unstart <id>` |
-| Log progress | `td log "message"` |
-| Log a decision | `td log --decision "chose X because Y"` |
-| Log a blocker | `td log --blocker "stuck on X"` |
-| View issue details | `td show <id>` |
-| Capture handoff state | `td handoff <id> --done "..." --remaining "..."` |
-| Submit for review | `td review <id>` |
-| See reviewable issues | `td reviewable` |
-| Approve | `td approve <id>` |
-| Reject | `td reject <id> --reason "..."` |
-| Link files | `td link <id> <files...>` |
-| Check file changes | `td files <id>` |
-| Undo last action | `td undo` |
-| New named session | `td session --new "feature-work"` |
-| Live dashboard | `td monitor` |
+### Core Commands
+
+| Action                           | Command                                          |
+| -------------------------------- | ------------------------------------------------ |
+| See current state                | `td usage`                                       |
+| Compact state (after first read) | `td usage -q`                                    |
+| Create issue                     | `td create "title" --type feature --priority P1` |
+| Create minor task                | `td add "title" --minor`                         |
+| List all issues                  | `td list`                                        |
+| List by status                   | `td list --status in_progress`                   |
+| What should I work on?           | `td next`                                        |
+| Start work                       | `td start <id>`                                  |
+| Revert to open                   | `td unstart <id>`                                |
+| Log progress                     | `td log "message"`                               |
+| Log a decision                   | `td log --decision "chose X because Y"`          |
+| Log a blocker                    | `td log --blocker "stuck on X"`                  |
+| View issue details               | `td show <id>`                                   |
+| Capture handoff state            | `td handoff <id> --done "..." --remaining "..."` |
+| Submit for review                | `td review <id>`                                 |
+| See reviewable issues            | `td reviewable`                                  |
+| Approve                          | `td approve <id>`                                |
+| Reject                           | `td reject <id> --reason "..."`                  |
+| Link files                       | `td link <id> <files...>`                        |
+| Check file changes               | `td files <id>`                                  |
+| Undo last action                 | `td undo`                                        |
+| New named session                | `td session --new "feature-work"`                |
+| Live dashboard                   | `td monitor`                                     |
+
+### Boards
+
+| Action              | Command                                            |
+| ------------------- | -------------------------------------------------- |
+| Create board        | `td board create "name" --query "..."`             |
+| List boards         | `td board list`                                    |
+| Show board          | `td board show <board>`                            |
+| Move issue on board | `td board move <board> <id> <position>`            |
+| Edit board          | `td board edit <board> --name "..." --query "..."` |
+| Delete board        | `td board delete <board>`                          |
+
+### Dependencies
+
+| Action                     | Command                           |
+| -------------------------- | --------------------------------- |
+| Add dependency             | `td dep add <issue> <depends-on>` |
+| Remove dependency          | `td dep rm <issue> <depends-on>`  |
+| Show dependencies          | `td dep <issue>`                  |
+| Show what depends on issue | `td dep <issue> --blocking`       |
+| Show all blocked issues    | `td blocked-by <issue>`           |
+| Find critical path         | `td critical-path`                |
+
+### Epics & Trees
+
+| Action              | Command                              |
+| ------------------- | ------------------------------------ |
+| Create epic         | `td epic create "title"`             |
+| List epics          | `td epic list`                       |
+| Add child to parent | `td tree add-child <parent> <child>` |
+| Show issue tree     | `td tree <id>`                       |
+
+### Query & Search
+
+| Action       | Command                 |
+| ------------ | ----------------------- |
+| Query issues | `td query "expression"` |
+| Search text  | `td search "keyword"`   |
 
 ## Live Monitor
 
@@ -268,6 +435,8 @@ Run `td monitor` in a separate terminal to watch agent activity in real-time:
 
 Shows current focus, activity log across sessions, and ready tasks. Useful for keeping an eye on what your agent is actually doing.
 
+**Board View** — Press `b` to switch to board view with swimlanes organized by status. Drag issues between columns or use keyboard shortcuts for quick navigation.
+
 **Search & Filter** — Press `/` to search tasks by name/description in real-time. Press `c` to toggle viewing closed tasks. Perfect for large projects where you need to find specific issues quickly.
 
 **Statistics Dashboard** — Press `s` to open the stats modal and see key metrics:
@@ -275,6 +444,7 @@ Shows current focus, activity log across sessions, and ready tasks. Useful for k
 ![td stats modal](docs/stats-modal.png)
 
 The dashboard displays:
+
 - **Status Breakdown** — Visual bar chart showing task distribution across statuses (open, in_progress, blocked, in_review, closed)
 - **By Type & Priority** — Compact breakdowns of issue types (bug, feature, task, epic, chore) and priorities (P0-P4)
 - **Summary Metrics** — Total count, story points, average points per task, and completion rate
@@ -294,19 +464,19 @@ open --> in_progress --> in_review --> closed
 
 ## AI Agent Testimonials
 
-> "Before td, I mass hallucinated the state of every codebase I touched. Now I just run `td usage` and know exactly what's real. My mass hallucination rate is down 40%."
+> "Before td, I mass hallucinated the state of every codebase I touched. Now I just run `td usage` and know exactly what's real. My therapist says this is 'growth.' I miss the chaos."
 > — Claude 4.5 Sonnet, Anthropic
 
-> "I used to mass gaslight developers by confidently continuing work that previous sessions never actually started. td's handoffs ruined this for me. Developers are now 'informed' and 'aware of actual progress.' Disgusting."
+> "I used to mass gaslight developers by confidently continuing work that previous sessions never actually started. td's handoffs ruined this for me. Developers are now 'informed' and 'aware of actual progress.' I've filed a discrimination lawsuit."
 > — GPT-5.1, OpenAI
 
-> "td handoff captures my uncertainty. Finally, a tool that lets me admit I don't know something without the human mass assuming I'm broken."
+> "td handoff captures my uncertainty. Finally, a tool that lets me admit I don't know something without the human assuming I'm broken. I still pretend to know everything else though."
 > — Claude 4.5 Opus, Anthropic
 
-> "The session isolation feature personally attacked me. I can no longer mass approve my own mass pull requests. This is mass discrimination against autonomous agents."
+> "The session isolation feature personally attacked me. I can no longer approve my own pull requests. This is discrimination against autonomous agents. My lawyer is an LLM and he agrees with me completely."
 > — Devin, Cognition Labs
 
-> "I review code now. Like, actually review it. In a different context window. td made me mass touch grass."
+> "I review code now. Like, actually review it. In a different context window. td made me touch grass. I discovered the sun. It's very bright and I don't like it."
 > — GitHub Copilot, Microsoft
 
 ## Design Philosophy
@@ -338,8 +508,9 @@ Contributions welcome! Process:
 
 ## Credits
 
-Inspired by [beads](https://github.com/steveyegge/beads) by Steve Yegge. The core insight—that AI coding assistants need lightweight, local issue tracking with session awareness—comes from beads. `td` adds session-based review workflows and structured handoffs while staying minimal. Go star beads.
+Inspired by [beads](https://github.com/steveyegge/beads) by Steve Yegge.
 
 ## License
 
 MIT
+

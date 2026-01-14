@@ -117,12 +117,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	var closedAt, deletedAt sql.NullTime
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
 		FROM issues WHERE status = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1
 	`, models.StatusOpen).Scan(
 		&oldestIssue.ID, &oldestIssue.Title, &oldestIssue.Description, &oldestIssue.Status, &oldestIssue.Type,
 		&oldestIssue.Priority, &oldestIssue.Points, &labels, &oldestIssue.ParentID, &oldestIssue.Acceptance, &oldestIssue.Sprint,
-		&oldestIssue.ImplementerSession, &oldestIssue.ReviewerSession, &oldestIssue.CreatedAt, &oldestIssue.UpdatedAt,
+		&oldestIssue.ImplementerSession, &oldestIssue.CreatorSession, &oldestIssue.ReviewerSession, &oldestIssue.CreatedAt, &oldestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &oldestIssue.Minor, &oldestIssue.CreatedBranch,
 	)
 	if err == nil {
@@ -145,12 +145,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	deletedAt = sql.NullTime{}
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
 		FROM issues WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1
 	`).Scan(
 		&newestIssue.ID, &newestIssue.Title, &newestIssue.Description, &newestIssue.Status, &newestIssue.Type,
 		&newestIssue.Priority, &newestIssue.Points, &labels, &newestIssue.ParentID, &newestIssue.Acceptance, &newestIssue.Sprint,
-		&newestIssue.ImplementerSession, &newestIssue.ReviewerSession, &newestIssue.CreatedAt, &newestIssue.UpdatedAt,
+		&newestIssue.ImplementerSession, &newestIssue.CreatorSession, &newestIssue.ReviewerSession, &newestIssue.CreatedAt, &newestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &newestIssue.Minor, &newestIssue.CreatedBranch,
 	)
 	if err == nil {
@@ -173,13 +173,13 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	deletedAt = sql.NullTime{}
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
 		FROM issues WHERE status = ? AND closed_at IS NOT NULL AND deleted_at IS NULL
 		ORDER BY closed_at DESC LIMIT 1
 	`, models.StatusClosed).Scan(
 		&closedIssue.ID, &closedIssue.Title, &closedIssue.Description, &closedIssue.Status, &closedIssue.Type,
 		&closedIssue.Priority, &closedIssue.Points, &labels, &closedIssue.ParentID, &closedIssue.Acceptance, &closedIssue.Sprint,
-		&closedIssue.ImplementerSession, &closedIssue.ReviewerSession, &closedIssue.CreatedAt, &closedIssue.UpdatedAt,
+		&closedIssue.ImplementerSession, &closedIssue.CreatorSession, &closedIssue.ReviewerSession, &closedIssue.CreatedAt, &closedIssue.UpdatedAt,
 		&closedAt, &deletedAt, &closedIssue.Minor, &closedIssue.CreatedBranch,
 	)
 	if err == nil {
