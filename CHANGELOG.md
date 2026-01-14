@@ -2,6 +2,22 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.12.0] - 2026-01-14
+
+### Features
+- Sidecar worktree integration
+- Mouse support for board picker
+- CLI interface improvements
+
+### Bug Fixes
+- Fix modals when embedded in Sidecar
+- Add panel checks to cursor commands when board mode active
+- Fix for opening issues in top panel of td monitor
+- Epic list consistency improvements
+
+### Refactoring
+- Split db.go into smaller files for maintainability
+
 ## [v0.11.0] - 2026-01-13
 
 ### Features
