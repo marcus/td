@@ -1181,8 +1181,12 @@ func (m Model) renderModal() string {
 func (m Model) wrapStatsModal(content string, width, height int) string {
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedContent := "\n" + content + "\n"
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(content, width+2, height+2, ModalTypeStats, 1)
+		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeStats, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1461,8 +1465,12 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedInner := "\n" + inner + "\n"
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(inner, width+2, height+2, ModalTypeHandoffs, 1)
+		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeHandoffs, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1602,8 +1610,12 @@ func (m Model) renderFormModal() string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedInner := "\n" + inner + "\n"
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(inner, modalWidth+2, modalHeight+2, ModalTypeForm, 1)
+		return m.ModalRenderer(paddedInner, modalWidth+2, modalHeight+2, ModalTypeForm, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1767,8 +1779,12 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedInner := "\n" + inner + "\n"
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(inner, width+2, height+2, ModalTypeIssue, depth)
+		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeIssue, depth)
 	}
 
 	// Default lipgloss rendering
@@ -1795,10 +1811,17 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 
 // wrapConfirmationModal wraps content in a confirmation modal box with standard styling
 func (m Model) wrapConfirmationModal(content string, width int) string {
+	// Calculate height from content lines + padding (1 top + 1 bottom)
+	height := strings.Count(content, "\n") + 1 + 2
+
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		// Add 2 to width: lipgloss Width = content area, renderer expects outer with borders
-		return m.ModalRenderer(content, width+2, 0, ModalTypeConfirmation, 1)
+		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
+		// Custom renderer only handles horizontal padding, so we add blank lines
+		// for top/bottom padding manually.
+		paddedContent := "\n" + content + "\n"
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeConfirmation, 1)
 	}
 
 	// Default lipgloss rendering
