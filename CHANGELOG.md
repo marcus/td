@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.12.2] - 2026-01-14
+
+### Features
+- Title validation for issue creation (min 20 chars, rejects generic titles)
+- Cascade status changes to descendant issues (review, close, approve now cascade down)
+- Epic task keybindings (O/R/C) in modal task section
+- Created/closed timestamps shown in modal view
+- Focus TaskList panel with cursor on first result after search
+
+### Bug Fixes
+- Modal actions (review, close, reopen) now work on focused epic tasks
+- Modal refresh behavior instead of auto-close after status changes
+
 ## [v0.12.1] - 2026-01-14
 
 ### Bug Fixes
