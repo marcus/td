@@ -1,2 +1,7 @@
 .todos/
 td
+
+# Sidecar worktree state files
+.sidecar-agent
+.sidecar-task
+.td-root
