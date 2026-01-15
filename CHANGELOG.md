@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.12.1] - 2026-01-14
+
+### Bug Fixes
+- Fix off-by-one mouse click bug in Current Work panel when no focused issue
+
 ## [v0.12.0] - 2026-01-14
 
 ### Features
