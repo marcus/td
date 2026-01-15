@@ -938,13 +938,19 @@ func (m Model) renderModal() string {
 		lines = append(lines, "")
 	}
 
-	// Status line: status, type, priority, points
+	// Status line: status, type, priority, points, created date
 	statusLine := fmt.Sprintf("%s  %s  %s",
 		formatStatus(issue.Status),
 		formatTypeIcon(issue.Type),
 		formatPriority(issue.Priority))
 	if issue.Points > 0 {
 		statusLine += fmt.Sprintf("  %dpts", issue.Points)
+	}
+	// Add created timestamp in subtle style
+	statusLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
+	// Add closed timestamp if closed
+	if issue.ClosedAt != nil {
+		statusLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
 	}
 	lines = append(lines, statusLine)
 

@@ -40,6 +40,12 @@ var createCmd = &cobra.Command{
 			return fmt.Errorf("title is required")
 		}
 
+		// Validate title quality
+		if err := validateTitle(title); err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		// Build issue
 		issue := &models.Issue{
 			Title: title,
@@ -208,4 +214,31 @@ func init() {
 	createCmd.Flags().String("depends-on", "", "Issues this depends on")
 	createCmd.Flags().String("blocks", "", "Issues this blocks")
 	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
+}
+
+// validateTitle checks that the title is descriptive enough
+func validateTitle(title string) error {
+	const minLength = 20
+
+	// Generic titles that should be rejected (case-insensitive)
+	genericTitles := []string{
+		"task", "issue", "bug", "feature", "fix", "update", "change",
+		"todo", "work", "item", "thing", "stuff", "test", "new", "add",
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(title))
+
+	// Check for exact match with generic titles
+	for _, generic := range genericTitles {
+		if lower == generic {
+			return fmt.Errorf("title '%s' is too generic - please provide a descriptive title (min %d chars)", title, minLength)
+		}
+	}
+
+	// Check minimum length
+	if len(title) < minLength {
+		return fmt.Errorf("title must be at least %d characters (got %d) - please be more descriptive", minLength, len(title))
+	}
+
+	return nil
 }

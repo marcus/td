@@ -739,6 +739,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.ShowTDQHelp = false
 		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
+		// Focus TaskList panel with cursor on first result
+		m.ActivePanel = PanelTaskList
+		m.Cursor[PanelTaskList] = 0
+		m.ScrollOffset[PanelTaskList] = 0
 		return m, nil
 
 	case keymap.CmdSearchCancel:

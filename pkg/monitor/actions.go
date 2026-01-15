@@ -17,10 +17,21 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 	var issueID string
 	var issue *models.Issue
 
-	// Check if a modal is open - use that issue
+	// Check if a modal is open
 	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
-		issueID = modal.IssueID
-		issue = modal.Issue
+		// If task section is focused, use the highlighted epic task
+		if modal.TaskSectionFocused && len(modal.EpicTasks) > 0 && modal.EpicTasksCursor < len(modal.EpicTasks) {
+			task := modal.EpicTasks[modal.EpicTasksCursor]
+			issueID = task.ID
+			var err error
+			issue, err = m.DB.GetIssue(issueID)
+			if err != nil || issue == nil {
+				return m, nil
+			}
+		} else {
+			issueID = modal.IssueID
+			issue = modal.Issue
+		}
 	} else {
 		// Otherwise, use the selected issue from the active panel
 		issueID = m.SelectedIssueID(m.ActivePanel)
@@ -54,12 +65,36 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		EntityID:   issueID,
 	})
 
+	// Cascade DOWN to descendants if this is a parent issue (epic)
+	if hasChildren, _ := m.DB.HasChildren(issueID); hasChildren {
+		descendants, err := m.DB.GetDescendantIssues(issueID, []models.Status{
+			models.StatusOpen,
+			models.StatusInProgress,
+		})
+		if err == nil && len(descendants) > 0 {
+			for _, child := range descendants {
+				child.Status = models.StatusInReview
+				if child.ImplementerSession == "" {
+					child.ImplementerSession = m.SessionID
+				}
+				m.DB.UpdateIssue(child)
+				m.DB.AddLog(&models.Log{
+					IssueID:   child.ID,
+					SessionID: m.SessionID,
+					Message:   "Cascaded review from " + issueID,
+					Type:      models.LogTypeProgress,
+				})
+			}
+		}
+	}
+
 	// Cascade up to parent epic if all siblings are ready
 	m.DB.CascadeUpParentStatus(issueID, models.StatusInReview, m.SessionID)
 
-	// If we're in a modal, close it since the issue moved to review
-	if m.ModalOpen() {
-		m.closeModal()
+	// If we're in a modal, refresh instead of closing to keep context
+	if modal := m.CurrentModal(); modal != nil {
+		// Refresh the modal issue data and epic tasks list
+		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 	}
 
 	return m, m.fetchData()
@@ -138,10 +173,21 @@ func (m Model) confirmClose() (tea.Model, tea.Cmd) {
 	var issueID string
 	var issue *models.Issue
 
-	// Check if a modal is open - use that issue
+	// Check if a modal is open
 	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
-		issueID = modal.IssueID
-		issue = modal.Issue
+		// If task section is focused, use the highlighted epic task
+		if modal.TaskSectionFocused && len(modal.EpicTasks) > 0 && modal.EpicTasksCursor < len(modal.EpicTasks) {
+			task := modal.EpicTasks[modal.EpicTasksCursor]
+			issueID = task.ID
+			var err error
+			issue, err = m.DB.GetIssue(issueID)
+			if err != nil || issue == nil {
+				return m, nil
+			}
+		} else {
+			issueID = modal.IssueID
+			issue = modal.Issue
+		}
 	} else {
 		// Otherwise, use the selected issue from the panel
 		issueID = m.SelectedIssueID(m.ActivePanel)
@@ -224,6 +270,29 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		Type:      models.LogTypeProgress,
 	})
 
+	// Cascade DOWN to descendants if this is a parent issue (epic)
+	if hasChildren, _ := m.DB.HasChildren(issueID); hasChildren {
+		descendants, err := m.DB.GetDescendantIssues(issueID, []models.Status{
+			models.StatusOpen,
+			models.StatusInProgress,
+			models.StatusInReview,
+		})
+		if err == nil && len(descendants) > 0 {
+			now := time.Now()
+			for _, child := range descendants {
+				child.Status = models.StatusClosed
+				child.ClosedAt = &now
+				m.DB.UpdateIssue(child)
+				m.DB.AddLog(&models.Log{
+					IssueID:   child.ID,
+					SessionID: m.SessionID,
+					Message:   "Cascaded close from " + issueID,
+					Type:      models.LogTypeProgress,
+				})
+			}
+		}
+	}
+
 	// Cascade up to parent epic if all siblings are closed
 	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
 
@@ -232,9 +301,11 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	m.CloseConfirmIssueID = ""
 	m.CloseConfirmTitle = ""
 
-	// Close modal if we just closed the issue being viewed
-	if modal := m.CurrentModal(); modal != nil && modal.IssueID == issueID {
-		m.closeModal()
+	// If we're in a modal, refresh instead of closing
+	if modal := m.CurrentModal(); modal != nil {
+		// If we closed an epic task (not the modal's main issue), refresh to update the list
+		// If we closed the main issue, also refresh to show updated status
+		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 	}
 
 	return m, m.fetchData()
@@ -294,6 +365,29 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		EntityID:   issue.ID,
 	})
 
+	// Cascade DOWN to descendants if this is a parent issue (epic)
+	if hasChildren, _ := m.DB.HasChildren(issue.ID); hasChildren {
+		descendants, err := m.DB.GetDescendantIssues(issue.ID, []models.Status{
+			models.StatusOpen,
+			models.StatusInProgress,
+			models.StatusInReview,
+		})
+		if err == nil && len(descendants) > 0 {
+			now := time.Now()
+			for _, child := range descendants {
+				child.Status = models.StatusClosed
+				child.ClosedAt = &now
+				m.DB.UpdateIssue(child)
+				m.DB.AddLog(&models.Log{
+					IssueID:   child.ID,
+					SessionID: m.SessionID,
+					Message:   "Cascaded approval from " + issue.ID,
+					Type:      models.LogTypeProgress,
+				})
+			}
+		}
+	}
+
 	// Cascade up to parent epic if all siblings are closed
 	m.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, m.SessionID)
 
@@ -309,10 +403,21 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 	var issueID string
 	var issue *models.Issue
 
-	// Check if a modal is open - use that issue
+	// Check if a modal is open
 	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
-		issueID = modal.IssueID
-		issue = modal.Issue
+		// If task section is focused, use the highlighted epic task
+		if modal.TaskSectionFocused && len(modal.EpicTasks) > 0 && modal.EpicTasksCursor < len(modal.EpicTasks) {
+			task := modal.EpicTasks[modal.EpicTasksCursor]
+			issueID = task.ID
+			var err error
+			issue, err = m.DB.GetIssue(issueID)
+			if err != nil || issue == nil {
+				return m, nil
+			}
+		} else {
+			issueID = modal.IssueID
+			issue = modal.Issue
+		}
 	} else {
 		// Otherwise, use the selected issue from the panel
 		issueID = m.SelectedIssueID(m.ActivePanel)
@@ -358,10 +463,18 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 	m.StatusMessage = "REOPENED " + issueID
 	m.StatusIsError = false
 
-	// If in modal, update the modal issue
-	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
-		modal.Issue.Status = models.StatusOpen
-		modal.Issue.ClosedAt = nil
+	// If in modal, refresh modal data
+	if modal := m.CurrentModal(); modal != nil {
+		// Update inline for immediate feedback
+		if modal.Issue != nil && modal.IssueID == issueID {
+			modal.Issue.Status = models.StatusOpen
+			modal.Issue.ClosedAt = nil
+		}
+		return m, tea.Batch(
+			tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+			m.fetchData(),
+			m.fetchIssueDetails(modal.IssueID),
+		)
 	}
 
 	return m, tea.Batch(

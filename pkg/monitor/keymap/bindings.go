@@ -173,6 +173,9 @@ func DefaultBindings() []Binding {
 		{Key: "left", Command: CmdNavigatePrev, Context: ContextEpicTasks, Description: "Previous task"},
 		{Key: "l", Command: CmdNavigateNext, Context: ContextEpicTasks, Description: "Next task"},
 		{Key: "right", Command: CmdNavigateNext, Context: ContextEpicTasks, Description: "Next task"},
+		{Key: "O", Command: CmdReopenIssue, Context: ContextEpicTasks, Description: "Reopen task"},
+		{Key: "R", Command: CmdMarkForReview, Context: ContextEpicTasks, Description: "Submit task for review"},
+		{Key: "C", Command: CmdCloseIssue, Context: ContextEpicTasks, Description: "Close task"},
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
