@@ -330,13 +330,19 @@ func (m Model) hitTestCurrentWorkRow(relY int) int {
 		rowIdx++
 	}
 
-	// "IN PROGRESS:" section header (blank line + header = 2 lines)
+	// "IN PROGRESS:" section header (blank line + margin-top + header = 3 lines)
+	// Note: sectionHeader style has MarginTop(1), adding an extra blank line
 	if inProgressCount > 0 {
 		// Only show header if we're past offset or at start
 		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
-			// Blank line
+			// Blank line (explicit \n in renderCurrentWorkPanel)
 			if relY == linePos {
 				return -1 // clicked on blank line
+			}
+			linePos++
+			// Additional blank line from sectionHeader's MarginTop(1)
+			if relY == linePos {
+				return -1 // clicked on margin-top blank line
 			}
 			linePos++
 			// Header line

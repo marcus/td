@@ -1259,3 +1259,84 @@ func TestMouseClickEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestHitTestCurrentWorkRow_NoFocusedIssue tests row detection when there's no focused issue
+// This is the scenario where there are in-progress issues but no focused issue
+func TestHitTestCurrentWorkRow_NoFocusedIssue(t *testing.T) {
+	// Create model with no focused issue but with in-progress issues
+	m := Model{
+		Height:       30,
+		Width:        100,
+		PaneHeights:  config.DefaultPaneHeights(),
+		PanelBounds:  map[Panel]Rect{PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 12}},
+		ScrollOffset: map[Panel]int{PanelCurrentWork: 0},
+		FocusedIssue: nil, // No focused issue!
+		InProgress: []models.Issue{
+			{ID: "issue0", Title: "Issue 0"},
+			{ID: "issue1", Title: "Issue 1"},
+			{ID: "issue2", Title: "Issue 2"},
+			{ID: "issue3", Title: "Issue 3"},
+		},
+		CurrentWorkRows: []string{"issue0", "issue1", "issue2", "issue3"},
+	}
+
+	// Panel structure when no focused issue:
+	// relY 0: explicit blank line (from \n in renderCurrentWorkPanel)
+	// relY 1: margin-top blank line (from sectionHeader's MarginTop(1))
+	// relY 2: IN PROGRESS: header
+	// relY 3: issue0 (row index 0)
+	// relY 4: issue1 (row index 1)
+	// relY 5: issue2 (row index 2)
+	// relY 6: issue3 (row index 3)
+
+	tests := []struct {
+		name     string
+		relY     int
+		expected int
+	}{
+		{
+			name:     "click on explicit blank line",
+			relY:     0,
+			expected: -1,
+		},
+		{
+			name:     "click on margin-top blank line",
+			relY:     1,
+			expected: -1,
+		},
+		{
+			name:     "click on IN PROGRESS header",
+			relY:     2,
+			expected: -1,
+		},
+		{
+			name:     "click on first in-progress issue",
+			relY:     3,
+			expected: 0, // Should select row index 0
+		},
+		{
+			name:     "click on second in-progress issue",
+			relY:     4,
+			expected: 1, // Should select row index 1
+		},
+		{
+			name:     "click on third in-progress issue",
+			relY:     5,
+			expected: 2, // Should select row index 2
+		},
+		{
+			name:     "click on fourth in-progress issue",
+			relY:     6,
+			expected: 3, // Should select row index 3
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.hitTestCurrentWorkRow(tt.relY)
+			if got != tt.expected {
+				t.Errorf("hitTestCurrentWorkRow(%d) = %d, want %d", tt.relY, got, tt.expected)
+			}
+		})
+	}
+}
