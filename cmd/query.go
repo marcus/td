@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/marcus/td/internal/db"
@@ -15,6 +16,11 @@ var queryCmd = &cobra.Command{
 	Use:   "query [expression]",
 	Short: "Search issues with TDQ query language",
 	Long: `Search issues using TDQ (Todo Query Language), a powerful query syntax.
+
+QUICK START:
+  td query "status = open"            All open issues
+  td query "type = bug AND is(open)"  Open bugs
+  td query "created >= -7d"           Created in last 7 days
 
 BASIC SYNTAX:
   field = value         Exact match
@@ -80,7 +86,15 @@ EXAMPLES:
   td query "implementer = @me AND is(in_progress)"
   td query "log.type = blocker"
   td query "title ~ auth OR description ~ auth"
-  td query "rework()"`,
+  td query "rework()"
+
+BOARDS:
+  Save queries as reusable boards with td board:
+    td board create "My Bugs" "type = bug AND implementer = @me"
+    td board show "My Bugs"
+    td board list                    See all saved boards
+
+  Run 'td board --help' for full board commands.`,
 	GroupID: "query",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,6 +119,7 @@ EXAMPLES:
 		parsedQuery, err := query.Parse(queryStr)
 		if err != nil {
 			output.Error("Parse error: %v", err)
+			printQuerySyntaxHelp()
 			return err
 		}
 
@@ -181,6 +196,19 @@ EXAMPLES:
 
 		return nil
 	},
+}
+
+func printQuerySyntaxHelp() {
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "TDQ Syntax: field operator value")
+	fmt.Fprintln(os.Stderr, "  Operators: = != < > <= >= ~ !~")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Examples:")
+	fmt.Fprintln(os.Stderr, "  td query \"status = open\"")
+	fmt.Fprintln(os.Stderr, "  td query \"type = bug AND priority <= P1\"")
+	fmt.Fprintln(os.Stderr, "  td query \"title ~ auth\"")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Run 'td query --examples' for more examples")
 }
 
 func printQueryExamples() {

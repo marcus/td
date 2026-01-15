@@ -22,9 +22,10 @@ var (
 	executedCmd     *cobra.Command // Captured for analytics logging
 )
 
-// SetVersion sets the version string
+// SetVersion sets the version string and enables --version flag
 func SetVersion(v string) {
 	versionStr = v
+	rootCmd.Version = v
 }
 
 var rootCmd = &cobra.Command{
