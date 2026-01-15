@@ -2,6 +2,15 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.12.3] - 2026-01-14
+
+### Features
+- Persist filter state across sessions (search query, sort mode, type filter, include closed)
+- Active search query now highlighted in orange for better visibility
+
+### Documentation
+- Add remote sync options research spec (Turso, rqlite, CR-SQLite analysis)
+
 ## [v0.12.2] - 2026-01-14
 
 ### Features
