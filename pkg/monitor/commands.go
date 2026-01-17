@@ -973,6 +973,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdCopyIDToClipboard:
 		return m.copyIssueIDToClipboard()
 
+	case keymap.CmdSendToWorktree:
+		return m.sendToWorktree()
+
 	// Form commands
 	case keymap.CmdNewIssue:
 		return m.openNewIssueForm()

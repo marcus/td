@@ -576,3 +576,10 @@ type PanelRenderer func(content string, width, height int, state PanelState) str
 // ModalRenderer renders content in a modal box
 // Used by embedders to inject custom modal styling (e.g., gradient borders)
 type ModalRenderer func(content string, width, height int, modalType ModalType, depth int) string
+
+// SendTaskToWorktreeMsg is emitted for embedding contexts to intercept.
+// Contains minimal data needed for worktree creation.
+type SendTaskToWorktreeMsg struct {
+	TaskID    string
+	TaskTitle string
+}

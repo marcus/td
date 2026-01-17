@@ -569,6 +569,36 @@ func (m Model) copyIssueIDToClipboard() (tea.Model, tea.Cmd) {
 	})
 }
 
+// sendToWorktree emits a message for embedding contexts to handle
+func (m Model) sendToWorktree() (tea.Model, tea.Cmd) {
+	var issueID, title string
+
+	// Priority: epic task cursor > modal issue > panel selection
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		if modal.TaskSectionFocused && len(modal.EpicTasks) > 0 &&
+			modal.EpicTasksCursor < len(modal.EpicTasks) {
+			task := modal.EpicTasks[modal.EpicTasksCursor]
+			issueID, title = task.ID, task.Title
+		} else {
+			issueID, title = modal.IssueID, modal.Issue.Title
+		}
+	} else {
+		issueID = m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		issue, err := m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
+		title = issue.Title
+	}
+
+	return m, func() tea.Msg {
+		return SendTaskToWorktreeMsg{TaskID: issueID, TaskTitle: title}
+	}
+}
+
 // filterActiveBlockers returns only non-closed issues from a list of blockers
 func filterActiveBlockers(blockers []models.Issue) []models.Issue {
 	var active []models.Issue

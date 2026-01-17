@@ -56,6 +56,7 @@ func DefaultBindings() []Binding {
 		{Key: "e", Command: CmdEditIssue, Context: ContextMain, Description: "Edit issue"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextMain, Description: "Copy issue as markdown"},
 		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextMain, Description: "Copy issue ID"},
+		{Key: "W", Command: CmdSendToWorktree, Context: ContextMain, Description: "Send to worktree"},
 
 		// ============================================================
 		// MODAL BINDINGS (Issue Details)
@@ -104,6 +105,7 @@ func DefaultBindings() []Binding {
 		{Key: "x", Command: CmdDelete, Context: ContextModal, Description: "Delete issue"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextModal, Description: "Close issue"},
 		{Key: "O", Command: CmdReopenIssue, Context: ContextModal, Description: "Reopen issue"},
+		{Key: "W", Command: CmdSendToWorktree, Context: ContextModal, Description: "Send to worktree"},
 
 		// ============================================================
 		// STATS MODAL BINDINGS
@@ -176,6 +178,7 @@ func DefaultBindings() []Binding {
 		{Key: "O", Command: CmdReopenIssue, Context: ContextEpicTasks, Description: "Reopen task"},
 		{Key: "R", Command: CmdMarkForReview, Context: ContextEpicTasks, Description: "Submit task for review"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextEpicTasks, Description: "Close task"},
+		{Key: "W", Command: CmdSendToWorktree, Context: ContextEpicTasks, Description: "Send to worktree"},
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
@@ -336,6 +339,7 @@ func DefaultBindings() []Binding {
 		{Key: "h", Command: CmdOpenHandoffs, Context: ContextBoard, Description: "Open handoffs"},
 		{Key: "S", Command: CmdCycleSortMode, Context: ContextBoard, Description: "Cycle sort mode"},
 		{Key: "T", Command: CmdCycleTypeFilter, Context: ContextBoard, Description: "Cycle type filter"},
+		{Key: "W", Command: CmdSendToWorktree, Context: ContextBoard, Description: "Send to worktree"},
 
 		// Additional navigation (same as ContextMain)
 		{Key: "ctrl+f", Command: CmdFullPageDown, Context: ContextBoard, Description: "Full page down"},

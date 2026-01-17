@@ -128,6 +128,9 @@ const (
 	CmdToggleBoardClosed      Command = "closed"
 	CmdCycleBoardStatusFilter Command = "status-filter"
 	CmdToggleBoardView        Command = "view"
+
+	// External integration commands
+	CmdSendToWorktree Command = "send-to-worktree"
 )
 
 // Binding maps a key or key sequence to a command in a specific context
