@@ -194,6 +194,8 @@ AllBoards          []models.Board
 | `B`     | Main/Board         | Open board picker                   |
 | `j/k`   | Board              | Navigate                            |
 | `J/K`   | Board              | Move issue up/down (swap positions) |
+| `ctrl+K`| Board              | Move issue to top                   |
+| `ctrl+J`| Board              | Move issue to bottom                |
 | `c`     | Board              | Toggle closed visibility            |
 | `F`     | Board              | Cycle status filter                 |
 | `Esc`   | Board              | Exit to All Issues                  |
@@ -212,6 +214,8 @@ AllBoards          []models.Board
 - `selectBoard()` - activate board, update last_viewed_at
 - `exitBoardMode()` - return to All Issues
 - `moveIssueInBoard(direction)` - swap with adjacent positioned issue; if current issue is unpositioned, insert it just above/below the nearest positioned neighbor (or at position 1 if none)
+- `moveIssueToTop()` - move selected issue to position 1 (top of column/category)
+- `moveIssueToBottom()` - move selected issue to max+1 (bottom of positioned issues)
 - `toggleBoardClosed()` - toggle closed in status filter (default closed hidden)
 
 ### Init (`pkg/monitor/model.go`)

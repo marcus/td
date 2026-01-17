@@ -1023,6 +1023,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdMoveIssueDown:
 		return m.moveIssueInBoard(1)
 
+	case keymap.CmdMoveIssueToTop:
+		return m.moveIssueToTop()
+
+	case keymap.CmdMoveIssueToBottom:
+		return m.moveIssueToBottom()
+
 	case keymap.CmdToggleBoardView:
 		return m.toggleBoardView()
 	}
@@ -1429,6 +1435,149 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 	}
 
 	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+}
+
+// moveIssueToTop moves the selected issue to position 1 (top of positioned issues).
+// Works in both swimlanes and backlog views. For swimlanes, only moves within same category.
+func (m Model) moveIssueToTop() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	boardID := m.BoardMode.Board.ID
+
+	// Get selected issue based on view mode
+	var issueID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		if len(m.BoardMode.SwimlaneRows) == 0 {
+			return m, nil
+		}
+		cursor := m.BoardMode.SwimlaneCursor
+		if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+			return m, nil
+		}
+		currentRow := m.BoardMode.SwimlaneRows[cursor]
+		issueID = currentRow.Issue.ID
+
+		// Check if already at top of category
+		categoryStart := m.findCategoryStart(cursor)
+		if cursor == categoryStart {
+			return m, nil // Already at top of category
+		}
+	} else {
+		// Backlog view
+		if len(m.BoardMode.Issues) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+			return m, nil
+		}
+		if m.BoardMode.Cursor == 0 {
+			return m, nil // Already at top
+		}
+		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	}
+
+	// Move to position 1 (SetIssuePosition handles shifting)
+	if err := m.DB.SetIssuePosition(boardID, issueID, 1); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+
+	m.BoardMode.PendingSelectionID = issueID
+	return m, m.fetchBoardIssues(boardID)
+}
+
+// moveIssueToBottom moves the selected issue to the end of positioned issues.
+// Works in both swimlanes and backlog views. For swimlanes, only moves within same category.
+func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	boardID := m.BoardMode.Board.ID
+
+	// Get selected issue based on view mode
+	var issueID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		if len(m.BoardMode.SwimlaneRows) == 0 {
+			return m, nil
+		}
+		cursor := m.BoardMode.SwimlaneCursor
+		if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+			return m, nil
+		}
+		currentRow := m.BoardMode.SwimlaneRows[cursor]
+		issueID = currentRow.Issue.ID
+
+		// Check if already at bottom of category
+		categoryEnd := m.findCategoryEnd(cursor)
+		if cursor == categoryEnd {
+			return m, nil // Already at bottom of category
+		}
+	} else {
+		// Backlog view
+		if len(m.BoardMode.Issues) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+			return m, nil
+		}
+		if m.BoardMode.Cursor == len(m.BoardMode.Issues)-1 {
+			return m, nil // Already at bottom
+		}
+		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	}
+
+	// Remove current position first (if any) to not count it in max
+	_ = m.DB.RemoveIssuePosition(boardID, issueID)
+
+	// Get max position and add to end
+	maxPos, err := m.DB.GetMaxBoardPosition(boardID)
+	if err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+
+	// Move to max+1
+	if err := m.DB.SetIssuePosition(boardID, issueID, maxPos+1); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+
+	m.BoardMode.PendingSelectionID = issueID
+	return m, m.fetchBoardIssues(boardID)
+}
+
+// findCategoryStart finds the index of the first issue in the current category
+func (m Model) findCategoryStart(cursor int) int {
+	if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+		return cursor
+	}
+	currentCategory := m.BoardMode.SwimlaneRows[cursor].Category
+	for i := cursor - 1; i >= 0; i-- {
+		if m.BoardMode.SwimlaneRows[i].Category != currentCategory {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// findCategoryEnd finds the index of the last issue in the current category
+func (m Model) findCategoryEnd(cursor int) int {
+	if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+		return cursor
+	}
+	currentCategory := m.BoardMode.SwimlaneRows[cursor].Category
+	for i := cursor + 1; i < len(m.BoardMode.SwimlaneRows); i++ {
+		if m.BoardMode.SwimlaneRows[i].Category != currentCategory {
+			return i - 1
+		}
+	}
+	return len(m.BoardMode.SwimlaneRows) - 1
 }
 
 // fetchBoards returns a command that fetches all boards

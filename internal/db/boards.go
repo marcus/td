@@ -376,6 +376,21 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 	return positions, nil
 }
 
+// GetMaxBoardPosition returns the highest position value for a board, or 0 if no positioned issues.
+func (db *DB) GetMaxBoardPosition(boardID string) (int, error) {
+	var maxPos sql.NullInt64
+	err := db.conn.QueryRow(`
+		SELECT MAX(position) FROM board_issue_positions WHERE board_id = ?
+	`, boardID).Scan(&maxPos)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get max position: %w", err)
+	}
+	if !maxPos.Valid {
+		return 0, nil
+	}
+	return int(maxPos.Int64), nil
+}
+
 // SwapIssuePositions swaps the positions of two issues on a board
 func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 	id1 = NormalizeIssueID(id1)

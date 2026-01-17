@@ -64,6 +64,8 @@ var commandMetadata = map[Command]struct {
 	CmdCloseBoardPicker:       {"Close", "Close board picker", 3},
 	CmdMoveIssueUp:            {"Move Up", "Move issue up in column", 3},
 	CmdMoveIssueDown:          {"Move Down", "Move issue down in column", 3},
+	CmdMoveIssueToTop:         {"Top", "Move issue to top of column", 3},
+	CmdMoveIssueToBottom:      {"Bottom", "Move issue to bottom of column", 3},
 	CmdExitBoardMode:          {"Exit", "Exit board mode", 3},
 	CmdToggleBoardView:        {"View", "Toggle swimlanes/backlog view", 2},
 	CmdToggleBoardClosed:      {"Closed", "Toggle closed in board", 2},

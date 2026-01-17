@@ -565,7 +565,15 @@ In `pkg/monitor/keymap/bindings.go`, add bindings for each context:
 // In MODAL BINDINGS section:
 {Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},
 {Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextModal, Description: "Copy issue ID"},
+
+// BOARD MODE - Ctrl+modifier keys (extends base command to extremes):
+{Key: "J", Command: CmdMoveIssueDown, Context: ContextBoard, Description: "Move issue down"},
+{Key: "K", Command: CmdMoveIssueUp, Context: ContextBoard, Description: "Move issue up"},
+{Key: "ctrl+j", Command: CmdMoveIssueToBottom, Context: ContextBoard, Description: "Move issue to bottom"},
+{Key: "ctrl+k", Command: CmdMoveIssueToTop, Context: ContextBoard, Description: "Move issue to top"},
 ```
+
+Note: The `ctrl+<key>` pattern extends the base command to its extreme. For example, `J` moves down one position, while `ctrl+J` moves to the bottom.
 
 ### Step 3: Add Handler Method
 

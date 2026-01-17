@@ -299,6 +299,8 @@ func DefaultBindings() []Binding {
 		{Key: "up", Command: CmdCursorUp, Context: ContextBoard, Description: "Move up"},
 		{Key: "J", Command: CmdMoveIssueDown, Context: ContextBoard, Description: "Move issue down"},
 		{Key: "K", Command: CmdMoveIssueUp, Context: ContextBoard, Description: "Move issue up"},
+		{Key: "ctrl+j", Command: CmdMoveIssueToBottom, Context: ContextBoard, Description: "Move issue to bottom"},
+		{Key: "ctrl+k", Command: CmdMoveIssueToTop, Context: ContextBoard, Description: "Move issue to top"},
 		{Key: "enter", Command: CmdOpenDetails, Context: ContextBoard, Description: "Open issue"},
 		{Key: "c", Command: CmdToggleBoardClosed, Context: ContextBoard, Description: "Toggle closed"},
 		{Key: "F", Command: CmdCycleBoardStatusFilter, Context: ContextBoard, Description: "Cycle status filter"},

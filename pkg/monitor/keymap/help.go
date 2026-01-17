@@ -138,6 +138,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Esc / q", Description: "Close picker / exit board"},
 		{Keys: "← / →", Description: "Switch columns (swimlanes)"},
 		{Keys: "J / K", Description: "Move issue down/up in column"},
+		{Keys: "Ctrl+J / Ctrl+K", Description: "Move issue to bottom/top"},
 		{Keys: "v", Description: "Toggle swimlanes/backlog view"},
 		{Keys: "c", Description: "Toggle closed issues"},
 		{Keys: "F", Description: "Cycle status filter"},
@@ -373,6 +374,10 @@ func CommandHelp(cmd Command) string {
 		return "Move issue up in column"
 	case CmdMoveIssueDown:
 		return "Move issue down in column"
+	case CmdMoveIssueToTop:
+		return "Move issue to top of column"
+	case CmdMoveIssueToBottom:
+		return "Move issue to bottom of column"
 	case CmdExitBoardMode:
 		return "Exit board mode to All Issues"
 	case CmdToggleBoardClosed:
@@ -453,8 +458,8 @@ func AllCommands() []Command {
 		CmdCloseIssue, CmdReopenIssue,
 		// Board commands
 		CmdOpenBoardPicker, CmdSelectBoard, CmdCloseBoardPicker,
-		CmdMoveIssueUp, CmdMoveIssueDown, CmdExitBoardMode,
-		CmdToggleBoardClosed, CmdCycleBoardStatusFilter, CmdToggleBoardView,
+		CmdMoveIssueUp, CmdMoveIssueDown, CmdMoveIssueToTop, CmdMoveIssueToBottom,
+		CmdExitBoardMode, CmdToggleBoardClosed, CmdCycleBoardStatusFilter, CmdToggleBoardView,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {

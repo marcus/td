@@ -122,6 +122,8 @@ const (
 	CmdCloseBoardPicker       Command = "close-picker"
 	CmdMoveIssueUp            Command = "move-up"
 	CmdMoveIssueDown          Command = "move-down"
+	CmdMoveIssueToTop         Command = "move-to-top"
+	CmdMoveIssueToBottom      Command = "move-to-bottom"
 	CmdExitBoardMode          Command = "exit"
 	CmdToggleBoardClosed      Command = "closed"
 	CmdCycleBoardStatusFilter Command = "status-filter"
