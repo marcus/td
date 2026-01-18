@@ -313,26 +313,25 @@ func (m Model) modalContentWidth() int {
 
 // renderMarkdownAsync returns a command that renders markdown in background
 func (m Model) renderMarkdownAsync(issueID, desc, accept string, width int) tea.Cmd {
+	theme := m.MarkdownTheme // capture for closure
 	return func() tea.Msg {
 		return MarkdownRenderedMsg{
 			IssueID:      issueID,
-			DescRender:   preRenderMarkdown(desc, width),
-			AcceptRender: preRenderMarkdown(accept, width),
+			DescRender:   preRenderMarkdown(desc, width, theme),
+			AcceptRender: preRenderMarkdown(accept, width, theme),
 		}
 	}
 }
 
-// preRenderMarkdown renders markdown once (expensive operation)
-func preRenderMarkdown(text string, width int) string {
+// preRenderMarkdown renders markdown once (expensive operation).
+// If theme is nil, uses td's default ANSI 256 color palette.
+func preRenderMarkdown(text string, width int, theme *MarkdownThemeConfig) string {
 	if text == "" {
 		return ""
 	}
 
-	// Use dark style directly (avoid expensive auto-detection)
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStylePath("dark"),
-		glamour.WithWordWrap(width),
-	)
+	// Use custom theme if provided, otherwise use td monitor default palette
+	renderer, err := glamour.NewTermRenderer(getGlamourOptionsWithTheme(width, theme)...)
 	if err != nil {
 		return text // fallback to plain text
 	}

@@ -140,6 +140,9 @@ type Model struct {
 	// Custom renderers (for embedding with custom theming)
 	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
 	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)
+
+	// Markdown theme (for embedding with shared theme)
+	MarkdownTheme *MarkdownThemeConfig // Custom markdown/syntax theme (nil = default td colors)
 }
 
 // NewModel creates a new monitor model
@@ -212,6 +215,11 @@ type EmbeddedOptions struct {
 	Version       string        // Version string for display
 	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
 	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)
+
+	// MarkdownTheme configures markdown rendering to share themes with embedder.
+	// Pass colors from your theme to get consistent syntax highlighting.
+	// If nil, uses td's default ANSI 256 color palette.
+	MarkdownTheme *MarkdownThemeConfig
 }
 
 // NewEmbeddedWithOptions creates a monitor model with custom options.
@@ -233,6 +241,7 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 	m.Embedded = true
 	m.PanelRenderer = opts.PanelRenderer
 	m.ModalRenderer = opts.ModalRenderer
+	m.MarkdownTheme = opts.MarkdownTheme
 	return &m, nil
 }
 
