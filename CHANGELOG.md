@@ -2,6 +2,13 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.14.0] - 2026-01-17
+
+### Features
+- Add markdown theme support with custom chroma style builder
+- Support hex color palettes and syntax themes for markdown rendering in monitor
+- Allow embedders (sidecar) to customize theme via MarkdownThemeConfig
+
 ## [v0.13.0] - 2026-01-17
 
 ### Features
