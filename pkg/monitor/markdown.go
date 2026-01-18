@@ -3,6 +3,7 @@ package monitor
 import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 )
 
 // MarkdownThemeConfig configures markdown rendering theme.
@@ -474,14 +475,20 @@ func getGlamourOptionsWithTheme(width int, theme *MarkdownThemeConfig) []glamour
 		}
 	}
 
-	// Chroma theme name provided: use glamour's built-in style handling
+	// Chroma theme name provided: use named Chroma style for syntax highlighting
 	if theme.SyntaxTheme != "" {
-		baseStyle := theme.MarkdownTheme
-		if baseStyle == "" {
-			baseStyle = "dark"
+		// Get base style (dark or light) and modify CodeBlock.Theme
+		var style ansi.StyleConfig
+		if theme.MarkdownTheme == "light" {
+			style = styles.LightStyleConfig
+		} else {
+			style = styles.DarkStyleConfig
 		}
+		// Set Chroma theme name and clear embedded Chroma so Theme takes effect
+		style.CodeBlock.Theme = theme.SyntaxTheme
+		style.CodeBlock.Chroma = nil
 		return []glamour.TermRendererOption{
-			glamour.WithStylePath(baseStyle),
+			glamour.WithStyles(style),
 			glamour.WithWordWrap(width),
 		}
 	}

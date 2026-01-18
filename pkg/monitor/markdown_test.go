@@ -410,3 +410,68 @@ func TestMarkdownThemeConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestSyntaxThemeActuallyApplies(t *testing.T) {
+	// Verify that different SyntaxTheme values produce different output
+	code := "```go\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n```"
+
+	// Render with monokai theme
+	monokaiTheme := &MarkdownThemeConfig{
+		SyntaxTheme:   "monokai",
+		MarkdownTheme: "dark",
+	}
+	monokaiResult := preRenderMarkdown(code, 80, monokaiTheme)
+
+	// Render with dracula theme
+	draculaTheme := &MarkdownThemeConfig{
+		SyntaxTheme:   "dracula",
+		MarkdownTheme: "dark",
+	}
+	draculaResult := preRenderMarkdown(code, 80, draculaTheme)
+
+	// Render with default td palette (no SyntaxTheme)
+	defaultResult := preRenderMarkdown(code, 80, nil)
+
+	// All should contain the code
+	for name, result := range map[string]string{
+		"monokai": monokaiResult,
+		"dracula": draculaResult,
+		"default": defaultResult,
+	} {
+		if !strings.Contains(result, "func") || !strings.Contains(result, "main") {
+			t.Errorf("%s: result should contain 'func' and 'main'", name)
+		}
+		// All should have ANSI escape codes (syntax highlighting)
+		if !strings.Contains(result, "\x1b[") {
+			t.Errorf("%s: result should contain ANSI codes", name)
+		}
+	}
+
+	// Monokai and dracula should produce different output (different color schemes)
+	if monokaiResult == draculaResult {
+		t.Error("monokai and dracula themes should produce different output")
+	}
+
+	// Both named themes should differ from default td palette
+	if monokaiResult == defaultResult {
+		t.Error("monokai theme should differ from default td palette")
+	}
+}
+
+func TestSyntaxThemeLightMode(t *testing.T) {
+	code := "```go\nvar x = 42\n```"
+
+	// Test light mode base style
+	lightTheme := &MarkdownThemeConfig{
+		SyntaxTheme:   "monokai",
+		MarkdownTheme: "light",
+	}
+	result := preRenderMarkdown(code, 80, lightTheme)
+
+	if !strings.Contains(result, "42") {
+		t.Error("light theme result should contain code")
+	}
+	if !strings.Contains(result, "\x1b[") {
+		t.Error("light theme should produce ANSI codes")
+	}
+}
