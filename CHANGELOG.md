@@ -2,6 +2,12 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.18.0] - 2026-01-20
+
+### Features
+- Add configurable title length limits via config (TitleMinLength, TitleMaxLength)
+- Default max title length of 100 chars prevents description-as-title abuse
+
 ## [v0.17.0] - 2026-01-19
 
 ### Bug Fixes

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
@@ -49,7 +50,8 @@ var createCmd = &cobra.Command{
 		}
 
 		// Validate title quality
-		if err := validateTitle(title); err != nil {
+		minLen, maxLen, _ := config.GetTitleLengthLimits(baseDir)
+		if err := validateTitle(title, minLen, maxLen); err != nil {
 			output.Error("%v", err)
 			return err
 		}
@@ -250,9 +252,7 @@ func parseTypeFromTitle(title string) (models.Type, string) {
 }
 
 // validateTitle checks that the title is descriptive enough
-func validateTitle(title string) error {
-	const minLength = 15
-
+func validateTitle(title string, minLength, maxLength int) error {
 	// Generic titles that should be rejected (case-insensitive)
 	genericTitles := []string{
 		"task", "issue", "bug", "feature", "fix", "update", "change",
@@ -269,11 +269,14 @@ func validateTitle(title string) error {
 		}
 	}
 
-	// Check minimum length using rune count (correct for unicode)
+	// Check length using rune count (correct for unicode)
 	// Use trimmed length to prevent whitespace padding exploit
 	runeCount := utf8.RuneCountInString(trimmed)
 	if runeCount < minLength {
 		return fmt.Errorf("title too short (%d chars, need %d) - e.g. 'Fix login timeout' not 'Fix bug'", runeCount, minLength)
+	}
+	if runeCount > maxLength {
+		return fmt.Errorf("title too long (%d chars, max %d) - move details to description", runeCount, maxLength)
 	}
 
 	return nil

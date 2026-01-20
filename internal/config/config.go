@@ -10,6 +10,12 @@ import (
 
 const configFile = ".todos/config.json"
 
+// Title validation defaults
+const (
+	DefaultTitleMinLength = 15
+	DefaultTitleMaxLength = 100
+)
+
 // Load reads the config from disk
 func Load(baseDir string) (*models.Config, error) {
 	configPath := filepath.Join(baseDir, configFile)
@@ -173,4 +179,24 @@ func SetFilterState(baseDir string, state *FilterState) error {
 	cfg.TypeFilter = state.TypeFilter
 	cfg.IncludeClosed = state.IncludeClosed
 	return Save(baseDir, cfg)
+}
+
+// GetTitleLengthLimits returns min/max title length limits from config (with defaults)
+func GetTitleLengthLimits(baseDir string) (min, max int, err error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return DefaultTitleMinLength, DefaultTitleMaxLength, err
+	}
+
+	min = cfg.TitleMinLength
+	if min <= 0 {
+		min = DefaultTitleMinLength
+	}
+
+	max = cfg.TitleMaxLength
+	if max <= 0 {
+		max = DefaultTitleMaxLength
+	}
+
+	return min, max, nil
 }

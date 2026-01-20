@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
@@ -828,5 +830,125 @@ func TestMultipleMinorTasksByCreator(t *testing.T) {
 
 	if len(reviewable) != 3 {
 		t.Errorf("Expected 3 reviewable minor tasks, got %d", len(reviewable))
+	}
+}
+
+// TestValidateTitleMinLength tests that titles shorter than min are rejected
+func TestValidateTitleMinLength(t *testing.T) {
+	tests := []struct {
+		title     string
+		minLen    int
+		maxLen    int
+		wantError bool
+	}{
+		{"Short", 15, 100, true},                              // 5 chars < 15
+		{"This is fine!", 15, 100, true},                      // 13 chars < 15
+		{"This is long enough to pass", 15, 100, false},       // 27 chars >= 15
+		{"Exactly fifteen!", 15, 100, false},                  // 16 chars >= 15
+		{"Fix the login bug", 15, 100, false},                 // 17 chars >= 15
+		{"A", 1, 100, false},                                  // Custom min=1
+		{"Unicode: 日本語テスト長さ確認", 15, 100, false},               // Unicode rune count (19 runes >= 15)
+	}
+
+	for _, tt := range tests {
+		err := validateTitle(tt.title, tt.minLen, tt.maxLen)
+		if tt.wantError && err == nil {
+			t.Errorf("validateTitle(%q, %d, %d) expected error, got nil", tt.title, tt.minLen, tt.maxLen)
+		}
+		if !tt.wantError && err != nil {
+			t.Errorf("validateTitle(%q, %d, %d) unexpected error: %v", tt.title, tt.minLen, tt.maxLen, err)
+		}
+	}
+}
+
+// TestValidateTitleMaxLength tests that titles longer than max are rejected
+func TestValidateTitleMaxLength(t *testing.T) {
+	tests := []struct {
+		title     string
+		minLen    int
+		maxLen    int
+		wantError bool
+	}{
+		{"This is a normal length title that should pass easily", 15, 100, false},
+		{strings.Repeat("a", 100), 15, 100, false},  // Exactly 100 chars
+		{strings.Repeat("a", 101), 15, 100, true},   // 101 chars > 100
+		{strings.Repeat("a", 200), 15, 100, true},   // Way too long
+		{strings.Repeat("a", 50), 15, 50, false},    // Custom max
+		{strings.Repeat("a", 51), 15, 50, true},     // Custom max exceeded
+	}
+
+	for _, tt := range tests {
+		err := validateTitle(tt.title, tt.minLen, tt.maxLen)
+		if tt.wantError && err == nil {
+			t.Errorf("validateTitle(len=%d, min=%d, max=%d) expected error, got nil", len(tt.title), tt.minLen, tt.maxLen)
+		}
+		if !tt.wantError && err != nil {
+			t.Errorf("validateTitle(len=%d, min=%d, max=%d) unexpected error: %v", len(tt.title), tt.minLen, tt.maxLen, err)
+		}
+	}
+}
+
+// TestValidateTitleGenericRejection tests that generic titles are rejected
+func TestValidateTitleGenericRejection(t *testing.T) {
+	genericTitles := []string{
+		"task", "TASK", "Task",
+		"issue", "bug", "feature",
+		"fix", "update", "change",
+		"todo", "work", "item",
+		"thing", "stuff", "test", "new", "add",
+	}
+
+	for _, title := range genericTitles {
+		err := validateTitle(title, 1, 100) // Use min=1 to isolate generic check
+		if err == nil {
+			t.Errorf("validateTitle(%q) should reject generic title", title)
+		}
+		if err != nil && !strings.Contains(err.Error(), "generic") {
+			t.Errorf("validateTitle(%q) error should mention 'generic': %v", title, err)
+		}
+	}
+}
+
+// TestValidateTitleErrorMessages tests that error messages are helpful
+func TestValidateTitleErrorMessages(t *testing.T) {
+	// Too short error
+	err := validateTitle("Short", 15, 100)
+	if err == nil || !strings.Contains(err.Error(), "too short") {
+		t.Errorf("Expected 'too short' error, got: %v", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "5 chars") {
+		t.Errorf("Error should include actual length, got: %v", err)
+	}
+
+	// Too long error
+	err = validateTitle(strings.Repeat("a", 150), 15, 100)
+	if err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Errorf("Expected 'too long' error, got: %v", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "max 100") {
+		t.Errorf("Error should include max length, got: %v", err)
+	}
+}
+
+// TestConfigDefaultTitleLengths tests that config defaults are correct
+func TestConfigDefaultTitleLengths(t *testing.T) {
+	if config.DefaultTitleMinLength != 15 {
+		t.Errorf("DefaultTitleMinLength should be 15, got %d", config.DefaultTitleMinLength)
+	}
+	if config.DefaultTitleMaxLength != 100 {
+		t.Errorf("DefaultTitleMaxLength should be 100, got %d", config.DefaultTitleMaxLength)
+	}
+}
+
+// TestConfigGetTitleLengthLimitsDefaults tests getting limits without config file
+func TestConfigGetTitleLengthLimitsDefaults(t *testing.T) {
+	dir := t.TempDir()
+
+	min, max, _ := config.GetTitleLengthLimits(dir)
+	if min != config.DefaultTitleMinLength {
+		t.Errorf("Expected default min %d, got %d", config.DefaultTitleMinLength, min)
+	}
+	if max != config.DefaultTitleMaxLength {
+		t.Errorf("Expected default max %d, got %d", config.DefaultTitleMaxLength, max)
 	}
 }

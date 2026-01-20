@@ -221,6 +221,9 @@ type Config struct {
 	SortMode      string `json:"sort_mode,omitempty"`   // "priority", "created", "updated"
 	TypeFilter    string `json:"type_filter,omitempty"` // "epic", "task", "bug", "feature", "chore", ""
 	IncludeClosed bool   `json:"include_closed,omitempty"`
+	// Title validation limits
+	TitleMinLength int `json:"title_min_length,omitempty"` // Default: 15
+	TitleMaxLength int `json:"title_max_length,omitempty"` // Default: 100
 }
 
 // ActionType represents the type of action that was performed
