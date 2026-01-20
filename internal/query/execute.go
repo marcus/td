@@ -112,12 +112,19 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 	// Pre-fetch data for efficiency - call once, not per issue
 	var reworkIDs map[string]bool
 	var issuesWithOpenDeps map[string]bool
+	var err error
 	for _, filter := range crossFilters {
 		if filter.field == "rework" && reworkIDs == nil {
-			reworkIDs, _ = database.GetRejectedInProgressIssueIDs()
+			reworkIDs, err = database.GetRejectedInProgressIssueIDs()
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch rework IDs: %w", err)
+			}
 		}
 		if (filter.field == "is_ready" || filter.field == "has_open_deps") && issuesWithOpenDeps == nil {
-			issuesWithOpenDeps, _ = database.GetIssuesWithOpenDeps()
+			issuesWithOpenDeps, err = database.GetIssuesWithOpenDeps()
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch dependency data: %w", err)
+			}
 		}
 	}
 

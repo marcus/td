@@ -330,8 +330,8 @@ func (e *Evaluator) functionToSQL(node *FunctionCall) ([]SQLCondition, error) {
 			return nil, fmt.Errorf("%s() requires 1 argument", node.Name)
 		}
 		label := escapeSQLWildcards(fmt.Sprintf("%v", node.Args[0]))
-		// Use LIKE for comma-separated labels field
-		return []SQLCondition{{Clause: "(labels LIKE ? OR labels LIKE ? OR labels LIKE ? OR labels = ?)",
+		// Use LIKE with ESCAPE clause for comma-separated labels field
+		return []SQLCondition{{Clause: "(labels LIKE ? ESCAPE '\\' OR labels LIKE ? ESCAPE '\\' OR labels LIKE ? ESCAPE '\\' OR labels = ?)",
 			Args: []interface{}{label + ",%", "%," + label + ",%", "%," + label, label}}}, nil
 
 	default:

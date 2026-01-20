@@ -2,6 +2,12 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.17.0] - 2026-01-19
+
+### Bug Fixes
+- Add missing ESCAPE clause to label() SQL query for proper wildcard escaping
+- Add error handling for is_ready()/has_open_deps() pre-fetch queries
+
 ## [v0.16.0] - 2026-01-19
 
 ### Features
