@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.16.0] - 2026-01-19
+
+### Features
+- Add `epic.labels` field for query expressions
+- Add `is_ready()` query function to find issues with no open dependencies
+- Add `has_open_deps()` query function to check dependency status
+
+### Bug Fixes
+- Fix board refresh when query functions change
+- Fix monitor panel header styling and row alignment
+- Stabilize activity table column widths
+- Fix activity table scrolling
+
 ## [v0.15.1] - 2026-01-19
 
 ### Bug Fixes
