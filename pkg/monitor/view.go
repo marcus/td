@@ -584,7 +584,7 @@ func (m Model) renderTaskListPanel(height int) string {
 		// Format row with category tag and selection highlight
 		tag := m.formatCategoryTag(row.Category)
 		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("  %s %s", tag, issueStr)
+		line := fmt.Sprintf("%s %s", tag, issueStr)
 
 		if isActive && cursor == i {
 			line = highlightRow(line, m.Width-4)
@@ -871,7 +871,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 		// Format row with category tag and selection highlight
 		tag := m.formatCategoryTag(row.Category)
 		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("  %s %s", tag, issueStr)
+		line := fmt.Sprintf("%s %s", tag, issueStr)
 
 		if isActive && cursor == i {
 			line = highlightRow(line, m.Width-4)
@@ -903,10 +903,10 @@ func (m Model) formatSwimlaneCategoryHeader(cat TaskListCategory) string {
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.BoardMode.SwimlaneData.Ready)
-		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.BoardMode.SwimlaneData.Blocked)
-		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
 	case CategoryClosed:
 		count = len(m.BoardMode.SwimlaneData.Closed)
 		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
@@ -926,10 +926,10 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.TaskList.Ready)
-		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.TaskList.Blocked)
-		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
 	case CategoryClosed:
 		count = len(m.TaskList.Closed)
 		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
@@ -2471,6 +2471,17 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("0")).
 				Background(lipgloss.Color("141"))
+
+	// Header styles for category sections (matching reviewAlertStyle pattern)
+	readyHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("42")) // Green bg
+
+	blockedHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("255")).
+				Background(lipgloss.Color("196")) // Red bg
 
 	// Prominent style for handoff alert - green background
 	handoffAlertStyle = lipgloss.NewStyle().
