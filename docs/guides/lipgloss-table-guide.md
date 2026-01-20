@@ -37,6 +37,7 @@ return t.Render()
 
 - Render only visible rows; avoid `Height` + `Offset` (prevents ellipsis row).
 - Disable all table borders when embedding (`BorderTop/Bottom/Left/Right(false)`).
+- Fix column widths for stable alignment across pages (use `StyleFunc` + `Width`).
 - Centralize layout math; reuse for render + hit testing + visible height.
 - Clamp `offset <= len(rows)-dataRowsVisible` and ignore the scroll-indicator line.
 - Keep cursor visible on scroll; otherwise clicks/selection desync.
@@ -79,6 +80,16 @@ Use that helper for:
 - `render...Panel()` slicing
 - `hitTest...Row()` clamping and bounds checks
 
+### 1c. Fix Column Widths When Slicing Rows
+
+When you only render the visible rows, lipgloss/table will auto-size columns
+based on the current window. If later pages have shorter values, columns shrink
+and spacing shifts (e.g., extra space after the time column).
+
+**Fix**: Set fixed widths for non-message columns via the table `StyleFunc`:
+- Time, Session, Type, Issue columns should have fixed widths
+- Leave the message column flexible to absorb remaining width
+
 ### 2. Table Header Takes 1 Line (only if borders are disabled)
 
 When using `Border(lipgloss.HiddenBorder())` with `BorderHeader(false)` **and** all borders disabled (`BorderTop/Bottom/Left/Right(false)`), the table renders:
@@ -115,7 +126,9 @@ This is why arrow key scroll keeps cursor visible but mouse wheel doesn't - they
 
 When cells contain styled content (ANSI escape codes), the table's width calculation can be off, causing columns to bleed together.
 
-**Solution**: Add trailing spaces to styled cells:
+**Solutions**:
+- Prefer fixed column widths via `StyleFunc` to stabilize layout.
+- If you keep auto-sizing, add trailing spaces to styled cells:
 
 ```go
 // WRONG - columns may bleed together

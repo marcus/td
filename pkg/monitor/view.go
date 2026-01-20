@@ -294,20 +294,25 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 // activityTableStyleFunc returns a StyleFunc for the activity table
 // that highlights the selected row when the panel is active.
 // visibleCursor is the cursor position relative to visible rows (cursor - offset).
-func (m Model) activityTableStyleFunc(visibleCursor int, isActive bool) table.StyleFunc {
+func (m Model) activityTableStyleFunc(visibleCursor int, isActive bool, colWidths []int) table.StyleFunc {
 	return func(row, col int) lipgloss.Style {
+		style := lipgloss.NewStyle()
+
 		// Header row (row == -1 in lipgloss/table)
 		if row == table.HeaderRow {
-			return activityTableHeaderStyle
+			style = activityTableHeaderStyle
 		}
 
 		// Selected row highlight (only when panel is active)
-		if isActive && row == visibleCursor {
-			return activityTableSelectedStyle
+		if isActive && row == visibleCursor && row != table.HeaderRow {
+			style = activityTableSelectedStyle
 		}
 
-		// Default - no extra styling (cells are pre-styled)
-		return lipgloss.NewStyle()
+		if col >= 0 && col < len(colWidths) && colWidths[col] > 0 {
+			style = style.Width(colWidths[col])
+		}
+
+		return style
 	}
 }
 
@@ -318,13 +323,12 @@ func (m Model) activityTableStyleFunc(visibleCursor int, isActive bool) table.St
 // when ANSI codes affect width calculation.
 func (m Model) formatActivityRow(item ActivityItem, messageWidth int) []string {
 	// Pre-styled cells using existing style functions
-	// Add trailing space to prevent column bleeding
 	timestamp := timestampStyle.Render(item.Timestamp.Format("15:04"))
-	session := subtleStyle.Render(truncateSession(item.SessionID)) + " "
-	badge := formatActivityBadge(item.Type) + " " // existing function with styling
+	session := subtleStyle.Render(truncateSession(item.SessionID))
+	badge := formatActivityBadge(item.Type) // existing function with styling
 	issueID := ""
 	if item.IssueID != "" {
-		issueID = titleStyle.Render(item.IssueID) + " "
+		issueID = titleStyle.Render(item.IssueID)
 	}
 
 	// Build message with optional title suffix (use bullet instead of pipe)
@@ -391,19 +395,25 @@ func (m Model) renderActivityPanel(height int) string {
 
 	// Calculate message column width
 	// Fixed columns: Time(5) + Session(10) + Type(5) + Issue(8) = 28
-	// Plus separators and padding
 	contentWidth := m.Width - 4 // panel border + padding
-	fixedWidth := activityColTimeWidth + activityColSessionWidth + activityColTypeWidth + activityColIssueWidth + 8
+	fixedWidth := activityColTimeWidth + activityColSessionWidth + activityColTypeWidth + activityColIssueWidth
 	messageWidth := contentWidth - fixedWidth
 	if messageWidth < 15 {
 		messageWidth = 15
+	}
+	colWidths := []int{
+		activityColTimeWidth,
+		activityColSessionWidth,
+		activityColTypeWidth,
+		activityColIssueWidth,
+		0, // message column expands to fill
 	}
 
 	// Create table with headers
 	t := table.New().
 		Headers("Time", "Sess", "Type", "Issue", "Message").
 		Width(contentWidth).
-		StyleFunc(m.activityTableStyleFunc(cursor-offset, isActive)).
+		StyleFunc(m.activityTableStyleFunc(cursor-offset, isActive, colWidths)).
 		Border(lipgloss.HiddenBorder()).
 		BorderHeader(false).
 		BorderRow(false).
