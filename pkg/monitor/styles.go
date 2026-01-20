@@ -9,6 +9,14 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
+// Activity table column widths (fixed columns; message takes remaining space)
+const (
+	activityColTimeWidth    = 5  // "15:04" format
+	activityColSessionWidth = 10 // truncated session ID
+	activityColTypeWidth    = 5  // "[LOG]", "[ACT]", "[CMT]"
+	activityColIssueWidth   = 8  // Issue ID like "td-abc123"
+)
+
 var (
 	// Base colors
 	primaryColor   = lipgloss.Color("212")
@@ -224,6 +232,14 @@ var (
 				Foreground(lipgloss.Color("255")).
 				Background(lipgloss.Color("203")). // Lighter red
 				Padding(0, 2)
+
+	// Activity table styles
+	activityTableHeaderStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("255"))
+
+	activityTableSelectedStyle = lipgloss.NewStyle().
+					Background(lipgloss.Color("237"))
 )
 
 // formatStatus renders a status with color

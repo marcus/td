@@ -2366,10 +2366,18 @@ func TestVisibleHeightUsesActualPanelHeight(t *testing.T) {
 			availableHeight := tt.height - footerHeight - searchBarHeight
 
 			// Test each panel
+			// Calculate panel heights matching visibleHeightForPanel's approach
+			panel0 := int(float64(availableHeight) * tt.paneHeights[0])
+			panel1 := int(float64(availableHeight) * tt.paneHeights[1])
+			panelHeights := [3]int{
+				panel0,
+				panel1,
+				availableHeight - panel0 - panel1, // Activity panel absorbs rounding
+			}
+
 			for panel := Panel(0); panel < 3; panel++ {
-				expectedPanelHeight := int(float64(availableHeight) * tt.paneHeights[panel])
-				// visibleHeight = panelHeight - 5 (title + border + indicators)
-				expectedVisible := expectedPanelHeight - 5
+				// visibleHeight = panelHeight - 5 (title + border + indicators/header)
+				expectedVisible := panelHeights[panel] - 5
 
 				got := m.visibleHeightForPanel(panel)
 

@@ -367,25 +367,53 @@ func (m Model) hitTestCurrentWorkRow(relY int) int {
 	return -1
 }
 
-// hitTestActivityRow maps a y position to an Activity index
+// hitTestActivityRow maps a y position to an Activity index.
+// Account for table header row(s) at top of content area.
 func (m Model) hitTestActivityRow(relY int) int {
 	if len(m.Activity) == 0 {
 		return -1
 	}
 
-	offset := m.ScrollOffset[PanelActivity]
-
-	// Account for "▲ more above" indicator
-	linePos := 0
-	if offset > 0 {
-		if relY == 0 {
-			return -1
-		}
-		linePos = 1
+	bounds, ok := m.PanelBounds[PanelActivity]
+	if !ok {
+		return -1
 	}
 
-	// Simple 1:1 mapping for activity (no headers)
-	rowIdx := relY - linePos + offset
+	// relY is relative to panel content area (after panel title/border)
+	// The lipgloss table with BorderHeader(false) and hidden borders renders:
+	// - Row 0: Header row ("Time", "Sess", etc.)
+	// - Row 1+: Data rows (no separator line when borders are hidden)
+	const tableHeaderRows = activityTableHeaderRows
+
+	layout := activityTableMetrics(bounds.H)
+	tableHeight := layout.tableHeight
+	dataRowsVisible := layout.dataRowsVisible
+
+	offset := m.ScrollOffset[PanelActivity]
+	maxOffset := len(m.Activity) - dataRowsVisible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Ignore the scroll indicator / padding line below the table.
+	if relY >= tableHeight {
+		return -1
+	}
+
+	if relY < tableHeaderRows {
+		return -1 // Click on table header area - no selection
+	}
+
+	// Convert to data row index
+	dataRowY := relY - tableHeaderRows
+	rowIdx := dataRowY + offset
+
 	if rowIdx >= 0 && rowIdx < len(m.Activity) {
 		return rowIdx
 	}
@@ -585,10 +613,10 @@ func (m *Model) ensureCursorVisible(panel Panel) {
 
 	// Scroll down if cursor below viewport
 	if cursor >= offset+effectiveHeight {
-		// After scrolling, "▲ more above" will appear taking 1 line,
-		// so we need to scroll 1 extra to compensate
 		newOffset := cursor - effectiveHeight + 1
-		if offset == 0 && newOffset > 0 {
+		// For panels with scroll indicators (not activity panel),
+		// "▲ more above" will appear taking 1 line, so scroll 1 extra
+		if panel != PanelActivity && offset == 0 && newOffset > 0 {
 			newOffset++ // Compensate for "more above" indicator appearing
 		}
 		m.ScrollOffset[panel] = newOffset
@@ -659,22 +687,29 @@ func (m Model) visibleHeightForPanel(panel Panel) int {
 	availableHeight := m.Height - footerHeight - searchBarHeight
 
 	// Get panel height based on dynamic pane ratios
+	// IMPORTANT: Must match renderView() calculation exactly, including rounding behavior
 	var panelHeight int
+	panel0 := int(float64(availableHeight) * m.PaneHeights[0])
+	panel1 := int(float64(availableHeight) * m.PaneHeights[1])
 	switch panel {
 	case PanelCurrentWork:
-		panelHeight = int(float64(availableHeight) * m.PaneHeights[0])
+		panelHeight = panel0
 	case PanelTaskList:
-		panelHeight = int(float64(availableHeight) * m.PaneHeights[1])
+		panelHeight = panel1
 	case PanelActivity:
-		panelHeight = int(float64(availableHeight) * m.PaneHeights[2])
+		// Activity panel absorbs rounding errors (matches renderView)
+		panelHeight = availableHeight - panel0 - panel1
 	default:
 		panelHeight = availableHeight / 3
 	}
 
-	// Account for: title (1) + border (2) + scroll indicators (2)
-	// Scroll indicators: "▲ more above" and "▼ more below" each take 1 line
-	// when the list is scrollable. Reserve space for both to ensure cursor
-	// stays visible during navigation.
+	if panel == PanelActivity {
+		return activityTableMetrics(panelHeight).dataRowsVisible
+	}
+
+	// Account for panel chrome on non-activity panels:
+	// - title (1) + border (2) = 3 lines base overhead
+	// - scroll indicators (2) = 5 total
 	return panelHeight - 5
 }
 
@@ -1082,10 +1117,24 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 	m.ScrollOffset[panel] = newOffset
 	m.ScrollIndependent[panel] = true
 
-	// NOTE: We intentionally do NOT call ensureCursorVisible here.
-	// Mouse scrolling should scroll the view independently of the cursor.
-	// The cursor can temporarily be off-screen; the user can use keyboard
-	// or click to re-select a visible item.
+	// Keep cursor visible when mouse scrolling
+	// This provides better UX than allowing cursor to go off-screen
+	if m.Cursor != nil {
+		visibleHeight := m.visibleHeightForPanel(panel)
+		cursor := m.Cursor[panel]
+
+		// If cursor went above viewport, move it to first visible row
+		if cursor < newOffset {
+			m.Cursor[panel] = newOffset
+		}
+		// If cursor went below viewport, move it to last visible row
+		if cursor >= newOffset+visibleHeight {
+			m.Cursor[panel] = newOffset + visibleHeight - 1
+			if m.Cursor[panel] >= count {
+				m.Cursor[panel] = count - 1
+			}
+		}
+	}
 
 	return m, nil
 }
