@@ -1599,3 +1599,93 @@ func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 		t.Error("SwapIssuePositions should fail when both issues are unpositioned")
 	}
 }
+
+// TestCreateIssue_CollisionRetry tests that CreateIssue retries on ID collision
+func TestCreateIssue_CollisionRetry(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create first issue normally
+	issue1 := &models.Issue{Title: "First Issue"}
+	if err := db.CreateIssue(issue1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	collidingID := issue1.ID
+
+	// Save original generator and restore after test
+	originalGenerator := idGenerator
+	defer func() { idGenerator = originalGenerator }()
+
+	// Mock generator: returns colliding ID twice, then a unique ID
+	callCount := 0
+	idGenerator = func() (string, error) {
+		callCount++
+		if callCount <= 2 {
+			return collidingID, nil // Will collide with issue1
+		}
+		return "td-unique", nil // Third attempt succeeds
+	}
+
+	// Create second issue - should succeed after retry
+	issue2 := &models.Issue{Title: "Second Issue"}
+	if err := db.CreateIssue(issue2); err != nil {
+		t.Fatalf("CreateIssue should succeed after retry: %v", err)
+	}
+
+	if issue2.ID != "td-unique" {
+		t.Errorf("Expected issue2.ID = 'td-unique', got %q", issue2.ID)
+	}
+
+	if callCount != 3 {
+		t.Errorf("Expected 3 ID generation attempts, got %d", callCount)
+	}
+}
+
+// TestCreateIssue_CollisionMaxRetries tests that CreateIssue fails after max retries
+func TestCreateIssue_CollisionMaxRetries(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create first issue normally
+	issue1 := &models.Issue{Title: "First Issue"}
+	if err := db.CreateIssue(issue1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	collidingID := issue1.ID
+
+	// Save original generator and restore after test
+	originalGenerator := idGenerator
+	defer func() { idGenerator = originalGenerator }()
+
+	// Mock generator: always returns the same colliding ID
+	callCount := 0
+	idGenerator = func() (string, error) {
+		callCount++
+		return collidingID, nil // Always collide
+	}
+
+	// Create second issue - should fail after 3 retries
+	issue2 := &models.Issue{Title: "Second Issue"}
+	err = db.CreateIssue(issue2)
+
+	if err == nil {
+		t.Fatal("CreateIssue should fail after max retries")
+	}
+
+	if callCount != 3 {
+		t.Errorf("Expected exactly 3 ID generation attempts, got %d", callCount)
+	}
+
+	expectedErr := "failed to generate unique issue ID after 3 attempts"
+	if err.Error() != expectedErr {
+		t.Errorf("Expected error %q, got %q", expectedErr, err.Error())
+	}
+}

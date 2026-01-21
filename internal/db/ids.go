@@ -24,13 +24,22 @@ func NormalizeIssueID(id string) string {
 	return id
 }
 
-// generateID generates a unique issue ID
-func generateID() (string, error) {
+// idGenerator is the function used to generate issue IDs.
+// It can be replaced in tests to control ID generation.
+var idGenerator = defaultGenerateID
+
+// defaultGenerateID generates a unique issue ID using crypto/rand
+func defaultGenerateID() (string, error) {
 	bytes := make([]byte, 3) // 6 hex characters - balances brevity with collision resistance
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 	return idPrefix + hex.EncodeToString(bytes), nil
+}
+
+// generateID generates a unique issue ID using the configured generator
+func generateID() (string, error) {
+	return idGenerator()
 }
 
 // generateWSID generates a unique work session ID
