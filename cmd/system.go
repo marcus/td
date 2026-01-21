@@ -400,6 +400,7 @@ var exportCmd = &cobra.Command{
 		format, _ := cmd.Flags().GetString("format")
 		outputPath, _ := cmd.Flags().GetString("output")
 		includeAll, _ := cmd.Flags().GetBool("all")
+		renderMarkdown, _ := cmd.Flags().GetBool("render-markdown")
 
 		opts := db.ListIssuesOptions{}
 		if includeAll {
@@ -456,6 +457,14 @@ var exportCmd = &cobra.Command{
 					md += fmt.Sprintf("\n%s\n", issue.Description)
 				}
 				md += "\n"
+			}
+			if renderMarkdown {
+				rendered, err := output.RenderMarkdown(md)
+				if err != nil {
+					output.Error("failed to render markdown: %v", err)
+					return err
+				}
+				md = rendered
 			}
 			data = []byte(md)
 		}
@@ -834,6 +843,7 @@ func init() {
 	exportCmd.Flags().String("format", "json", "Export format: json or md")
 	exportCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")
 	exportCmd.Flags().Bool("all", false, "Include closed/deleted")
+	exportCmd.Flags().BoolP("render-markdown", "m", false, "Render markdown output for humans")
 
 	importCmd.Flags().String("format", "json", "Import format: json or md")
 	importCmd.Flags().Bool("dry-run", false, "Preview changes")

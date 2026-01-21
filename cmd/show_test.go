@@ -75,3 +75,13 @@ func TestShowJSONFlagStillWorks(t *testing.T) {
 	// Reset
 	showCmd.Flags().Set("json", "false")
 }
+
+// TestShowRenderMarkdownFlagExists tests that --render-markdown flag is defined
+func TestShowRenderMarkdownFlagExists(t *testing.T) {
+	if showCmd.Flags().Lookup("render-markdown") == nil {
+		t.Error("Expected --render-markdown flag to be defined")
+	}
+	if showCmd.Flags().ShorthandLookup("m") == nil {
+		t.Error("Expected -m shorthand to be defined for --render-markdown")
+	}
+}
