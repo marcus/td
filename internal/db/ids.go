@@ -26,7 +26,7 @@ func NormalizeIssueID(id string) string {
 
 // generateID generates a unique issue ID
 func generateID() (string, error) {
-	bytes := make([]byte, 4) // 8 hex characters - larger space to reduce collision risk
+	bytes := make([]byte, 3) // 6 hex characters - balances brevity with collision resistance
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}

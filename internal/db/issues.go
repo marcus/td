@@ -40,12 +40,6 @@ type ListIssuesOptions struct {
 // CreateIssue creates a new issue
 func (db *DB) CreateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
-		id, err := generateID()
-		if err != nil {
-			return err
-		}
-		issue.ID = id
-
 		if issue.Status == "" {
 			issue.Status = models.StatusOpen
 		}
@@ -62,12 +56,29 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 
 		labels := strings.Join(issue.Labels, ",")
 
-		_, err = db.conn.Exec(`
-			INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch, creator_session)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch, issue.CreatorSession)
+		// Retry loop for rare ID collisions (6 hex chars = 16.7M keyspace)
+		const maxRetries = 3
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			id, err := generateID()
+			if err != nil {
+				return err
+			}
+			issue.ID = id
 
-		return err
+			_, err = db.conn.Exec(`
+				INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch, creator_session)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch, issue.CreatorSession)
+
+			if err == nil {
+				return nil
+			}
+			// Only retry on UNIQUE constraint violation (ID collision)
+			if !strings.Contains(err.Error(), "UNIQUE constraint") {
+				return err
+			}
+		}
+		return fmt.Errorf("failed to generate unique issue ID after %d attempts", maxRetries)
 	})
 }
 

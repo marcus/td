@@ -345,9 +345,12 @@ func TestCreateIssueIDFormat(t *testing.T) {
 	issue := &models.Issue{Title: "Test Issue"}
 	database.CreateIssue(issue)
 
-	// ID should start with "td-"
-	if len(issue.ID) < 7 || issue.ID[:3] != "td-" {
-		t.Errorf("Expected ID format 'td-xxxx', got %q", issue.ID)
+	// ID should be "td-" + 6 hex chars = 9 total chars
+	if !strings.HasPrefix(issue.ID, "td-") {
+		t.Errorf("Expected ID to start with 'td-', got %q", issue.ID)
+	}
+	if len(issue.ID) != 9 {
+		t.Errorf("Expected ID length of 9 (td- + 6 hex chars), got %d: %q", len(issue.ID), issue.ID)
 	}
 }
 
