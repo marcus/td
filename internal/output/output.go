@@ -195,6 +195,15 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 		sb.WriteString("\n")
 	}
 
+	// Acceptance criteria
+	if issue.Acceptance != "" {
+		sb.WriteString("\n")
+		sb.WriteString(subtleStyle.Render("Acceptance Criteria:"))
+		sb.WriteString("\n")
+		sb.WriteString(issue.Acceptance)
+		sb.WriteString("\n")
+	}
+
 	// Handoff
 	if handoff != nil {
 		sb.WriteString("\n")

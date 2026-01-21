@@ -130,13 +130,12 @@ func TestMigrateBranchSessionCleanupOldFile(t *testing.T) {
 	t.Setenv("TD_SESSION_ID", "agent-1")
 
 	// Create legacy branch-scoped session file in .todos/sessions/
-	sessionsDir := filepath.Join(baseDir, ".todos", "sessions")
-	if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+	branch := getCurrentBranch()
+	branchPath := sessionPathForBranch(baseDir, branch)
+	if err := os.MkdirAll(filepath.Dir(branchPath), 0755); err != nil {
 		t.Fatalf("mkdir .todos/sessions: %v", err)
 	}
-
-	branchPath := filepath.Join(sessionsDir, "main.json")
-	branchContent := `{"id":"ses_oldbranchmig","branch":"main","started_at":"2025-01-01T00:00:00Z"}`
+	branchContent := fmt.Sprintf(`{"id":"ses_oldbranchmig","branch":"%s","started_at":"2025-01-01T00:00:00Z"}`, branch)
 	if err := os.WriteFile(branchPath, []byte(branchContent), 0644); err != nil {
 		t.Fatalf("write branch session: %v", err)
 	}
@@ -252,19 +251,19 @@ func TestMigrationSucceedsEvenIfCleanupFails(t *testing.T) {
 // TestMigrationTableDriven tests various migration scenarios
 func TestMigrationTableDriven(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFunc      func(baseDir string) string // setup and return path to file that should be cleaned up
-		shouldExist    bool                         // whether old file should exist after migration
-		expectedID     string                       // expected migrated session ID
-		shouldSucceed  bool                         // whether migration should succeed
+		name          string
+		setupFunc     func(baseDir string) string // setup and return path to file that should be cleaned up
+		shouldExist   bool                        // whether old file should exist after migration
+		expectedID    string                      // expected migrated session ID
+		shouldSucceed bool                        // whether migration should succeed
 	}{
 		{
 			name: "branch_scoped_migration",
 			setupFunc: func(baseDir string) string {
-				sessionsDir := filepath.Join(baseDir, ".todos", "sessions")
-				os.MkdirAll(sessionsDir, 0755)
-				path := filepath.Join(sessionsDir, "main.json")
-				content := `{"id":"ses_branch_001","branch":"main","started_at":"2025-01-01T00:00:00Z"}`
+				branch := getCurrentBranch()
+				path := sessionPathForBranch(baseDir, branch)
+				os.MkdirAll(filepath.Dir(path), 0755)
+				content := fmt.Sprintf(`{"id":"ses_branch_001","branch":"%s","started_at":"2025-01-01T00:00:00Z"}`, branch)
 				os.WriteFile(path, []byte(content), 0644)
 				return path
 			},
@@ -343,13 +342,13 @@ func TestMigrationTableDriven(t *testing.T) {
 // TestMigrationStatePreservation verifies migration state is properly maintained
 func TestMigrationStatePreservation(t *testing.T) {
 	tests := []struct {
-		name              string
-		sessionContent    string
-		expectedFields    map[string]string // field name -> expected value
+		name               string
+		sessionContent     string
+		expectedFields     map[string]string // field name -> expected value
 		verifyAfterMigrate func(*Session) error
 	}{
 		{
-			name: "preserves_session_id",
+			name:           "preserves_session_id",
 			sessionContent: `{"id":"ses_preserved_123","started_at":"2025-01-01T12:00:00Z"}`,
 			verifyAfterMigrate: func(sess *Session) error {
 				if sess.ID != "ses_preserved_123" {
@@ -359,7 +358,7 @@ func TestMigrationStatePreservation(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves_name",
+			name:           "preserves_name",
 			sessionContent: `{"id":"ses_named_001","name":"important-session","started_at":"2025-01-01T12:00:00Z"}`,
 			verifyAfterMigrate: func(sess *Session) error {
 				if sess.Name != "important-session" {
@@ -369,7 +368,7 @@ func TestMigrationStatePreservation(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves_previous_session_id",
+			name:           "preserves_previous_session_id",
 			sessionContent: `{"id":"ses_new_001","previous_session_id":"ses_old_999","started_at":"2025-01-01T12:00:00Z"}`,
 			verifyAfterMigrate: func(sess *Session) error {
 				if sess.PreviousSessionID != "ses_old_999" {
@@ -379,7 +378,7 @@ func TestMigrationStatePreservation(t *testing.T) {
 			},
 		},
 		{
-			name: "sets_agent_type",
+			name:           "sets_agent_type",
 			sessionContent: `{"id":"ses_agent_001","started_at":"2025-01-01T12:00:00Z"}`,
 			verifyAfterMigrate: func(sess *Session) error {
 				if sess.AgentType == "" {
@@ -389,7 +388,7 @@ func TestMigrationStatePreservation(t *testing.T) {
 			},
 		},
 		{
-			name: "sets_agent_type_on_migration",
+			name:           "sets_agent_type_on_migration",
 			sessionContent: `{"id":"ses_agenttype_001","started_at":"2025-01-01T12:00:00Z"}`,
 			verifyAfterMigrate: func(sess *Session) error {
 				// When TD_SESSION_ID is set, AgentType is "explicit" and PID is 0
@@ -433,10 +432,10 @@ func TestMigrationStatePreservation(t *testing.T) {
 // TestEdgeCasesSessionMigration tests edge cases in migration
 func TestEdgeCasesSessionMigration(t *testing.T) {
 	tests := []struct {
-		name           string
-		setup          func(baseDir string) error
-		shouldSucceed  bool
-		description    string
+		name          string
+		setup         func(baseDir string) error
+		shouldSucceed bool
+		description   string
 	}{
 		{
 			name: "empty_session_file",

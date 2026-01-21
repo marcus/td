@@ -283,6 +283,7 @@ func TestFormatIssueLong(t *testing.T) {
 		ID:          "td-long1",
 		Title:       "Long format issue",
 		Description: "This is a detailed description",
+		Acceptance:  "Acceptance criteria text",
 		Status:      models.StatusInProgress,
 		Type:        models.TypeFeature,
 		Priority:    models.PriorityP1,
@@ -323,6 +324,12 @@ func TestFormatIssueLong(t *testing.T) {
 	}
 	if !strings.Contains(result, "This is a detailed description") {
 		t.Error("Should contain description")
+	}
+	if !strings.Contains(result, "Acceptance Criteria:") {
+		t.Error("Should contain acceptance criteria header")
+	}
+	if !strings.Contains(result, "Acceptance criteria text") {
+		t.Error("Should contain acceptance criteria text")
 	}
 	if !strings.Contains(result, "Points: 8") {
 		t.Error("Should contain points")
@@ -377,6 +384,9 @@ func TestFormatIssueLongNoOptional(t *testing.T) {
 	}
 	if strings.Contains(result, "Description:") {
 		t.Error("Should not contain Description header when empty")
+	}
+	if strings.Contains(result, "Acceptance Criteria:") {
+		t.Error("Should not contain Acceptance Criteria header when empty")
 	}
 	if strings.Contains(result, "Points:") {
 		t.Error("Should not contain Points when 0")

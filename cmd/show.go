@@ -208,8 +208,15 @@ Examples:
 			return nil
 		}
 
+		renderMarkdown, _ := cmd.Flags().GetBool("render-markdown")
+		issueForOutput := issue
+		if renderMarkdown {
+			width := output.TerminalWidth(80)
+			issueForOutput = renderIssueMarkdown(issue, width)
+		}
+
 		// Long format (default)
-		fmt.Print(output.FormatIssueLong(issue, logs, handoff))
+		fmt.Print(output.FormatIssueLong(issueForOutput, logs, handoff))
 
 		// Add git state section
 		if startSnapshot != nil {
@@ -367,6 +374,11 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 	}
 
 	short, _ := cmd.Flags().GetBool("short")
+	renderMarkdown, _ := cmd.Flags().GetBool("render-markdown")
+	markdownWidth := 0
+	if renderMarkdown {
+		markdownWidth = output.TerminalWidth(80)
+	}
 
 	for i, id := range issueIDs {
 		issue, err := database.GetIssue(id)
@@ -380,7 +392,11 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 		} else {
 			logs, _ := database.GetLogs(id, 5)
 			handoff, _ := database.GetLatestHandoff(id)
-			fmt.Print(output.FormatIssueLong(issue, logs, handoff))
+			issueForOutput := issue
+			if renderMarkdown {
+				issueForOutput = renderIssueMarkdown(issue, markdownWidth)
+			}
+			fmt.Print(output.FormatIssueLong(issueForOutput, logs, handoff))
 		}
 
 		// Add separator between issues
@@ -392,6 +408,34 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 	return nil
 }
 
+func renderIssueMarkdown(issue *models.Issue, width int) *models.Issue {
+	if issue == nil {
+		return issue
+	}
+
+	rendered := *issue
+
+	if rendered.Description != "" {
+		description, err := output.RenderMarkdownWithWidth(rendered.Description, width)
+		if err != nil {
+			output.Warning("failed to render description markdown: %v", err)
+		} else {
+			rendered.Description = description
+		}
+	}
+
+	if rendered.Acceptance != "" {
+		acceptance, err := output.RenderMarkdownWithWidth(rendered.Acceptance, width)
+		if err != nil {
+			output.Warning("failed to render acceptance markdown: %v", err)
+		} else {
+			rendered.Acceptance = acceptance
+		}
+	}
+
+	return &rendered
+}
+
 func init() {
 	rootCmd.AddCommand(showCmd)
 
@@ -401,4 +445,5 @@ func init() {
 	showCmd.Flags().StringP("format", "f", "", "Output format (json)")
 	showCmd.Flags().Bool("children", false, "Display child issues inline (alternative to 'td tree')")
 	showCmd.Flags().Bool("tree", false, "Display issue as tree with descendants (alias for 'td tree')")
+	showCmd.Flags().BoolP("render-markdown", "m", false, "Render markdown in description and acceptance")
 }
