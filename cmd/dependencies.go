@@ -127,6 +127,10 @@ func getTransitiveBlocked(database *db.DB, issueID string, visited map[string]bo
 	return dependency.GetTransitiveBlocked(database, issueID, visited)
 }
 
+func getTransitiveBlockedOpen(database *db.DB, issueID string, visited map[string]bool) []string {
+	return dependency.GetTransitiveBlockedOpen(database, issueID, visited)
+}
+
 var dependsOnCmd = &cobra.Command{
 	Use:     "depends-on [issue-id]",
 	Aliases: []string{"deps", "dependencies"},
@@ -241,10 +245,10 @@ var criticalPathCmd = &cobra.Command{
 			issueMap[issues[i].ID] = &issues[i]
 		}
 
-		// Calculate how many issues each issue blocks (including transitive)
+		// Calculate how many open issues each issue blocks (including transitive)
 		blockCounts := make(map[string]int)
 		for _, issue := range issues {
-			count := len(getTransitiveBlocked(database, issue.ID, make(map[string]bool)))
+			count := len(getTransitiveBlockedOpen(database, issue.ID, make(map[string]bool)))
 			if count > 0 {
 				blockCounts[issue.ID] = count
 			}

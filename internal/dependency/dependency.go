@@ -116,8 +116,17 @@ func GetDependents(database *db.DB, issueID string) ([]models.Issue, error) {
 	return dependents, nil
 }
 
-// GetTransitiveBlocked returns all issues transitively blocked by issueID.
+// GetTransitiveBlocked returns all unique issues transitively blocked by issueID.
 func GetTransitiveBlocked(database *db.DB, issueID string, visited map[string]bool) []string {
+	return getTransitiveBlockedFiltered(database, issueID, visited, false)
+}
+
+// GetTransitiveBlockedOpen returns all unique open/non-closed issues transitively blocked by issueID.
+func GetTransitiveBlockedOpen(database *db.DB, issueID string, visited map[string]bool) []string {
+	return getTransitiveBlockedFiltered(database, issueID, visited, true)
+}
+
+func getTransitiveBlockedFiltered(database *db.DB, issueID string, visited map[string]bool, excludeClosed bool) []string {
 	if visited[issueID] {
 		return nil
 	}
@@ -125,10 +134,20 @@ func GetTransitiveBlocked(database *db.DB, issueID string, visited map[string]bo
 
 	blocked, _ := database.GetBlockedBy(issueID)
 	var all []string
-	all = append(all, blocked...)
 
 	for _, id := range blocked {
-		all = append(all, GetTransitiveBlocked(database, id, visited)...)
+		if visited[id] {
+			continue
+		}
+		if excludeClosed {
+			issue, err := database.GetIssue(id)
+			if err != nil || issue.Status == models.StatusClosed {
+				visited[id] = true
+				continue
+			}
+		}
+		all = append(all, id)
+		all = append(all, getTransitiveBlockedFiltered(database, id, visited, excludeClosed)...)
 	}
 
 	return all

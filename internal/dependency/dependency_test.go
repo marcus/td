@@ -300,3 +300,109 @@ func TestGetTransitiveBlocked(t *testing.T) {
 		t.Errorf("expected 0 transitively blocked for D, got %d", len(blocked))
 	}
 }
+
+func TestGetTransitiveBlockedDiamond(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Diamond: D depends on both B and C, both B and C depend on A
+	// A -> B -> D
+	// A -> C -> D
+	issueA := createTestIssue(t, database, "Issue A")
+	issueB := createTestIssue(t, database, "Issue B")
+	issueC := createTestIssue(t, database, "Issue C")
+	issueD := createTestIssue(t, database, "Issue D")
+
+	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueD.ID, issueB.ID, "depends_on")
+	database.AddDependency(issueD.ID, issueC.ID, "depends_on")
+
+	// A blocks B, C, D - each counted exactly once
+	blocked := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
+	if len(blocked) != 3 {
+		t.Errorf("diamond: expected 3 unique blocked, got %d: %v", len(blocked), blocked)
+	}
+}
+
+func TestGetTransitiveBlockedMultiPath(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Complex multi-path: E depends on B, C, D; all depend on A
+	// A -> B -> E
+	// A -> C -> E
+	// A -> D -> E
+	issueA := createTestIssue(t, database, "Issue A")
+	issueB := createTestIssue(t, database, "Issue B")
+	issueC := createTestIssue(t, database, "Issue C")
+	issueD := createTestIssue(t, database, "Issue D")
+	issueE := createTestIssue(t, database, "Issue E")
+
+	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueD.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueE.ID, issueB.ID, "depends_on")
+	database.AddDependency(issueE.ID, issueC.ID, "depends_on")
+	database.AddDependency(issueE.ID, issueD.ID, "depends_on")
+
+	// A blocks B, C, D, E - E counted exactly once despite 3 paths
+	blocked := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
+	if len(blocked) != 4 {
+		t.Errorf("multi-path: expected 4 unique blocked, got %d: %v", len(blocked), blocked)
+	}
+}
+
+func TestGetTransitiveBlockedOpenExcludesClosed(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Chain: C -> B -> A, but B is closed
+	issueA := createTestIssue(t, database, "Issue A")
+	issueB := createTestIssue(t, database, "Issue B")
+	issueC := createTestIssue(t, database, "Issue C")
+
+	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueC.ID, issueB.ID, "depends_on")
+
+	// Close B
+	issueB.Status = models.StatusClosed
+	database.UpdateIssue(issueB)
+
+	// GetTransitiveBlocked includes closed issues
+	all := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
+	if len(all) != 2 {
+		t.Errorf("expected 2 total blocked (including closed), got %d", len(all))
+	}
+
+	// GetTransitiveBlockedOpen excludes closed issues and their subtrees
+	open := GetTransitiveBlockedOpen(database, issueA.ID, make(map[string]bool))
+	if len(open) != 0 {
+		t.Errorf("expected 0 open blocked (B closed, C unreachable via open path), got %d: %v", len(open), open)
+	}
+}
+
+func TestGetTransitiveBlockedOpenPartialClosed(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// A -> B (open) -> D (open)
+	// A -> C (closed)
+	issueA := createTestIssue(t, database, "Issue A")
+	issueB := createTestIssue(t, database, "Issue B")
+	issueC := createTestIssue(t, database, "Issue C")
+	issueD := createTestIssue(t, database, "Issue D")
+
+	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	database.AddDependency(issueD.ID, issueB.ID, "depends_on")
+
+	// Close C
+	issueC.Status = models.StatusClosed
+	database.UpdateIssue(issueC)
+
+	open := GetTransitiveBlockedOpen(database, issueA.ID, make(map[string]bool))
+	if len(open) != 2 {
+		t.Errorf("expected 2 open blocked (B and D), got %d: %v", len(open), open)
+	}
+}
