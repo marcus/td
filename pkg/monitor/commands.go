@@ -1633,7 +1633,13 @@ func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
 			}
 		}
 
-		return BoardIssuesMsg{BoardID: boardID, Issues: issues}
+		// Pre-compute rejected IDs to avoid synchronous DB query in Update handler
+		rejectedIDs, _ := m.DB.GetRejectedInProgressIssueIDs()
+		if rejectedIDs == nil {
+			rejectedIDs = make(map[string]bool)
+		}
+
+		return BoardIssuesMsg{BoardID: boardID, Issues: issues, RejectedIDs: rejectedIDs}
 	}
 }
 

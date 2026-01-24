@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // AgentType identifies the type of AI agent
@@ -71,8 +72,22 @@ var agentPatterns = map[string]AgentType{
 	"gemini":   AgentGemini,
 }
 
-// GetAgentFingerprint detects the agent running this process by walking the process tree
+// Cached fingerprint - process tree won't change during our lifetime
+var (
+	cachedFingerprint     AgentFingerprint
+	cachedFingerprintOnce sync.Once
+)
+
+// GetAgentFingerprint detects the agent running this process by walking the process tree.
+// Result is cached after first call since the process tree is stable.
 func GetAgentFingerprint() AgentFingerprint {
+	cachedFingerprintOnce.Do(func() {
+		cachedFingerprint = detectFingerprint()
+	})
+	return cachedFingerprint
+}
+
+func detectFingerprint() AgentFingerprint {
 	// Priority 1: Explicit override
 	if id := os.Getenv("TD_SESSION_ID"); id != "" {
 		return AgentFingerprint{Type: AgentType("explicit"), PID: 0, ExplicitID: id}

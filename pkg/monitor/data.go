@@ -440,15 +440,20 @@ func FetchStats(database *db.DB) StatsDataMsg {
 // ComputeBoardIssueCategories sets the Category field on each BoardIssueView.
 // This is the single source of truth for issue categorization, considering
 // dependency blocking, rejection status, and reviewability.
-func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView, sessionID string) {
+// If precomputedRejectedIDs is non-nil, it's used instead of querying the DB.
+func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView, sessionID string, precomputedRejectedIDs map[string]bool) {
 	if len(issues) == 0 {
 		return
 	}
 
-	// Get rejected in_progress issue IDs for "needs rework" detection
-	rejectedIDs, err := database.GetRejectedInProgressIssueIDs()
-	if err != nil {
-		rejectedIDs = make(map[string]bool)
+	// Use pre-computed rejected IDs if available, otherwise query
+	rejectedIDs := precomputedRejectedIDs
+	if rejectedIDs == nil {
+		var err error
+		rejectedIDs, err = database.GetRejectedInProgressIssueIDs()
+		if err != nil {
+			rejectedIDs = make(map[string]bool)
+		}
 	}
 
 	// Batch load all dependencies and their statuses
@@ -510,7 +515,8 @@ func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView
 // for the swimlanes view. Issues are sorted within each category respecting
 // backlog positions: positioned issues first (by position), then unpositioned
 // (by sortMode). Also sets Category on each BoardIssueView.
-func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
+// If rejectedIDs is non-nil, it's passed through to avoid a synchronous DB query.
+func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode, rejectedIDs map[string]bool) TaskListData {
 	var data TaskListData
 
 	if len(issues) == 0 {
@@ -518,7 +524,7 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	}
 
 	// Compute categories (sets Category field on each issue)
-	ComputeBoardIssueCategories(database, issues, sessionID)
+	ComputeBoardIssueCategories(database, issues, sessionID, rejectedIDs)
 
 	// Group by category (preserve BoardIssueView for position-aware sorting)
 	categories := map[TaskListCategory][]models.BoardIssueView{

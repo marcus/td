@@ -406,9 +406,10 @@ type BoardsDataMsg struct {
 
 // BoardIssuesMsg carries issues for the current board
 type BoardIssuesMsg struct {
-	BoardID string
-	Issues  []models.BoardIssueView
-	Error   error
+	BoardID     string
+	Issues      []models.BoardIssueView
+	RejectedIDs map[string]bool // pre-computed to avoid sync query in Update
+	Error       error
 }
 
 // BoardMode holds state for board mode view (when Task List is in board mode)
