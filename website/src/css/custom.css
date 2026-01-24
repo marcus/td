@@ -12,13 +12,13 @@
    CSS Custom Properties - Light (base)
    ========================================================================= */
 :root {
-  --ifm-color-primary: #a6e22e;
-  --ifm-color-primary-dark: #9ad41e;
-  --ifm-color-primary-darker: #91c81c;
-  --ifm-color-primary-darkest: #78a517;
-  --ifm-color-primary-light: #b0e846;
-  --ifm-color-primary-lighter: #b6eb54;
-  --ifm-color-primary-lightest: #c5ef74;
+  --ifm-color-primary: #d8b4fe;
+  --ifm-color-primary-dark: #d4a5f4;
+  --ifm-color-primary-darker: #c884f0;
+  --ifm-color-primary-darkest: #b870e8;
+  --ifm-color-primary-light: #e5c7ff;
+  --ifm-color-primary-lighter: #ead5ff;
+  --ifm-color-primary-lightest: #f3e8ff;
 
   --ifm-background-color: #121417;
   --ifm-navbar-background-color: #171a1f;
@@ -33,13 +33,13 @@
   --ifm-line-height-base: 1.65;
 
   --ifm-navbar-height: 4rem;
-  --ifm-navbar-shadow: 0 1px 0 rgba(166, 226, 46, 0.08);
+  --ifm-navbar-shadow: 0 1px 0 rgba(216, 180, 254, 0.08);
 
-  --docusaurus-highlighted-code-line-bg: rgba(166, 226, 46, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(216, 180, 254, 0.1);
 
   /* Accent palette */
-  --td-green: #a6e22e;
-  --td-purple: #ae81ff;
+  --td-green: #d8b4fe;
+  --td-purple: #d8b4fe;
   --td-orange: #fd971f;
   --td-pink: #f92672;
   --td-cyan: #66d9ef;
@@ -57,21 +57,21 @@
   --td-text-muted: #6b7280;
 
   /* Borders */
-  --td-border-color: rgba(166, 226, 46, 0.12);
-  --td-border-color-hover: rgba(166, 226, 46, 0.3);
+  --td-border-color: rgba(216, 180, 254, 0.12);
+  --td-border-color-hover: rgba(216, 180, 254, 0.3);
 }
 
 /* =========================================================================
    CSS Custom Properties - Dark theme
    ========================================================================= */
 :root[data-theme='dark'] {
-  --ifm-color-primary: #a6e22e;
-  --ifm-color-primary-dark: #9ad41e;
-  --ifm-color-primary-darker: #91c81c;
-  --ifm-color-primary-darkest: #78a517;
-  --ifm-color-primary-light: #b0e846;
-  --ifm-color-primary-lighter: #b6eb54;
-  --ifm-color-primary-lightest: #c5ef74;
+  --ifm-color-primary: #d8b4fe;
+  --ifm-color-primary-dark: #d4a5f4;
+  --ifm-color-primary-darker: #c884f0;
+  --ifm-color-primary-darkest: #b870e8;
+  --ifm-color-primary-light: #e5c7ff;
+  --ifm-color-primary-lighter: #ead5ff;
+  --ifm-color-primary-lightest: #f3e8ff;
 
   --ifm-background-color: #121417;
   --ifm-navbar-background-color: #171a1f;
@@ -79,20 +79,20 @@
 
   --ifm-font-color-base: #f8f8f2;
   --ifm-heading-color: #f8f8f2;
-  --ifm-link-color: #a6e22e;
-  --ifm-link-hover-color: #b6eb54;
+  --ifm-link-color: #d8b4fe;
+  --ifm-link-hover-color: #ead5ff;
 
   --ifm-menu-color: #a0a0a0;
-  --ifm-menu-color-active: #a6e22e;
-  --ifm-menu-color-background-active: rgba(166, 226, 46, 0.08);
+  --ifm-menu-color-active: #d8b4fe;
+  --ifm-menu-color-background-active: rgba(216, 180, 254, 0.08);
 
   --ifm-toc-link-color: #a0a0a0;
-  --ifm-toc-border-color: rgba(166, 226, 46, 0.08);
+  --ifm-toc-border-color: rgba(216, 180, 254, 0.08);
 
-  --ifm-hr-border-color: rgba(166, 226, 46, 0.1);
+  --ifm-hr-border-color: rgba(216, 180, 254, 0.1);
   --ifm-color-emphasis-300: #2a2e35;
 
-  --docusaurus-highlighted-code-line-bg: rgba(166, 226, 46, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(216, 180, 254, 0.1);
 }
 
 /* =========================================================================
@@ -817,8 +817,8 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 2rem;
-  background: linear-gradient(135deg, var(--td-green), #8bc926);
-  color: var(--td-bg-base);
+  background: #89d4ff;
+  color: #4b5563;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 0.95rem;
@@ -831,8 +831,8 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 
 .sc-cta__button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(166, 226, 46, 0.3);
-  color: var(--td-bg-base);
+  box-shadow: 0 4px 20px rgba(137, 212, 255, 0.4);
+  color: #4b5563;
   text-decoration: none;
 }
 
@@ -874,7 +874,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 }
 
 .sc-terminal-mockup__dot--green {
-  background-color: #28c840;
+  background-color: #d8b4fe;
 }
 
 .sc-terminal-mockup__title {

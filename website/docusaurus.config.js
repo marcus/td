@@ -80,7 +80,7 @@ const config = {
         respectPrefersColorScheme: false,
       },
       navbar: {
-        title: 'td',
+        title: '',
         logo: {
           alt: 'td logo',
           src: 'img/td-logo.png',
