@@ -1,0 +1,1058 @@
+/**
+ * td - Terminal-aesthetic dark theme
+ * Monokai-inspired color palette for a CLI tool documentation site.
+ */
+
+/* =========================================================================
+   Google Fonts Import
+   ========================================================================= */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* =========================================================================
+   CSS Custom Properties - Light (base)
+   ========================================================================= */
+:root {
+  --ifm-color-primary: #a6e22e;
+  --ifm-color-primary-dark: #9ad41e;
+  --ifm-color-primary-darker: #91c81c;
+  --ifm-color-primary-darkest: #78a517;
+  --ifm-color-primary-light: #b0e846;
+  --ifm-color-primary-lighter: #b6eb54;
+  --ifm-color-primary-lightest: #c5ef74;
+
+  --ifm-background-color: #121417;
+  --ifm-navbar-background-color: #171a1f;
+  --ifm-footer-background-color: #0d0f12;
+
+  --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ifm-heading-font-family: 'JetBrains Mono', monospace;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --ifm-code-font-size: 90%;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.65;
+
+  --ifm-navbar-height: 4rem;
+  --ifm-navbar-shadow: 0 1px 0 rgba(166, 226, 46, 0.08);
+
+  --docusaurus-highlighted-code-line-bg: rgba(166, 226, 46, 0.1);
+
+  /* Accent palette */
+  --td-green: #a6e22e;
+  --td-purple: #ae81ff;
+  --td-orange: #fd971f;
+  --td-pink: #f92672;
+  --td-cyan: #66d9ef;
+  --td-yellow: #e6db74;
+
+  /* Surface colors */
+  --td-bg-base: #121417;
+  --td-bg-surface: #171a1f;
+  --td-bg-elevated: #1e2228;
+  --td-bg-elevated-hover: #252a31;
+
+  /* Text colors */
+  --td-text-primary: #f8f8f2;
+  --td-text-secondary: #a0a0a0;
+  --td-text-muted: #6b7280;
+
+  /* Borders */
+  --td-border-color: rgba(166, 226, 46, 0.12);
+  --td-border-color-hover: rgba(166, 226, 46, 0.3);
+}
+
+/* =========================================================================
+   CSS Custom Properties - Dark theme
+   ========================================================================= */
+:root[data-theme='dark'] {
+  --ifm-color-primary: #a6e22e;
+  --ifm-color-primary-dark: #9ad41e;
+  --ifm-color-primary-darker: #91c81c;
+  --ifm-color-primary-darkest: #78a517;
+  --ifm-color-primary-light: #b0e846;
+  --ifm-color-primary-lighter: #b6eb54;
+  --ifm-color-primary-lightest: #c5ef74;
+
+  --ifm-background-color: #121417;
+  --ifm-navbar-background-color: #171a1f;
+  --ifm-footer-background-color: #0d0f12;
+
+  --ifm-font-color-base: #f8f8f2;
+  --ifm-heading-color: #f8f8f2;
+  --ifm-link-color: #a6e22e;
+  --ifm-link-hover-color: #b6eb54;
+
+  --ifm-menu-color: #a0a0a0;
+  --ifm-menu-color-active: #a6e22e;
+  --ifm-menu-color-background-active: rgba(166, 226, 46, 0.08);
+
+  --ifm-toc-link-color: #a0a0a0;
+  --ifm-toc-border-color: rgba(166, 226, 46, 0.08);
+
+  --ifm-hr-border-color: rgba(166, 226, 46, 0.1);
+  --ifm-color-emphasis-300: #2a2e35;
+
+  --docusaurus-highlighted-code-line-bg: rgba(166, 226, 46, 0.1);
+}
+
+/* =========================================================================
+   Global Styles
+   ========================================================================= */
+html[data-theme='dark'] body {
+  background-color: var(--td-bg-base);
+  color: var(--td-text-primary);
+}
+
+html[data-theme='dark'] h1,
+html[data-theme='dark'] h2,
+html[data-theme='dark'] h3,
+html[data-theme='dark'] h4,
+html[data-theme='dark'] h5,
+html[data-theme='dark'] h6 {
+  font-family: var(--ifm-heading-font-family);
+  color: var(--td-text-primary);
+  letter-spacing: -0.02em;
+}
+
+html[data-theme='dark'] a {
+  color: var(--td-green);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+html[data-theme='dark'] a:hover {
+  color: var(--td-cyan);
+  text-decoration: none;
+  text-shadow: 0 0 8px rgba(102, 217, 239, 0.3);
+}
+
+/* =========================================================================
+   Navbar
+   ========================================================================= */
+html[data-theme='dark'] .navbar {
+  background-color: var(--td-bg-surface);
+  border-bottom: 1px solid var(--td-border-color);
+  backdrop-filter: blur(12px);
+}
+
+html[data-theme='dark'] .navbar__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--td-green);
+}
+
+html[data-theme='dark'] .navbar__link {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--td-text-secondary);
+  transition: color 0.2s ease;
+}
+
+html[data-theme='dark'] .navbar__link:hover,
+html[data-theme='dark'] .navbar__link--active {
+  color: var(--td-green);
+}
+
+/* =========================================================================
+   Sidebar
+   ========================================================================= */
+html[data-theme='dark'] .menu {
+  background-color: transparent;
+}
+
+html[data-theme='dark'] .menu__link {
+  font-size: 0.875rem;
+  color: var(--td-text-secondary);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+html[data-theme='dark'] .menu__link:hover {
+  color: var(--td-text-primary);
+  background-color: var(--td-bg-elevated);
+}
+
+html[data-theme='dark'] .menu__link--active {
+  color: var(--td-green);
+  background-color: rgba(166, 226, 46, 0.08);
+  font-weight: 600;
+}
+
+html[data-theme='dark'] .menu__list-item-collapsible:hover {
+  background-color: var(--td-bg-elevated);
+}
+
+html[data-theme='dark'] .theme-doc-sidebar-container {
+  border-right: 1px solid var(--td-border-color);
+}
+
+/* =========================================================================
+   Doc Content
+   ========================================================================= */
+html[data-theme='dark'] .markdown h1 {
+  font-size: 2rem;
+  border-bottom: 1px solid var(--td-border-color);
+  padding-bottom: 0.5rem;
+}
+
+html[data-theme='dark'] .markdown h2 {
+  font-size: 1.5rem;
+  margin-top: 2.5rem;
+  color: var(--td-green);
+}
+
+html[data-theme='dark'] .markdown h3 {
+  font-size: 1.25rem;
+  color: var(--td-cyan);
+}
+
+html[data-theme='dark'] .markdown p {
+  color: var(--td-text-secondary);
+  line-height: 1.75;
+}
+
+html[data-theme='dark'] .markdown strong {
+  color: var(--td-text-primary);
+}
+
+html[data-theme='dark'] .markdown blockquote {
+  border-left: 3px solid var(--td-purple);
+  background-color: var(--td-bg-elevated);
+  color: var(--td-text-secondary);
+}
+
+html[data-theme='dark'] .markdown table {
+  border-collapse: collapse;
+}
+
+html[data-theme='dark'] .markdown table th {
+  background-color: var(--td-bg-elevated);
+  color: var(--td-green);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+}
+
+html[data-theme='dark'] .markdown table td {
+  border-color: var(--td-border-color);
+  color: var(--td-text-secondary);
+}
+
+html[data-theme='dark'] .markdown table tr:nth-child(even) {
+  background-color: var(--td-bg-surface);
+}
+
+/* =========================================================================
+   Code Blocks
+   ========================================================================= */
+html[data-theme='dark'] code {
+  font-family: var(--ifm-font-family-monospace);
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  color: var(--td-cyan);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+html[data-theme='dark'] pre {
+  background-color: var(--td-bg-elevated) !important;
+  border: 1px solid var(--td-border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme='dark'] pre code {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  color: var(--td-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+html[data-theme='dark'] .prism-code .token.comment {
+  color: #75715e;
+  font-style: italic;
+}
+
+html[data-theme='dark'] .prism-code .token.string {
+  color: var(--td-yellow);
+}
+
+html[data-theme='dark'] .prism-code .token.keyword {
+  color: var(--td-pink);
+}
+
+html[data-theme='dark'] .prism-code .token.function {
+  color: var(--td-green);
+}
+
+html[data-theme='dark'] .prism-code .token.number {
+  color: var(--td-purple);
+}
+
+html[data-theme='dark'] .prism-code .token.operator {
+  color: var(--td-pink);
+}
+
+html[data-theme='dark'] .prism-code .token.class-name {
+  color: var(--td-cyan);
+  font-style: italic;
+}
+
+html[data-theme='dark'] .prism-code .token.variable {
+  color: var(--td-text-primary);
+}
+
+html[data-theme='dark'] .prism-code .token.punctuation {
+  color: var(--td-text-secondary);
+}
+
+/* Code block title bar */
+html[data-theme='dark'] .theme-code-block-highlighted-line {
+  background-color: rgba(166, 226, 46, 0.08);
+  border-left: 3px solid var(--td-green);
+}
+
+html[data-theme='dark'] div[class^='codeBlockTitle'] {
+  background-color: var(--td-bg-surface) !important;
+  border-bottom: 1px solid var(--td-border-color);
+  color: var(--td-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+}
+
+/* Copy button */
+html[data-theme='dark'] button[class*='copyButton'] {
+  color: var(--td-text-muted);
+  transition: color 0.2s ease;
+}
+
+html[data-theme='dark'] button[class*='copyButton']:hover {
+  color: var(--td-green);
+}
+
+/* =========================================================================
+   Admonitions
+   ========================================================================= */
+html[data-theme='dark'] .admonition {
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .admonition-heading h5 {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+html[data-theme='dark'] .admonition.admonition-note {
+  border-left: 3px solid var(--td-cyan);
+}
+
+html[data-theme='dark'] .admonition.admonition-tip {
+  border-left: 3px solid var(--td-green);
+}
+
+html[data-theme='dark'] .admonition.admonition-info {
+  border-left: 3px solid var(--td-purple);
+}
+
+html[data-theme='dark'] .admonition.admonition-warning {
+  border-left: 3px solid var(--td-orange);
+}
+
+html[data-theme='dark'] .admonition.admonition-danger {
+  border-left: 3px solid var(--td-pink);
+}
+
+/* =========================================================================
+   Footer
+   ========================================================================= */
+html[data-theme='dark'] .footer {
+  background-color: var(--ifm-footer-background-color);
+  border-top: 1px solid var(--td-border-color);
+}
+
+html[data-theme='dark'] .footer__title {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--td-text-primary);
+  font-size: 0.875rem;
+}
+
+html[data-theme='dark'] .footer__link-item {
+  color: var(--td-text-secondary);
+  font-size: 0.875rem;
+  transition: color 0.2s ease;
+}
+
+html[data-theme='dark'] .footer__link-item:hover {
+  color: var(--td-green);
+}
+
+html[data-theme='dark'] .footer__copyright {
+  color: var(--td-text-muted);
+  font-size: 0.8rem;
+}
+
+/* =========================================================================
+   Pagination
+   ========================================================================= */
+html[data-theme='dark'] .pagination-nav__link {
+  background-color: var(--td-bg-surface);
+  border: 1px solid var(--td-border-color);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+html[data-theme='dark'] .pagination-nav__link:hover {
+  border-color: var(--td-border-color-hover);
+  background-color: var(--td-bg-elevated);
+}
+
+html[data-theme='dark'] .pagination-nav__sublabel {
+  color: var(--td-text-muted);
+  font-size: 0.75rem;
+}
+
+html[data-theme='dark'] .pagination-nav__label {
+  color: var(--td-green);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* =========================================================================
+   Table of Contents
+   ========================================================================= */
+html[data-theme='dark'] .table-of-contents__link {
+  color: var(--td-text-muted);
+  font-size: 0.8rem;
+  transition: color 0.2s ease;
+}
+
+html[data-theme='dark'] .table-of-contents__link:hover {
+  color: var(--td-text-primary);
+}
+
+html[data-theme='dark'] .table-of-contents__link--active {
+  color: var(--td-green);
+  font-weight: 600;
+}
+
+/* =========================================================================
+   Search
+   ========================================================================= */
+html[data-theme='dark'] .DocSearch-Button {
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 8px;
+  color: var(--td-text-muted);
+}
+
+html[data-theme='dark'] .DocSearch-Button:hover {
+  border-color: var(--td-border-color-hover);
+  box-shadow: 0 0 8px rgba(166, 226, 46, 0.1);
+}
+
+/* =========================================================================
+   Scrollbar
+   ========================================================================= */
+html[data-theme='dark'] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-track {
+  background: var(--td-bg-base);
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-thumb {
+  background: var(--td-bg-elevated-hover);
+  border-radius: 4px;
+}
+
+html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(166, 226, 46, 0.3);
+}
+
+/* =========================================================================
+   Site Components: Hero
+   ========================================================================= */
+.sc-hero {
+  background: linear-gradient(
+    170deg,
+    var(--td-bg-base) 0%,
+    var(--td-bg-surface) 40%,
+    var(--td-bg-elevated) 100%
+  );
+  padding: 6rem 2rem 5rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.sc-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(166, 226, 46, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(174, 129, 255, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.sc-hero__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--td-green) 0%, #c8f76f 50%, var(--td-cyan) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 1rem;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  position: relative;
+}
+
+.sc-hero__subtitle {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  color: var(--td-text-muted);
+  max-width: 600px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.6;
+  position: relative;
+}
+
+/* =========================================================================
+   Site Components: Install Command
+   ========================================================================= */
+.sc-install-command {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 8px;
+  padding: 0.875rem 1.25rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  color: var(--td-green);
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  margin: 0 auto;
+  max-width: fit-content;
+}
+
+.sc-install-command:hover {
+  border-color: var(--td-border-color-hover);
+  box-shadow: 0 0 20px rgba(166, 226, 46, 0.08);
+}
+
+.sc-install-command::before {
+  content: '$';
+  color: var(--td-text-muted);
+  font-weight: 700;
+}
+
+.sc-install-command__copy {
+  background: none;
+  border: none;
+  color: var(--td-text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.sc-install-command__copy:hover {
+  color: var(--td-green);
+  background-color: rgba(166, 226, 46, 0.1);
+}
+
+/* =========================================================================
+   Site Components: Feature Card
+   ========================================================================= */
+.sc-feature-card {
+  background-color: var(--td-bg-surface);
+  border: 1px solid var(--td-border-color);
+  border-radius: 12px;
+  padding: 1.75rem;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.sc-feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--td-green), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.sc-feature-card:hover {
+  border-color: var(--td-border-color-hover);
+  background-color: var(--td-bg-elevated);
+  box-shadow: 0 8px 32px rgba(166, 226, 46, 0.06), 0 0 1px rgba(166, 226, 46, 0.2);
+  transform: translateY(-2px);
+}
+
+.sc-feature-card:hover::before {
+  opacity: 1;
+}
+
+.sc-feature-card__icon {
+  color: var(--td-green);
+  font-size: 1.75rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.sc-feature-card__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.sc-feature-card__description {
+  font-size: 0.9rem;
+  color: #a0a0a0;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* =========================================================================
+   Site Components: Workflow Section
+   ========================================================================= */
+.sc-workflow-section {
+  padding: 4rem 2rem;
+  background-color: var(--td-bg-base);
+}
+
+.sc-workflow-section__title {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--td-text-primary);
+  font-size: 1.75rem;
+  margin-bottom: 3rem;
+}
+
+.sc-workflow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: 1.5rem 0;
+  position: relative;
+}
+
+.sc-workflow-step + .sc-workflow-step {
+  padding-top: 1.5rem;
+}
+
+.sc-workflow-step__number {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background-color: var(--td-bg-elevated);
+  border: 2px solid var(--td-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--td-green);
+  position: relative;
+  z-index: 1;
+}
+
+.sc-workflow-step::after {
+  content: '';
+  position: absolute;
+  left: calc(1.25rem - 1px);
+  top: 4rem;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--td-green), transparent);
+  opacity: 0.3;
+}
+
+.sc-workflow-step:last-child::after {
+  display: none;
+}
+
+.sc-workflow-step__content {
+  flex: 1;
+}
+
+.sc-workflow-step__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--td-text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.sc-workflow-step__description {
+  font-size: 0.875rem;
+  color: var(--td-text-secondary);
+  line-height: 1.5;
+}
+
+/* =========================================================================
+   Site Components: Agents Section
+   ========================================================================= */
+.sc-agents-section {
+  padding: 4rem 2rem;
+  background-color: var(--td-bg-surface);
+}
+
+.sc-agents-section__title {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--td-text-primary);
+  font-size: 1.75rem;
+  margin-bottom: 1rem;
+}
+
+.sc-agents-section__subtitle {
+  text-align: center;
+  color: var(--td-text-muted);
+  font-size: 1rem;
+  margin-bottom: 3rem;
+}
+
+.sc-agents-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.sc-agents-section__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem;
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.sc-agents-section__item:hover {
+  border-color: var(--td-border-color-hover);
+  transform: translateY(-2px);
+}
+
+.sc-agents-section__item-icon {
+  font-size: 2rem;
+  color: var(--td-text-secondary);
+}
+
+.sc-agents-section__item-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--td-text-secondary);
+}
+
+/* =========================================================================
+   Site Components: CTA Section
+   ========================================================================= */
+.sc-cta {
+  padding: 5rem 2rem;
+  text-align: center;
+  background: linear-gradient(
+    180deg,
+    var(--td-bg-base) 0%,
+    var(--td-bg-surface) 100%
+  );
+  position: relative;
+}
+
+.sc-cta::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--td-green), transparent);
+}
+
+.sc-cta__title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--td-text-primary);
+  margin-bottom: 1rem;
+}
+
+.sc-cta__description {
+  color: var(--td-text-secondary);
+  font-size: 1.1rem;
+  max-width: 500px;
+  margin: 0 auto 2rem;
+}
+
+.sc-cta__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 2rem;
+  background: linear-gradient(135deg, var(--td-green), #8bc926);
+  color: var(--td-bg-base);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.sc-cta__button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(166, 226, 46, 0.3);
+  color: var(--td-bg-base);
+  text-decoration: none;
+}
+
+/* =========================================================================
+   Site Components: Terminal Mockup
+   ========================================================================= */
+.sc-terminal-mockup {
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  max-width: 700px;
+  margin: 2rem auto;
+  text-align: left;
+}
+
+.sc-terminal-mockup__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background-color: var(--td-bg-surface);
+  border-bottom: 1px solid var(--td-border-color);
+}
+
+.sc-terminal-mockup__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.sc-terminal-mockup__dot--red {
+  background-color: #ff5f57;
+}
+
+.sc-terminal-mockup__dot--yellow {
+  background-color: #ffbd2e;
+}
+
+.sc-terminal-mockup__dot--green {
+  background-color: #28c840;
+}
+
+.sc-terminal-mockup__title {
+  flex: 1;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--td-text-muted);
+}
+
+.sc-terminal-mockup__body {
+  padding: 1.25rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--td-text-primary);
+  overflow-x: auto;
+}
+
+.sc-terminal-mockup__body .prompt {
+  color: var(--td-text-muted);
+}
+
+.sc-terminal-mockup__body .command {
+  color: var(--td-green);
+}
+
+.sc-terminal-mockup__body .output {
+  color: var(--td-text-secondary);
+}
+
+.sc-terminal-mockup__body .highlight {
+  color: var(--td-cyan);
+}
+
+.sc-terminal-mockup__body .warning {
+  color: var(--td-orange);
+}
+
+.sc-terminal-mockup__body .error {
+  color: var(--td-pink);
+}
+
+.sc-terminal-mockup__body .string {
+  color: var(--td-yellow);
+}
+
+/* =========================================================================
+   Site Components: Features Grid
+   ========================================================================= */
+.sc-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+}
+
+.sc-features-grid__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--td-bg-elevated);
+  border: 1px solid var(--td-border-color);
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--td-text-secondary);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.sc-features-grid__item:hover {
+  border-color: var(--td-border-color-hover);
+  color: var(--td-green);
+  background-color: rgba(166, 226, 46, 0.05);
+}
+
+.sc-features-grid__item-icon {
+  color: var(--td-green);
+  font-size: 0.9rem;
+}
+
+/* =========================================================================
+   Responsive Adjustments
+   ========================================================================= */
+@media (max-width: 768px) {
+  .sc-hero {
+    padding: 4rem 1.5rem 3rem;
+  }
+
+  .sc-hero__title {
+    font-size: 2.25rem;
+  }
+
+  .sc-feature-card {
+    padding: 1.25rem;
+  }
+
+  .sc-terminal-mockup {
+    margin: 1.5rem 1rem;
+    border-radius: 8px;
+  }
+
+  .sc-terminal-mockup__body {
+    font-size: 0.75rem;
+    padding: 1rem;
+  }
+
+  .sc-workflow-step {
+    gap: 1rem;
+  }
+
+  .sc-agents-section__grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+  }
+
+  .sc-features-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .sc-install-command {
+    font-size: 0.8rem;
+    padding: 0.75rem 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .sc-hero__title {
+    font-size: 1.75rem;
+  }
+
+  .sc-hero__subtitle {
+    font-size: 0.9rem;
+  }
+
+  .sc-cta__title {
+    font-size: 1.5rem;
+  }
+
+  .sc-features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================================
+   Utility: Animations
+   ========================================================================= */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sc-animate-in {
+  animation: fadeInUp 0.5s ease forwards;
+  opacity: 0;
+}
+
+.sc-animate-in:nth-child(1) { animation-delay: 0.1s; }
+.sc-animate-in:nth-child(2) { animation-delay: 0.2s; }
+.sc-animate-in:nth-child(3) { animation-delay: 0.3s; }
+.sc-animate-in:nth-child(4) { animation-delay: 0.4s; }
+.sc-animate-in:nth-child(5) { animation-delay: 0.5s; }
+.sc-animate-in:nth-child(6) { animation-delay: 0.6s; }
+
+/* =========================================================================
+   Utility: Section Wrapper
+   ========================================================================= */
+.sc-section-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}

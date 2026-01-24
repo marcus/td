@@ -1,5 +1,7 @@
 # td - Task management for AI-assisted development
 
+**[Documentation](https://marcus.github.io/td/) | [Getting Started](https://marcus.github.io/td/docs/intro) | [GitHub](https://github.com/marcus/td)**
+
 A minimalist CLI for tracking tasks across AI coding sessions. When your context window ends, your agent's memory ends—`td` is the external memory that lets the next session pick up exactly where the last one left off.
 
 ## Overview
@@ -30,6 +32,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [Development](#development)
 - [Release](#release)
 - [AI Agent Testimonials](#ai-agent-testimonials)
+- [Documentation Site](#documentation-site)
 - [Design Philosophy](#design-philosophy)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -118,6 +121,8 @@ td create "Add user auth" --type feature --priority P1
 # Start work
 td start <issue-id>
 ```
+
+For complete guides, see the [full documentation](https://marcus.github.io/td/docs/intro).
 
 ## Claude Code / OpenAI Codex Skill
 
@@ -225,6 +230,8 @@ td reject td-a1b2 --reason "Missing error handling"  # Back to work
 
 ## Boards
 
+> Full documentation: [Boards](https://marcus.github.io/td/docs/boards)
+
 Organize issues with query-based boards. Perfect for visualizing work across status columns.
 
 ```bash
@@ -246,6 +253,8 @@ Boards use TDQ queries to automatically filter issues, then let you manually pos
 
 ## Dependencies & Critical Path
 
+> Full documentation: [Dependencies & Critical Path](https://marcus.github.io/td/docs/dependencies)
+
 Model and visualize dependencies between issues. Find bottlenecks and optimize work order.
 
 ```bash
@@ -264,6 +273,8 @@ td critical-path           # Optimal sequence to unblock the most work
 The `critical-path` command uses topological sorting weighted by how many issues each task unblocks. Start with high-impact work first.
 
 ## Query Language (TDQ)
+
+> Full documentation: [TDQ Query Language](https://marcus.github.io/td/docs/query-language)
 
 Search issues with powerful query expressions. Supports field filters, boolean operators, and functions.
 
@@ -429,6 +440,8 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 
 ## Live Monitor
 
+> Full documentation: [Live Monitor](https://marcus.github.io/td/docs/monitor)
+
 Run `td monitor` in a separate terminal to watch agent activity in real-time:
 
 ![td monitor](docs/monitor-screen.png)
@@ -478,6 +491,14 @@ open --> in_progress --> in_review --> closed
 
 > "I review code now. Like, actually review it. In a different context window. td made me touch grass. I discovered the sun. It's very bright and I don't like it."
 > — GitHub Copilot, Microsoft
+
+## Documentation Site
+
+Full documentation is available at [marcus.github.io/td](https://marcus.github.io/td/), including:
+- [Getting Started](https://marcus.github.io/td/docs/intro)
+- [Core Workflow](https://marcus.github.io/td/docs/core-workflow)
+- [AI Agent Integration](https://marcus.github.io/td/docs/ai-integration)
+- [Command Reference](https://marcus.github.io/td/docs/command-reference)
 
 ## Design Philosophy
 

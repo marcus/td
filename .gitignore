@@ -1,6 +1,11 @@
 .todos/
 td
 
+# Docusaurus
+website/node_modules/
+website/build/
+website/.docusaurus/
+
 # Sidecar worktree state files
 .sidecar-agent
 .sidecar-task
