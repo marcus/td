@@ -119,10 +119,19 @@ html[data-theme='dark'] a {
   transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
+html[data-theme='dark'] a.sc-cta__button {
+  color: #2d1f45;
+}
+
 html[data-theme='dark'] a:hover {
   color: var(--td-cyan);
   text-decoration: none;
   text-shadow: 0 0 8px rgba(102, 217, 239, 0.3);
+}
+
+html[data-theme='dark'] a.sc-cta__button:hover {
+  color: #2d1f45;
+  text-shadow: none;
 }
 
 /* =========================================================================
