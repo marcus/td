@@ -6,6 +6,8 @@ sidebar_position: 9
 
 `td monitor` is a real-time TUI dashboard for watching agent activity. Run it in a separate terminal to observe what your AI agent is doing as it works through tasks.
 
+![td monitor TUI dashboard](/img/td-monitor.png)
+
 ## Starting the Monitor
 
 ```bash

@@ -199,7 +199,7 @@ function WorkflowSection() {
 
           {/* Row 1: Human creates backlog */}
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item">
+            <div className="sc-workflow-item sc-workflow-item--human">
               <div className="sc-workflow-item__title">Create backlog</div>
               <div className="sc-workflow-item__desc">Define epics, break into tasks, set priorities</div>
               <code className="sc-workflow-item__code">td create "OAuth login" -p P1</code>
@@ -214,7 +214,7 @@ function WorkflowSection() {
             <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
           </div>
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item">
+            <div className="sc-workflow-item sc-workflow-item--agent">
               <div className="sc-workflow-item__title">Pick up tasks</div>
               <div className="sc-workflow-item__desc">Start work, handle in parallel when unblocked</div>
               <code className="sc-workflow-item__code">td start td-a1b2</code>
@@ -224,7 +224,7 @@ function WorkflowSection() {
           {/* Row 3: Agent handoffs */}
           <div className="sc-workflow-cell" />
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--indent">
+            <div className="sc-workflow-item sc-workflow-item--agent">
               <div className="sc-workflow-item__title">Do handoffs</div>
               <div className="sc-workflow-item__desc">Record progress for next session to resume</div>
               <code className="sc-workflow-item__code">td handoff --done "..." --remaining "..."</code>
@@ -232,9 +232,11 @@ function WorkflowSection() {
           </div>
 
           {/* Row 4: Agent submits for review */}
-          <div className="sc-workflow-cell" />
+          <div className="sc-workflow-cell sc-workflow-cell--arrow-left">
+            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
+          </div>
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--indent">
+            <div className="sc-workflow-item sc-workflow-item--agent">
               <div className="sc-workflow-item__title">Submit for review</div>
               <div className="sc-workflow-item__desc">Different session must review—enforced isolation</div>
               <code className="sc-workflow-item__code">td review td-a1b2</code>
@@ -243,19 +245,17 @@ function WorkflowSection() {
 
           {/* Row 5: Human reviews */}
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item">
+            <div className="sc-workflow-item sc-workflow-item--human">
               <div className="sc-workflow-item__title">Review & approve</div>
               <div className="sc-workflow-item__desc">Verify work, request changes, or close</div>
               <code className="sc-workflow-item__code">td approve td-a1b2</code>
             </div>
           </div>
-          <div className="sc-workflow-cell sc-workflow-cell--arrow-right">
-            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
-          </div>
+          <div className="sc-workflow-cell" />
 
           {/* Row 6: Human monitors */}
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item">
+            <div className="sc-workflow-item sc-workflow-item--human">
               <div className="sc-workflow-item__title">Monitor progress</div>
               <div className="sc-workflow-item__desc">Watch agents work across sessions in real-time</div>
               <code className="sc-workflow-item__code">td monitor</code>
@@ -263,6 +263,26 @@ function WorkflowSection() {
           </div>
           <div className="sc-workflow-cell" />
         </div>
+      </div>
+    </section>
+  );
+}
+
+function MonitorPreview() {
+  return (
+    <section style={{ padding: '4rem 2rem', backgroundColor: 'var(--td-bg-surface)' }}>
+      <div className="sc-section-container" style={{ textAlign: 'center' }}>
+        <h2 style={{ fontFamily: "'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif", color: 'var(--td-text-primary)', fontSize: '1.75rem', marginBottom: '0.75rem' }}>
+          Watch work happen in real-time
+        </h2>
+        <p style={{ color: 'var(--td-text-secondary)', maxWidth: 600, margin: '0 auto 2rem', fontSize: '1.05rem' }}>
+          The live monitor shows current work, board swimlanes, and activity logs across all agent sessions.
+        </p>
+        <img
+          src={useBaseUrl('/img/td-monitor.png')}
+          alt="td monitor — real-time TUI dashboard"
+          style={{ maxWidth: '100%', borderRadius: 8 }}
+        />
       </div>
     </section>
   );
@@ -406,6 +426,7 @@ export default function Home() {
         <TerminalMockup />
         <FeatureCards />
         <WorkflowSection />
+        <MonitorPreview />
         <AgentsSection />
         <FeaturesGrid />
         <BottomCTA />

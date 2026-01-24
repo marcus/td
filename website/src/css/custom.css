@@ -723,9 +723,26 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
   background: var(--td-bg-elevated-hover);
 }
 
-.sc-workflow-item--indent {
-  margin-left: 1.5rem;
-  border-left: 3px solid var(--td-green);
+.sc-workflow-item--human {
+  background: rgba(137, 212, 255, 0.04);
+  border-color: rgba(137, 212, 255, 0.15);
+}
+
+.sc-workflow-item--human:hover {
+  border-color: rgba(137, 212, 255, 0.3);
+}
+
+.sc-workflow-item--human .sc-workflow-item__code {
+  color: #89d4ff;
+}
+
+.sc-workflow-item--agent {
+  background: rgba(78, 205, 196, 0.04);
+  border-color: rgba(78, 205, 196, 0.15);
+}
+
+.sc-workflow-item--agent:hover {
+  border-color: rgba(78, 205, 196, 0.3);
 }
 
 .sc-workflow-item__title {
