@@ -53,6 +53,13 @@ const config = {
         href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap',
       },
     },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&display=swap',
+      },
+    },
   ],
 
   presets: [

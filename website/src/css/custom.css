@@ -527,6 +527,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 }
 
 .sc-hero__subtitle {
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif;
   font-size: clamp(1rem, 2vw, 1.25rem);
   color: var(--td-text-muted);
   max-width: 600px;
@@ -652,7 +653,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 
 .sc-workflow-section__title {
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif;
   color: var(--td-text-primary);
   font-size: 1.75rem;
   margin-bottom: 3rem;
@@ -731,7 +732,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 
 .sc-agents-section__title {
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif;
   color: var(--td-text-primary);
   font-size: 1.75rem;
   margin-bottom: 1rem;
@@ -807,7 +808,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 }
 
 .sc-cta__title {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif;
   font-size: 2rem;
   font-weight: 700;
   color: var(--td-text-primary);

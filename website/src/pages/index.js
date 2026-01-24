@@ -270,7 +270,7 @@ function FeaturesGrid() {
   return (
     <section style={{ padding: '4rem 2rem', backgroundColor: 'var(--td-bg-base)' }}>
       <div className="sc-section-container">
-        <h2 style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", color: 'var(--td-text-primary)', fontSize: '1.75rem', marginBottom: '2rem' }}>
+        <h2 style={{ textAlign: 'center', fontFamily: "'Fraunces', 'Iowan Old Style', 'Palatino', 'Times New Roman', serif", color: 'var(--td-text-primary)', fontSize: '1.75rem', marginBottom: '2rem' }}>
           Everything you need
         </h2>
         <div className="sc-features-grid" style={{ maxWidth: 900, margin: '0 auto' }}>
