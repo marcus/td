@@ -173,51 +173,81 @@ function FeatureCards() {
   );
 }
 
-const workflowSteps = [
-  {
-    number: 1,
-    title: 'Create',
-    description: 'Define a task with priority, labels, and dependencies.',
-    command: 'td create "Add OAuth login" -p P1 -l backend',
-  },
-  {
-    number: 2,
-    title: 'Start',
-    description: 'Focus your session on a specific issue.',
-    command: 'td start td-a1b2',
-  },
-  {
-    number: 3,
-    title: 'Handoff',
-    description: 'Record progress so the next session picks up cleanly.',
-    command: 'td handoff td-a1b2 --done "OAuth callback" --remaining "Refresh tokens"',
-  },
-  {
-    number: 4,
-    title: 'Review',
-    description: 'A different session reviews and closes the issue.',
-    command: 'td review td-a1b2 --approve',
-  },
-];
-
 function WorkflowSection() {
   return (
     <section className="sc-workflow-section">
       <div className="sc-section-container">
-        <h2 className="sc-workflow-section__title">The workflow</h2>
-        <div style={{ maxWidth: 650, margin: '0 auto' }}>
-          {workflowSteps.map((step, idx) => (
-            <div className="sc-workflow-step" key={idx}>
-              <div className="sc-workflow-step__number">{step.number}</div>
-              <div className="sc-workflow-step__content">
-                <div className="sc-workflow-step__title">{step.title}</div>
-                <div className="sc-workflow-step__description">{step.description}</div>
-                <code style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--td-green)' }}>
-                  {step.command}
-                </code>
-              </div>
+        <h2 className="sc-workflow-section__title">How it works</h2>
+        <p style={{ textAlign: 'center', color: 'var(--td-text-secondary)', maxWidth: 700, margin: '0 auto 3rem', fontSize: '1.05rem' }}>
+          You build the backlog. Agents work through it autonomously—in parallel, with handoffs and enforced review.
+        </p>
+
+        <div className="sc-workflow-columns">
+          <div className="sc-workflow-column">
+            <div className="sc-workflow-column__header">
+              <span className="sc-workflow-column__icon">👤</span>
+              <span className="sc-workflow-column__title">You</span>
             </div>
-          ))}
+
+            <div className="sc-workflow-item">
+              <div className="sc-workflow-item__title">Create backlog</div>
+              <div className="sc-workflow-item__desc">Define epics, break into tasks, set priorities</div>
+              <code className="sc-workflow-item__code">td create "OAuth login" -p P1</code>
+            </div>
+
+            <div className="sc-workflow-arrow">→</div>
+
+            <div className="sc-workflow-spacer" />
+
+            <div className="sc-workflow-arrow">←</div>
+
+            <div className="sc-workflow-item">
+              <div className="sc-workflow-item__title">Review & approve</div>
+              <div className="sc-workflow-item__desc">Verify work, request changes, or approve</div>
+              <code className="sc-workflow-item__code">td approve td-a1b2</code>
+            </div>
+
+            <div className="sc-workflow-spacer" />
+
+            <div className="sc-workflow-item">
+              <div className="sc-workflow-item__title">Monitor in real-time</div>
+              <div className="sc-workflow-item__desc">Watch agents work across sessions</div>
+              <code className="sc-workflow-item__code">td monitor</code>
+            </div>
+          </div>
+
+          <div className="sc-workflow-divider" />
+
+          <div className="sc-workflow-column">
+            <div className="sc-workflow-column__header">
+              <span className="sc-workflow-column__icon">🤖</span>
+              <span className="sc-workflow-column__title">Agents</span>
+            </div>
+
+            <div className="sc-workflow-spacer" />
+
+            <div className="sc-workflow-arrow">←</div>
+
+            <div className="sc-workflow-item">
+              <div className="sc-workflow-item__title">Pick up tasks</div>
+              <div className="sc-workflow-item__desc">Start work, handle in parallel if ready</div>
+              <code className="sc-workflow-item__code">td start td-a1b2</code>
+            </div>
+
+            <div className="sc-workflow-item sc-workflow-item--indent">
+              <div className="sc-workflow-item__title">Do handoffs</div>
+              <div className="sc-workflow-item__desc">Record progress for next session</div>
+              <code className="sc-workflow-item__code">td handoff --done "..." --remaining "..."</code>
+            </div>
+
+            <div className="sc-workflow-item sc-workflow-item--indent">
+              <div className="sc-workflow-item__title">Submit for review</div>
+              <div className="sc-workflow-item__desc">Different agent/session must review</div>
+              <code className="sc-workflow-item__code">td review td-a1b2</code>
+            </div>
+
+            <div className="sc-workflow-arrow">→</div>
+          </div>
         </div>
       </div>
     </section>
