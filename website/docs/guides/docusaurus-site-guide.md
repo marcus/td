@@ -73,7 +73,7 @@ Notes:
 - **title, tagline, URL** - Basic site metadata
 - **Navbar and footer** - Navigation links
 - **Color mode** - Set to dark only
-- **Google Fonts** - JetBrains Mono and Inter loaded via `headTags`
+- **Google Fonts** - JetBrains Mono, Inter, and Fraunces loaded via `headTags`
 
 ## Adding Images
 
@@ -94,11 +94,11 @@ Deployment:
 
 ## Style Guidelines
 
-- **No emoji** - use Lucide icons instead
-- **Terminal aesthetic** dark theme throughout
-- **Primary color**: green (`#a6e22e`), dark backgrounds
-- **Fonts**: JetBrains Mono for headings/code, Inter for body text
+- **Never use emoji** - use Lucide icons or custom SVGs instead. Emoji are prohibited across the entire site (landing page, docs, components). Use `lucide-react` for UI icons and inline SVGs for brand/agent logos.
+- **Soft dark theme** with pastel purple (`#d8b4fe`) accents and pastel blue (`#89d4ff`) CTAs
+- **Fonts**: JetBrains Mono for code/nav, Fraunces serif for section headers, Inter for body text
 - **CSS class prefix**: `sc-*` for all custom component styles
+- **Agent icons**: Custom inline SVGs (sidecar-style) rather than icon library components
 
 ## Common Tasks
 

@@ -21,6 +21,9 @@ import {
   BarChart3,
   Check,
   Copy,
+  LayoutDashboard,
+  ExternalLink,
+  Route,
 } from 'lucide-react';
 
 function CopyButton({ text }) {
@@ -60,8 +63,9 @@ function HeroSection() {
           Task management for AI-assisted development
         </p>
         <p style={{ color: 'var(--td-text-secondary)', maxWidth: 640, margin: '0 auto 2rem', lineHeight: 1.7, fontSize: '1.05rem' }}>
-          Structured handoffs. Session isolation. The external memory that lets
-          your next AI session pick up exactly where the last one left off.
+          Markdown files and agent-specific task systems don't scale. td gives Claude, Cursor,
+          Codex, and Gemini a shared backlog with structured handoffs, parallel execution,
+          and an enforced review workflow.
         </p>
         <div className="sc-install-command" style={{ marginBottom: '2rem' }}>
           <span>{installCmd}</span>
@@ -337,13 +341,15 @@ const pills = [
   { icon: <Terminal size={14} />, label: 'CLI-first' },
   { icon: <Database size={14} />, label: 'SQLite local' },
   { icon: <Package size={14} />, label: 'Single binary' },
-  { icon: <Settings size={14} />, label: 'Zero config' },
-  { icon: <Search size={14} />, label: 'Query language' },
-  { icon: <GitCommit size={14} />, label: 'Git integration' },
-  { icon: <RotateCcw size={14} />, label: 'Undo support' },
+  { icon: <Search size={14} />, label: 'TDQ query language' },
+  { icon: <LayoutDashboard size={14} />, label: 'Configurable boards' },
+  { icon: <Route size={14} />, label: 'Critical path analysis' },
   { icon: <ListChecks size={14} />, label: 'Multi-issue sessions' },
-  { icon: <FileText size={14} />, label: 'File tracking' },
+  { icon: <GitCommit size={14} />, label: 'Git snapshots' },
+  { icon: <RotateCcw size={14} />, label: 'Undo support' },
   { icon: <BarChart3 size={14} />, label: 'Analytics' },
+  { icon: <FileText size={14} />, label: 'File tracking' },
+  { icon: <ExternalLink size={14} />, label: 'Sidecar integration', link: 'https://marcus.github.io/sidecar/' },
 ];
 
 function FeaturesGrid() {
@@ -354,7 +360,12 @@ function FeaturesGrid() {
           Everything you need
         </h2>
         <div className="sc-features-grid" style={{ maxWidth: 900, margin: '0 auto' }}>
-          {pills.map((pill, idx) => (
+          {pills.map((pill, idx) => pill.link ? (
+            <a href={pill.link} className="sc-features-grid__item" key={idx} target="_blank" rel="noopener noreferrer">
+              <span className="sc-features-grid__item-icon">{pill.icon}</span>
+              {pill.label}
+            </a>
+          ) : (
             <div className="sc-features-grid__item" key={idx}>
               <span className="sc-features-grid__item-icon">{pill.icon}</span>
               {pill.label}

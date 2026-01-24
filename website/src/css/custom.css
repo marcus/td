@@ -183,7 +183,7 @@ html[data-theme='dark'] .menu__link:hover {
 
 html[data-theme='dark'] .menu__link--active {
   color: var(--td-green);
-  background-color: rgba(166, 226, 46, 0.08);
+  background-color: rgba(216, 180, 254, 0.08);
   font-weight: 600;
 }
 
@@ -319,7 +319,7 @@ html[data-theme='dark'] .prism-code .token.punctuation {
 
 /* Code block title bar */
 html[data-theme='dark'] .theme-code-block-highlighted-line {
-  background-color: rgba(166, 226, 46, 0.08);
+  background-color: rgba(216, 180, 254, 0.08);
   border-left: 3px solid var(--td-green);
 }
 
@@ -459,7 +459,7 @@ html[data-theme='dark'] .DocSearch-Button {
 
 html[data-theme='dark'] .DocSearch-Button:hover {
   border-color: var(--td-border-color-hover);
-  box-shadow: 0 0 8px rgba(166, 226, 46, 0.1);
+  box-shadow: 0 0 8px rgba(216, 180, 254, 0.1);
 }
 
 /* =========================================================================
@@ -480,7 +480,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb {
 }
 
 html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(166, 226, 46, 0.3);
+  background: rgba(216, 180, 254, 0.3);
 }
 
 /* =========================================================================
@@ -507,7 +507,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(166, 226, 46, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 20% 50%, rgba(216, 180, 254, 0.04) 0%, transparent 60%),
     radial-gradient(ellipse at 80% 20%, rgba(174, 129, 255, 0.03) 0%, transparent 50%);
   pointer-events: none;
 }
@@ -516,7 +516,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
   font-family: 'JetBrains Mono', monospace;
   font-size: clamp(2.5rem, 6vw, 4.5rem);
   font-weight: 700;
-  background: linear-gradient(135deg, var(--td-green) 0%, #c8f76f 50%, var(--td-cyan) 100%);
+  background: linear-gradient(135deg, var(--td-green) 0%, #e5c7ff 50%, var(--td-cyan) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -558,7 +558,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 
 .sc-install-command:hover {
   border-color: var(--td-border-color-hover);
-  box-shadow: 0 0 20px rgba(166, 226, 46, 0.08);
+  box-shadow: 0 0 20px rgba(216, 180, 254, 0.08);
 }
 
 .sc-install-command::before {
@@ -582,7 +582,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 
 .sc-install-command__copy:hover {
   color: var(--td-green);
-  background-color: rgba(166, 226, 46, 0.1);
+  background-color: rgba(216, 180, 254, 0.1);
 }
 
 /* =========================================================================
@@ -613,7 +613,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 .sc-feature-card:hover {
   border-color: var(--td-border-color-hover);
   background-color: var(--td-bg-elevated);
-  box-shadow: 0 8px 32px rgba(166, 226, 46, 0.06), 0 0 1px rgba(166, 226, 46, 0.2);
+  box-shadow: 0 8px 32px rgba(216, 180, 254, 0.06), 0 0 1px rgba(216, 180, 254, 0.2);
   transform: translateY(-2px);
 }
 
@@ -1008,7 +1008,17 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 .sc-features-grid__item:hover {
   border-color: var(--td-border-color-hover);
   color: var(--td-green);
-  background-color: rgba(166, 226, 46, 0.05);
+  background-color: rgba(216, 180, 254, 0.05);
+}
+
+a.sc-features-grid__item {
+  text-decoration: none;
+  color: var(--td-text-secondary);
+}
+
+a.sc-features-grid__item:hover {
+  color: var(--td-green);
+  text-decoration: none;
 }
 
 .sc-features-grid__item-icon {
