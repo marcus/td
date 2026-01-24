@@ -72,38 +72,34 @@ var agentPatterns = map[string]AgentType{
 	"gemini":   AgentGemini,
 }
 
-// Cached fingerprint - process tree won't change during our lifetime
+// Cache the expensive process tree walk (won't change during process lifetime)
 var (
-	cachedFingerprint     AgentFingerprint
-	cachedFingerprintOnce sync.Once
+	cachedAncestor     AgentFingerprint
+	cachedAncestorOnce sync.Once
 )
 
 // GetAgentFingerprint detects the agent running this process by walking the process tree.
-// Result is cached after first call since the process tree is stable.
+// The expensive process tree walk is cached; env var checks are always re-evaluated.
 func GetAgentFingerprint() AgentFingerprint {
-	cachedFingerprintOnce.Do(func() {
-		cachedFingerprint = detectFingerprint()
-	})
-	return cachedFingerprint
-}
-
-func detectFingerprint() AgentFingerprint {
-	// Priority 1: Explicit override
+	// Priority 1: Explicit override (cheap env check, always re-evaluate)
 	if id := os.Getenv("TD_SESSION_ID"); id != "" {
 		return AgentFingerprint{Type: AgentType("explicit"), PID: 0, ExplicitID: id}
 	}
 
-	// Priority 2: Agent-provided session IDs
+	// Priority 2: Agent-provided session IDs (cheap env check)
 	if os.Getenv("CURSOR_AGENT") != "" {
 		return AgentFingerprint{Type: AgentCursor, PID: os.Getppid()}
 	}
 
-	// Priority 3: Walk process ancestry
-	if fp := detectAgentAncestor(); fp.Type != AgentUnknown {
-		return fp
+	// Priority 3: Walk process ancestry (expensive, cached)
+	cachedAncestorOnce.Do(func() {
+		cachedAncestor = detectAgentAncestor()
+	})
+	if cachedAncestor.Type != AgentUnknown {
+		return cachedAncestor
 	}
 
-	// Priority 4: Terminal session detection
+	// Priority 4: Terminal session detection (cheap env check)
 	if getTerminalSessionID() != "" {
 		return AgentFingerprint{Type: AgentTerminal, PID: 0}
 	}

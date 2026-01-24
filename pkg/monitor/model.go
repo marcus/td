@@ -585,7 +585,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			filteredIssues := filterBoardIssuesByQuery(msg.Issues, m.SearchQuery)
 			m.BoardMode.Issues = filteredIssues
 			// Build swimlane data using filtered issues
-			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode)
+			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode, msg.RejectedIDs)
 			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
 
 			// Restore selection if we have a pending selection ID (from move operations)

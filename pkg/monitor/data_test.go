@@ -54,7 +54,7 @@ func TestComputeBoardIssueCategories(t *testing.T) {
 	}
 
 	// Compute categories
-	ComputeBoardIssueCategories(database, issues, "test-session")
+	ComputeBoardIssueCategories(database, issues, "test-session", nil)
 
 	// Verify categories
 	tests := []struct {
@@ -298,7 +298,7 @@ func TestComputeBoardIssueCategoriesClosedDepUnblocks(t *testing.T) {
 
 	issues := []models.BoardIssueView{{Issue: *dependent}}
 
-	ComputeBoardIssueCategories(database, issues, "test-session")
+	ComputeBoardIssueCategories(database, issues, "test-session", nil)
 
 	if issues[0].Category != string(CategoryReady) {
 		t.Errorf("dependent with closed blocker: got %q, want %q", issues[0].Category, CategoryReady)
