@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.21.0] - 2026-01-23
+
+### Features
+- Improve agent DX based on error pattern analysis
+
+### Bug Fixes
+- Fix agent fingerprint cache to only cache expensive process tree walk
+- Add indices to schema for frequent queries to improve performance
+- Fix critical path queries
+
+### Documentation
+- Update docs structure and marketing site
+
 ## [v0.20.0] - 2026-01-21
 
 ### Features
