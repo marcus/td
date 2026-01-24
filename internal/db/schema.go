@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 11
+const SchemaVersion = 12
 
 const schema = `
 -- Issues table
@@ -289,5 +289,12 @@ ON CONFLICT(name) DO UPDATE SET
 		Version:     11,
 		Description: "Add view_mode to boards for swimlanes/backlog toggle",
 		SQL:         `ALTER TABLE boards ADD COLUMN view_mode TEXT NOT NULL DEFAULT 'swimlanes';`,
+	},
+	{
+		Version:     12,
+		Description: "Add missing indices for monitor query performance",
+		SQL: `CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
 	},
 }
