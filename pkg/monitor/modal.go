@@ -357,9 +357,7 @@ func (m Model) openStatsModal() (tea.Model, tea.Cmd) {
 	m.StatsError = nil
 	m.StatsData = nil
 
-	// Create declarative modal and mouse handler
-	m.StatsModal = m.createStatsModal()
-	m.StatsModal.Reset()
+	// Create mouse handler (modal will be created when data loads)
 	m.StatsMouseHandler = mouse.NewHandler()
 
 	return m, m.fetchStats()
@@ -399,6 +397,57 @@ func (m *Model) createStatsModal() *modal.Modal {
 		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
 			return modal.RenderedSection{
 				Content: m.renderStatsContent(contentWidth),
+			}
+		},
+		nil, // No update handling needed
+	))
+
+	// Add Close button
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Close ", "close"),
+	))
+
+	return md
+}
+
+// openTDQHelpModal opens the TDQ query help modal
+func (m Model) openTDQHelpModal() Model {
+	m.ShowTDQHelp = true
+	m.TDQHelpModal = m.createTDQHelpModal()
+	m.TDQHelpModal.Reset()
+	m.TDQHelpMouseHandler = mouse.NewHandler()
+	return m
+}
+
+// closeTDQHelpModal closes the TDQ query help modal
+func (m *Model) closeTDQHelpModal() {
+	m.ShowTDQHelp = false
+	m.TDQHelpModal = nil
+	m.TDQHelpMouseHandler = nil
+}
+
+// createTDQHelpModal builds the declarative modal for TDQ query syntax help.
+func (m *Model) createTDQHelpModal() *modal.Modal {
+	// Calculate width based on terminal size (70% width, capped)
+	modalWidth := m.Width * 70 / 100
+	if modalWidth > 80 {
+		modalWidth = 80
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+
+	md := modal.New("TDQ Query Syntax",
+		modal.WithWidth(modalWidth),
+		modal.WithVariant(modal.VariantInfo), // Cyan border for info
+		modal.WithHints(false),               // No hints, we have our own footer
+	)
+
+	// Use Custom section for the help content
+	md.AddSection(modal.Custom(
+		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+			return modal.RenderedSection{
+				Content: m.Keymap.GenerateTDQHelp(),
 			}
 		},
 		nil, // No update handling needed

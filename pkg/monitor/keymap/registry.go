@@ -30,6 +30,7 @@ const (
 	ContextBoardPicker       Context = "board-picker"        // When board picker is open
 	ContextBoard             Context = "board"               // When board mode is active
 	ContextGettingStarted    Context = "getting-started"    // When getting started modal is open
+	ContextTDQHelp           Context = "tdq-help"           // When TDQ help modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings

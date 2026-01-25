@@ -31,6 +31,7 @@ var contextToSidecar = map[Context]string{
 	ContextHelp:              "td-help",
 	ContextBoard:             "td-board",
 	ContextBoardPicker:       "td-board-picker",
+	ContextTDQHelp:           "td-tdq-help",
 }
 
 // commandMetadata defines display info and priority for each command.

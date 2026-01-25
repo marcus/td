@@ -890,6 +890,22 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle TDQ Help modal mouse events (declarative modal)
+	if m.ShowTDQHelp && m.TDQHelpModal != nil && m.TDQHelpMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.TDQHelpModal.HandleMouse(msg, m.TDQHelpMouseHandler)
+			if action != "" {
+				return m.handleTDQHelpAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.TDQHelpModal.HandleMouse(msg, m.TDQHelpMouseHandler)
+			return m, nil
+		}
+	}
+
 	// Handle Stats modal mouse events (declarative modal)
 	if m.StatsOpen && m.StatsModal != nil && m.StatsMouseHandler != nil && !m.StatsLoading && m.StatsError == nil {
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {

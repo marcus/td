@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
+
+// Header style for TDQ help sections
+var tdqHeaderStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("212")) // Primary color (purple/magenta)
 
 // HelpSection represents a group of bindings in help text
 type HelpSection struct {
@@ -186,10 +193,10 @@ func (r *Registry) GenerateHelp() string {
 func (r *Registry) GenerateTDQHelp() string {
 	var sb strings.Builder
 
-	sb.WriteString("\nTDQ QUERY LANGUAGE - Search Syntax\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("TDQ QUERY LANGUAGE - Search Syntax") + "\n")
 	sb.WriteString("═══════════════════════════════════\n\n")
 
-	sb.WriteString("BASIC OPERATORS:\n")
+	sb.WriteString(tdqHeaderStyle.Render("BASIC OPERATORS:") + "\n")
 	ops := []HelpBinding{
 		{Keys: "field = value", Description: "Exact match"},
 		{Keys: "field != value", Description: "Not equal"},
@@ -203,7 +210,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nBOOLEAN LOGIC:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("BOOLEAN LOGIC:") + "\n")
 	bools := []HelpBinding{
 		{Keys: "expr AND expr", Description: "Both must match"},
 		{Keys: "expr OR expr", Description: "Either matches"},
@@ -214,7 +221,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nFIELDS:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("FIELDS:") + "\n")
 	fields := []HelpBinding{
 		{Keys: "status", Description: "open, in_progress, blocked, in_review, closed"},
 		{Keys: "type", Description: "bug, feature, task, epic, chore"},
@@ -229,7 +236,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nFUNCTIONS:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("FUNCTIONS:") + "\n")
 	funcs := []HelpBinding{
 		{Keys: "has(field)", Description: "Field is not empty"},
 		{Keys: "is(status)", Description: "Shorthand status check"},
@@ -240,7 +247,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nCROSS-ENTITY:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("CROSS-ENTITY:") + "\n")
 	cross := []HelpBinding{
 		{Keys: `log.message ~ "x"`, Description: "Search log messages"},
 		{Keys: "log.type = blocker", Description: "Filter by log type"},
@@ -251,7 +258,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nSPECIAL VALUES:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("SPECIAL VALUES:") + "\n")
 	special := []HelpBinding{
 		{Keys: "@me", Description: "Current session"},
 		{Keys: "today / -7d", Description: "Relative dates"},
@@ -261,7 +268,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nSORTING:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("SORTING:") + "\n")
 	sortOps := []HelpBinding{
 		{Keys: "sort:priority", Description: "Sort by priority (default)"},
 		{Keys: "sort:-created", Description: "Newest first"},
@@ -272,7 +279,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
-	sb.WriteString("\nEXAMPLES:\n")
+	sb.WriteString("\n" + tdqHeaderStyle.Render("EXAMPLES:") + "\n")
 	examples := []string{
 		`  type = bug AND priority <= P1`,
 		`  status = open AND created >= -7d`,

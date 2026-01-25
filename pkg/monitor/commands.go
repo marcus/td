@@ -38,6 +38,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.StatsOpen {
 		return keymap.ContextStats
 	}
+	if m.ShowTDQHelp {
+		return keymap.ContextTDQHelp
+	}
 	// Search mode takes priority - it's an overlay that captures input
 	if m.SearchMode {
 		return keymap.ContextSearch
@@ -177,6 +180,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Fall through to keymap for esc, q, I, etc.
+	}
+
+	// TDQ Help modal: let declarative modal handle keys first
+	if m.ShowTDQHelp && m.TDQHelpModal != nil {
+		action, cmd := m.TDQHelpModal.HandleKey(msg)
+		if action != "" {
+			return m.handleTDQHelpAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, etc.
 	}
 
 	// Stats modal: let declarative modal handle keys first (when data is ready)
@@ -325,11 +340,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdToggleHelp:
 		// Show TDQ help when in search mode, regular help otherwise
 		if m.SearchMode {
-			m.ShowTDQHelp = !m.ShowTDQHelp
+			if m.ShowTDQHelp {
+				m.closeTDQHelpModal()
+			} else {
+				m = m.openTDQHelpModal()
+			}
 			m.HelpOpen = false
 		} else {
 			m.HelpOpen = !m.HelpOpen
-			m.ShowTDQHelp = false
+			m.closeTDQHelpModal()
 			if m.HelpOpen {
 				// Initialize scroll position and calculate total lines
 				m.HelpScroll = 0
@@ -439,6 +458,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				m.StatsScroll++
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(1)
 		} else {
 			m.moveCursor(1)
 		}
@@ -504,6 +525,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else if m.StatsScroll > 0 {
 				m.StatsScroll--
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(-1)
 		} else {
 			m.moveCursor(-1)
 		}
@@ -536,6 +559,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				m.StatsScroll = 0
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.SetScrollOffset(0)
 		} else {
 			m.Cursor[m.ActivePanel] = 0
 			m.saveSelectedID(m.ActivePanel)
@@ -577,6 +602,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				m.StatsScroll = 9999 // Will be clamped by view
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.SetScrollOffset(9999) // Will be clamped during render
 		} else {
 			count := m.rowCount(m.ActivePanel)
 			if count > 0 {
@@ -641,6 +668,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				m.StatsScroll += pageSize
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(pageSize)
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(1)
@@ -695,6 +724,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					m.StatsScroll = 0
 				}
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(-pageSize)
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(-1)
@@ -729,6 +760,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			} else {
 				m.StatsScroll += pageSize
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(pageSize)
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(1)
@@ -765,6 +798,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					m.StatsScroll = 0
 				}
 			}
+		} else if m.ShowTDQHelp && m.TDQHelpModal != nil {
+			m.TDQHelpModal.Scroll(-pageSize)
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(-1)
@@ -794,6 +829,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.closeHandoffsModal()
 		} else if m.StatsOpen {
 			m.closeStatsModal()
+		} else if m.ShowTDQHelp {
+			m.closeTDQHelpModal()
 		}
 		return m, nil
 
@@ -890,7 +927,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	// Search commands
 	case keymap.CmdSearchConfirm:
 		m.SearchMode = false
-		m.ShowTDQHelp = false
+		m.closeTDQHelpModal()
 		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
 		// Focus TaskList panel with cursor on first result
@@ -902,7 +939,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdSearchCancel:
 		// If TDQ help is open, close it but stay in search mode
 		if m.ShowTDQHelp {
-			m.ShowTDQHelp = false
+			m.closeTDQHelpModal()
 			return m, nil
 		}
 		// Otherwise exit search mode entirely
@@ -1782,8 +1819,10 @@ func (m Model) handleGettingStartedAction(action string) (Model, tea.Cmd) {
 	switch action {
 	case "install":
 		return m.installAgentInstructions()
-	case "close":
+	case "close", "cancel":
 		m.GettingStartedOpen = false
+		m.GettingStartedModal = nil
+		m.GettingStartedMouseHandler = nil
 		return m, nil
 	}
 	return m, nil
@@ -1794,6 +1833,16 @@ func (m Model) handleStatsAction(action string) (Model, tea.Cmd) {
 	switch action {
 	case "close", "cancel":
 		m.closeStatsModal()
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleTDQHelpAction handles actions from the TDQ help modal
+func (m Model) handleTDQHelpAction(action string) (Model, tea.Cmd) {
+	switch action {
+	case "close", "cancel":
+		m.closeTDQHelpModal()
 		return m, nil
 	}
 	return m, nil

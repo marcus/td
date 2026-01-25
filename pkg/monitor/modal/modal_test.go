@@ -689,3 +689,74 @@ func TestMouseHandler(t *testing.T) {
 		t.Errorf("expected ActionScrollDown, got %v", action.Type)
 	}
 }
+
+func TestGettingStartedModalButtonClick(t *testing.T) {
+	// Simulate the Getting Started modal structure (must fit on 80x24)
+	m := New("Welcome to td!", WithWidth(60), WithHints(false)).
+		AddSection(Text("Task management for AI agents.")).
+		AddSection(Spacer()).
+		AddSection(Text("Press I to install td instructions to AGENTS.md")).
+		AddSection(Spacer()).
+		AddSection(Text("PROMPT: \"Use td to plan my feature and implement it.\"")).
+		AddSection(Spacer()).
+		AddSection(Text("Press ? for help · H to reopen this modal")).
+		AddSection(Spacer()).
+		AddSection(Buttons(
+			Btn(" [I]nstall ", "install"),
+			Btn(" Close ", "close"),
+		))
+
+	handler := mouse.NewHandler()
+	m.Render(80, 24, handler)
+
+	// Verify focus IDs were populated
+	if len(m.focusIDs) != 2 {
+		t.Fatalf("expected 2 focusable IDs (install, close), got %d", len(m.focusIDs))
+	}
+
+	// Find the button regions
+	regions := handler.HitMap.Regions()
+	var installRegion, closeRegion *mouse.Region
+	for i := range regions {
+		if regions[i].ID == "install" {
+			installRegion = &regions[i]
+		}
+		if regions[i].ID == "close" {
+			closeRegion = &regions[i]
+		}
+	}
+
+	if installRegion == nil {
+		t.Fatal("expected 'install' button region to be registered")
+	}
+	if closeRegion == nil {
+		t.Fatal("expected 'close' button region to be registered")
+	}
+
+	t.Logf("Install button at (%d, %d) size %dx%d", installRegion.Rect.X, installRegion.Rect.Y, installRegion.Rect.W, installRegion.Rect.H)
+	t.Logf("Close button at (%d, %d) size %dx%d", closeRegion.Rect.X, closeRegion.Rect.Y, closeRegion.Rect.W, closeRegion.Rect.H)
+
+	// Click the Install button
+	action := m.HandleMouse(tea.MouseMsg{
+		X:      installRegion.Rect.X + 1,
+		Y:      installRegion.Rect.Y,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}, handler)
+
+	if action != "install" {
+		t.Errorf("expected 'install' on click, got %q", action)
+	}
+
+	// Click the Close button
+	action = m.HandleMouse(tea.MouseMsg{
+		X:      closeRegion.Rect.X + 1,
+		Y:      closeRegion.Rect.Y,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}, handler)
+
+	if action != "close" {
+		t.Errorf("expected 'close' on click, got %q", action)
+	}
+}

@@ -136,6 +136,31 @@ func DefaultBindings() []Binding {
 		{Key: "r", Command: CmdRefresh, Context: ContextStats, Description: "Refresh"},
 
 		// ============================================================
+		// TDQ HELP MODAL BINDINGS
+		// Active when the TDQ query help modal is open
+		// ============================================================
+		{Key: "esc", Command: CmdClose, Context: ContextTDQHelp, Description: "Close modal"},
+		{Key: "enter", Command: CmdClose, Context: ContextTDQHelp, Description: "Close modal"},
+
+		// Scrolling
+		{Key: "j", Command: CmdScrollDown, Context: ContextTDQHelp, Description: "Scroll down"},
+		{Key: "down", Command: CmdScrollDown, Context: ContextTDQHelp, Description: "Scroll down"},
+		{Key: "k", Command: CmdScrollUp, Context: ContextTDQHelp, Description: "Scroll up"},
+		{Key: "up", Command: CmdScrollUp, Context: ContextTDQHelp, Description: "Scroll up"},
+
+		// Vim-style page navigation
+		{Key: "ctrl+d", Command: CmdHalfPageDown, Context: ContextTDQHelp, Description: "Half page down"},
+		{Key: "ctrl+u", Command: CmdHalfPageUp, Context: ContextTDQHelp, Description: "Half page up"},
+		{Key: "ctrl+f", Command: CmdFullPageDown, Context: ContextTDQHelp, Description: "Full page down"},
+		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextTDQHelp, Description: "Full page up"},
+		{Key: "pgdown", Command: CmdFullPageDown, Context: ContextTDQHelp, Description: "Page down"},
+		{Key: "pgup", Command: CmdFullPageUp, Context: ContextTDQHelp, Description: "Page up"},
+		{Key: "G", Command: CmdCursorBottom, Context: ContextTDQHelp, Description: "Go to bottom"},
+		{Key: "g g", Command: CmdCursorTop, Context: ContextTDQHelp, Description: "Go to top"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextTDQHelp, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextTDQHelp, Description: "Go to bottom"},
+
+		// ============================================================
 		// SEARCH MODE BINDINGS
 		// Active when search input is focused
 		// Note: Most keys are forwarded to textinput for cursor/editing support
@@ -352,7 +377,7 @@ func DefaultBindings() []Binding {
 		// Active when the getting started modal is open
 		// ============================================================
 		{Key: "H", Command: CmdOpenGettingStarted, Context: ContextMain, Description: "Open getting started guide"},
-		{Key: "I", Command: CmdInstallInstructions, Context: ContextMain, Description: "Install agent instructions"},
+		{Key: "H", Command: CmdOpenGettingStarted, Context: ContextBoard, Description: "Open getting started guide"},
 		{Key: "I", Command: CmdInstallInstructions, Context: ContextGettingStarted, Description: "Install agent instructions"},
 		{Key: "esc", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
 		{Key: "q", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},

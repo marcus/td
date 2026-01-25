@@ -36,7 +36,7 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 | Close Confirmation | Confirm close with optional reason text | **YES** | YES | YES | YES | YES | NO | YES | NO | YES |
 | Board Picker | Select board for new issue | **YES** | YES | YES | YES | YES | YES | YES | YES | YES |
 | Help Modal | Show keybindings and navigation help | NO | YES | YES | NO | NO | YES | NO | YES | N/A |
-| TDQ Help | Show query language syntax | NO | NO | N/A | N/A | N/A | N/A | N/A | NO | N/A |
+| TDQ Help | Show query language syntax | **YES** | YES | YES | YES | YES | NO | YES | NO | YES |
 
 ## Migration Status
 
@@ -49,12 +49,12 @@ The following modals have been migrated to the declarative modal library:
 | Board Picker | ✅ Migrated | Uses modal.List() for board items, modal.Buttons() for Select/Cancel |
 | Delete Confirmation | ✅ Migrated | Uses modal.Text() + modal.Buttons() with BtnDanger() |
 | Close Confirmation | ✅ Migrated | Uses modal.InputWithLabel() + modal.Buttons() |
+| TDQ Help | ✅ Migrated | Uses modal.Custom() for help content, modal.Buttons() for Close |
 
 **Not migrating** (per original epic scope):
 - Issue Details Modal - too complex, already fully compliant, keep as-is
 - Form Modal - uses huh library, keep as-is
 - Help Modal - full-screen overlay, not a standard modal
-- TDQ Help - minimal overlay text, not a modal
 
 ## Detailed Compliance Analysis
 
@@ -186,15 +186,18 @@ The following modals have been migrated to the declarative modal library:
 
 ---
 
-### TDQ Help Overlay (N/A - SPECIAL CASE)
-**Location**: `pkg/monitor/view.go`, `renderTDQHelp()`
+### TDQ Help Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createTDQHelpModal()`
 
-**Status**: Not a traditional modal - overlay text
-- Simple text overlay showing query syntax
-- Generated on demand when search mode active
-- Uses OverlayModal for display
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantInfo` (cyan border)
+- `modal.Custom()` section for TDQ query syntax help text
+- `modal.Buttons()` with Close button
+- Automatic keyboard navigation via `HandleKey()`
+- Full mouse support via `HandleMouse()`
+- Footer help text
 
-**Notes**: This is minimal help text, not a full modal. No interaction needed.
+**Non-Conformances**: None
 
 ---
 
@@ -202,8 +205,8 @@ The following modals have been migrated to the declarative modal library:
 
 ### Good Patterns Observed
 
-1. **Declarative Modal Library Usage** (5/9 modals)
-   - Statistics, Handoffs, Board Picker, Delete Confirmation, Close Confirmation
+1. **Declarative Modal Library Usage** (6/9 modals)
+   - Statistics, Handoffs, Board Picker, Delete Confirmation, Close Confirmation, TDQ Help
    - Consistent API: `modal.New()` → `AddSection()` → `Render()` / `HandleKey()` / `HandleMouse()`
    - Automatic hit region management eliminates off-by-one bugs
 
@@ -248,7 +251,7 @@ Current modal implementations should verify:
 - [x] Close Confirmation: Input field focus, button cycling, reason text preserved
 - [x] Board Picker: Mouse hover tracking, scroll, click selects, Select button works
 - [ ] Help: Scroll boundaries (G/gg), scroll indicator display
-- [ ] TDQ Help: Appears/disappears correctly, text readable
+- [x] TDQ Help: Close button, hover states, Esc closes, Tab cycles focus
 
 ---
 

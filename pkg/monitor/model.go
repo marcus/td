@@ -42,7 +42,9 @@ type Model struct {
 	HelpOpen       bool // Whether help modal is open
 	HelpScroll     int  // Current scroll position in help
 	HelpTotalLines int  // Cached total line count in help
-	ShowTDQHelp    bool // Show TDQ query syntax help (when in search mode)
+	ShowTDQHelp          bool           // Show TDQ query syntax help (when in search mode)
+	TDQHelpModal         *modal.Modal   // Declarative modal instance for TDQ help
+	TDQHelpMouseHandler  *mouse.Handler // Mouse handler for TDQ help modal
 	LastRefresh  time.Time
 	StartedAt    time.Time // When monitor started, to track new handoffs
 	Err          error     // Last error, if any
@@ -527,6 +529,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatsLoading = false
 			m.StatsError = msg.Error
 			m.StatsData = msg.Data
+			// Create declarative modal now that data is available
+			if msg.Error == nil && msg.Data != nil && msg.Data.ExtendedStats != nil {
+				m.StatsModal = m.createStatsModal()
+				m.StatsModal.Reset()
+			}
 		}
 		return m, nil
 

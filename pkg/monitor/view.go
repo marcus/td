@@ -34,10 +34,11 @@ func (m Model) renderView() string {
 		return OverlayModal(base, helpModal, m.Width, m.Height)
 	}
 
-	if m.ShowTDQHelp {
+	// Render TDQ help modal if open (using declarative modal)
+	if m.ShowTDQHelp && m.TDQHelpModal != nil && m.TDQHelpMouseHandler != nil {
 		base := m.renderBaseView()
-		tdqModal := m.renderTDQHelp()
-		return OverlayModal(base, tdqModal, m.Width, m.Height)
+		tdqHelpContent := m.TDQHelpModal.Render(m.Width, m.Height, m.TDQHelpMouseHandler)
+		return OverlayModal(base, tdqHelpContent, m.Width, m.Height)
 	}
 
 	// Render getting started modal if open (using declarative modal)
@@ -2146,11 +2147,6 @@ func (m Model) renderHelp() string {
 		Height(modalHeight)
 
 	return modalStyle.Render(inner)
-}
-
-// renderTDQHelp renders the TDQ query language help overlay
-func (m Model) renderTDQHelp() string {
-	return helpStyle.Render(m.Keymap.GenerateTDQHelp())
 }
 
 // determinePanelState determines the visual state of a panel for theming
