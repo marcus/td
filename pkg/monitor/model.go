@@ -89,12 +89,14 @@ type Model struct {
 	StatsMouseHandler *mouse.Handler // Mouse handler for stats modal
 
 	// Handoffs modal state
-	HandoffsOpen    bool
-	HandoffsLoading bool
-	HandoffsData    []models.Handoff
-	HandoffsCursor  int
-	HandoffsScroll  int
-	HandoffsError   error
+	HandoffsOpen         bool
+	HandoffsLoading      bool
+	HandoffsData         []models.Handoff
+	HandoffsCursor       int
+	HandoffsScroll       int
+	HandoffsError        error
+	HandoffsModal        *modal.Modal   // Declarative modal instance
+	HandoffsMouseHandler *mouse.Handler // Mouse handler for handoffs modal
 
 	// Form modal state
 	FormOpen  bool
@@ -563,6 +565,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.HandoffsLoading = false
 			m.HandoffsError = msg.Error
 			m.HandoffsData = msg.Data
+			// Create declarative modal now that data is available
+			if msg.Error == nil && len(msg.Data) > 0 {
+				m.HandoffsModal = m.createHandoffsModal()
+				m.HandoffsModal.Reset()
+			}
 		}
 		return m, nil
 

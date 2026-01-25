@@ -191,6 +191,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap for esc, scroll keys, etc.
 	}
 
+	// Handoffs modal: let declarative modal handle keys first (when data is ready)
+	if m.HandoffsOpen && m.HandoffsModal != nil && !m.HandoffsLoading && m.HandoffsError == nil && len(m.HandoffsData) > 0 {
+		action, cmd := m.HandoffsModal.HandleKey(msg)
+		if action != "" {
+			return m.handleHandoffsAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// The List section handles j/k/up/down/home/end internally without returning an action.
+		// We need to consume these keys here to prevent double-handling by the keymap.
+		key := msg.String()
+		switch key {
+		case "j", "k", "up", "down", "home", "end":
+			return m, nil // Key was handled by List section
+		}
+		// Fall through to keymap for ctrl+d, G, g g, r (refresh), etc.
+	}
+
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
@@ -1760,6 +1779,25 @@ func (m Model) handleStatsAction(action string) (Model, tea.Cmd) {
 	case "close", "cancel":
 		m.closeStatsModal()
 		return m, nil
+	}
+	return m, nil
+}
+
+// handleHandoffsAction handles actions from the handoffs modal
+func (m Model) handleHandoffsAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "open":
+		// Open the selected handoff's issue
+		return m.openIssueFromHandoffs()
+	case "close", "cancel":
+		m.closeHandoffsModal()
+		return m, nil
+	default:
+		// Check if action is a list item selection (handoff-N format)
+		if len(action) > 8 && action[:8] == "handoff-" {
+			// List item clicked - open the issue
+			return m.openIssueFromHandoffs()
+		}
 	}
 	return m, nil
 }

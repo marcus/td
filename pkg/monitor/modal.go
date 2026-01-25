@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -419,6 +420,9 @@ func (m Model) openHandoffsModal() (tea.Model, tea.Cmd) {
 	m.HandoffsError = nil
 	m.HandoffsData = nil
 
+	// Create mouse handler (modal will be created when data loads)
+	m.HandoffsMouseHandler = mouse.NewHandler()
+
 	return m, m.fetchHandoffs()
 }
 
@@ -430,6 +434,77 @@ func (m *Model) closeHandoffsModal() {
 	m.HandoffsLoading = false
 	m.HandoffsError = nil
 	m.HandoffsData = nil
+	m.HandoffsModal = nil
+	m.HandoffsMouseHandler = nil
+}
+
+// createHandoffsModal builds the declarative modal for handoffs.
+// This must be called after data loads since the list content depends on HandoffsData.
+func (m *Model) createHandoffsModal() *modal.Modal {
+	// Calculate width based on terminal size (80% width, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+
+	md := modal.New("Recent Handoffs",
+		modal.WithWidth(modalWidth),
+		modal.WithVariant(modal.VariantDefault), // Green variant
+		modal.WithHints(false),                  // No hints, we have our own footer
+	)
+
+	// Build list items from handoffs data
+	items := make([]modal.ListItem, 0, len(m.HandoffsData))
+	for i, h := range m.HandoffsData {
+		// Format: [timestamp] [session] [issue_id] done:X remaining:Y
+		timestamp := h.Timestamp.Format("01-02 15:04")
+		session := truncateSession(h.SessionID)
+		issueID := h.IssueID
+
+		summary := fmt.Sprintf("done:%d remaining:%d", len(h.Done), len(h.Remaining))
+		if len(h.Uncertain) > 0 {
+			summary += fmt.Sprintf(" uncertain:%d", len(h.Uncertain))
+		}
+
+		label := fmt.Sprintf("%s %s %s %s", timestamp, session, issueID, summary)
+		items = append(items, modal.ListItem{
+			ID:    fmt.Sprintf("handoff-%d", i),
+			Label: label,
+			Data:  i, // Store index for action handling
+		})
+	}
+
+	// Calculate max visible items based on modal height
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+	// Account for title, buttons, padding, and borders
+	maxVisible := modalHeight - 8
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	if maxVisible > len(items) {
+		maxVisible = len(items)
+	}
+
+	// Add list section with handoff items
+	md.AddSection(modal.List("handoffs-list", items, &m.HandoffsCursor, modal.WithMaxVisible(maxVisible)))
+
+	// Add buttons
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Open Issue ", "open"),
+		modal.Btn(" Close ", "close"),
+	))
+
+	return md
 }
 
 // openIssueFromHandoffs opens the issue detail modal for the selected handoff

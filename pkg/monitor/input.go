@@ -910,6 +910,22 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle Handoffs modal mouse events (declarative modal)
+	if m.HandoffsOpen && m.HandoffsModal != nil && m.HandoffsMouseHandler != nil && !m.HandoffsLoading && m.HandoffsError == nil && len(m.HandoffsData) > 0 {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.HandoffsModal.HandleMouse(msg, m.HandoffsMouseHandler)
+			if action != "" {
+				return m.handleHandoffsAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.HandoffsModal.HandleMouse(msg, m.HandoffsMouseHandler)
+			return m, nil
+		}
+	}
+
 	// Handle left-click in modal for section selection
 	if m.ModalOpen() && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleModalClick(msg.X, msg.Y)

@@ -1434,6 +1434,17 @@ func (m Model) renderStatsContent(contentWidth int) string {
 
 // renderHandoffsModal renders the handoffs modal
 func (m Model) renderHandoffsModal() string {
+	// Use declarative modal when available and data is ready
+	if m.HandoffsModal != nil && !m.HandoffsLoading && m.HandoffsError == nil && len(m.HandoffsData) > 0 {
+		return m.HandoffsModal.Render(m.Width, m.Height, m.HandoffsMouseHandler)
+	}
+
+	// Fallback to legacy rendering for loading/error/empty states
+	return m.renderHandoffsModalLegacy()
+}
+
+// renderHandoffsModalLegacy is the legacy rendering for loading/error/empty states
+func (m Model) renderHandoffsModalLegacy() string {
 	// Calculate modal dimensions (80% of terminal, capped)
 	modalWidth := m.Width * 80 / 100
 	if modalWidth > 100 {
@@ -1449,8 +1460,6 @@ func (m Model) renderHandoffsModal() string {
 	if modalHeight < 15 {
 		modalHeight = 15
 	}
-
-	contentWidth := modalWidth - 4 // Account for border and padding
 
 	var content strings.Builder
 
@@ -1474,70 +1483,8 @@ func (m Model) renderHandoffsModal() string {
 		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 	}
 
-	// Build content lines
-	var lines []string
-	lines = append(lines, titleStyle.Render(fmt.Sprintf("RECENT HANDOFFS (%d)", len(m.HandoffsData))))
-	lines = append(lines, "")
-
-	for i, h := range m.HandoffsData {
-		// Format: [timestamp] [session] [issue_id] done:X remaining:Y
-		timestamp := subtleStyle.Render(h.Timestamp.Format("01-02 15:04"))
-		session := subtleStyle.Render(truncateSession(h.SessionID))
-		issueID := titleStyle.Render(h.IssueID)
-
-		summary := fmt.Sprintf("done:%d remaining:%d", len(h.Done), len(h.Remaining))
-		if len(h.Uncertain) > 0 {
-			summary += fmt.Sprintf(" uncertain:%d", len(h.Uncertain))
-		}
-
-		line := fmt.Sprintf("  %s %s %s %s", timestamp, session, issueID, summary)
-
-		if i == m.HandoffsCursor {
-			line = highlightRow(line, contentWidth)
-		}
-
-		lines = append(lines, truncateString(line, contentWidth))
-	}
-
-	// Apply scroll offset
-	visibleHeight := modalHeight - 5 // border, title, footer
-	totalLines := len(lines)
-
-	maxScroll := totalLines - visibleHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	scroll := m.HandoffsScroll
-	if scroll > maxScroll {
-		scroll = maxScroll
-	}
-
-	// Auto-scroll to keep cursor visible
-	if m.HandoffsCursor < scroll {
-		scroll = m.HandoffsCursor
-	} else if m.HandoffsCursor >= scroll+visibleHeight {
-		scroll = m.HandoffsCursor - visibleHeight + 1
-	}
-
-	endIdx := scroll + visibleHeight
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if scroll < totalLines {
-		visibleLines := lines[scroll:endIdx]
-		content.WriteString(strings.Join(visibleLines, "\n"))
-	}
-
-	// Scroll indicator
-	if totalLines > visibleHeight {
-		content.WriteString("\n")
-		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
-		content.WriteString(scrollInfo)
-	}
-
+	// This should not be reached in practice (declarative modal handles this case)
+	content.WriteString(subtleStyle.Render("Loading..."))
 	return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 }
 
