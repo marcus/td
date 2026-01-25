@@ -1516,7 +1516,12 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 
 // renderBoardPicker renders the board picker modal
 func (m Model) renderBoardPicker() string {
-	// Calculate modal dimensions (60% of terminal, capped)
+	// Use declarative modal when available
+	if m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil && len(m.AllBoards) > 0 {
+		return m.BoardPickerModal.Render(m.Width, m.Height, m.BoardPickerMouseHandler)
+	}
+
+	// Fallback: render empty state or loading state
 	modalWidth := m.Width * 60 / 100
 	if modalWidth > 80 {
 		modalWidth = 80
@@ -1532,8 +1537,6 @@ func (m Model) renderBoardPicker() string {
 		modalHeight = 10
 	}
 
-	contentWidth := modalWidth - 4 // Account for border and padding
-
 	var content strings.Builder
 
 	// Empty state
@@ -1541,42 +1544,11 @@ func (m Model) renderBoardPicker() string {
 		content.WriteString(subtleStyle.Render("No boards found"))
 		content.WriteString("\n\n")
 		content.WriteString(subtleStyle.Render("Create a board with: td board create <name>"))
-		return m.wrapBoardPickerModal(content.String(), modalWidth, modalHeight)
+	} else {
+		// Loading state (modal not yet created)
+		content.WriteString(subtleStyle.Render("Loading boards..."))
 	}
 
-	// Build content lines
-	var lines []string
-	lines = append(lines, titleStyle.Render(fmt.Sprintf("SELECT BOARD (%d)", len(m.AllBoards))))
-	lines = append(lines, "")
-
-	for i, b := range m.AllBoards {
-		// Format board line
-		name := b.Name
-		if b.IsBuiltin {
-			name += " (builtin)"
-		}
-		if b.Query != "" {
-			queryPreview := b.Query
-			if len(queryPreview) > 30 {
-				queryPreview = queryPreview[:27] + "..."
-			}
-			name += " • " + subtleStyle.Render(queryPreview)
-		}
-
-		line := "  " + name
-
-		if i == m.BoardPickerCursor {
-			// Selected (keyboard cursor) - highest priority
-			line = highlightRow(line, contentWidth)
-		} else if i == m.BoardPickerHover {
-			// Hovered (mouse) - subtle highlight
-			line = hoverRow(line, contentWidth)
-		}
-
-		lines = append(lines, truncateString(line, contentWidth))
-	}
-
-	content.WriteString(strings.Join(lines, "\n"))
 	return m.wrapBoardPickerModal(content.String(), modalWidth, modalHeight)
 }
 

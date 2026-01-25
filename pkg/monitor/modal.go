@@ -517,6 +517,98 @@ func (m Model) openIssueFromHandoffs() (tea.Model, tea.Cmd) {
 	return m.pushModal(issueID, PanelCurrentWork)
 }
 
+// openBoardPickerModal opens the board picker modal and fetches data
+func (m Model) openBoardPickerModal() (Model, tea.Cmd) {
+	m.BoardPickerOpen = true
+	m.BoardPickerCursor = 0
+	m.BoardPickerHover = -1
+
+	// Create mouse handler (modal will be created when data loads)
+	m.BoardPickerMouseHandler = mouse.NewHandler()
+
+	return m, m.fetchBoards()
+}
+
+// closeBoardPickerModal closes the board picker modal and clears state
+func (m *Model) closeBoardPickerModal() {
+	m.BoardPickerOpen = false
+	m.BoardPickerCursor = 0
+	m.BoardPickerHover = -1
+	m.BoardPickerModal = nil
+	m.BoardPickerMouseHandler = nil
+}
+
+// createBoardPickerModal builds the declarative modal for board picker.
+// This must be called after data loads since the list content depends on AllBoards.
+func (m *Model) createBoardPickerModal() *modal.Modal {
+	// Calculate width based on terminal size (60% width, capped)
+	modalWidth := m.Width * 60 / 100
+	if modalWidth > 80 {
+		modalWidth = 80
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+
+	md := modal.New(fmt.Sprintf("SELECT BOARD (%d)", len(m.AllBoards)),
+		modal.WithWidth(modalWidth),
+		modal.WithVariant(modal.VariantDefault), // Purple/primary color (212)
+		modal.WithHints(false),                  // No hints, we have our own footer
+	)
+
+	// Build list items from boards data
+	items := make([]modal.ListItem, 0, len(m.AllBoards))
+	for i, b := range m.AllBoards {
+		// Format board line
+		name := b.Name
+		if b.IsBuiltin {
+			name += " (builtin)"
+		}
+		if b.Query != "" {
+			queryPreview := b.Query
+			if len(queryPreview) > 30 {
+				queryPreview = queryPreview[:27] + "..."
+			}
+			name += " \u2022 " + queryPreview // bullet character
+		}
+
+		items = append(items, modal.ListItem{
+			ID:    fmt.Sprintf("board-%d", i),
+			Label: name,
+			Data:  i, // Store index for action handling
+		})
+	}
+
+	// Calculate max visible items based on modal height
+	modalHeight := m.Height * 60 / 100
+	if modalHeight > 30 {
+		modalHeight = 30
+	}
+	if modalHeight < 10 {
+		modalHeight = 10
+	}
+	// Account for title, buttons, padding, and borders
+	maxVisible := modalHeight - 8
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	if maxVisible > len(items) {
+		maxVisible = len(items)
+	}
+
+	// Add list section with board items
+	md.AddSection(modal.List("boards-list", items, &m.BoardPickerCursor, modal.WithMaxVisible(maxVisible)))
+
+	// Add buttons
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Select ", "select"),
+		modal.Btn(" Cancel ", "cancel"),
+	))
+
+	return md
+}
+
 // navigateEpicTask navigates to the prev/next task within the epic's task list
 func (m Model) navigateEpicTask(delta int) (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()

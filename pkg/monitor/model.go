@@ -110,10 +110,12 @@ type Model struct {
 	AgentFileHasTD             bool           // Whether agent file already has td instructions
 
 	// Board picker state
-	BoardPickerOpen   bool
-	BoardPickerCursor int
-	BoardPickerHover  int // -1=none, 0+=hovered board index
-	AllBoards         []models.Board
+	BoardPickerOpen         bool
+	BoardPickerCursor       int
+	BoardPickerHover        int // -1=none, 0+=hovered board index (legacy, used by modal)
+	AllBoards               []models.Board
+	BoardPickerModal        *modal.Modal   // Declarative modal instance
+	BoardPickerMouseHandler *mouse.Handler // Mouse handler for board picker modal
 
 	// Board mode state
 	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
@@ -617,6 +619,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			m.StatusMessage = "Error loading boards: " + msg.Error.Error()
 			m.StatusIsError = true
+			// Close the modal on error
+			m.closeBoardPickerModal()
+			return m, nil
+		}
+		// Create declarative modal now that data is available
+		if m.BoardPickerOpen && len(msg.Boards) > 0 {
+			m.BoardPickerModal = m.createBoardPickerModal()
+			m.BoardPickerModal.Reset()
 		}
 		return m, nil
 

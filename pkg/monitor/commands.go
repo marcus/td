@@ -210,6 +210,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap for ctrl+d, G, g g, r (refresh), etc.
 	}
 
+	// Board picker modal: let declarative modal handle keys first (when data is ready)
+	if m.BoardPickerOpen && m.BoardPickerModal != nil && len(m.AllBoards) > 0 {
+		action, cmd := m.BoardPickerModal.HandleKey(msg)
+		if action != "" {
+			return m.handleBoardPickerAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// The List section handles j/k/up/down/home/end internally without returning an action.
+		// We need to consume these keys here to prevent double-handling by the keymap.
+		key := msg.String()
+		switch key {
+		case "j", "k", "up", "down", "home", "end":
+			return m, nil // Key was handled by List section
+		}
+		// Fall through to keymap for esc, etc.
+	}
+
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
@@ -1094,7 +1113,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.selectBoard()
 
 	case keymap.CmdCloseBoardPicker:
-		m.BoardPickerOpen = false
+		m.closeBoardPickerModal()
 		return m, nil
 
 	// Board mode commands
@@ -1135,10 +1154,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 // openBoardPicker opens the board picker modal
 func (m Model) openBoardPicker() (Model, tea.Cmd) {
-	m.BoardPickerOpen = true
-	m.BoardPickerCursor = 0
-	m.BoardPickerHover = -1 // No hover initially
-	return m, m.fetchBoards()
+	return m.openBoardPickerModal()
 }
 
 // selectBoard selects the currently highlighted board and activates board mode
@@ -1162,7 +1178,7 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 	if m.BoardMode.StatusFilter == nil {
 		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
 	}
-	m.BoardPickerOpen = false
+	m.closeBoardPickerModal()
 
 	// Update last viewed
 	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
@@ -1797,6 +1813,25 @@ func (m Model) handleHandoffsAction(action string) (tea.Model, tea.Cmd) {
 		if len(action) > 8 && action[:8] == "handoff-" {
 			// List item clicked - open the issue
 			return m.openIssueFromHandoffs()
+		}
+	}
+	return m, nil
+}
+
+// handleBoardPickerAction handles actions from the board picker modal
+func (m Model) handleBoardPickerAction(action string) (Model, tea.Cmd) {
+	switch action {
+	case "select":
+		// Select the currently highlighted board
+		return m.selectBoard()
+	case "cancel":
+		m.closeBoardPickerModal()
+		return m, nil
+	default:
+		// Check if action is a list item selection (board-N format)
+		if len(action) > 6 && action[:6] == "board-" {
+			// List item clicked - select the board
+			return m.selectBoard()
 		}
 	}
 	return m, nil
