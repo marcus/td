@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.22.0] - 2026-01-25
+
+### Features
+- Migrate multiple modals to declarative library (Statistics, Handoffs, Board Picker, Delete/Close Confirmation)
+- Add Getting Started modal for new users
+- Improve monitor screenshot and workflow section styling
+- Update marketing copy and redesign workflow sections
+- Add Fraunces serif font for section headers
+
+### Documentation
+- Update modal inventory after declarative modal migrations
+
 ## [v0.21.0] - 2026-01-23
 
 ### Features
