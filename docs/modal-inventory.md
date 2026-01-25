@@ -4,7 +4,7 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 
 **New Implementation**: Use the declarative modal library documented in [declarative-modal-guide.md](guides/declarative-modal-guide.md).
 
-**Legacy Reference**: The original guide is at [modal-system-guide.md](guides/modal-system-guide.md) (deprecated).
+**Legacy Reference**: The original guide is at [modal-system-guide.md](guides/deprecated/modal-system-guide.md) (deprecated).
 
 ## Compliance Features
 
@@ -22,27 +22,46 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 | Commands | Handles commands in executeCommand() |
 | Scrollable | Can scroll if content exceeds available height |
 | Help Text | Shows keybindings/help in footer |
+| Declarative | Uses declarative modal library (modal.New()) |
 
 ## Modal Compliance Matrix
 
-| Modal | Purpose | ModalStack | OverlayModal | Depth Colors | Keyboard Nav | Mouse Click | Mouse Hover | Mouse Scroll | Interactive Buttons | Context | Commands | Scrollable | Help Text |
-|-------|---------|:----------:|:------------:|:------------:|:-------------:|:----------:|:----------:|:----------:|:------------------:|:-------:|:--------:|:----------:|:---------:|
-| Issue Details | View/interact with issue, navigate dependencies | YES | YES | YES | YES | YES | YES | YES | YES | YES | YES | YES | YES |
-| Statistics | Show project stats, status/type/priority breakdown | NO | YES | NO | YES | NO | NO | YES | NO | NO | NO | YES | YES |
-| Handoffs | View recent handoffs, open issue from list | NO | YES | NO | YES | NO | NO | YES | NO | NO | NO | NO | YES |
-| Form Modal | Create/edit issues, inline form with fields | NO | YES | NO | YES | YES | YES | NO | YES | YES | YES | NO | YES |
-| Delete Confirmation | Confirm destructive delete action | NO | YES | NO | YES | YES | YES | NO | YES | NO | YES | NO | YES |
-| Close Confirmation | Confirm close with optional reason text | NO | YES | NO | YES | YES | YES | NO | YES | NO | YES | NO | YES |
-| Board Picker | Select board for new issue | NO | YES | NO | YES | YES | YES | YES | NO | NO | NO | NO | YES |
-| Help Modal | Show keybindings and navigation help | NO | YES | NO | YES | NO | NO | YES | NO | NO | NO | YES | N/A |
-| TDQ Help | Show query language syntax | NO | NO | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | NO | N/A |
+| Modal | Purpose | Declarative | OverlayModal | Keyboard Nav | Mouse Click | Mouse Hover | Mouse Scroll | Interactive Buttons | Scrollable | Help Text |
+|-------|---------|:-----------:|:------------:|:-------------:|:----------:|:----------:|:----------:|:------------------:|:----------:|:---------:|
+| Issue Details | View/interact with issue, navigate dependencies | NO | YES | YES | YES | YES | YES | YES | YES | YES |
+| Statistics | Show project stats, status/type/priority breakdown | **YES** | YES | YES | YES | YES | YES | YES | YES | YES |
+| Handoffs | View recent handoffs, open issue from list | **YES** | YES | YES | YES | YES | YES | YES | YES | YES |
+| Form Modal | Create/edit issues, inline form with fields | NO | YES | YES | YES | YES | NO | YES | NO | YES |
+| Delete Confirmation | Confirm destructive delete action | **YES** | YES | YES | YES | YES | NO | YES | NO | YES |
+| Close Confirmation | Confirm close with optional reason text | **YES** | YES | YES | YES | YES | NO | YES | NO | YES |
+| Board Picker | Select board for new issue | **YES** | YES | YES | YES | YES | YES | YES | YES | YES |
+| Help Modal | Show keybindings and navigation help | NO | YES | YES | NO | NO | YES | NO | YES | N/A |
+| TDQ Help | Show query language syntax | NO | NO | N/A | N/A | N/A | N/A | N/A | NO | N/A |
+
+## Migration Status
+
+The following modals have been migrated to the declarative modal library:
+
+| Modal | Migration Status | Commit |
+|-------|-----------------|--------|
+| Statistics | ✅ Migrated | Uses modal.Custom() for stats content, modal.Buttons() for Close |
+| Handoffs | ✅ Migrated | Uses modal.List() for handoff items, modal.Buttons() for Open/Close |
+| Board Picker | ✅ Migrated | Uses modal.List() for board items, modal.Buttons() for Select/Cancel |
+| Delete Confirmation | ✅ Migrated | Uses modal.Text() + modal.Buttons() with BtnDanger() |
+| Close Confirmation | ✅ Migrated | Uses modal.InputWithLabel() + modal.Buttons() |
+
+**Not migrating** (per original epic scope):
+- Issue Details Modal - too complex, already fully compliant, keep as-is
+- Form Modal - uses huh library, keep as-is
+- Help Modal - full-screen overlay, not a standard modal
+- TDQ Help - minimal overlay text, not a modal
 
 ## Detailed Compliance Analysis
 
 ### Issue Details Modal (FULLY COMPLIANT)
-**Location**: `pkg/monitor/view.go:958-1268`, `renderModal()`
+**Location**: `pkg/monitor/view.go`, `renderModal()`
 
-**Status**: Exceeds guide requirements
+**Status**: Exceeds guide requirements (not using declarative library - too complex)
 - Uses full ModalStack architecture with depth-aware styling
 - All keyboard navigation (↑↓ scroll, Tab focus, Enter select, Esc close)
 - Complete mouse support (click, hover, scroll)
@@ -56,52 +75,41 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 
 ---
 
-### Statistics Modal (PARTIALLY COMPLIANT)
-**Location**: `pkg/monitor/view.go:1294-1440`, `renderStatsModal()`
+### Statistics Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createStatsModal()`
 
-**Status**: Missing interactive button pattern
-- Uses OverlayModal with dimmed background
-- Keyboard navigation: ↑↓ scroll, Esc close
-- Mouse scroll wheel support
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantDefault`
+- `modal.Custom()` section for scrollable stats content (bar charts, breakdowns)
+- `modal.Buttons()` with Close button
+- Automatic keyboard navigation via `HandleKey()`
+- Automatic mouse support via `HandleMouse()`
 - Scrollable content with scroll clamping
 - Footer help text
 
-**Non-Conformances**:
-- No interactive buttons (uses text hints instead: "Press esc to close")
-- No dedicated context detection
-- No command handling in executeCommand()
-- No mouse click or hover handlers
-- Fixed border color (green), no depth styling
-
-**Recommendation**: Add interactive button pattern for consistency, though scrolling-only modal is acceptable with key hints.
+**Non-Conformances**: None
 
 ---
 
-### Handoffs Modal (PARTIALLY COMPLIANT)
-**Location**: `pkg/monitor/view.go:1443-1549`, `renderHandoffsModal()`
+### Handoffs Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createHandoffsModal()`
 
-**Status**: Basic implementation, missing advanced features
-- Uses OverlayModal with dimmed background
-- Keyboard navigation: ↑↓ select, Enter open issue
-- Mouse scroll wheel support
-- Selectable rows with cursor
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantDefault`
+- `modal.List()` section for handoff items with cursor navigation
+- `modal.Buttons()` with Open Issue and Close buttons
+- Automatic keyboard navigation (↑↓/j/k select, Enter open, Esc close)
+- Full mouse support (click, hover, scroll)
 - Footer help text
 
-**Non-Conformances**:
-- No interactive buttons (cursor-based selection only)
-- No dedicated context detection for modal
-- No mouse click or hover handlers
-- Fixed border color (green), no depth styling
-- Uses text hints ("Press esc to close") instead of interactive elements
-
-**Recommendation**: Add mouse click handler to select handoffs, add hover state for better UX.
+**Non-Conformances**: None
 
 ---
 
 ### Form Modal (COMPLIANT)
-**Location**: `pkg/monitor/view.go:1670-1723`, `renderFormModal()`
+**Location**: `pkg/monitor/view.go`, `renderFormModal()`
 
-**Status**: Compliant with appropriate adaptations
+**Status**: Compliant with appropriate adaptations (uses huh library, not declarative)
 - Uses OverlayModal with dimmed background
 - Keyboard navigation: Tab/Shift+Tab between fields, Ctrl+S submit, Esc cancel
 - Mouse support: via huh library (click, focus management)
@@ -115,66 +123,56 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 
 ---
 
-### Delete Confirmation Modal (COMPLIANT)
-**Location**: `pkg/monitor/view.go:1928-1978`, `renderConfirmation()`
+### Delete Confirmation Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createDeleteConfirmModal()`
 
-**Status**: Fully compliant with confirmation pattern
-- Uses OverlayModal with dimmed background
-- Keyboard navigation: Tab to cycle buttons, Y/N quick keys, Enter confirm, Esc cancel
-- Mouse support: click buttons, hover state tracking
-- Interactive Yes/No buttons with hover/focus styling
-- Fixed border color (red) appropriate for destructive action
-- Command handling via Tab/Shift+Tab and Y/N
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantDanger` (red border)
+- `modal.Text()` for issue title display
+- `modal.Buttons()` with Yes (BtnDanger) and No buttons
+- Y/N quick keys for fast confirmation
+- Automatic keyboard navigation via `HandleKey()`
+- Full mouse support (click, hover)
 - Footer help text showing available keys
 
 **Non-Conformances**: None
 
-**Notes**: No dedicated context needed - uses generic ConfirmOpen flag with button focus state.
-
 ---
 
-### Close Confirmation Modal (COMPLIANT)
-**Location**: `pkg/monitor/view.go:1981-2038`, `renderCloseConfirmation()`
+### Close Confirmation Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createCloseConfirmModal()`
 
-**Status**: Fully compliant with confirmation pattern
-- Uses OverlayModal with dimmed background
-- Keyboard navigation: Tab cycle (input → Confirm → Cancel → input), Enter confirm, Esc cancel
-- Mouse support: click buttons, hover state tracking
-- Text input field + interactive Confirm/Cancel buttons
-- Interactive button styling with hover/focus
-- Fixed border color (red) appropriate for state change
-- Command handling via Tab/Shift+Tab and Enter/Esc
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantDanger` (red border)
+- `modal.Text()` for issue title display
+- `modal.InputWithLabel()` for optional reason text input
+- `modal.Buttons()` with Confirm and Cancel buttons
+- Tab cycles between input and buttons automatically
+- Automatic keyboard navigation via `HandleKey()`
+- Full mouse support (click, hover)
 - Footer help text showing available keys
 
 **Non-Conformances**: None
 
-**Notes**: Properly manages focus between text input and buttons.
-
 ---
 
-### Board Picker Modal (MOSTLY COMPLIANT)
-**Location**: `pkg/monitor/view.go:1578-1667`, `renderBoardPicker()`
+### Board Picker Modal (FULLY COMPLIANT - DECLARATIVE)
+**Location**: `pkg/monitor/modal.go`, `createBoardPickerModal()`
 
-**Status**: Compliant with minor gaps
-- Uses OverlayModal with dimmed background
-- Keyboard navigation: ↑↓ select, Enter confirm
-- Mouse support: click items, hover state tracking, scroll wheel
-- Selectable rows with cursor highlighting
-- Mouse hover state rendering
-- Fixed border color (purple)
+**Status**: Migrated to declarative modal library
+- Uses `modal.New()` with `VariantDefault` (purple border)
+- `modal.List()` section for board items with cursor navigation
+- `modal.Buttons()` with Select and Cancel buttons
+- Automatic keyboard navigation (↑↓/j/k select, Enter select, Esc cancel)
+- Full mouse support (click, hover, scroll)
 - Footer help text
 
-**Non-Conformances**:
-- No interactive button pair (uses cursor navigation only)
-- No dedicated context detection
-- No command handling in executeCommand() (handled via switch on msg.Type)
-
-**Notes**: Cursor-based selection is appropriate for picker UI. Guide recommends buttons, but this approach is acceptable for list selection.
+**Non-Conformances**: None
 
 ---
 
 ### Help Modal (N/A - SPECIAL CASE)
-**Location**: `pkg/monitor/view.go:2194-2283`, `renderHelp()`
+**Location**: `pkg/monitor/view.go`, `renderHelp()`
 
 **Status**: Not subject to standard compliance - full-screen overlay
 - Full terminal overlay (not centered modal)
@@ -189,7 +187,7 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 ---
 
 ### TDQ Help Overlay (N/A - SPECIAL CASE)
-**Location**: `pkg/monitor/view.go:2286-2288`, `renderTDQHelp()`
+**Location**: `pkg/monitor/view.go`, `renderTDQHelp()`
 
 **Status**: Not a traditional modal - overlay text
 - Simple text overlay showing query syntax
@@ -204,100 +202,51 @@ This document provides a comprehensive inventory of all modals in the TD monitor
 
 ### Good Patterns Observed
 
-1. **Consistent OverlayModal Usage** (8/9 modals)
+1. **Declarative Modal Library Usage** (5/9 modals)
+   - Statistics, Handoffs, Board Picker, Delete Confirmation, Close Confirmation
+   - Consistent API: `modal.New()` → `AddSection()` → `Render()` / `HandleKey()` / `HandleMouse()`
+   - Automatic hit region management eliminates off-by-one bugs
+
+2. **Consistent OverlayModal Usage** (8/9 modals)
    - All primary modals use OverlayModal for dimmed background overlay
    - Provides visual focus and context preservation
 
-2. **Comprehensive Keyboard Navigation**
-   - Most modals support multiple keyboard inputs
-   - Tab/Shift+Tab for focus cycling
+3. **Comprehensive Keyboard Navigation**
+   - All modals support Tab/Shift+Tab for focus cycling
    - Esc consistently closes
+   - Enter triggers focused action
 
-3. **Mouse Support Hierarchy**
-   - Scroll wheel: 7/9 modals
-   - Click handlers: 6/9 modals
-   - Hover state: 5/9 modals
+4. **Full Mouse Support**
+   - All declarative modals have click and hover support
+   - Scroll wheel support for scrollable content
 
-4. **Interactive Buttons**
-   - Confirmation modals use styled button pairs
-   - Form modal uses huh library UI
+5. **Interactive Buttons**
+   - All modals now use styled button pairs instead of text hints
+   - Confirmation modals use danger styling for destructive actions
 
-### Anti-Patterns and Gaps
+### Legacy Patterns (Non-Declarative Modals)
 
-1. **Text Hints Instead of Buttons**
-   - Stats modal: "Press esc to close"
-   - Handoffs modal: "Press esc to close"
-   - Should use interactive button pattern
+1. **Issue Details Modal**
+   - Too complex for declarative library (nested navigation, multiple focus sections)
+   - Manual hit region calculation justified by complexity
 
-2. **Inconsistent Context Detection**
-   - Issue details: Full context detection
-   - Stats/Handoffs: No context detection
-   - Confirmation: Uses boolean flags, not context
-
-3. **Missing Click Handlers**
-   - Stats modal: No click handler (scrolling only)
-   - Handoffs modal: No click handler despite being selectable
-   - Should enable clicking on rows
-
-4. **Help Text Placement**
-   - Most use footer area (appropriate)
-   - Some use subtle text hints (inconsistent)
+2. **Form Modal**
+   - Uses huh library which provides its own declarative UI
+   - Appropriate choice for form handling
 
 ---
 
-## Recommendations for Improvements
-
-### High Priority
-
-1. **Add click handlers to Stats and Handoffs modals**
-   - Allow clicking to interact with content
-   - Pattern already exists in Board Picker
-
-2. **Replace text hints with interactive buttons**
-   - Stats modal should have visible close button
-   - Handoffs modal should enable row selection via click
-
-3. **Add missing hover states**
-   - Stats modal rows should be hoverable
-   - Handoffs modal rows should be hoverable
-
-### Medium Priority
-
-1. **Consolidate context detection**
-   - Create consistent pattern for all modals
-   - Use currentContext() for all modal types
-
-2. **Standardize command handling**
-   - Move all modal handling to executeCommand()
-   - Reduce special-case checks in input.go
-
-3. **Add custom renderer vertical padding checks**
-   - Ensure modal bounds calculations account for custom renderers
-   - Document embedded mode requirements (per guide section)
-
-### Low Priority
-
-1. **Visual consistency**
-   - Consider unified help text styling
-   - Align footer text placement across all modals
-
-2. **Documentation**
-   - Update help.go when adding new modal features
-   - Maintain this inventory as features evolve
-
----
-
-## Testing Gaps
+## Testing Checklist
 
 Current modal implementations should verify:
 
 - [ ] Issue Details: All keyboard navigation, depth colors change correctly, mouse click on sections
-- [ ] Statistics: Scroll clamping, mouse wheel at edges, ESC closes
-- [ ] Handoffs: Cursor stays in bounds, ESC closes, Enter opens issue
+- [x] Statistics: Scroll clamping, mouse wheel, ESC closes, Close button works
+- [x] Handoffs: Cursor navigation, mouse click/hover, Enter opens issue, Open Issue button works
 - [ ] Form: All field types interactive, Tab cycles focus, Ctrl+S submits
-- [ ] Delete Confirmation: Tab cycles buttons, Y/N quick keys, hover states
-- [ ] Close Confirmation: Input field focus, button cycling, reason text preserved
-- [ ] Board Picker: Mouse hover tracking, scroll wrapping, click selects
+- [x] Delete Confirmation: Tab cycles buttons, Y/N quick keys, hover states, danger styling
+- [x] Close Confirmation: Input field focus, button cycling, reason text preserved
+- [x] Board Picker: Mouse hover tracking, scroll, click selects, Select button works
 - [ ] Help: Scroll boundaries (G/gg), scroll indicator display
 - [ ] TDQ Help: Appears/disappears correctly, text readable
 
@@ -306,10 +255,16 @@ Current modal implementations should verify:
 ## File Locations
 
 All implementations located in `pkg/monitor/`:
+
+**Declarative Modal Library**:
+- **Modal library**: `modal/modal.go`, `modal/section.go`, `modal/input.go`, `modal/list.go`
+- **Mouse handling**: `mouse/mouse.go`
+
+**Modal State and Functions**:
 - **Modal state**: `types.go` (ModalEntry struct, Model fields)
-- **Stack management**: `modal.go` (push/pop/navigate functions)
+- **Stack management**: `modal.go` (push/pop/navigate functions, declarative modal creation)
 - **Rendering**: `view.go` (all render functions)
-- **Keyboard/Mouse**: `input.go` (all handlers)
+- **Keyboard/Mouse**: `input.go`, `commands.go` (all handlers)
 - **Form dimensions**: `form_modal.go`
 - **Overlay compositing**: `overlay.go`
 - **Keybindings**: `keymap/registry.go`, `keymap/bindings.go`
