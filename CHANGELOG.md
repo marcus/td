@@ -2,6 +2,15 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.23.0] - 2026-01-26
+
+### Features
+- Group view controls in footer (view mode, show closed toggle, sort order)
+- Split docs for easier navigation
+
+### Bug Fixes
+- Better focus handling for edit modal
+
 ## [v0.22.2] - 2026-01-26
 
 ### Bug Fixes
