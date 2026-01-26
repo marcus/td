@@ -298,7 +298,14 @@ func (r *Registry) GenerateTDQHelp() string {
 
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
-	return "n:new e:edit x:del a:approve r:review s:stats /:search c:closed T:type tab:panel ?:help"
+	// Grouped: actions | view controls | search/nav
+	return "n:new e:edit x:del a:approve r:review  S:sort T:type c:closed b:boards  /:search s:stats tab:panel ?:help"
+}
+
+// BoardFooterHelp generates help text for board mode footer
+func (r *Registry) BoardFooterHelp() string {
+	// Board-specific: v:view toggles swimlanes/backlog, F:filter cycles status
+	return "n:new e:edit x:del a:approve  v:view S:sort T:type F:filter c:closed b:boards  /:search s:stats tab:panel ?:help"
 }
 
 // ModalFooterHelp generates help text for the modal footer

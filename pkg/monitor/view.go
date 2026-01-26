@@ -2010,7 +2010,14 @@ func (m Model) renderSearchBar() string {
 
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render(m.Keymap.FooterHelp())
+	// Use board-specific footer when in board mode
+	var keysStr string
+	if m.TaskListMode == TaskListModeBoard {
+		keysStr = m.Keymap.BoardFooterHelp()
+	} else {
+		keysStr = m.Keymap.FooterHelp()
+	}
+	keys := helpStyle.Render(keysStr)
 
 	// Show active sessions indicator
 	sessionsIndicator := ""
