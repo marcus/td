@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.22.2] - 2026-01-26
+
+### Bug Fixes
+- Make list section a single tab stop instead of per-item (Tab now cycles list → buttons, not item1 → item2 → ... → buttons)
+
 ## [v0.22.1] - 2026-01-26
 
 ### Bug Fixes
