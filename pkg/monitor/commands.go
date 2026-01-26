@@ -91,6 +91,18 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.FormState != nil {
 			moveToButtons := func(focus int) (tea.Model, tea.Cmd) {
+				// When moving away from form fields, blur the focused field
+				if focus != formButtonFocusForm && m.FormState.ButtonFocus == formButtonFocusForm {
+					if field := m.FormState.Form.GetFocusedField(); field != nil {
+						field.Blur()
+					}
+				}
+				// When moving back to form fields, focus the appropriate field
+				if focus == formButtonFocusForm && m.FormState.ButtonFocus != formButtonFocusForm {
+					if field := m.FormState.Form.GetFocusedField(); field != nil {
+						field.Focus()
+					}
+				}
 				m.FormState.ButtonFocus = focus
 				m.FormState.ButtonHover = 0
 				return m, nil

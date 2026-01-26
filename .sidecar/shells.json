@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "shells": [
+    {
+      "tmuxName": "sidecar-sh-td-1",
+      "displayName": "td ax (agent experience)",
+      "createdAt": "2026-01-26T11:27:27.203493-08:00"
+    },
+    {
+      "tmuxName": "sidecar-sh-td-2",
+      "displayName": "edit modal",
+      "createdAt": "2026-01-26T12:49:55.880825-08:00",
+      "agentType": "claude",
+      "skipPerms": true
+    }
+  ]
+}
