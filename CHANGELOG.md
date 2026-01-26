@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.22.1] - 2026-01-26
+
+### Bug Fixes
+- Fix board picker and handoffs modal navigation (j/k/up/down) not updating cursor due to value receiver semantics with declarative modal list pointers
+
 ## [v0.22.0] - 2026-01-25
 
 ### Features
