@@ -57,36 +57,26 @@ function HeroSection() {
         <img
           src={logoUrl}
           alt="td logo"
-          style={{ maxWidth: 280, width: '100%', height: 'auto', marginBottom: '2rem' }}
+          className="sc-hero__logo"
         />
+        <h1 className="sc-hero__tagline">
+          Task tracking for AI agents
+        </h1>
         <p className="sc-hero__subtitle">
-          Task management for AI-assisted development
-        </p>
-        <p style={{ color: 'var(--td-text-secondary)', maxWidth: 640, margin: '0 auto 2rem', lineHeight: 1.7, fontSize: '1.05rem' }}>
-          Markdown files and agent-specific task systems don't scale. td gives Claude, Cursor,
-          Codex, and Gemini a shared backlog with structured handoffs, parallel execution,
-          and an enforced review workflow.
+          Claude, Cursor, Codex, Gemini—same backlog. Handoffs that work. Reviews that catch bugs.
         </p>
         <div className="sc-install-command" style={{ marginBottom: '2rem' }}>
           <span>{installCmd}</span>
           <CopyButton text={installCmd} />
         </div>
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link className="sc-cta__button" to="/docs/intro">
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link className="sc-cta__button sc-cta__button--primary" to="/docs/intro">
             Get Started <ArrowRight size={16} />
           </Link>
-          <Link
-            className="sc-cta__button"
-            to="/docs/core-workflow"
-            style={{ background: 'var(--td-bg-elevated)', color: 'var(--td-green)', border: '1px solid var(--td-border-color)' }}
-          >
+          <Link className="sc-cta__button" to="/docs/core-workflow">
             Read Docs
           </Link>
-          <Link
-            className="sc-cta__button"
-            to="https://github.com/marcus/td"
-            style={{ background: 'var(--td-bg-elevated)', color: 'var(--td-text-secondary)', border: '1px solid var(--td-border-color)' }}
-          >
+          <Link className="sc-cta__button" to="https://github.com/marcus/td">
             GitHub
           </Link>
         </div>
@@ -199,22 +189,18 @@ function WorkflowSection() {
 
           {/* Row 1: Human creates backlog */}
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--human">
+            <div className="sc-workflow-item sc-workflow-item--human sc-workflow-item--arrow-to-right">
               <div className="sc-workflow-item__title">Create backlog</div>
               <div className="sc-workflow-item__desc">Define epics, break into tasks, set priorities</div>
               <code className="sc-workflow-item__code">td create "OAuth login" -p P1</code>
             </div>
           </div>
-          <div className="sc-workflow-cell sc-workflow-cell--arrow-right">
-            <ArrowRight size={18} className="sc-workflow-arrow-icon" />
-          </div>
+          <div className="sc-workflow-cell" />
 
           {/* Row 2: Agent picks up and works */}
-          <div className="sc-workflow-cell sc-workflow-cell--arrow-left">
-            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
-          </div>
+          <div className="sc-workflow-cell" />
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--agent">
+            <div className="sc-workflow-item sc-workflow-item--agent sc-workflow-item--arrow-down">
               <div className="sc-workflow-item__title">Pick up tasks</div>
               <div className="sc-workflow-item__desc">Start work, handle in parallel when unblocked</div>
               <code className="sc-workflow-item__code">td start td-a1b2</code>
@@ -224,7 +210,7 @@ function WorkflowSection() {
           {/* Row 3: Agent handoffs */}
           <div className="sc-workflow-cell" />
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--agent">
+            <div className="sc-workflow-item sc-workflow-item--agent sc-workflow-item--arrow-down">
               <div className="sc-workflow-item__title">Do handoffs</div>
               <div className="sc-workflow-item__desc">Record progress for next session to resume</div>
               <code className="sc-workflow-item__code">td handoff --done "..." --remaining "..."</code>
@@ -232,11 +218,9 @@ function WorkflowSection() {
           </div>
 
           {/* Row 4: Agent submits for review */}
-          <div className="sc-workflow-cell sc-workflow-cell--arrow-left">
-            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
-          </div>
+          <div className="sc-workflow-cell" />
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--agent">
+            <div className="sc-workflow-item sc-workflow-item--agent sc-workflow-item--arrow-to-left">
               <div className="sc-workflow-item__title">Submit for review</div>
               <div className="sc-workflow-item__desc">Different session must review—enforced isolation</div>
               <code className="sc-workflow-item__code">td review td-a1b2</code>
@@ -245,7 +229,7 @@ function WorkflowSection() {
 
           {/* Row 5: Human reviews */}
           <div className="sc-workflow-cell">
-            <div className="sc-workflow-item sc-workflow-item--human">
+            <div className="sc-workflow-item sc-workflow-item--human sc-workflow-item--arrow-down">
               <div className="sc-workflow-item__title">Review & approve</div>
               <div className="sc-workflow-item__desc">Verify work, request changes, or close</div>
               <code className="sc-workflow-item__code">td approve td-a1b2</code>
@@ -294,7 +278,7 @@ function AgentsSection() {
       <div className="sc-section-container">
         <h2 className="sc-agents-section__title">Works with your agent</h2>
         <p className="sc-agents-section__subtitle">
-          Any AI coding agent that can run shell commands works with td.
+          Any agent that can run shell commands works with td—coding, research, data pipelines, whatever.
         </p>
         <div className="sc-agents-section__grid">
           <div className="sc-agents-section__item">
