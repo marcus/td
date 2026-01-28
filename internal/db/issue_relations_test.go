@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -1413,5 +1414,319 @@ func TestMultipleDependencyTypes(t *testing.T) {
 	deps1, _ := db.GetDependencies(issue1.ID)
 	if len(deps1) != 0 {
 		t.Errorf("Expected 0 dependencies for issue1, got %d", len(deps1))
+	}
+}
+
+// ============================================================================
+// CascadeUnblockDependents Tests
+// ============================================================================
+
+func TestCascadeUnblockDependents_SingleDep(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
+	db.CreateIssue(blocker)
+	db.CreateIssue(dependent)
+	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	count, ids := db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	if count != 1 {
+		t.Errorf("expected 1 unblocked, got %d", count)
+	}
+	if len(ids) != 1 || ids[0] != dependent.ID {
+		t.Errorf("expected [%s], got %v", dependent.ID, ids)
+	}
+
+	updated, _ := db.GetIssue(dependent.ID)
+	if updated.Status != models.StatusOpen {
+		t.Errorf("expected open, got %s", updated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_AllDepsClosed(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
+	a2 := &models.Issue{Title: "A2", Status: models.StatusClosed}
+	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
+	db.CreateIssue(a1)
+	db.CreateIssue(a2)
+	db.CreateIssue(b)
+	db.AddDependency(b.ID, a1.ID, "depends_on")
+	db.AddDependency(b.ID, a2.ID, "depends_on")
+
+	count, _ := db.CascadeUnblockDependents(a2.ID, "test-session")
+
+	if count != 1 {
+		t.Errorf("expected 1 unblocked, got %d", count)
+	}
+	updated, _ := db.GetIssue(b.ID)
+	if updated.Status != models.StatusOpen {
+		t.Errorf("expected open, got %s", updated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_PartialResolution(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
+	a2 := &models.Issue{Title: "A2", Status: models.StatusOpen} // not closed
+	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
+	db.CreateIssue(a1)
+	db.CreateIssue(a2)
+	db.CreateIssue(b)
+	db.AddDependency(b.ID, a1.ID, "depends_on")
+	db.AddDependency(b.ID, a2.ID, "depends_on")
+
+	count, _ := db.CascadeUnblockDependents(a1.ID, "test-session")
+
+	if count != 0 {
+		t.Errorf("expected 0 unblocked, got %d", count)
+	}
+	updated, _ := db.GetIssue(b.ID)
+	if updated.Status != models.StatusBlocked {
+		t.Errorf("expected blocked, got %s", updated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_NonBlockedSkipped(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusOpen} // not blocked
+	db.CreateIssue(blocker)
+	db.CreateIssue(dependent)
+	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	count, _ := db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	if count != 0 {
+		t.Errorf("expected 0 unblocked, got %d", count)
+	}
+	updated, _ := db.GetIssue(dependent.ID)
+	if updated.Status != models.StatusOpen {
+		t.Errorf("expected open, got %s", updated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_InProgressSkipped(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusInProgress}
+	db.CreateIssue(blocker)
+	db.CreateIssue(dependent)
+	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	count, _ := db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	if count != 0 {
+		t.Errorf("expected 0 unblocked, got %d", count)
+	}
+	updated, _ := db.GetIssue(dependent.ID)
+	if updated.Status != models.StatusInProgress {
+		t.Errorf("expected in_progress, got %s", updated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_NoDependents(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	issue := &models.Issue{Title: "Standalone", Status: models.StatusClosed}
+	db.CreateIssue(issue)
+
+	count, ids := db.CascadeUnblockDependents(issue.ID, "test-session")
+
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+	if ids != nil {
+		t.Errorf("expected nil, got %v", ids)
+	}
+}
+
+func TestCascadeUnblockDependents_MultipleBlocked(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	b1 := &models.Issue{Title: "B1", Status: models.StatusBlocked}
+	b2 := &models.Issue{Title: "B2", Status: models.StatusBlocked}
+	db.CreateIssue(blocker)
+	db.CreateIssue(b1)
+	db.CreateIssue(b2)
+	db.AddDependency(b1.ID, blocker.ID, "depends_on")
+	db.AddDependency(b2.ID, blocker.ID, "depends_on")
+
+	count, ids := db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	if count != 2 {
+		t.Errorf("expected 2 unblocked, got %d", count)
+	}
+	if len(ids) != 2 {
+		t.Errorf("expected 2 ids, got %d", len(ids))
+	}
+
+	for _, dep := range []*models.Issue{b1, b2} {
+		updated, _ := db.GetIssue(dep.ID)
+		if updated.Status != models.StatusOpen {
+			t.Errorf("%s: expected open, got %s", dep.ID, updated.Status)
+		}
+	}
+}
+
+func TestCascadeUnblockDependents_ChainNoTransitive(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	a := &models.Issue{Title: "A", Status: models.StatusClosed}
+	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
+	c := &models.Issue{Title: "C", Status: models.StatusBlocked}
+	db.CreateIssue(a)
+	db.CreateIssue(b)
+	db.CreateIssue(c)
+	db.AddDependency(b.ID, a.ID, "depends_on")
+	db.AddDependency(c.ID, b.ID, "depends_on")
+
+	count, _ := db.CascadeUnblockDependents(a.ID, "test-session")
+
+	if count != 1 {
+		t.Errorf("expected 1 unblocked (only B), got %d", count)
+	}
+
+	bUpdated, _ := db.GetIssue(b.ID)
+	if bUpdated.Status != models.StatusOpen {
+		t.Errorf("B: expected open, got %s", bUpdated.Status)
+	}
+
+	cUpdated, _ := db.GetIssue(c.ID)
+	if cUpdated.Status != models.StatusBlocked {
+		t.Errorf("C: expected blocked (B is open not closed), got %s", cUpdated.Status)
+	}
+}
+
+func TestCascadeUnblockDependents_LogsCreated(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
+	db.CreateIssue(blocker)
+	db.CreateIssue(dependent)
+	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	// Verify progress log
+	logs, err := db.GetLogs(dependent.ID, 0)
+	if err != nil {
+		t.Fatalf("GetLogs failed: %v", err)
+	}
+	found := false
+	for _, l := range logs {
+		if l.Type == models.LogTypeProgress && l.Message == "Auto-unblocked (dependency "+blocker.ID+" closed)" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected auto-unblock progress log entry")
+	}
+
+	// Verify action log
+	action, err := db.GetLastAction("test-session")
+	if err != nil {
+		t.Fatalf("GetLastAction failed: %v", err)
+	}
+	if action == nil {
+		t.Fatal("expected action log entry")
+	}
+	if action.ActionType != models.ActionUnblock {
+		t.Errorf("expected ActionUnblock, got %s", action.ActionType)
+	}
+	if action.EntityID != dependent.ID {
+		t.Errorf("expected entity %s, got %s", dependent.ID, action.EntityID)
+	}
+}
+
+func TestCascadeUnblockDependents_UndoData(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
+	db.CreateIssue(blocker)
+	db.CreateIssue(dependent)
+	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	db.CascadeUnblockDependents(blocker.ID, "test-session")
+
+	action, err := db.GetLastAction("test-session")
+	if err != nil || action == nil {
+		t.Fatalf("GetLastAction failed: %v", err)
+	}
+
+	// PreviousData should contain blocked status
+	if action.PreviousData == "" {
+		t.Fatal("expected PreviousData to be set")
+	}
+	if action.NewData == "" {
+		t.Fatal("expected NewData to be set")
+	}
+
+	// Verify the status values in the JSON
+	if !strings.Contains(action.PreviousData, string(models.StatusBlocked)) {
+		t.Errorf("PreviousData should contain 'blocked', got: %s", action.PreviousData)
+	}
+	if !strings.Contains(action.NewData, string(models.StatusOpen)) {
+		t.Errorf("NewData should contain 'open', got: %s", action.NewData)
 	}
 }

@@ -91,7 +91,7 @@ open --> in_progress --> in_review --> closed
 
 - **open**: Created, not yet started
 - **in_progress**: Actively being worked on
-- **blocked**: Waiting on something external
+- **blocked**: Waiting on a dependency (auto-unblocks when all dependencies close)
 - **in_review**: Implementation complete, awaiting review
 - **closed**: Approved and done
 

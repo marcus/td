@@ -232,12 +232,91 @@ func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, 
 	cascadedIDs = append(cascadedIDs, parent.ID)
 	cascadedCount++
 
+	// Auto-unblock issues that depend on this newly-closed parent
+	if targetStatus == models.StatusClosed {
+		db.CascadeUnblockDependents(parent.ID, sessionID)
+	}
+
 	// Recursively check parent's parent
 	moreCount, moreIDs := db.CascadeUpParentStatus(parent.ID, targetStatus, sessionID)
 	cascadedCount += moreCount
 	cascadedIDs = append(cascadedIDs, moreIDs...)
 
 	return cascadedCount, cascadedIDs
+}
+
+// CascadeUnblockDependents checks issues that depend on closedIssueID.
+// For each dependent in "blocked" status, if ALL its dependencies are now closed,
+// it transitions the dependent from blocked → open.
+// Returns the count and IDs of unblocked issues.
+func (db *DB) CascadeUnblockDependents(closedIssueID, sessionID string) (int, []string) {
+	dependents, err := db.GetBlockedBy(closedIssueID)
+	if err != nil || len(dependents) == 0 {
+		return 0, nil
+	}
+
+	var unblockedIDs []string
+
+	for _, depID := range dependents {
+		issue, err := db.GetIssue(depID)
+		if err != nil || issue == nil {
+			continue
+		}
+
+		if issue.Status != models.StatusBlocked {
+			continue
+		}
+
+		// Check if ALL dependencies of this issue are now closed
+		deps, err := db.GetDependencies(depID)
+		if err != nil {
+			continue
+		}
+
+		allClosed := true
+		for _, d := range deps {
+			depIssue, err := db.GetIssue(d)
+			if err != nil || depIssue == nil {
+				allClosed = false
+				break
+			}
+			if depIssue.Status != models.StatusClosed {
+				allClosed = false
+				break
+			}
+		}
+
+		if !allClosed {
+			continue
+		}
+
+		prevData, _ := json.Marshal(issue)
+		issue.Status = models.StatusOpen
+		if err := db.UpdateIssue(issue); err != nil {
+			continue
+		}
+
+		newData, _ := json.Marshal(issue)
+		db.LogAction(&models.ActionLog{
+			SessionID:    sessionID,
+			ActionType:   models.ActionUnblock,
+			EntityType:   "issue",
+			EntityID:     depID,
+			PreviousData: string(prevData),
+			NewData:      string(newData),
+		})
+
+		db.AddLog(&models.Log{
+			IssueID:   depID,
+			SessionID: sessionID,
+			Message:   fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID),
+			Type:      models.LogTypeProgress,
+		})
+
+		unblockedIDs = append(unblockedIDs, depID)
+	}
+
+	return len(unblockedIDs), unblockedIDs
 }
 
 // ============================================================================
@@ -287,7 +366,7 @@ func (db *DB) GetDependencies(issueID string) ([]string, error) {
 // GetBlockedBy returns what issues are blocked by this issue
 func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 	rows, err := db.conn.Query(`
-		SELECT issue_id FROM issue_dependencies WHERE depends_on_id = ?
+		SELECT issue_id FROM issue_dependencies WHERE depends_on_id = ? AND relation_type = 'depends_on'
 	`, issueID)
 	if err != nil {
 		return nil, err

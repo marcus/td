@@ -425,6 +425,13 @@ Supports bulk operations:
 				}
 			}
 
+			// Auto-unblock dependents whose dependencies are now all closed
+			if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
+				for _, id := range ids {
+					fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+				}
+			}
+
 			approved++
 		}
 
@@ -748,6 +755,13 @@ Examples:
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
 				for _, id := range ids {
 					fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+				}
+			}
+
+			// Auto-unblock dependents whose dependencies are now all closed
+			if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
+				for _, id := range ids {
+					fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
 				}
 			}
 

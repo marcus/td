@@ -1377,3 +1377,114 @@ func TestReviewWithWorkSessionTaggedIssue(t *testing.T) {
 		t.Error("Work session should NOT be ended by individual handoff")
 	}
 }
+
+// ============================================================================
+// Auto-Unblock Integration Tests
+// ============================================================================
+
+func TestApproveAutoUnblocksDependents(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create blocker (in_review, ready to be approved)
+	blocker := &models.Issue{
+		Title:              "Blocker",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses_impl",
+	}
+	database.CreateIssue(blocker)
+
+	// Create dependent (blocked, depends on blocker)
+	dependent := &models.Issue{
+		Title:  "Dependent",
+		Status: models.StatusBlocked,
+	}
+	database.CreateIssue(dependent)
+	database.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	// Simulate approve: close the blocker then cascade unblock
+	blocker.Status = models.StatusClosed
+	database.UpdateIssue(blocker)
+	database.CascadeUnblockDependents(blocker.ID, "ses_reviewer")
+
+	// Verify dependent is now open
+	updated, _ := database.GetIssue(dependent.ID)
+	if updated.Status != models.StatusOpen {
+		t.Errorf("dependent should be open after blocker approved, got %s", updated.Status)
+	}
+}
+
+func TestCloseAutoUnblocksDependents(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	blocker := &models.Issue{
+		Title:  "Blocker",
+		Status: models.StatusOpen,
+	}
+	database.CreateIssue(blocker)
+
+	dependent := &models.Issue{
+		Title:  "Dependent",
+		Status: models.StatusBlocked,
+	}
+	database.CreateIssue(dependent)
+	database.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	// Simulate close: set closed then cascade unblock
+	blocker.Status = models.StatusClosed
+	database.UpdateIssue(blocker)
+	database.CascadeUnblockDependents(blocker.ID, "ses_closer")
+
+	updated, _ := database.GetIssue(dependent.ID)
+	if updated.Status != models.StatusOpen {
+		t.Errorf("dependent should be open after blocker closed, got %s", updated.Status)
+	}
+}
+
+func TestApproveAutoUnblockPartialDeps(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	a1 := &models.Issue{
+		Title:              "A1",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses_impl",
+	}
+	a2 := &models.Issue{
+		Title:  "A2",
+		Status: models.StatusOpen,
+	}
+	dependent := &models.Issue{
+		Title:  "Dependent",
+		Status: models.StatusBlocked,
+	}
+	database.CreateIssue(a1)
+	database.CreateIssue(a2)
+	database.CreateIssue(dependent)
+	database.AddDependency(dependent.ID, a1.ID, "depends_on")
+	database.AddDependency(dependent.ID, a2.ID, "depends_on")
+
+	// Approve only A1
+	a1.Status = models.StatusClosed
+	database.UpdateIssue(a1)
+	database.CascadeUnblockDependents(a1.ID, "ses_reviewer")
+
+	// Dependent should still be blocked (A2 not closed)
+	updated, _ := database.GetIssue(dependent.ID)
+	if updated.Status != models.StatusBlocked {
+		t.Errorf("dependent should remain blocked (A2 still open), got %s", updated.Status)
+	}
+}

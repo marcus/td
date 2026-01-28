@@ -282,12 +282,16 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 					Message:   "Cascaded close from " + issueID,
 					Type:      models.LogTypeProgress,
 				})
+				m.DB.CascadeUnblockDependents(child.ID, m.SessionID)
 			}
 		}
 	}
 
 	// Cascade up to parent epic if all siblings are closed
 	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
+
+	// Auto-unblock dependents whose dependencies are now all closed
+	m.DB.CascadeUnblockDependents(issueID, m.SessionID)
 
 	// Close the confirmation modal
 	m.closeCloseConfirmModal()
@@ -379,12 +383,16 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 					Message:   "Cascaded approval from " + issue.ID,
 					Type:      models.LogTypeProgress,
 				})
+				m.DB.CascadeUnblockDependents(child.ID, m.SessionID)
 			}
 		}
 	}
 
 	// Cascade up to parent epic if all siblings are closed
 	m.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, m.SessionID)
+
+	// Auto-unblock dependents whose dependencies are now all closed
+	m.DB.CascadeUnblockDependents(issue.ID, m.SessionID)
 
 	// Clear the saved ID so cursor stays at the same position after refresh
 	// The item will move to Closed, and we want cursor at same index for next item
