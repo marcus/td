@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"encoding/json"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,18 +51,27 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Capture previous state for undo
+	prevData, _ := json.Marshal(issue)
+
 	// Update status
 	issue.Status = models.StatusInReview
+	if issue.ImplementerSession == "" {
+		issue.ImplementerSession = m.SessionID
+	}
 	if err := m.DB.UpdateIssue(issue); err != nil {
 		return m, nil
 	}
 
 	// Log action for undo
+	newData, _ := json.Marshal(issue)
 	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionReview,
-		EntityType: "issue",
-		EntityID:   issueID,
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionReview,
+		EntityType:   "issue",
+		EntityID:     issueID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
 	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
@@ -137,6 +147,13 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 
 	deletedID := m.ConfirmIssueID
 
+	// Capture previous state for undo (before deletion)
+	issue, err := m.DB.GetIssue(deletedID)
+	var prevData []byte
+	if err == nil && issue != nil {
+		prevData, _ = json.Marshal(issue)
+	}
+
 	// Delete issue
 	if err := m.DB.DeleteIssue(deletedID); err != nil {
 		m.closeDeleteConfirmModal()
@@ -145,10 +162,11 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 
 	// Log action for undo
 	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionDelete,
-		EntityType: "issue",
-		EntityID:   deletedID,
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionDelete,
+		EntityType:   "issue",
+		EntityID:     deletedID,
+		PreviousData: string(prevData),
 	})
 
 	// Close the delete confirmation modal
@@ -231,6 +249,9 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Capture previous state for undo
+	prevData, _ := json.Marshal(issue)
+
 	// Update status
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -241,11 +262,14 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	}
 
 	// Log action for undo
+	newData, _ := json.Marshal(issue)
 	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionClose,
-		EntityType: "issue",
-		EntityID:   issueID,
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionClose,
+		EntityType:   "issue",
+		EntityID:     issueID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
 	})
 
 	// Add progress log with optional reason
@@ -340,6 +364,9 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Capture previous state for undo
+	prevData, _ := json.Marshal(issue)
+
 	// Update status
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -353,11 +380,14 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
 
 	// Log action for undo
+	newData, _ := json.Marshal(issue)
 	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionApprove,
-		EntityType: "issue",
-		EntityID:   issue.ID,
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionApprove,
+		EntityType:   "issue",
+		EntityID:     issue.ID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
 	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
@@ -444,8 +474,12 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 		})
 	}
 
+	// Capture previous state for undo
+	prevData, _ := json.Marshal(issue)
+
 	// Update status
 	issue.Status = models.StatusOpen
+	issue.ReviewerSession = ""
 	issue.ClosedAt = nil
 	if err := m.DB.UpdateIssue(issue); err != nil {
 		m.StatusMessage = "Failed to reopen: " + err.Error()
@@ -456,11 +490,14 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 	}
 
 	// Log action for undo
+	newData, _ := json.Marshal(issue)
 	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionReopen,
-		EntityType: "issue",
-		EntityID:   issueID,
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionReopen,
+		EntityType:   "issue",
+		EntityID:     issueID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
 	})
 
 	m.StatusMessage = "REOPENED " + issueID
