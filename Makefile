@@ -17,7 +17,7 @@ help:
 		"  make install                   # go install ." \
 		"  make install-dev               # go install with -ldflags version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
-		"  make release VERSION=vX.Y.Z    # tag + push tag to origin"
+		"  make release VERSION=vX.Y.Z    # tag + push (triggers GoReleaser via GitHub Actions)"
 
 fmt:
 	gofmt -w .

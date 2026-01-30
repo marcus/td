@@ -83,26 +83,34 @@ OPEN (P1):
 
 ## Installation
 
-**Requirements**: Go 1.21+
+### Homebrew (macOS)
 
 ```bash
-# Install latest release
-go install github.com/marcus/td@latest
-
-# Or install a specific version
-# go install github.com/marcus/td@v0.2.0
-
-# (Dev) Install from a local clone
-# git clone https://github.com/marcus/td.git && cd td && make install
-
-# Verify installation
-td version
+brew install marcus/tap/td
 ```
 
-**Setup PATH**: Ensure `~/go/bin` is in your `$PATH`:
+### Download Binary
+
+Download pre-built binaries from [GitHub Releases](https://github.com/marcus/td/releases). Available for macOS and Linux (amd64/arm64).
+
+### Go Install
+
+Requires Go 1.21+:
+
+```bash
+go install github.com/marcus/td@latest
+```
+
+Ensure `~/go/bin` is in your `$PATH`:
 
 ```bash
 export PATH="$PATH:$HOME/go/bin"  # Add to ~/.zshrc or ~/.bashrc
+```
+
+### Verify
+
+```bash
+td version
 ```
 
 ## Quick Start
@@ -193,12 +201,14 @@ make fmt
 
 ## Release
 
+Releases are automated via GoReleaser. Pushing a version tag triggers GitHub Actions to build binaries and update the Homebrew formula.
+
 ```bash
-# Create and push an annotated tag (requires clean working tree)
+# Create and push an annotated tag (triggers automated release)
 make release VERSION=v0.2.0
 
-# Then anyone (including you) can install that exact version:
-# go install github.com/marcus/td@v0.2.0
+# Homebrew users get the update via:
+# brew upgrade td
 ```
 
 ## Core Workflow

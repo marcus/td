@@ -22,14 +22,29 @@ Three mechanisms eliminate context loss:
 
 ## Installation
 
+### Homebrew (macOS)
+
+```bash
+brew install marcus/tap/td
+```
+
+### Download Binary
+
+Download pre-built binaries from [GitHub Releases](https://github.com/marcus/td/releases). Available for macOS and Linux (amd64/arm64).
+
+### Go Install
+
 ```bash
 # Requirements: Go 1.21+
 go install github.com/marcus/td@latest
 
 # Ensure ~/go/bin is in PATH
 export PATH="$PATH:$HOME/go/bin"
+```
 
-# Verify
+### Verify
+
+```bash
 td version
 ```
 
