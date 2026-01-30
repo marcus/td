@@ -150,7 +150,7 @@ var createCmd = &cobra.Command{
 		issue.Minor, _ = cmd.Flags().GetBool("minor")
 
 		// Get session BEFORE creating issue (needed for CreatorSession)
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("failed to create session: %v", err)
 			return fmt.Errorf("failed to create session: %w", err)

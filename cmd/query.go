@@ -147,7 +147,7 @@ BOARDS:
 		}
 		defer database.Close()
 
-		sess, _ := session.GetOrCreate(baseDir)
+		sess, _ := session.GetOrCreate(database)
 		sessionID := ""
 		if sess != nil {
 			sessionID = sess.ID

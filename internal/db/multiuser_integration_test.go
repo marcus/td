@@ -2,12 +2,10 @@ package db
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/marcus/td/internal/models"
-	"github.com/marcus/td/internal/session"
 )
 
 // TestMultiUserIssueIndependence verifies multiple users can work on same repo independently
@@ -65,55 +63,6 @@ func TestMultiUserIssueIndependence(t *testing.T) {
 	}
 	if retrievedB.CreatorSession != userBSession {
 		t.Errorf("User B issue creator session mismatch: %s != %s", retrievedB.CreatorSession, userBSession)
-	}
-}
-
-// TestSessionFingerprinting verifies session fingerprints distinguish users
-func TestSessionFingerprinting(t *testing.T) {
-	tests := []struct {
-		name      string
-		sessionID string
-		wantAgent string
-	}{
-		{
-			name:      "explicit session ID",
-			sessionID: "my-test-session",
-			wantAgent: "explicit",
-		},
-		{
-			name:      "explicit session with special chars",
-			sessionID: "user@example.com-session",
-			wantAgent: "explicit",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// Set explicit session ID
-			oldVal := os.Getenv("TD_SESSION_ID")
-			defer func() {
-				if oldVal != "" {
-					os.Setenv("TD_SESSION_ID", oldVal)
-				} else {
-					os.Unsetenv("TD_SESSION_ID")
-				}
-			}()
-
-			os.Setenv("TD_SESSION_ID", tc.sessionID)
-
-			// Get fingerprint
-			fp := session.GetAgentFingerprint()
-			fpString := fp.String()
-
-			if fp.Type != session.AgentType(tc.wantAgent) {
-				t.Errorf("agent type mismatch: got %s, want %s", fp.Type, tc.wantAgent)
-			}
-
-			// Verify fingerprint string is filesystem-safe
-			if !isFilesystemSafe(fpString) {
-				t.Errorf("fingerprint string not filesystem-safe: %q", fpString)
-			}
-		})
 	}
 }
 

@@ -54,7 +54,7 @@ var listCmd = &cobra.Command{
 
 		if queryStr != "" {
 			// Use TDQ query engine
-			sess, _ := session.GetOrCreate(baseDir)
+			sess, _ := session.GetOrCreate(database)
 			sessionID := ""
 			if sess != nil {
 				sessionID = sess.ID
@@ -188,7 +188,7 @@ var listCmd = &cobra.Command{
 
 		// Reviewable filter
 		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
-			sess, err := session.GetOrCreate(baseDir)
+			sess, err := session.GetOrCreate(database)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -198,7 +198,7 @@ var listCmd = &cobra.Command{
 
 		// Mine filter (issues where current session is implementer)
 		if mine, _ := cmd.Flags().GetBool("mine"); mine {
-			sess, err := session.GetOrCreate(baseDir)
+			sess, err := session.GetOrCreate(database)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -299,8 +299,14 @@ var reviewableCmd = &cobra.Command{
 	Short:   "Show issues awaiting review that you can review",
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-		sess, err := session.GetOrCreate(baseDir)
+		database, err := db.Open(getBaseDir())
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -351,8 +357,14 @@ var inReviewCmd = &cobra.Command{
 	Short:   "List all issues currently in review",
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-		sess, err := session.GetOrCreate(baseDir)
+		database, err := db.Open(getBaseDir())
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err

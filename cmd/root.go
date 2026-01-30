@@ -122,8 +122,11 @@ func logAgentError(args []string, errMsg string) {
 
 	// Try to get session ID (may fail if not initialized)
 	var sessionID string
-	if sess, err := session.Get(dir); err == nil {
-		sessionID = sess.ID
+	if database, dbErr := db.Open(dir); dbErr == nil {
+		if sess, err := session.Get(database); err == nil {
+			sessionID = sess.ID
+		}
+		database.Close()
 	}
 
 	// Log the error (silently fails if project not initialized)
@@ -366,8 +369,11 @@ func buildCommandEvent(cmd *cobra.Command, err error) db.CommandUsageEvent {
 	// Try to get session ID
 	dir := getBaseDir()
 	if dir != "" {
-		if sess, err := session.Get(dir); err == nil {
-			event.SessionID = sess.ID
+		if database, dbErr := db.Open(dir); dbErr == nil {
+			if sess, err := session.Get(database); err == nil {
+				event.SessionID = sess.ID
+			}
+			database.Close()
 		}
 	}
 

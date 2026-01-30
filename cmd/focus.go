@@ -84,7 +84,7 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err

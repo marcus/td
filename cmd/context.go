@@ -53,9 +53,9 @@ var usageCmd = &cobra.Command{
 		// If --new-session is set, force creation of a new session (useful at conversation start / after /clear).
 		var sess *session.Session
 		if newSession {
-			sess, err = session.ForceNewSession(baseDir)
+			sess, err = session.ForceNewSession(database)
 		} else {
-			sess, err = session.GetOrCreate(baseDir)
+			sess, err = session.GetOrCreate(database)
 		}
 		if err != nil {
 			output.Error("%v", err)

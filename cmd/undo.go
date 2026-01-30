@@ -44,7 +44,7 @@ Use 'td undo --list' to see recent undoable actions.`,
 			return err
 		}
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -247,7 +247,7 @@ var lastCmd = &cobra.Command{
 			return err
 		}
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err

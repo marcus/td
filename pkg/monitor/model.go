@@ -236,7 +236,7 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 		return nil, err
 	}
 
-	sess, err := session.GetOrCreate(baseDir)
+	sess, err := session.GetOrCreate(database)
 	if err != nil {
 		releaseSharedDB(baseDir)
 		return nil, err
@@ -272,7 +272,7 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 		return nil, err
 	}
 
-	sess, err := session.GetOrCreate(opts.BaseDir)
+	sess, err := session.GetOrCreate(database)
 	if err != nil {
 		releaseSharedDB(opts.BaseDir)
 		return nil, err

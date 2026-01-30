@@ -34,6 +34,16 @@ func (db *DB) columnExists(table, column string) (bool, error) {
 	return false, rows.Err()
 }
 
+// tableExists checks whether a table exists in the database
+func (db *DB) tableExists(table string) (bool, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // GetSchemaVersion returns the current schema version from the database
 func (db *DB) GetSchemaVersion() (int, error) {
 	var version string
@@ -125,6 +135,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
+			if migration.Version == 13 {
+				if err := db.migrateV13Sessions(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 13 (sessions): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
@@ -143,4 +163,57 @@ func (db *DB) runMigrationsInternal() (int, error) {
 	}
 
 	return migrationsRun, nil
+}
+
+// migrateV13Sessions handles the v13 migration which extends the sessions table.
+// If the sessions table is missing (bad prior migration), it creates it fresh.
+func (db *DB) migrateV13Sessions() error {
+	exists, err := db.tableExists("sessions")
+	if err != nil {
+		return fmt.Errorf("check sessions table: %w", err)
+	}
+
+	if !exists {
+		// No sessions table — create it fresh with all v13 columns
+		_, err := db.conn.Exec(`
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT DEFAULT '',
+    branch TEXT DEFAULT '',
+    agent_type TEXT DEFAULT '',
+    agent_pid INTEGER DEFAULT 0,
+    context_id TEXT DEFAULT '',
+    previous_session_id TEXT DEFAULT '',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    last_activity DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+`)
+		return err
+	}
+
+	// Sessions table exists — recreate with new columns, preserving data
+	_, err = db.conn.Exec(`
+CREATE TABLE sessions_new (
+    id TEXT PRIMARY KEY,
+    name TEXT DEFAULT '',
+    branch TEXT DEFAULT '',
+    agent_type TEXT DEFAULT '',
+    agent_pid INTEGER DEFAULT 0,
+    context_id TEXT DEFAULT '',
+    previous_session_id TEXT DEFAULT '',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    last_activity DATETIME
+);
+INSERT INTO sessions_new (id, name, context_id, previous_session_id, started_at, ended_at)
+    SELECT id, name, context_id, previous_session_id, started_at, ended_at FROM sessions;
+DROP TABLE sessions;
+ALTER TABLE sessions_new RENAME TO sessions;
+CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+`)
+	return err
 }

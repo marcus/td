@@ -41,7 +41,7 @@ var wsStartCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -102,7 +102,7 @@ var wsTagCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -223,7 +223,7 @@ var wsLogCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -409,7 +409,7 @@ Flags support values, stdin (-), or file (@path):
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err

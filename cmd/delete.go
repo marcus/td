@@ -26,7 +26,7 @@ var deleteCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, _ := session.GetOrCreate(baseDir)
+		sess, _ := session.GetOrCreate(database)
 
 		for _, issueID := range args {
 			// Get issue before delete for undo

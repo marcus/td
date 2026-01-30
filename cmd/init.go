@@ -46,7 +46,7 @@ var initCmd = &cobra.Command{
 		}
 
 		// Create session
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("failed to create session: %v", err)
 			return err

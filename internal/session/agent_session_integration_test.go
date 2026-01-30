@@ -1,28 +1,25 @@
 package session
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/marcus/td/internal/db"
 )
 
 // TestAgentScopedSessionIsolation verifies that different agents get different sessions
 func TestAgentScopedSessionIsolation(t *testing.T) {
-	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
-		t.Fatalf("mkdir .todos: %v", err)
-	}
+	database := setupTestDB(t)
 
 	// Simulate Agent A (explicit override)
 	t.Setenv("TD_SESSION_ID", "agent-a")
-	sessA, err := GetOrCreate(baseDir)
+	sessA, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate for agent A: %v", err)
 	}
 
 	// Simulate Agent B (different explicit override)
 	t.Setenv("TD_SESSION_ID", "agent-b")
-	sessB, err := GetOrCreate(baseDir)
+	sessB, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate for agent B: %v", err)
 	}
@@ -32,48 +29,33 @@ func TestAgentScopedSessionIsolation(t *testing.T) {
 		t.Errorf("Agents A and B should have different session IDs, both got %s", sessA.ID)
 	}
 
-	// Verify session files are in different locations
-	sessionsDir := filepath.Join(baseDir, ".todos/sessions")
-	entries, err := os.ReadDir(sessionsDir)
+	// Verify both sessions exist in DB
+	allSessions, err := database.ListAllSessions()
 	if err != nil {
-		t.Fatalf("read sessions dir: %v", err)
+		t.Fatalf("list sessions: %v", err)
 	}
-
-	// Should have a branch subdirectory with agent-specific files
-	foundDirs := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			foundDirs++
-		}
-	}
-	if foundDirs == 0 {
-		t.Error("Expected at least one branch subdirectory in sessions")
+	if len(allSessions) < 2 {
+		t.Errorf("Expected at least 2 sessions in DB, got %d", len(allSessions))
 	}
 }
 
 // TestSameAgentSameSession verifies stability within same agent
 func TestSameAgentSameSession(t *testing.T) {
-	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
-		t.Fatalf("mkdir .todos: %v", err)
-	}
+	database := setupTestDB(t)
 
 	t.Setenv("TD_SESSION_ID", "stable-agent")
 
-	// First call creates session
-	sess1, err := GetOrCreate(baseDir)
+	sess1, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate (1): %v", err)
 	}
 
-	// Second call should return same session
-	sess2, err := GetOrCreate(baseDir)
+	sess2, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate (2): %v", err)
 	}
 
-	// Third call should still return same session
-	sess3, err := GetOrCreate(baseDir)
+	sess3, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate (3): %v", err)
 	}
@@ -84,26 +66,32 @@ func TestSameAgentSameSession(t *testing.T) {
 	}
 }
 
-// TestAgentSessionPersistence verifies session survives restart
+// TestAgentSessionPersistence verifies session survives DB reopen
 func TestAgentSessionPersistence(t *testing.T) {
 	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
-		t.Fatalf("mkdir .todos: %v", err)
-	}
 
 	t.Setenv("TD_SESSION_ID", "persistent-agent")
 
 	// Create initial session
-	sess1, err := GetOrCreate(baseDir)
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	sess1, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate (initial): %v", err)
 	}
 	initialID := sess1.ID
+	database.Close()
 
-	// Clear in-memory state (simulate restart)
-	// Just call GetOrCreate again - it should load from disk
+	// Reopen - should load from DB
+	database2, err := db.Open(baseDir)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer database2.Close()
 
-	sess2, err := GetOrCreate(baseDir)
+	sess2, err := GetOrCreate(database2)
 	if err != nil {
 		t.Fatalf("GetOrCreate (after restart): %v", err)
 	}
@@ -113,86 +101,64 @@ func TestAgentSessionPersistence(t *testing.T) {
 	}
 }
 
-// TestAgentSessionFileStructure verifies correct file hierarchy
-func TestAgentSessionFileStructure(t *testing.T) {
-	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
-		t.Fatalf("mkdir .todos: %v", err)
-	}
+// TestAgentSessionDBStructure verifies session data is correctly stored in DB
+func TestAgentSessionDBStructure(t *testing.T) {
+	database := setupTestDB(t)
 
 	t.Setenv("TD_SESSION_ID", "test-agent")
 
-	sess, err := GetOrCreate(baseDir)
+	sess, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 
-	// Verify sessions directory exists with at least one branch subdirectory
-	sessionsDir := filepath.Join(baseDir, ".todos/sessions")
-	entries, err := os.ReadDir(sessionsDir)
+	// Check that session has expected agent info (stored as fingerprint string)
+	if sess.AgentType != "explicit_test-agent" {
+		t.Errorf("AgentType = %q, want %q", sess.AgentType, "explicit_test-agent")
+	}
+
+	// Verify in DB directly
+	row, err := database.GetSessionByID(sess.ID)
 	if err != nil {
-		t.Fatalf("read sessions dir: %v", err)
+		t.Fatalf("GetSessionByID: %v", err)
 	}
-
-	foundBranchDir := false
-	for _, entry := range entries {
-		if entry.IsDir() {
-			foundBranchDir = true
-			// Check for session file inside
-			subEntries, err := os.ReadDir(filepath.Join(sessionsDir, entry.Name()))
-			if err != nil {
-				t.Errorf("read branch dir: %v", err)
-				continue
-			}
-			if len(subEntries) == 0 {
-				t.Errorf("Branch dir %s should contain session file", entry.Name())
-			}
-		}
+	if row == nil {
+		t.Fatal("session not found in DB")
 	}
-
-	if !foundBranchDir {
-		t.Error("Expected at least one branch subdirectory in sessions")
+	if row.AgentType != "explicit_test-agent" {
+		t.Errorf("DB AgentType = %q, want %q", row.AgentType, "explicit_test-agent")
 	}
-
-	// Check that session file contains expected agent info
-	if sess.AgentType != "explicit" {
-		t.Errorf("AgentType = %q, want %q", sess.AgentType, "explicit")
+	if row.Branch == "" {
+		t.Error("DB Branch should be set")
 	}
 }
 
 // TestForceNewSessionCreatesNewAgentSession verifies --new-session behavior
 func TestForceNewSessionCreatesNewAgentSession(t *testing.T) {
-	baseDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
-		t.Fatalf("mkdir .todos: %v", err)
-	}
+	database := setupTestDB(t)
 
 	t.Setenv("TD_SESSION_ID", "force-new-agent")
 
-	// Create initial session
-	sess1, err := GetOrCreate(baseDir)
+	sess1, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 
-	// Force new session
-	sess2, err := ForceNewSession(baseDir)
+	sess2, err := ForceNewSession(database)
 	if err != nil {
 		t.Fatalf("ForceNewSession: %v", err)
 	}
 
-	// Should have different ID
 	if sess1.ID == sess2.ID {
 		t.Errorf("ForceNewSession should create new ID, both got %s", sess1.ID)
 	}
 
-	// New session should link to previous
 	if sess2.PreviousSessionID != sess1.ID {
 		t.Errorf("PreviousSessionID = %q, want %q", sess2.PreviousSessionID, sess1.ID)
 	}
 
 	// Subsequent GetOrCreate should return the new session
-	sess3, err := GetOrCreate(baseDir)
+	sess3, err := GetOrCreate(database)
 	if err != nil {
 		t.Fatalf("GetOrCreate after force: %v", err)
 	}

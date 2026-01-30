@@ -174,7 +174,7 @@ var boardShowCmd = &cobra.Command{
 			return err
 		}
 
-		sess, _ := session.GetOrCreate(baseDir)
+		sess, _ := session.GetOrCreate(database)
 		sessionID := ""
 		if sess != nil {
 			sessionID = sess.ID
@@ -433,7 +433,7 @@ var boardUnpositionCmd = &cobra.Command{
 
 // logActionWithSession logs an action if a session exists, filling in the SessionID.
 func logActionWithSession(baseDir string, database *db.DB, action *models.ActionLog) {
-	sess, _ := session.GetOrCreate(baseDir)
+	sess, _ := session.GetOrCreate(database)
 	if sess != nil {
 		action.SessionID = sess.ID
 		database.LogAction(action)

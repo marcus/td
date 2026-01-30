@@ -27,7 +27,7 @@ var blockCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -110,7 +110,7 @@ Examples:
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -210,7 +210,7 @@ Examples:
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 12
+const SchemaVersion = 13
 
 const schema = `
 -- Issues table
@@ -120,10 +120,14 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     name TEXT DEFAULT '',
-    context_id TEXT NOT NULL,
+    branch TEXT DEFAULT '',
+    agent_type TEXT DEFAULT '',
+    agent_pid INTEGER DEFAULT 0,
+    context_id TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at DATETIME
+    ended_at DATETIME,
+    last_activity DATETIME
 );
 
 -- Schema info table for version tracking
@@ -143,6 +147,8 @@ CREATE INDEX IF NOT EXISTS idx_handoffs_issue ON handoffs(issue_id);
 CREATE INDEX IF NOT EXISTS idx_git_snapshots_issue ON git_snapshots(issue_id);
 CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
 `
 
 // Migration defines a database migration
@@ -296,5 +302,11 @@ ON CONFLICT(name) DO UPDATE SET
 		SQL: `CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
+	},
+	{
+		Version:     13,
+		Description: "Extend sessions table for full DB-backed session storage",
+		// SQL is set dynamically in runMigrationsInternal based on whether sessions table exists
+		SQL: "",
 	},
 }

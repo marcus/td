@@ -33,7 +33,7 @@ var infoCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.GetOrCreate(baseDir)
+		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -179,18 +179,18 @@ var whoamiCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
-		sess, err := session.GetOrCreate(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
 		database, err := db.Open(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
 		defer database.Close()
+
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		// Get issues touched by this session
 		touchedIssues, _ := database.GetIssueSessionLog(sess.ID)
@@ -218,11 +218,18 @@ var sessionNameCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
 		newSession, _ := cmd.Flags().GetBool("new")
 
 		if newSession {
 			// Force create a new session
-			sess, err := session.ForceNewSession(baseDir)
+			sess, err := session.ForceNewSession(database)
 			if err != nil {
 				output.Error("failed to create session: %v", err)
 				return err
@@ -236,8 +243,7 @@ var sessionNameCmd = &cobra.Command{
 
 			// Set name if provided
 			if len(args) > 0 {
-				sess.Name = args[0]
-				if err := session.Save(baseDir, sess); err != nil {
+				if _, err := session.SetName(database, args[0]); err != nil {
 					output.Error("failed to save session name: %v", err)
 					return err
 				}
@@ -249,7 +255,7 @@ var sessionNameCmd = &cobra.Command{
 		// Name existing session
 		if len(args) == 0 {
 			// Just show current session
-			sess, err := session.GetOrCreate(baseDir)
+			sess, err := session.GetOrCreate(database)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -260,7 +266,7 @@ var sessionNameCmd = &cobra.Command{
 
 		name := args[0]
 
-		sess, err := session.SetName(baseDir, name)
+		sess, err := session.SetName(database, name)
 		if err != nil {
 			output.Error("failed to set session name: %v", err)
 			return err
@@ -275,9 +281,14 @@ var sessionListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all sessions (branch + agent scoped)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
+		database, err := db.Open(getBaseDir())
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
 
-		sessions, err := session.ListSessions(baseDir)
+		sessions, err := session.ListSessions(database)
 		if err != nil {
 			output.Error("failed to list sessions: %v", err)
 			return err
@@ -328,7 +339,12 @@ var sessionCleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Remove stale session files",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
+		database, err := db.Open(getBaseDir())
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
 
 		olderThan, _ := cmd.Flags().GetString("older-than")
 		force, _ := cmd.Flags().GetBool("force")
@@ -340,7 +356,7 @@ var sessionCleanupCmd = &cobra.Command{
 		}
 
 		// Preview what would be deleted
-		sessions, err := session.ListSessions(baseDir)
+		sessions, err := session.ListSessions(database)
 		if err != nil {
 			output.Error("failed to list sessions: %v", err)
 			return err
@@ -372,7 +388,7 @@ var sessionCleanupCmd = &cobra.Command{
 			return nil
 		}
 
-		deleted, err := session.CleanupStaleSessions(baseDir, maxAge)
+		deleted, err := session.CleanupStaleSessions(database, maxAge)
 		if err != nil {
 			output.Error("cleanup failed: %v", err)
 			return err

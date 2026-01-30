@@ -61,7 +61,7 @@ td version
 - `cmd/` - Cobra commands
 - `internal/db/` - SQLite (schema.go)
 - `internal/models/` - Issue, Log, Handoff, WorkSession
-- `internal/session/` - Session ID (.todos/session)
+- `internal/session/` - Session management (DB-backed, scoped by branch + agent)
 - `pkg/monitor/` - TUI monitor (see [docs/modal-system.md](docs/modal-system.md) for modal architecture)
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
