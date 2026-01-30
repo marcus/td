@@ -689,3 +689,136 @@ func TestExtractCrossEntityConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionArgEnumNormalization(t *testing.T) {
+	tests := []struct {
+		name    string
+		query   string
+		issue   models.Issue
+		matches bool
+	}{
+		{
+			name:  "any() with mixed-case status values",
+			query: "any(status, OPEN, Closed)",
+			issue: models.Issue{
+				ID:     "td-fn-01",
+				Status: models.StatusOpen,
+			},
+			matches: true,
+		},
+		{
+			name:  "any() with lowercase priority values",
+			query: "any(priority, p0, p1)",
+			issue: models.Issue{
+				ID:       "td-fn-02",
+				Priority: models.PriorityP1,
+			},
+			matches: true,
+		},
+		{
+			name:  "any() with lowercase priority no match",
+			query: "any(priority, p0, p1)",
+			issue: models.Issue{
+				ID:       "td-fn-03",
+				Priority: models.PriorityP3,
+			},
+			matches: false,
+		},
+		{
+			name:  "none() with mixed-case status",
+			query: "none(status, CLOSED, blocked)",
+			issue: models.Issue{
+				ID:     "td-fn-04",
+				Status: models.StatusOpen,
+			},
+			matches: true,
+		},
+		{
+			name:  "none() excludes matching mixed-case",
+			query: "none(status, OPEN, blocked)",
+			issue: models.Issue{
+				ID:     "td-fn-05",
+				Status: models.StatusOpen,
+			},
+			matches: false,
+		},
+		{
+			name:  "is() with mixed case",
+			query: "is(IN_PROGRESS)",
+			issue: models.Issue{
+				ID:     "td-fn-06",
+				Status: models.StatusInProgress,
+			},
+			matches: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, err := Parse(tt.query)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			if errs := query.Validate(); len(errs) > 0 {
+				t.Fatalf("validation errors: %v", errs)
+			}
+
+			ctx := NewEvalContext("ses_test")
+			eval := NewEvaluator(ctx, query)
+
+			matcher, err := eval.ToMatcher()
+			if err != nil {
+				t.Fatalf("ToMatcher error: %v", err)
+			}
+
+			got := matcher(tt.issue)
+			if got != tt.matches {
+				t.Errorf("matcher(%v) = %v, want %v", tt.issue.ID, got, tt.matches)
+			}
+		})
+	}
+}
+
+func TestIsPriorityCaseInsensitive(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"P0", true},
+		{"P4", true},
+		{"p0", true},
+		{"p3", true},
+		{"P5", false},
+		{"p5", false},
+		{"X1", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isPriority(tt.input); got != tt.expected {
+				t.Errorf("isPriority(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestComparePriorityCaseInsensitive(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b, op string
+		expected bool
+	}{
+		{"uppercase lt", "P0", "P2", OpLt, true},
+		{"lowercase lt", "p0", "p2", OpLt, true},
+		{"mixed case lt", "p0", "P2", OpLt, true},
+		{"lowercase gte", "p2", "p1", OpGte, true},
+		{"lowercase eq via lte+gte", "p1", "p1", OpLte, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := comparePriority(tt.a, tt.b, tt.op); got != tt.expected {
+				t.Errorf("comparePriority(%q, %q, %q) = %v, want %v", tt.a, tt.b, tt.op, got, tt.expected)
+			}
+		})
+	}
+}

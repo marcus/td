@@ -659,4 +659,40 @@ func validateFunctionCall(fn *FunctionCall, errs *[]error) {
 		*errs = append(*errs, fmt.Errorf("function %s accepts at most %d argument(s), got %d",
 			fn.Name, spec.MaxArgs, argc))
 	}
+
+	// Normalize enum values in function arguments.
+	// Functions like any(field, v1, v2), all(), none(), is() have enum args.
+	switch fn.Name {
+	case "is":
+		// is(status) - single arg is a status enum value
+		if len(fn.Args) >= 1 {
+			if strVal, ok := fn.Args[0].(string); ok {
+				if enumVals, ok := EnumValues["status"]; ok {
+					for _, v := range enumVals {
+						if strings.EqualFold(v, strVal) {
+							fn.Args[0] = v
+							break
+						}
+					}
+				}
+			}
+		}
+	case "any", "all", "none":
+		// First arg is field name, remaining args are values to match
+		if len(fn.Args) >= 2 {
+			fieldName := fmt.Sprintf("%v", fn.Args[0])
+			if enumVals, ok := EnumValues[fieldName]; ok {
+				for i := 1; i < len(fn.Args); i++ {
+					if strVal, ok := fn.Args[i].(string); ok {
+						for _, v := range enumVals {
+							if strings.EqualFold(v, strVal) {
+								fn.Args[i] = v
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }

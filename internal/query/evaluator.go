@@ -818,11 +818,16 @@ func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bo
 
 // Helper functions
 
+var priorityRegexp = regexp.MustCompile(`(?i)^P[0-4]$`)
+
 func isPriority(s string) bool {
-	return regexp.MustCompile(`^P[0-4]$`).MatchString(s)
+	return priorityRegexp.MatchString(s)
 }
 
 func comparePriority(a, b, op string) bool {
+	// Normalize to uppercase for consistent map lookup
+	a = strings.ToUpper(a)
+	b = strings.ToUpper(b)
 	// P0 is highest priority (lowest number)
 	priorityOrder := map[string]int{"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
 	orderA := priorityOrder[a]
