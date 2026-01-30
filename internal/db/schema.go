@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 13
+const SchemaVersion = 14
 
 const schema = `
 -- Issues table
@@ -307,6 +307,12 @@ CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
 		Version:     13,
 		Description: "Extend sessions table for full DB-backed session storage",
 		// SQL is set dynamically in runMigrationsInternal based on whether sessions table exists
+		SQL: "",
+	},
+	{
+		Version:     14,
+		Description: "Repair sessions table for DBs where v13 did not apply correctly",
+		// Reuses migrateV13Sessions — handles missing table and old-schema table
 		SQL: "",
 	},
 }

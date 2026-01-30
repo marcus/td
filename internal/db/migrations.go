@@ -135,9 +135,9 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
-			if migration.Version == 13 {
-				if err := db.migrateV13Sessions(); err != nil {
-					return migrationsRun, fmt.Errorf("migration 13 (sessions): %w", err)
+			if migration.Version == 13 || migration.Version == 14 {
+				if err := db.ensureSessionsTable(); err != nil {
+					return migrationsRun, fmt.Errorf("migration %d (sessions): %w", migration.Version, err)
 				}
 				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
 					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
@@ -165,16 +165,18 @@ func (db *DB) runMigrationsInternal() (int, error) {
 	return migrationsRun, nil
 }
 
-// migrateV13Sessions handles the v13 migration which extends the sessions table.
-// If the sessions table is missing (bad prior migration), it creates it fresh.
-func (db *DB) migrateV13Sessions() error {
+// ensureSessionsTable ensures the sessions table exists with all required columns.
+// Handles three cases:
+//  1. Table missing entirely — create fresh
+//  2. Table exists but missing new columns (branch, agent_type, etc.) — recreate preserving data
+//  3. Table already correct — no-op
+func (db *DB) ensureSessionsTable() error {
 	exists, err := db.tableExists("sessions")
 	if err != nil {
 		return fmt.Errorf("check sessions table: %w", err)
 	}
 
 	if !exists {
-		// No sessions table — create it fresh with all v13 columns
 		_, err := db.conn.Exec(`
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
@@ -194,7 +196,21 @@ CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_t
 		return err
 	}
 
-	// Sessions table exists — recreate with new columns, preserving data
+	// Table exists — check if it already has the new columns
+	hasBranch, err := db.columnExists("sessions", "branch")
+	if err != nil {
+		return fmt.Errorf("check branch column: %w", err)
+	}
+	if hasBranch {
+		// Already has new columns — just ensure indexes exist
+		_, err = db.conn.Exec(`
+CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+`)
+		return err
+	}
+
+	// Old schema — recreate with new columns, preserving data
 	_, err = db.conn.Exec(`
 CREATE TABLE sessions_new (
     id TEXT PRIMARY KEY,
