@@ -1,7 +1,7 @@
 package serverdb
 
 // ServerSchemaVersion is the current server database schema version
-const ServerSchemaVersion = 2
+const ServerSchemaVersion = 3
 
 const serverSchema = `
 -- Users table
@@ -101,5 +101,40 @@ var Migrations = []Migration{
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_user_code ON auth_requests(user_code);
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_status ON auth_requests(status);
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_cleanup ON auth_requests(status, expires_at);`,
+	},
+	{
+		Version:     3,
+		Description: "Add encryption tables for end-to-end encrypted sync",
+		SQL: `CREATE TABLE IF NOT EXISTS user_public_keys (
+			user_id TEXT NOT NULL,
+			public_key BLOB NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS encrypted_private_keys (
+			user_id TEXT NOT NULL,
+			encrypted_key BLOB NOT NULL,
+			salt BLOB NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (user_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS project_key_epochs (
+			project_id TEXT NOT NULL,
+			epoch INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_by TEXT NOT NULL,
+			PRIMARY KEY (project_id, epoch)
+		);
+
+		CREATE TABLE IF NOT EXISTS wrapped_project_keys (
+			project_id TEXT NOT NULL,
+			epoch INTEGER NOT NULL,
+			user_id TEXT NOT NULL,
+			wrapped_key BLOB NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (project_id, epoch, user_id)
+		);`,
 	},
 }
