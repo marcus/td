@@ -21,7 +21,6 @@ func InitServerEventLog(db *sql.DB) error {
 			payload           JSON NOT NULL,
 			client_timestamp  DATETIME NOT NULL,
 			server_timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
-			key_id            TEXT,
 			UNIQUE(device_id, session_id, client_action_id)
 		);
 		CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
