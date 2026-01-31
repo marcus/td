@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -136,6 +137,7 @@ type Harness struct {
 	clientKeys []string
 	Validator  tdsync.EntityValidator
 	actionSeq  atomic.Int64
+	serverMu   sync.Mutex // serializes server DB writes (SQLite single-writer)
 }
 
 // NewHarness creates a test harness with numClients and one server DB for projectID.
@@ -348,9 +350,11 @@ func (h *Harness) Push(clientID, projectID string) (tdsync.PushResult, error) {
 		return tdsync.PushResult{}, nil
 	}
 
-	// Insert into server
+	// Insert into server (mutex serializes concurrent writers for SQLite)
+	h.serverMu.Lock()
 	serverTx, err := serverDB.Begin()
 	if err != nil {
+		h.serverMu.Unlock()
 		clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("begin server tx: %w", err)
 	}
@@ -358,14 +362,17 @@ func (h *Harness) Push(clientID, projectID string) (tdsync.PushResult, error) {
 	result, err := tdsync.InsertServerEvents(serverTx, events)
 	if err != nil {
 		serverTx.Rollback()
+		h.serverMu.Unlock()
 		clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("insert server events: %w", err)
 	}
 
 	if err := serverTx.Commit(); err != nil {
+		h.serverMu.Unlock()
 		clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("commit server tx: %w", err)
 	}
+	h.serverMu.Unlock()
 
 	// Mark synced on client
 	if err := tdsync.MarkEventsSynced(clientTx, result.Acks); err != nil {
@@ -613,20 +620,25 @@ func (h *Harness) PushWithoutMark(clientID, projectID string) (tdsync.PushResult
 		return tdsync.PushResult{}, nil
 	}
 
+	h.serverMu.Lock()
 	serverTx, err := serverDB.Begin()
 	if err != nil {
+		h.serverMu.Unlock()
 		return tdsync.PushResult{}, fmt.Errorf("begin server tx: %w", err)
 	}
 
 	result, err := tdsync.InsertServerEvents(serverTx, events)
 	if err != nil {
 		serverTx.Rollback()
+		h.serverMu.Unlock()
 		return tdsync.PushResult{}, fmt.Errorf("insert server events: %w", err)
 	}
 
 	if err := serverTx.Commit(); err != nil {
+		h.serverMu.Unlock()
 		return tdsync.PushResult{}, fmt.Errorf("commit server tx: %w", err)
 	}
+	h.serverMu.Unlock()
 
 	return result, nil
 }
