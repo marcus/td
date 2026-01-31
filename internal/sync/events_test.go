@@ -14,12 +14,23 @@ const testSchema = `CREATE TABLE issues (
 	title      TEXT,
 	status     TEXT,
 	priority   TEXT,
+	labels     TEXT DEFAULT '',
 	created_at DATETIME,
 	updated_at DATETIME,
 	deleted_at DATETIME
+);
+CREATE TABLE handoffs (
+	id          TEXT PRIMARY KEY,
+	issue_id    TEXT,
+	done        TEXT DEFAULT '[]',
+	remaining   TEXT DEFAULT '[]',
+	decisions   TEXT DEFAULT '[]',
+	uncertain   TEXT DEFAULT '[]',
+	created_at  DATETIME,
+	deleted_at  DATETIME
 );`
 
-var testValidator EntityValidator = func(t string) bool { return t == "issues" }
+var testValidator EntityValidator = func(t string) bool { return t == "issues" || t == "handoffs" }
 
 func setupDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -443,4 +454,71 @@ func TestApplyEvent_OverwriteTracking(t *testing.T) {
 		t.Fatal("update to existing entity should report overwrite")
 	}
 	tx.Commit()
+}
+
+func TestUpsertEntity_LabelsArrayNormalized(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	// Payload with labels as JSON array (what sync payloads send)
+	payload := []byte(`{"title":"labeled","labels":["bug","urgent"]}`)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
+	if err != nil {
+		t.Fatalf("upsert with labels array: %v", err)
+	}
+	tx.Commit()
+
+	var labels string
+	db.QueryRow("SELECT labels FROM issues WHERE id = ?", "i1").Scan(&labels)
+	if labels != "bug,urgent" {
+		t.Fatalf("labels: got %q, want 'bug,urgent'", labels)
+	}
+}
+
+func TestUpsertEntity_HandoffArraysNormalized(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	payload := []byte(`{"issue_id":"i1","done":["task A"],"remaining":["task B","task C"],"decisions":[],"uncertain":["maybe"]}`)
+	_, err := upsertEntity(tx, "handoffs", "h1", payload)
+	if err != nil {
+		t.Fatalf("upsert handoff with arrays: %v", err)
+	}
+	tx.Commit()
+
+	var done, remaining, decisions, uncertain string
+	db.QueryRow("SELECT done, remaining, decisions, uncertain FROM handoffs WHERE id = ?", "h1").
+		Scan(&done, &remaining, &decisions, &uncertain)
+
+	if done != `["task A"]` {
+		t.Fatalf("done: got %q, want '[\"task A\"]'", done)
+	}
+	if remaining != `["task B","task C"]` {
+		t.Fatalf("remaining: got %q", remaining)
+	}
+	if decisions != `[]` {
+		t.Fatalf("decisions: got %q, want '[]'", decisions)
+	}
+	if uncertain != `["maybe"]` {
+		t.Fatalf("uncertain: got %q", uncertain)
+	}
+}
+
+func TestUpsertEntity_NestedObjectNormalized(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	// Test that a map value gets serialized to JSON string
+	payload := []byte(`{"title":"with meta","priority":{"level":"high","score":5}}`)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
+	if err != nil {
+		t.Fatalf("upsert with nested object: %v", err)
+	}
+	tx.Commit()
+
+	var priority string
+	db.QueryRow("SELECT priority FROM issues WHERE id = ?", "i1").Scan(&priority)
+	if priority != `{"level":"high","score":5}` {
+		t.Fatalf("priority: got %q", priority)
+	}
 }

@@ -103,6 +103,8 @@ func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessa
 
 	fields["id"] = entityID
 
+	normalizeFieldsForDB(entityType, fields)
+
 	colStr, placeholders, insertVals, err := buildInsert(fields)
 	if err != nil {
 		return applyResult{}, fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
@@ -156,4 +158,42 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 	cols = strings.Join(keys, ", ")
 	placeholders = strings.Join(ph, ", ")
 	return
+}
+
+// normalizeFieldsForDB converts non-scalar values (slices, maps) to DB-compatible strings.
+// Special case: issues.labels is stored as comma-separated text.
+// All other array/object fields are stored as JSON strings.
+func normalizeFieldsForDB(entityType string, fields map[string]any) {
+	for k, v := range fields {
+		switch val := v.(type) {
+		case []any:
+			if entityType == "issues" && k == "labels" {
+				// Convert ["a","b"] to "a,b"
+				parts := make([]string, 0, len(val))
+				for _, item := range val {
+					parts = append(parts, fmt.Sprint(item))
+				}
+				fields[k] = strings.Join(parts, ",")
+			} else {
+				data, err := json.Marshal(val)
+				if err != nil {
+					slog.Warn("normalize field", "field", k, "err", err)
+					fields[k] = "[]"
+				} else {
+					fields[k] = string(data)
+				}
+			}
+		case map[string]any:
+			data, err := json.Marshal(val)
+			if err != nil {
+				slog.Warn("normalize field", "field", k, "err", err)
+				fields[k] = "{}"
+			} else {
+				fields[k] = string(data)
+			}
+		// json.RawMessage is []byte, handle it
+		case json.RawMessage:
+			fields[k] = string(val)
+		}
+	}
 }
