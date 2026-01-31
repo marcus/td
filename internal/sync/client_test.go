@@ -190,22 +190,29 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 	db := setupClientDB(t)
 
 	cases := []struct {
-		id       string
-		tdAction string
-		want     string
+		id         string
+		tdAction   string
+		entityType string
+		want       string
 	}{
-		{"al-00000001", "create", "create"},
-		{"al-00000002", "update", "update"},
-		{"al-00000003", "start", "update"},
-		{"al-00000004", "delete", "delete"},
-		{"al-00000005", "review", "update"},
-		{"al-00000006", "approve", "update"},
-		{"al-00000007", "close", "update"},
-		{"al-00000008", "reopen", "update"},
+		{"al-00000001", "create", "issues", "create"},
+		{"al-00000002", "update", "issues", "update"},
+		{"al-00000003", "start", "issues", "update"},
+		{"al-00000004", "delete", "issues", "delete"},
+		{"al-00000005", "review", "issues", "update"},
+		{"al-00000006", "approve", "issues", "update"},
+		{"al-00000007", "close", "issues", "update"},
+		{"al-00000008", "reopen", "issues", "update"},
+		{"al-00000009", "remove_dependency", "issue_dependencies", "delete"},
+		{"al-00000010", "unlink_file", "issue_files", "delete"},
+		{"al-00000011", "board_unposition", "board_position", "delete"},
+		{"al-00000012", "board_delete", "boards", "delete"},
+		{"al-00000013", "board_set_position", "board_position", "update"},
+		{"al-00000014", "board_remove_issue", "board_position", "delete"},
 	}
 
 	for _, tc := range cases {
-		insertActionLog(t, db, tc.id, "sess1", tc.tdAction, "issues", "i1",
+		insertActionLog(t, db, tc.id, "sess1", tc.tdAction, tc.entityType, "i1",
 			`{"title":"test"}`, `{}`, 0, "")
 	}
 
@@ -698,5 +705,58 @@ func TestMarkEventsSynced(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Fatalf("pending events: got %d, want 1", len(events))
+	}
+}
+
+// TestGetPendingEvents_RealActionTypesIntegration inserts action_log rows with
+// real td action types (not pre-mapped "delete") and verifies they produce the
+// correct sync event action types end-to-end through GetPendingEvents.
+func TestGetPendingEvents_RealActionTypesIntegration(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Insert rows using real action types that td's action_log would contain.
+	// These must map to "delete" after flowing through mapActionType.
+	insertActionLog(t, db, "al-int-001", "sess1", "remove_dependency", "dependency", "dep-1",
+		`{}`, `{"id":"dep-1","issue_id":"i1","depends_on_id":"i2"}`, 0, "")
+	insertActionLog(t, db, "al-int-002", "sess1", "unlink_file", "file_link", "fl-1",
+		`{}`, `{"id":"fl-1","issue_id":"i1","file_path":"main.go"}`, 0, "")
+	insertActionLog(t, db, "al-int-003", "sess1", "board_unposition", "board_position", "bp-1",
+		`{}`, `{"id":"bp-1","board_id":"bd-1","issue_id":"i1","position":1}`, 0, "")
+	insertActionLog(t, db, "al-int-004", "sess1", "board_remove_issue", "board_position", "bp-2",
+		`{}`, `{"id":"bp-2","board_id":"bd-1","issue_id":"i2","position":2}`, 0, "")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+
+	events, err := GetPendingEvents(tx, "device-int", "sess-int")
+	if err != nil {
+		t.Fatalf("GetPendingEvents: %v", err)
+	}
+
+	if len(events) != 4 {
+		t.Fatalf("got %d events, want 4", len(events))
+	}
+
+	// Every real action type above should map to "delete"
+	expected := []struct {
+		entityType string
+		actionType string
+	}{
+		{"issue_dependencies", "delete"},
+		{"issue_files", "delete"},
+		{"board_issue_positions", "delete"},
+		{"board_issue_positions", "delete"},
+	}
+
+	for i, exp := range expected {
+		if events[i].ActionType != exp.actionType {
+			t.Errorf("events[%d] ActionType: got %q, want %q", i, events[i].ActionType, exp.actionType)
+		}
+		if events[i].EntityType != exp.entityType {
+			t.Errorf("events[%d] EntityType: got %q, want %q", i, events[i].EntityType, exp.entityType)
+		}
 	}
 }

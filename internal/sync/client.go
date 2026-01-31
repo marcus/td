@@ -13,7 +13,7 @@ func mapActionType(tdAction string) string {
 	switch tdAction {
 	case "create":
 		return "create"
-	case "delete":
+	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue":
 		return "delete"
 	default:
 		return "update"
