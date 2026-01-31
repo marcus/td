@@ -10,6 +10,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// farPast is a time far in the past; when used as lastSyncAt, all local rows
+// appear to be modified "after last sync", so conflicts are always recorded.
+var farPast = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
 const clientTestSchema = `
 CREATE TABLE issues (
     id TEXT PRIMARY KEY,
@@ -306,7 +310,7 @@ func TestApplyRemoteEvents_Basic(t *testing.T) {
 	}
 
 	tx, _ := db.Begin()
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("ApplyRemoteEvents: %v", err)
 	}
@@ -367,7 +371,7 @@ func TestApplyRemoteEvents_PartialFailure(t *testing.T) {
 	}
 
 	tx, _ := db.Begin()
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("ApplyRemoteEvents: %v", err)
 	}
@@ -420,7 +424,7 @@ func TestApplyRemoteEvents_ConflictTracking(t *testing.T) {
 	}}
 
 	tx = beginTx(t, db)
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -488,7 +492,7 @@ func TestApplyRemoteEvents_MultipleOverwritesProduceConflicts(t *testing.T) {
 	}
 
 	tx = beginTx(t, db)
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -538,7 +542,7 @@ func TestApplyRemoteEvents_DeleteDoesNotProduceConflict(t *testing.T) {
 	}
 
 	tx = beginTx(t, db)
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -593,7 +597,7 @@ func TestApplyRemoteEvents_ConflictDataCorrectness(t *testing.T) {
 	}}
 
 	tx = beginTx(t, db)
-	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -638,6 +642,122 @@ func TestApplyRemoteEvents_ConflictDataCorrectness(t *testing.T) {
 	}
 	if time.Since(c.OverwrittenAt) > 5*time.Second {
 		t.Error("OverwrittenAt should be recent")
+	}
+}
+
+func TestApplyRemoteEvents_NoConflictWhenUnchangedSinceSync(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Create a local row with a known updated_at
+	tx := beginTx(t, db)
+	oldTime := "2025-01-01T00:00:00Z"
+	_, err := tx.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES (?, ?, ?, ?)`,
+		"i1", "local", "open", oldTime)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// lastSyncAt is AFTER the local row's updated_at → no conflict expected
+	syncTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{"title": "remote", "status": "closed"},
+	})
+	events := []Event{{
+		ServerSeq: 1, DeviceID: "other", ActionType: "update",
+		EntityType: "issues", EntityID: "i1", Payload: remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &syncTime)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Applied != 1 {
+		t.Fatalf("Applied=%d, want 1", result.Applied)
+	}
+	if result.Overwrites != 0 {
+		t.Fatalf("Overwrites=%d, want 0 (local unchanged since sync)", result.Overwrites)
+	}
+	if len(result.Conflicts) != 0 {
+		t.Fatalf("Conflicts=%d, want 0", len(result.Conflicts))
+	}
+}
+
+func TestApplyRemoteEvents_ConflictWhenModifiedAfterSync(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Create a local row with updated_at AFTER lastSyncAt
+	tx := beginTx(t, db)
+	recentTime := "2025-07-01T00:00:00Z"
+	_, err := tx.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES (?, ?, ?, ?)`,
+		"i1", "modified-locally", "open", recentTime)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// lastSyncAt is BEFORE the local row's updated_at → conflict expected
+	syncTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{"title": "remote", "status": "closed"},
+	})
+	events := []Event{{
+		ServerSeq: 1, DeviceID: "other", ActionType: "update",
+		EntityType: "issues", EntityID: "i1", Payload: remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &syncTime)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Overwrites != 1 {
+		t.Fatalf("Overwrites=%d, want 1 (local was modified after sync)", result.Overwrites)
+	}
+	if len(result.Conflicts) != 1 {
+		t.Fatalf("Conflicts=%d, want 1", len(result.Conflicts))
+	}
+}
+
+func TestApplyRemoteEvents_NilLastSyncAtSkipsConflicts(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Seed a local row
+	tx := beginTx(t, db)
+	p, _ := json.Marshal(map[string]any{"title": "local", "status": "open"})
+	if _, err := upsertEntity(tx, "issues", "i1", p); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// Apply remote overwrite with nil lastSyncAt (bootstrap scenario)
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{"title": "remote", "status": "closed"},
+	})
+	events := []Event{{
+		ServerSeq: 1, DeviceID: "other", ActionType: "update",
+		EntityType: "issues", EntityID: "i1", Payload: remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, nil)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Overwrites != 0 {
+		t.Fatalf("Overwrites=%d, want 0 (nil lastSyncAt = no conflicts)", result.Overwrites)
 	}
 }
 

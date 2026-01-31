@@ -271,7 +271,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 			return err
 		}
 
-		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator)
+		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, state.LastSyncAt)
 		if err != nil {
 			tx.Rollback()
 			output.Error("apply events: %v", err)

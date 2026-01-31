@@ -429,7 +429,7 @@ func (h *Harness) Pull(clientID, projectID string) (tdsync.PullResult, error) {
 		return tdsync.PullResult{}, fmt.Errorf("begin client tx: %w", err)
 	}
 
-	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator)
+	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator, nil)
 	if err != nil {
 		clientTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("apply remote events: %w", err)
@@ -680,7 +680,7 @@ func (h *Harness) PullAll(clientID, projectID string) (tdsync.PullResult, error)
 		return tdsync.PullResult{}, fmt.Errorf("begin client tx: %w", err)
 	}
 
-	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator)
+	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator, nil)
 	if err != nil {
 		clientTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("apply remote events: %w", err)

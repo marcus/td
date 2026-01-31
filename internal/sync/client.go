@@ -122,7 +122,9 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 
 // ApplyRemoteEvents applies a batch of remote events to the local database.
 // Events with invalid entity types are logged and added to the Failed list.
-func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator EntityValidator) (ApplyResult, error) {
+// lastSyncAt gates conflict detection: overwrites are only flagged as conflicts
+// when the local row was modified after lastSyncAt. Pass nil to skip conflict recording.
+func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator EntityValidator, lastSyncAt *time.Time) (ApplyResult, error) {
 	var result ApplyResult
 
 	for _, ev := range events {
@@ -155,7 +157,7 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
 			continue
 		}
-		if res.Overwritten {
+		if res.Overwritten && localModifiedSinceSync(res.OldData, lastSyncAt) {
 			result.Overwrites++
 			result.Conflicts = append(result.Conflicts, ConflictRecord{
 				EntityType:    ev.EntityType,
@@ -172,6 +174,42 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 	}
 
 	return result, nil
+}
+
+// localModifiedSinceSync checks if the old row data has a timestamp field
+// (updated_at, timestamp, or created_at) that is after lastSyncAt.
+// Returns true (conflict) when: lastSyncAt is nil, oldData is empty,
+// or the local row was modified after last sync.
+func localModifiedSinceSync(oldData json.RawMessage, lastSyncAt *time.Time) bool {
+	if lastSyncAt == nil {
+		return false // first sync / bootstrap — don't flag conflicts
+	}
+	if len(oldData) == 0 {
+		return false
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal(oldData, &fields); err != nil {
+		return true // can't parse — be safe, record conflict
+	}
+
+	// Try timestamp fields in priority order
+	for _, key := range []string{"updated_at", "timestamp", "created_at"} {
+		if val, ok := fields[key]; ok && val != nil {
+			tsStr, ok := val.(string)
+			if !ok {
+				continue
+			}
+			ts, err := parseTimestamp(tsStr)
+			if err != nil {
+				continue
+			}
+			return ts.After(*lastSyncAt)
+		}
+	}
+
+	// No timestamp field found — be conservative, record conflict
+	return true
 }
 
 // MarkEventsSynced updates action_log rows with their server-assigned sequence numbers.

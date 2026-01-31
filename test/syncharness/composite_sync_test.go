@@ -3,6 +3,7 @@ package syncharness
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	tdsync "github.com/marcus/td/internal/sync"
@@ -505,7 +506,8 @@ func TestBoardPosition_ConflictRecording(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin client tx: %v", err)
 	}
-	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, clientB.DeviceID, h.Validator)
+	farPast := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, clientB.DeviceID, h.Validator, &farPast)
 	if err != nil {
 		clientTx.Rollback()
 		t.Fatalf("apply: %v", err)
