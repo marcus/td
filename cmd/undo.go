@@ -116,6 +116,8 @@ func performUndo(database *db.DB, action *models.ActionLog) error {
 		return undoBoardPositionAction(database, action)
 	case "handoff":
 		return undoHandoffAction(database, action)
+	case "logs", "comments", "work_sessions":
+		return fmt.Errorf("undo not supported for %s", action.EntityType)
 	default:
 		return fmt.Errorf("unknown entity type: %s", action.EntityType)
 	}

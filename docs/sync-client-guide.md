@@ -19,8 +19,8 @@ Sync replicates your local td issues, logs, comments, handoffs, and boards to a 
 | Board positions | Yes |
 | Dependencies | Yes |
 | File links | Yes |
+| Work sessions | Yes |
 | Sessions | No (local only) |
-| Work sessions | No (local only) |
 
 ### Board positions, dependencies, and file links
 

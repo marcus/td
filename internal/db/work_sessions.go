@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,8 +23,25 @@ func (db *DB) CreateWorkSession(ws *models.WorkSession) error {
 			INSERT INTO work_sessions (id, name, session_id, started_at, start_sha)
 			VALUES (?, ?, ?, ?, ?)
 		`, ws.ID, ws.Name, ws.SessionID, ws.StartedAt, ws.StartSHA)
+		if err != nil {
+			return err
+		}
 
-		return err
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
+			"started_at": ws.StartedAt, "start_sha": ws.StartSHA,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, ws.SessionID, "create", "work_sessions", ws.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
@@ -58,7 +76,26 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 			UPDATE work_sessions SET name = ?, ended_at = ?, end_sha = ?
 			WHERE id = ?
 		`, ws.Name, ws.EndedAt, ws.EndSHA, ws.ID)
-		return err
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
+			"started_at": ws.StartedAt, "ended_at": ws.EndedAt,
+			"start_sha": ws.StartSHA, "end_sha": ws.EndSHA,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, ws.SessionID, "update", "work_sessions", ws.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
