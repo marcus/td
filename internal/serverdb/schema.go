@@ -1,7 +1,7 @@
 package serverdb
 
 // ServerSchemaVersion is the current server database schema version
-const ServerSchemaVersion = 1
+const ServerSchemaVersion = 2
 
 const serverSchema = `
 -- Users table
@@ -82,4 +82,24 @@ type Migration struct {
 // Migrations is the list of all server database migrations in order
 var Migrations = []Migration{
 	// Version 1 is the initial schema - no migration needed
+	{
+		Version:     2,
+		Description: "Add auth_requests table for device auth flow",
+		SQL: `CREATE TABLE IF NOT EXISTS auth_requests (
+			id TEXT PRIMARY KEY,
+			email TEXT NOT NULL,
+			device_code TEXT UNIQUE NOT NULL,
+			user_code TEXT UNIQUE NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			user_id TEXT,
+			api_key_id TEXT,
+			expires_at DATETIME NOT NULL,
+			verified_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_auth_requests_device_code ON auth_requests(device_code);
+		CREATE INDEX IF NOT EXISTS idx_auth_requests_user_code ON auth_requests(user_code);
+		CREATE INDEX IF NOT EXISTS idx_auth_requests_status ON auth_requests(status);
+		CREATE INDEX IF NOT EXISTS idx_auth_requests_cleanup ON auth_requests(status, expires_at);`,
+	},
 }

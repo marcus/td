@@ -17,6 +17,7 @@ type Server struct {
 	http   *http.Server
 	store  *serverdb.ServerDB
 	dbPool *ProjectDBPool
+	cancel context.CancelFunc
 }
 
 // NewServer creates a new Server with the given config and store.
@@ -51,11 +52,40 @@ func (s *Server) Start() error {
 		}
 	}()
 
+	// Periodically clean up expired auth requests
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("cleanup panic", "panic", r)
+			}
+		}()
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := s.store.CleanupExpiredAuthRequests()
+				if err != nil {
+					slog.Error("cleanup expired auth requests", "err", err)
+				} else if n > 0 {
+					slog.Info("cleaned up expired auth requests", "count", n)
+				}
+			}
+		}
+	}()
+
 	return nil
 }
 
 // Shutdown gracefully stops the server and closes all project databases.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	err := s.http.Shutdown(ctx)
 	s.dbPool.CloseAll()
 	return err
@@ -67,6 +97,12 @@ func (s *Server) routes() http.Handler {
 
 	// Health
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+
+	// Auth (public)
+	mux.HandleFunc("POST /v1/auth/login/start", s.handleLoginStart)
+	mux.HandleFunc("POST /v1/auth/login/poll", s.handleLoginPoll)
+	mux.HandleFunc("GET /auth/verify", s.handleVerifyPage)
+	mux.HandleFunc("POST /auth/verify", s.handleVerifySubmit)
 
 	// Projects
 	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.handleCreateProject))
