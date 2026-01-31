@@ -40,6 +40,15 @@ Optimized for session continuity—capturing working state so new context window
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		// Capture executed command for analytics (logged in Execute() to avoid double logging)
 		executedCmd = cmd
+
+		// Auto-sync push after mutating commands
+		name := cmd.Name()
+		if cmd.Parent() != nil && cmd.Parent().Name() != "td" {
+			name = cmd.Parent().Name()
+		}
+		if isMutatingCommand(name) {
+			autoSyncAfterMutation()
+		}
 	},
 }
 

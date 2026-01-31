@@ -8,6 +8,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/pkg/monitor"
 	"github.com/spf13/cobra"
 )
@@ -58,6 +59,15 @@ Mouse support:
 		}
 
 		model := monitor.NewModel(database, sess.ID, interval, versionStr, baseDir)
+
+		// Enable periodic auto-sync in monitor if authenticated and linked
+		if AutoSyncEnabled() && syncconfig.IsAuthenticated() {
+			syncState, _ := database.GetSyncState()
+			if syncState != nil && !syncState.SyncDisabled {
+				model.AutoSyncFunc = func() { autoSyncAfterMutation() }
+				model.AutoSyncInterval = 30 * time.Second
+			}
+		}
 
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 		if _, err := p.Run(); err != nil {

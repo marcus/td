@@ -144,6 +144,11 @@ type Model struct {
 	BoardMode            BoardMode          // Active board mode state
 	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
 
+	// Auto-sync callback (set by caller for periodic background sync)
+	AutoSyncFunc     func() // Called periodically to push/pull in background
+	AutoSyncInterval time.Duration
+	LastAutoSync     time.Time
+
 	// Configuration
 	RefreshInterval time.Duration
 
@@ -478,6 +483,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
 			cmds = append(cmds, modalCmd)
+		}
+		// Periodic auto-sync
+		if m.AutoSyncFunc != nil && m.AutoSyncInterval > 0 && time.Since(m.LastAutoSync) >= m.AutoSyncInterval {
+			m.LastAutoSync = time.Now()
+			syncFn := m.AutoSyncFunc
+			cmds = append(cmds, func() tea.Msg {
+				syncFn()
+				return nil
+			})
 		}
 		return m, tea.Batch(cmds...)
 
