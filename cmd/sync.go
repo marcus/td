@@ -201,7 +201,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	totalApplied := 0
 
 	for {
-		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000)
+		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, deviceID)
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
 				output.Error("unauthorized - re-login may be needed")

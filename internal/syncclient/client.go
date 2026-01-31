@@ -134,6 +134,20 @@ type SyncStatusResponse struct {
 	LastEventTime string `json:"last_event_time,omitempty"`
 }
 
+// HealthResponse is the response from GET /healthz.
+type HealthResponse struct {
+	Status string `json:"status"`
+}
+
+// HealthCheck hits the /healthz endpoint to verify server reachability.
+func (c *Client) HealthCheck() (*HealthResponse, error) {
+	var resp HealthResponse
+	if err := c.doNoAuth("GET", "/healthz", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // --- Auth methods ---
 
 // LoginStart initiates device auth flow. No API key required.
@@ -189,10 +203,13 @@ func (c *Client) Push(projectID string, req *PushRequest) (*PushResponse, error)
 }
 
 // Pull fetches remote events from the server.
-func (c *Client) Pull(projectID string, afterSeq int64, limit int) (*PullResponse, error) {
+func (c *Client) Pull(projectID string, afterSeq int64, limit int, excludeDeviceID string) (*PullResponse, error) {
 	params := url.Values{}
 	params.Set("after_server_seq", strconv.FormatInt(afterSeq, 10))
 	params.Set("limit", strconv.Itoa(limit))
+	if excludeDeviceID != "" {
+		params.Set("exclude_client", excludeDeviceID)
+	}
 
 	var resp PullResponse
 	if err := c.do("GET", fmt.Sprintf("/v1/projects/%s/sync/pull?%s", projectID, params.Encode()), nil, &resp); err != nil {

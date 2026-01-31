@@ -248,7 +248,8 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	result, err := tdsync.GetEventsSince(tx, afterSeq, limit, "")
+	excludeClient := r.URL.Query().Get("exclude_client")
+	result, err := tdsync.GetEventsSince(tx, afterSeq, limit, excludeClient)
 	if err != nil {
 		logFor(r.Context()).Error("get events", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to query events")
