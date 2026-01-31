@@ -262,6 +262,48 @@ func (c *Client) Pull(projectID string, afterSeq int64, limit int, excludeDevice
 	return &resp, nil
 }
 
+// SnapshotResponse holds the result of a snapshot download.
+type SnapshotResponse struct {
+	Data           []byte
+	SnapshotSeq    int64
+}
+
+// GetSnapshot downloads a snapshot database for bootstrap.
+func (c *Client) GetSnapshot(projectID string) (*SnapshotResponse, error) {
+	path := fmt.Sprintf("/v1/projects/%s/sync/snapshot", projectID)
+	req, err := http.NewRequest("GET", c.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil // no events to snapshot
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("snapshot: HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot: %w", err)
+	}
+
+	seqStr := resp.Header.Get("X-Snapshot-Event-Id")
+	seq, _ := strconv.ParseInt(seqStr, 10, 64)
+
+	return &SnapshotResponse{Data: data, SnapshotSeq: seq}, nil
+}
+
 // SyncStatus gets the sync status for a project.
 func (c *Client) SyncStatus(projectID string) (*SyncStatusResponse, error) {
 	var resp SyncStatusResponse

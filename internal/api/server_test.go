@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/marcus/td/internal/serverdb"
@@ -910,6 +911,71 @@ func TestPullExcludeClient(t *testing.T) {
 	}
 	if deviceCounts[deviceB] != 2 {
 		t.Fatalf("pull all: expected 2 events from device B, got %d", deviceCounts[deviceB])
+	}
+}
+
+func TestSnapshotEndpoint(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Snapshot with no events should 404
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("empty snapshot: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Push 3 events
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
+		DeviceID: "dev1", SessionID: "sess1",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"one","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "i_002",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"two","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+			{ClientActionID: 3, ActionType: "update", EntityType: "issues", EntityID: "i_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"updated","status":"closed"}}`), ClientTimestamp: "2025-01-01T00:00:02Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Get snapshot
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Check headers
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/x-sqlite3" {
+		t.Fatalf("Content-Type: got %q, want application/x-sqlite3", ct)
+	}
+	seqStr := w.Header().Get("X-Snapshot-Event-Id")
+	if seqStr == "" {
+		t.Fatal("missing X-Snapshot-Event-Id header")
+	}
+	seq, err := strconv.ParseInt(seqStr, 10, 64)
+	if err != nil || seq < 3 {
+		t.Fatalf("X-Snapshot-Event-Id: got %q (parsed %d), want >= 3", seqStr, seq)
+	}
+
+	// Verify body is a valid SQLite database
+	body := w.Body.Bytes()
+	if len(body) < 100 {
+		t.Fatalf("snapshot body too small: %d bytes", len(body))
+	}
+	// SQLite magic: "SQLite format 3\000"
+	if string(body[:15]) != "SQLite format 3" {
+		t.Fatal("snapshot body is not a valid SQLite database")
 	}
 }
 

@@ -1,12 +1,16 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	tddb "github.com/marcus/td/internal/db"
 	tdsync "github.com/marcus/td/internal/sync"
 )
 
@@ -316,4 +320,128 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleSyncSnapshot handles GET /v1/projects/{id}/sync/snapshot.
+// Builds a snapshot database by replaying all events, then streams it to the client.
+func (s *Server) handleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+
+	eventsDB, err := s.dbPool.Get(projectID)
+	if err != nil {
+		logFor(r.Context()).Error("get project db", "project", projectID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to open project database")
+		return
+	}
+
+	// Get the latest server_seq
+	var lastSeq int64
+	if err := eventsDB.QueryRow(`SELECT COALESCE(MAX(server_seq), 0) FROM events`).Scan(&lastSeq); err != nil {
+		logFor(r.Context()).Error("query max seq", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if lastSeq == 0 {
+		writeError(w, http.StatusNotFound, "no_events", "no events to snapshot")
+		return
+	}
+
+	// Build snapshot in a temp file
+	tmpFile, err := os.CreateTemp("", "td-snapshot-*.db")
+	if err != nil {
+		logFor(r.Context()).Error("create temp file", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create snapshot")
+		return
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	if err := buildSnapshot(eventsDB, tmpPath, lastSeq); err != nil {
+		logFor(r.Context()).Error("build snapshot", "project", projectID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to build snapshot")
+		return
+	}
+
+	// Stream the snapshot file
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		logFor(r.Context()).Error("open snapshot", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to read snapshot")
+		return
+	}
+	defer f.Close()
+
+	stat, _ := f.Stat()
+	w.Header().Set("Content-Type", "application/x-sqlite3")
+	w.Header().Set("X-Snapshot-Event-Id", strconv.FormatInt(lastSeq, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, f)
+}
+
+// buildSnapshot replays events from the events DB into a new snapshot DB.
+func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
+	snapDB, err := sql.Open("sqlite", snapshotPath)
+	if err != nil {
+		return fmt.Errorf("open snapshot db: %w", err)
+	}
+	defer snapDB.Close()
+
+	if _, err := snapDB.Exec(tddb.BaseSchema()); err != nil {
+		return fmt.Errorf("init snapshot schema: %w", err)
+	}
+
+	validator := func(t string) bool { return allowedEntityTypes[t] }
+	afterSeq := int64(0)
+	batchSize := 1000
+
+	for {
+		tx, err := eventsDB.Begin()
+		if err != nil {
+			return fmt.Errorf("begin event read tx: %w", err)
+		}
+
+		result, err := tdsync.GetEventsSince(tx, afterSeq, batchSize, "")
+		tx.Rollback() // read-only
+
+		if err != nil {
+			return fmt.Errorf("get events after %d: %w", afterSeq, err)
+		}
+		if len(result.Events) == 0 {
+			break
+		}
+
+		var batch []tdsync.Event
+		for _, ev := range result.Events {
+			if ev.ServerSeq > upToSeq {
+				break
+			}
+			batch = append(batch, ev)
+		}
+
+		if len(batch) > 0 {
+			snapTx, err := snapDB.Begin()
+			if err != nil {
+				return fmt.Errorf("begin snapshot tx: %w", err)
+			}
+
+			if _, err := tdsync.ApplyRemoteEvents(snapTx, batch, "", validator, nil); err != nil {
+				snapTx.Rollback()
+				return fmt.Errorf("apply events: %w", err)
+			}
+
+			if err := snapTx.Commit(); err != nil {
+				return fmt.Errorf("commit snapshot: %w", err)
+			}
+		}
+
+		afterSeq = result.LastServerSeq
+		if !result.HasMore || afterSeq >= upToSeq {
+			break
+		}
+	}
+
+	return nil
 }
