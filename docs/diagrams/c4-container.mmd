@@ -1,0 +1,45 @@
+C4Container
+    title td-sync System — Container Diagram
+
+    Person(user, "User", "Developer using td CLI/TUI")
+
+    System_Boundary(client_boundary, "Client Device") {
+        Container(td, "td CLI/TUI", "Go binary", "Local task management, reads/writes local SQLite")
+        ContainerDb(local_db, "Project DB", "SQLite", "Issues, logs, handoffs, action_log, sync_state")
+        Container(sync_client, "Sync Client", "Go library (in td)", "Push/pull events, auth, conflict handling")
+        ContainerDb(auth_file, "auth.json", "JSON file", "API key, device_id, server_url (~/.config/td/)")
+    }
+
+    System_Boundary(server_boundary, "td-sync Server") {
+        Container(server, "td-sync", "Go single binary", "HTTP API: auth, projects, sync endpoints")
+
+        System_Boundary(db_boundary, "Data Layer") {
+            ContainerDb(server_db, "server.db", "SQLite", "Users, API keys, projects, memberships, sync cursors")
+
+            System_Boundary(project_dbs, "Per-Project Databases") {
+                ContainerDb(proj_events_1, "project-A events.db", "SQLite", "Append-only event log")
+                ContainerDb(proj_events_2, "project-B events.db", "SQLite", "Append-only event log")
+                ContainerDb(proj_events_n, "project-N events.db", "SQLite", "...")
+            }
+        }
+    }
+
+    Container(litestream, "Litestream", "Sidecar container", "Continuous WAL replication of all databases")
+    System_Ext(object_storage, "Object Storage", "S3 / R2 / B2 — disaster recovery, point-in-time restore")
+
+    Rel(user, td, "Uses")
+    Rel(td, local_db, "Reads/writes tasks")
+    Rel(td, sync_client, "Triggers sync")
+    Rel(sync_client, local_db, "Reads action_log, applies remote events")
+    Rel(sync_client, auth_file, "Reads credentials")
+    Rel(sync_client, server, "HTTPS push/pull", "Bearer token")
+
+    Rel(server, server_db, "Auth, membership lookups")
+    Rel(server, proj_events_1, "Insert/query events")
+    Rel(server, proj_events_2, "Insert/query events")
+    Rel(server, proj_events_n, "Insert/query events")
+    Rel(litestream, server_db, "Tails WAL")
+    Rel(litestream, proj_events_1, "Tails WAL")
+    Rel(litestream, proj_events_2, "Tails WAL")
+    Rel(litestream, proj_events_n, "Tails WAL")
+    Rel(litestream, object_storage, "Streams WAL segments")

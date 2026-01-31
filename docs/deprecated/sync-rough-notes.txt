@@ -1,0 +1,179 @@
+This is the plan for the TD-Sync server development.
+
+The first thing before anything else, we'll be creating a test harness, which would give us an easy way to run the server locally with two databases, simulate latency, conflicts, schema mismatches, and everything else.
+
+We should be able to run tests quickly that do big and small syncs, and quickly find out where the issues are.
+
+There should be an HTML dashboard to show the outputs of the runs and any conflicts.
+
+Then after that, we will start working on the TD-Sync layer.
+
+The main thing that we'll want to see there is that it starts up and shuts down at the right time, and that the UI responds reactively after a sync is done.
+
+The library for TD should essentially come from our test harness, and really should have minimal interaction with the actual application itself.
+
+Another idea for the test harness is to use the activity logs, the action logs, from Sidecar and TD themselves as examples of changes, since they probably have schema changes and they have real data, and we can try playing them back to see how the server works.
+
+We can probably borrow some of the connection code from TD to prevent multiple writers.
+
+This would be down the road, but for the deploy, it should be an extremely straightforward deploy with an interactive script that could be run that gives you feedback on every step of what it's doing, and the script should be idempotent, so if the user fails something, they should be able to fix it and then restart the script and have it recover gracefully.
+
+So it should save their choices as they're setting it up.
+
+Authentication should be also likewise straightforward.
+
+If the user has an environment variable with their auth token, it should work across all their databases, although we could in the abstraction layer of auth, which is completely separate from the sync engine, we could scope auth later to specific databases.
+
+The thing I'm wondering about now is whether we should try to make the TD sync server work as a sync server to other issue management systems, so TD itself never has to directly know about anything other than its own database, and as far as what happens with conflicts, I think we should have the newest version always wins, but if there is a conflict, both versions should get saved, or at least the version that's being clobbered should be saved to an activity log row or something like that, should be recoverable essentially, maybe we don't build a UI around it now, but at some point it should be recoverable.
+
+Kind of going back to the testing plan, I think the way it would work would be that for every test run, there are two databases created, one with the source, one with the dest, well, one on the server side, one on the client side, simulated, and then the expected result would always be that they end up the same, or if there was a conflict, that both records were saved, one was the one that was inserted into the database, the other was the one that was replaced in log.
+
+So, I think that's what we're going to do, I think we're going to try to save the tasks, the thing we got caught up with in Muse was that we wanted to save incremental changes, but with tasks, I don't think we need to do that, I think we just always replace, and I wonder if when we do that, I guess there would be a relationship between the task and the action log, so you should be able to replay a task history by finding all action and log results for a specific task in chronological order, since chronological is always the way we save them, or is what wins.
+
+That way you could also give a way to view task history from a task, basically by replaying it, the problem there is that the comments and logs and everything would not be replayable because they're not, well they would be timestamped, so you'd always get the newest version of those from the time prior to the tasks, or the time of the task creation all the way up to the time of the next task creation, but this would assume that what we were doing would be saving a diff, or saving the full version of the object in the action log, which we could do, but it doubles the size of the database, actually more than doubles the size of the database, we could store the originals like a blob in there, like a zipped compressed blob.
+
+I just wonder if that's not overengineering.
+
+Things that advise you, you can replay all history.
+
+Things that cost you is database size and complexity, but what if we just stored it, and didn't do anything with it at first.
+
+Just every time an action log was created, a snapshot was created in the action log, I don't think it would affect performance very much or anything.
+
+I'll consider that.
+
+Going back to testing, we would expect the current state of both databases to be the same from every perspective, except the action log, which could be different if, well, not even that really, because if there was a conflict, the conflict would get synced back too.
+
+So we would expect the databases to be essentially identical, and if it fails, we should know soon, and should be able to figure out why and fix the bug, and it should be mostly debuggable by AI agents.
+
+It should make it really fast to iterate on the sync engine.
+
+Mostly I think the way we should structure the application is into an authentication layer, so any access to the database is at a connection level authentication, and for now, I think that that's probably two levels.
+
+One is read and write, and one is write only, or sorry, read only.
+
+So GitHub viewers could read, and your team could read and write eventually.
+
+I don't know if that's a thing with a separate token or what.
+
+I don't know how to scope that.
+
+Maybe the auth token is scoped to an access control list, something like that.
+
+So we build and test authentication, we build the sync system and test that separately.
+
+And I wonder if we build the HTTP layer on top of the sync system separately too.
+
+So the majority of testing is done directly interacting with the Go APIs, and then we have a separate test suite that uses the HTTP layers.
+
+The question is, what should be the frequency, and really what should be the transport?
+
+HTTP seems like the easiest one, because you don't have any incoming requests.
+
+Everything is pulling or pushing, so posts, excuse me, posts or gets pretty much.
+
+The biggest downside, obviously.
+
+You can only pull so often.
+
+I don't know what the implications are to pulling every one second.
+
+Maybe there could be a kind of like a degrade in the pulling frequency with usage to where it's always alive, but it goes down to 10 seconds or something, 15, or where the user can pause sync all together.
+
+I don't know if that should be, that should probably be built straight into TD.
+
+I don't know how else it would be built.
+
+I don't know if it could be tested as part of the sync test suite, I guess.
+
+The test suite then should just assume that it could either go really fast or really slow.
+
+It should handle both.
+
+Another thing we need to build is the backup system.
+
+In case the database gets corrupted, A, and B, possibly to onboard new users.
+
+Although I don't think that onboarding like 10,000 tasks is really going to be that hideously slow.
+
+That's a lot.
+
+The question would be, how do we send those initial rows?
+
+With the other sync, you could send an array of the changes since the last time, but how do we break those up or batch them?
+
+Because you're not going to probably want to do 25 megabyte HTTP request to get the initial database, but batching it while potentially people are writing to it is not going to be great.
+
+I mean, I guess you're batching starting from a snapshot, then checking the diff afterwards.
+
+Batching starting from a timestamp, then checking the diff and syncing that normally afterwards, that could probably work.
+
+I don't know how the sync server knows what to send.
+
+Does the client just send a timestamp and then the sync server responds with everything created since that timestamp?
+
+It seems like the activity log ID is going to be the key, because that's what's going to track which changes have been applied.
+
+Because the task rows and the other object rows will potentially be there by ID, but they might have been modified.
+
+I guess the question would be, do we take the timestamp on the object or on the activity log?
+
+I think the answer is the activity log, because it's a central place for the timestamps.
+
+And then it's a little more forgiving when a table has different timestamps or something.
+
+So UTC timestamps and the action log are going to be key.
+
+It doesn't want to stay in sync.
+
+Which means I will have to probably try to check the epoch time, if that's the word, when starting up.
+
+I don't know.
+
+Or maybe just trust the user's computers.
+
+I guess the server could be the source of truth for that.
+
+Maybe we shouldn't get too bogged down in that.
+
+So basically we would have the sync server and the sync client.
+
+The client will have an interface.
+
+It'll be built separately and then meant to be included in TD.
+
+We're just going to leave it out all together at first.
+
+And then during the testing the same, we'll have just native, I don't know, system level calls to the go methods that would later be HTTP.
+
+So the client and the server could not talk directly to each other but I guess they could.
+
+And they'd be able to send messages back and forth.
+
+And it needs to be faster and lighter than HTTP while we're testing.
+
+So for the first version we don't even build the client.
+
+We just build the server and then we have like a test suite which is an activity log, action log emitter.
+
+And it can generate them and use them from an existing database or whatever.
+
+But all it is is a SQLite database.
+
+It starts off in a certain state.
+
+And can be written to by the test harness.
+
+So we can test things as they're happening.
+
+And it can then read from its own database and push to the server.
+
+Although now that I think about it, that only tests the server.
+
+We do need it to be both ways.
+
+We would definitely want to allow tokens to be created that would be meant to be used by cloud AI.
+
+So like claude Code in the cloud could know how to get its own token.
+
+That'd be cool.

@@ -41,29 +41,36 @@ Sync server for td task databases. Enables multi-device and multi-user collabora
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │ td client A │     │ td client B │     │ td client C │
 │ (SQLite)    │     │ (SQLite)    │     │ (SQLite)    │
+│ sync lib    │     │ sync lib    │     │ sync lib    │
 └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
        │                   │                   │
        └───────────────────┼───────────────────┘
-                           │
+                           │ HTTPS
                            ▼
                  ┌───────────────────┐
                  │   td-sync server  │
-                 │   (Go)            │
+                 │   (Go binary)     │
+                 │   + sync lib      │
                  └─────────┬─────────┘
                            │
               ┌────────────┴────────────┐
               ▼                         ▼
-       ┌─────────────┐          ┌─────────────┐
-       │  auth.db    │          │  events.db  │
-       │  (SQLite)   │          │  (SQLite)   │
-       └─────────────┘          └─────────────┘
-              │                         │
-              └────────────┬────────────┘
-                           ▼
-                    ┌─────────────┐
-                    │ Litestream  │
-                    │ → S3/R2/B2  │
-                    └─────────────┘
+       ┌─────────────┐     ┌──────────────────────┐
+       │  server.db  │     │  Per-Project DBs      │
+       │  (SQLite)   │     │  /data/projects/      │
+       │  users,     │     │    {id}/events.db     │
+       │  api_keys,  │     │    {id}/events.db     │
+       │  projects,  │     │    ...                │
+       │  members    │     └──────────────────────┘
+       └─────────────┘                │
+              │                       │
+              └───────────┬───────────┘
+                          ▼
+                   ┌─────────────┐
+                   │ Litestream  │
+                   │ (sidecar)   │
+                   │ → S3/R2/B2  │
+                   └─────────────┘
 ```
 
 ### Components
@@ -71,16 +78,18 @@ Sync server for td task databases. Enables multi-device and multi-user collabora
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Sync server | Go (single binary) | HTTP API for auth and sync |
-| Auth database | SQLite | Users, API keys, projects, memberships |
-| Events database | SQLite | Append-only event log per project |
-| State cache | SQLite per project | Materialized view for web/API reads |
-| Backup | Litestream | Continuous replication to object storage |
+| Sync library | Go (`internal/sync`) | Shared event application logic, used by client and server |
+| Server database | SQLite (`server.db`) | Users, API keys, projects, memberships |
+| Project databases | SQLite (one per project) | Append-only event log |
+| Backup | Litestream (sidecar) | Continuous WAL replication to object storage |
 
 ---
 
 ## Database Schemas
 
-### auth.db
+### server.db
+
+Single database for the entire server. Contains auth, project registry, and membership data. All authorization checks resolve here before touching any project database.
 
 ```sql
 -- Users
@@ -140,13 +149,16 @@ CREATE INDEX idx_api_keys_prefix ON api_keys(key_prefix);
 CREATE INDEX idx_memberships_user ON memberships(user_id);
 ```
 
-### events.db
+### Per-Project events.db
+
+Located at: `/data/projects/{project_id}/events.db`
+
+One database per project. `project_id` is implicit from the file path and not stored in the events table.
 
 ```sql
 -- Events (append-only log of all changes)
 CREATE TABLE events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project_id TEXT NOT NULL,
+    server_seq INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,          -- originating device
     session_id TEXT NOT NULL,         -- originating session (for idempotency)
     client_action_id INTEGER NOT NULL,-- action_log.id from client
@@ -156,20 +168,17 @@ CREATE TABLE events (
     payload JSON NOT NULL,            -- {schema_version, previous_data, new_data}
     client_timestamp DATETIME NOT NULL,
     server_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(project_id, device_id, session_id, client_action_id)
+    UNIQUE(device_id, session_id, client_action_id)
 );
 
-CREATE INDEX idx_events_project_id ON events(project_id, id);
-CREATE INDEX idx_events_project_entity ON events(project_id, entity_type, entity_id);
+CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
 ```
 
-### State Cache (per project)
+### State Cache (per project) — Deferred
 
-Located at: `/data/projects/{project_id}/state.db`
+~~Located at: `/data/projects/{project_id}/state.db`~~
 
-Schema: **Identical to td client schema** (issues, logs, handoffs, etc.)
-
-Purpose: Materialized view for read-only web access and fast client bootstrap.
+**Deferred to Phase 4 (Read-Only Web).** State cache adds a second source of truth with rebuild/race-condition complexity. Not needed until server-side reads are required. In Phase 1, the event log is the only server-side store per project.
 
 ---
 
@@ -199,7 +208,10 @@ New columns in `action_log`:
 
 ```sql
 ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
+ALTER TABLE action_log ADD COLUMN server_seq INTEGER;  -- populated from push ack
 ```
+
+**Prerequisite:** td's existing `action_log` must include `action_type`, `entity_type`, `entity_id`, and a `payload` column containing JSON with `schema_version`, `new_data`, and `previous_data`. If any of these are missing, a td migration is required before Phase 0. The test harness imports td's `internal/db.InitSchema()` to create real td databases — the code is the source of truth for the schema, not this spec.
 
 ### Event generation
 
@@ -207,6 +219,7 @@ ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
 - Events MUST be appended within the same transaction as the mutation.
 - Events MUST include enough data to apply the change on another replica.
 - Event payloads MUST include a `schema_version` field.
+- **`new_data` MUST contain the full entity state**, not a partial diff. `INSERT OR REPLACE` deletes the existing row and re-inserts, so any columns omitted from `new_data` are reset to defaults. Partial payloads silently drop data.
 
 ### Event payload format
 
@@ -221,7 +234,16 @@ ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
 }
 ```
 
-The server treats payloads as opaque for sync purposes. Payloads are interpreted only for state cache materialization and future publishing.
+The server treats payloads as opaque for sync purposes.
+
+### Schema Compatibility Rules
+
+- **Ignore unknown fields.** If a payload contains fields the client doesn't recognize, skip them during apply.
+- **Use zero-values for missing fields.** If the client expects a field not in the payload, use the column default (NULL, empty string, 0).
+- **Never remove fields from payloads.** Fields can be added across schema versions but never removed. A `schema_version: 3` payload is a superset of `schema_version: 2`.
+- **The server never interprets payloads.** It stores and forwards them. Compatibility is purely a client concern.
+
+Clients don't need to be on the same version to sync. An older client won't see new fields; a newer client fills defaults for fields an older client didn't send.
 
 ### Sync triggers
 
@@ -264,12 +286,77 @@ Events map to local database operations:
 
 | action_type | Operation |
 |-------------|-----------|
-| `create` | INSERT using `new_data` |
-| `update` | UPDATE using `new_data` |
-| `delete` | DELETE by entity_id |
-| `soft_delete` | UPDATE SET deleted_at = timestamp |
+| `create` | INSERT OR REPLACE using `new_data` |
+| `update` | INSERT OR REPLACE using `new_data` |
+| `delete` | DELETE by entity_id (no-op if missing) |
+| `soft_delete` | UPDATE SET deleted_at = timestamp (no-op if missing) |
 
 Entity types match td tables: `issue`, `log`, `handoff`, `comment`, `board`, `work_session`, etc.
+
+### Event-to-SQL Mapping
+
+The sync library maps JSON payloads to SQL dynamically — no hardcoded schema knowledge. JSON keys in `new_data` map 1:1 to column names. `INSERT OR REPLACE` handles both creates and upserts.
+
+```go
+func insertEntity(tx *sql.Tx, entityType, entityID string, data json.RawMessage) error {
+    var fields map[string]any
+    json.Unmarshal(data, &fields)
+    fields["id"] = entityID
+    cols, vals, placeholders := buildInsert(fields)
+    _, err := tx.Exec(
+        fmt.Sprintf("INSERT OR REPLACE INTO %s (%s) VALUES (%s)",
+            entityType, cols, placeholders),
+        vals...,
+    )
+    return err
+}
+```
+
+Table names are validated against a caller-provided allowlist to prevent SQL injection:
+
+```go
+var validEntityTypes = map[string]bool{
+    "issues": true, "logs": true, "handoffs": true,
+    "comments": true, "boards": true, "work_sessions": true,
+}
+```
+
+The allowlist is owned by the caller (td or the test harness), not the sync library. The library accepts a validation function.
+
+### Idempotency Edge Cases
+
+The event stream is authoritative. The sync library always converges toward the server's state:
+
+| Scenario | Behavior | Rationale |
+|----------|----------|-----------|
+| `create` for existing entity | Upsert (INSERT OR REPLACE) | May exist from partial sync or create-create race. |
+| `update` for missing entity | Insert using `new_data` | Entity created in an event we missed. Payload has full data. |
+| `delete` for missing entity | No-op | Already gone or never existed. Desired state is "not present." |
+| `update` for deleted entity | Re-insert using `new_data` | Server says entity should exist. Server wins. |
+
+### Partial Batch Failure
+
+When applying pulled events, if an individual event fails:
+
+- Log the error at WARN level with full context (event type, entity ID, error).
+- **Skip it and continue** applying remaining events.
+- Return the highest successfully applied `server_seq` plus a list of failed events.
+- The caller commits the transaction, advancing the cursor past failures.
+
+Failed events are preserved in the server's event log for debugging. Rolling back the entire batch would block the client permanently on a single bad event.
+
+```go
+type ApplyResult struct {
+    LastAppliedSeq int64
+    Applied        int
+    Failed         []FailedEvent
+}
+
+type FailedEvent struct {
+    ServerSeq int64
+    Error     error
+}
+```
 
 ### Conflict resolution
 
@@ -286,6 +373,10 @@ if localUpdatedAt.After(lastSyncAt) {
 ```
 
 This provides observability into conflict frequency with minimal code. A full conflict recording table will be added in a later phase if multi-user collaboration reveals the need.
+
+**`previous_data` accuracy caveat:** `previous_data` is captured at mutation time on the originating client. If that client had stale local state (e.g., hadn't pulled recently), its `previous_data` reflects what *it* saw, not necessarily the true prior server state. This is acceptable for Phase 1 observability and debugging, but `previous_data` should not be treated as a reliable conflict history for undo or merge operations.
+
+**UX note:** Silent last-write-wins is fine for solo users. For multi-user, users must know their local edits can be lost; document clearly and consider console warning on next sync.
 
 ### Authentication UX
 
@@ -316,6 +407,24 @@ If the server returns 401/403:
 
 Email-based auth (magic links) deferred to phase 2 for collaboration invites.
 
+### First User Bootstrap
+
+When `AllowSignup` is `true` (default for new installations):
+
+1. Client calls `POST /v1/auth/login/start` with `{ email: "user@example.com" }`.
+2. Server creates a pending auth request. If no user exists with that email, one is created on successful verification.
+3. Server returns `device_code`, `user_code`, `verification_uri`.
+4. User visits the verification page (served by the sync server — a simple HTML form, no JS framework).
+5. Server verifies the code, creates the user if new, generates an API key.
+6. Client polls and receives the API key.
+
+The device code flow does not verify email ownership in Phase 1 — the user just types their email and a code. True email verification is Phase 2 (collaboration invites).
+
+When `AllowSignup` is `false`:
+
+- `POST /v1/auth/login/start` returns an error if the email isn't in `server.db`.
+- An admin adds users via CLI: `td-sync admin add-user --email user@example.com`
+
 ---
 
 ## Sync Flow
@@ -324,10 +433,10 @@ Email-based auth (magic links) deferred to phase 2 for collaboration invites.
 1. PUSH local changes
    ├── Query: SELECT * FROM action_log WHERE synced_at IS NULL ORDER BY id
    ├── POST /projects/:id/sync/push
-   └── UPDATE action_log SET synced_at = now() WHERE id IN (accepted)
+   └── For each ack: UPDATE action_log SET synced_at = now(), server_seq = {ack.server_seq} WHERE id = {ack.client_action_id}
 
 2. PULL remote changes
-   ├── GET /projects/:id/sync/pull?after_server_seq={n}&exclude_client={device_id}
+   ├── GET /projects/:id/sync/pull?after_server_seq={n}  (exclude_client is non-MVP)
    ├── For each event:
    │   └── Apply to local database (see Event Application)
    └── UPDATE sync_state SET last_pulled_server_seq = {new_seq}
@@ -335,21 +444,13 @@ Email-based auth (magic links) deferred to phase 2 for collaboration invites.
 
 ### Initial Sync (New Client)
 
-Option A: **Event replay** (simple, works for small projects)
+**Phase 1: Event replay only.**
 ```
 GET /projects/:id/sync/pull?after_server_seq=0
 Apply all events to empty local database
 ```
 
-Option B: **Snapshot bootstrap** (fast, for larger projects)
-```
-GET /projects/:id/sync/snapshot
-  → Save as local .todos/db.sqlite
-GET /projects/:id/sync/pull?after_server_seq={X-Snapshot-Event-Id}
-  → Apply incremental events
-```
-
-Threshold: Use snapshot if event_count > 1000.
+Snapshot bootstrap deferred to Phase 2. Event replay is sufficient for expected project sizes (even 10k events replays quickly with in-process SQLite).
 
 ---
 
@@ -467,14 +568,14 @@ POST /v1/projects/:id/sync/push
 GET /v1/projects/:id/sync/pull
   Query: after_server_seq=integer  # last known seq (0 for full sync)
          limit=integer             # max events (default 1000, max 10000)
-         exclude_client=string     # omit own events (optional)
+         exclude_client=string     # omit own events (optional, non-MVP optimization — clients re-apply own events idempotently without it)
   Response: {
     events: Event[],
     last_server_seq: integer,
     has_more: boolean
   }
 
-GET /v1/projects/:id/sync/snapshot
+GET /v1/projects/:id/sync/snapshot          # Phase 2
   # Download full state.db for fast bootstrap
   Response: SQLite database file (application/x-sqlite3)
   Headers:
@@ -483,9 +584,7 @@ GET /v1/projects/:id/sync/snapshot
 GET /v1/projects/:id/sync/status
   Response: {
     event_count: integer,
-    last_event_at: datetime,
-    snapshot_available: boolean,
-    snapshot_event_id: integer
+    last_event_at: datetime
   }
 ```
 
@@ -567,32 +666,45 @@ TD_SYNC_AUTO="true"                 # Auto-sync (startup, periodic, debounce)
 
 ### Project Structure
 
+Server binary and sync library live in the td repo. Single module, two binaries.
+
 ```
-td-sync/
+td/
 ├── cmd/
-│   └── td-sync/
+│   ├── td/                        # existing CLI binary
+│   └── td-sync/                   # server binary
 │       └── main.go
 ├── internal/
-│   ├── api/
+│   ├── db/                        # existing td database layer
+│   ├── sync/                      # shared sync library
+│   │   ├── engine.go              # core push/pull logic
+│   │   ├── events.go              # event application (create/update/delete → SQL)
+│   │   ├── events_test.go
+│   │   ├── engine_test.go
+│   │   └── testutil.go
+│   ├── api/                       # HTTP layer (server only)
 │   │   ├── auth.go
 │   │   ├── projects.go
 │   │   ├── sync.go
 │   │   └── middleware.go
-│   ├── db/
-│   │   ├── auth.go
-│   │   └── events.go
-│   ├── models/
-│   │   └── models.go
-│   └── state/
-│       └── materialized.go      # State cache management
+│   └── models/
+│       └── models.go
+├── test/
+│   └── syncharness/               # integration test harness
+│       ├── harness.go
+│       ├── harness_test.go
+│       └── fixtures/
 ├── migrations/
-│   ├── auth/
-│   └── events/
+│   ├── global/
+│   └── project/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
-└── README.md
+└── docs/
+    └── sync-mvp-testing-spec.md   # detailed MVP testing spec
 ```
+
+**Key constraint:** `internal/sync` never imports from `internal/db`, `cmd/`, or any td-specific package. It receives `*sql.Tx` from callers — it does not open or manage database connections. This keeps the sync library testable in isolation and prevents it from competing with td's single-writer connection management.
 
 ### Configuration
 
@@ -603,9 +715,8 @@ type Config struct {
     Port          int           `env:"PORT" default:"8080"`
 
     // Database
-    AuthDBPath    string        `env:"AUTH_DB_PATH" default:"/data/auth.db"`
-    EventsDBPath  string        `env:"EVENTS_DB_PATH" default:"/data/events.db"`
-    StateCachePath string       `env:"STATE_CACHE_PATH" default:"/data/projects"`
+    ServerDBPath   string       `env:"SERVER_DB_PATH" default:"/data/server.db"`
+    ProjectDataDir string       `env:"PROJECT_DATA_DIR" default:"/data/projects"`
 
     // Auth
     AuthSecret    string        `env:"AUTH_SECRET" required:"true"`
@@ -618,44 +729,31 @@ type Config struct {
     // Limits
     MaxEventPayloadBytes int    `env:"MAX_EVENT_PAYLOAD" default:"65536"`  // 64KB
     MaxPushBatchSize     int    `env:"MAX_PUSH_BATCH" default:"1000"`
+
 }
 ```
 
-### State Cache Updates
+### Push Handler
 
-On event insert, apply to project's state.db:
+Server-side push uses the shared sync library. The server opens the project's events.db, starts a transaction, and passes it to `sync.InsertServerEvents`:
 
 ```go
-func (s *Server) handlePush(projectID string, events []Event) error {
-    // 1. Insert into events.db
-    eventIDs, err := s.eventsDB.InsertEvents(projectID, events)
+func (s *Server) handlePush(projectID string, events []sync.Event) (sync.PushResult, error) {
+    db := s.getProjectDB(projectID)
+    tx, _ := db.Begin()
+    defer tx.Rollback()
 
-    // 2. Apply to state cache
-    stateDB := s.stateCache.Get(projectID)
-    for _, event := range events {
-        if err := applyEvent(stateDB, event); err != nil {
-            // Log but don't fail; state can be rebuilt
-            slog.Warn("state cache apply failed", "event", event.ID, "err", err)
-        }
+    result, err := sync.InsertServerEvents(tx, projectID, events)
+    if err != nil {
+        return result, err
     }
 
-    return nil
+    tx.Commit()
+    return result, nil
 }
 ```
 
-State cache rebuild (on corruption or new project):
-
-```go
-func (s *Server) rebuildStateCache(projectID string) error {
-    events, err := s.eventsDB.GetAllEvents(projectID)
-    stateDB := sqlite.OpenNew(s.stateCachePath(projectID))
-    initSchema(stateDB)  // td's schema
-    for _, event := range events {
-        applyEvent(stateDB, event)
-    }
-    return nil
-}
-```
+No state cache updates in Phase 1. The event log is the only write target.
 
 ---
 
@@ -712,6 +810,8 @@ func (s *Server) rebuildStateCache(projectID string) error {
 
 ### Docker Compose
 
+Litestream runs as a sidecar container, replicating `server.db` and all per-project `events.db` files to object storage. When new projects are created, regenerate the Litestream config and send SIGHUP to reload.
+
 ```yaml
 version: "3.8"
 
@@ -740,23 +840,26 @@ volumes:
 
 ### Litestream Config
 
+Static config for `server.db`. Per-project databases require config regeneration + SIGHUP when projects are created/deleted.
+
 ```yaml
 dbs:
-  - path: /data/auth.db
+  - path: /data/server.db
     replicas:
-      - url: s3://your-bucket/td-backup/auth.db
+      - url: s3://your-bucket/td-backup/server.db
 
-  - path: /data/events.db
-    replicas:
-      - url: s3://your-bucket/td-backup/events.db
+  # Per-project entries added dynamically:
+  # - path: /data/projects/{project_id}/events.db
+  #   replicas:
+  #     - url: s3://your-bucket/td-backup/projects/{project_id}/events.db
 ```
 
 ### Quick Start (Self-Host)
 
 ```bash
 # Clone
-git clone https://github.com/marcus/td-sync
-cd td-sync
+git clone https://github.com/marcus/td
+cd td
 
 # Configure
 cp .env.example .env
@@ -781,17 +884,28 @@ td auth login --server https://your-server:8080
 
 ## Roadmap
 
+### Phase 0: Test Harness & Sync Library
+- [ ] Shared sync library (`internal/sync`) with event application logic
+- [ ] Test harness with simulated multi-client scenarios (direct Go calls, no HTTP)
+- [ ] Core test cases: create, update, delete, conflict, idempotency, large batch
+- [ ] Convergence validation (all clients identical after sync)
+- [ ] See [sync-mvp-testing-spec.md](sync-mvp-testing-spec.md) for detailed spec
+
 ### Phase 1: Core Sync
-- [ ] Server: device auth, projects, memberships, events
-- [ ] Client: auth commands, sync command, auto-sync triggers
-- [ ] Self-host: Docker image, Litestream, docs
+- [ ] Server binary (`cmd/td-sync`): HTTP layer on top of sync library
+- [ ] Server database: device auth, projects, memberships
+- [ ] Per-project databases: event storage
+- [ ] Device auth with self-hosted verification page
+- [ ] Litestream sidecar with dynamic config regeneration
+- [ ] Client integration: `td auth login`, `td sync`, `td project link/create`
 - [ ] Observability: structured logging, basic metrics
 
 ### Phase 2: Polish
-- [ ] Snapshot bootstrap
+- [ ] Snapshot bootstrap (event replay sufficient until then)
 - [ ] `td doctor` diagnostics
 - [ ] Rate limiting
 - [ ] Email-based auth (magic links for collaboration invites)
+- [ ] Auto-sync triggers (startup, debounce, periodic)
 
 ### Phase 3: Collaboration
 - [ ] Invite flow (email)
@@ -815,7 +929,21 @@ td auth login --server https://your-server:8080
 
 1. **Key expiry**: 1 year default? Never expire unless revoked?
 2. **Free tier limits**: Max projects? Max events? Max collaborators?
-3. **Snapshot frequency**: On-demand only? Periodic background job?
-4. **Soft delete retention**: 30 days? 90 days? Configurable?
-5. **Undo across sync**: Should `td undo` emit an event, or only work locally?
-6. **Device auth verification UI**: Hosted web page? Or third-party OAuth provider?
+3. **Soft delete retention**: 30 days? 90 days? Configurable?
+4. **Undo across sync**: Should `td undo` emit an event, or only work locally?
+
+## Resolved Decisions
+
+1. **Database layout**: One server.db for auth/registry + one events.db per project. Memberships stay in server.db — auth resolves before any project db is opened.
+2. **State cache**: Deferred to Phase 4. Event log is the only server-side store in Phase 1.
+3. **Snapshot bootstrap**: Deferred to Phase 2. Event replay only for initial sync.
+4. **Repository structure**: Single repo (td). Server binary at `cmd/td-sync`, shared sync library at `internal/sync`.
+5. **Sync library connection management**: Library receives `*sql.Tx` from callers, never opens databases. Prevents write contention with td's single-writer model.
+6. **Litestream**: Sidecar container (not embedded). Config regenerated + SIGHUP on project create/delete.
+7. **Device auth verification UI**: Self-hosted HTML page served by the sync server. No third-party dependency.
+8. **Conflict preservation**: `previous_data` in event payload is the conflict record. No separate conflict table — event log is the history.
+9. **Schema compatibility**: Ignore unknown fields, zero-value missing fields, never remove fields. Clients don't need matching versions.
+10. **Event-to-SQL mapping**: Dynamic column mapping from JSON keys. No hardcoded schema in the sync library. Table names validated via caller-provided allowlist.
+11. **Idempotency**: Event stream is authoritative. Upsert on create/update, no-op on delete-if-missing, re-insert on update-after-delete.
+12. **Partial batch failure**: Skip failed events, log them, continue applying. Don't roll back the batch.
+13. **First user bootstrap**: Auto-create users on successful device auth when `AllowSignup` is true. CLI admin command when false.
