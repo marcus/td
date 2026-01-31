@@ -227,6 +227,34 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 	}
 }
 
+func TestGetPendingEvents_EntityTypeNormalization(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "sess1", "create", "issue", "i1",
+		`{"title":"Normalized","status":"open"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000002", "sess1", "create", "issues", "i2",
+		`{"title":"AlreadyCanonical","status":"open"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000003", "sess1", "create", "dependency", "i1:i2",
+		`{"issue_id":"i1","depends_on_id":"i2"}`, `{}`, 0, "")
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+
+	events, err := GetPendingEvents(tx, "d1", "s1")
+	if err != nil {
+		t.Fatalf("GetPendingEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2", len(events))
+	}
+	if events[0].EntityType != "issues" {
+		t.Errorf("entity type normalize: got %q, want issues", events[0].EntityType)
+	}
+	if events[1].EntityType != "issues" {
+		t.Errorf("entity type canonical: got %q, want issues", events[1].EntityType)
+	}
+}
+
 func TestApplyRemoteEvents_Basic(t *testing.T) {
 	db := setupClientDB(t)
 

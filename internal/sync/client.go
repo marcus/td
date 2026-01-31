@@ -20,6 +20,27 @@ func mapActionType(tdAction string) string {
 	}
 }
 
+// normalizeEntityType maps action_log entity types to canonical table names.
+// Returns false when the entity type is not supported by the sync engine.
+func normalizeEntityType(entityType string) (string, bool) {
+	switch entityType {
+	case "issue", "issues":
+		return "issues", true
+	case "handoff", "handoffs":
+		return "handoffs", true
+	case "board", "boards":
+		return "boards", true
+	case "log", "logs":
+		return "logs", true
+	case "comment", "comments":
+		return "comments", true
+	case "work_session", "work_sessions":
+		return "work_sessions", true
+	default:
+		return "", false
+	}
+}
+
 // GetPendingEvents reads unsynced, non-undone action_log rows and returns them as Events.
 // It uses rowid for ordering and as ClientActionID.
 func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
@@ -36,9 +57,9 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var (
-			rowid                                                int64
-			id, actionType, entityType, entityID, tsStr          string
-			newDataStr, prevDataStr                              sql.NullString
+			rowid                                       int64
+			id, actionType, entityType, entityID, tsStr string
+			newDataStr, prevDataStr                     sql.NullString
 		)
 		if err := rows.Scan(&rowid, &id, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
 			return nil, fmt.Errorf("scan action_log row: %w", err)
@@ -47,6 +68,12 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 		clientTS, err := parseTimestamp(tsStr)
 		if err != nil {
 			return nil, fmt.Errorf("parse timestamp rowid=%d: %w", rowid, err)
+		}
+
+		canonicalType, ok := normalizeEntityType(entityType)
+		if !ok {
+			slog.Warn("sync: skipping unsupported entity type", "entity_type", entityType, "action_id", id)
+			continue
 		}
 
 		// Build payload wrapper with schema_version, new_data, previous_data
@@ -74,7 +101,7 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 			DeviceID:        deviceID,
 			SessionID:       sessionID,
 			ActionType:      mapActionType(actionType),
-			EntityType:      entityType,
+			EntityType:      canonicalType,
 			EntityID:        entityID,
 			Payload:         payloadBytes,
 			ClientTimestamp: clientTS,
