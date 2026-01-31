@@ -152,6 +152,12 @@ CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
 `
 
+// BaseSchema returns the initial database schema DDL.
+// Used by the sync test harness to avoid schema duplication.
+func BaseSchema() string {
+	return schema
+}
+
 // Migration defines a database migration
 type Migration struct {
 	Version     int

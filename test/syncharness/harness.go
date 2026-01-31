@@ -11,110 +11,15 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/marcus/td/internal/db"
 	tdsync "github.com/marcus/td/internal/sync"
 )
 
-// clientSchema is the minimal schema needed for sync testing.
-const clientSchema = `
-CREATE TABLE issues (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL DEFAULT '',
-    description TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'open',
-    type TEXT NOT NULL DEFAULT 'task',
-    priority TEXT NOT NULL DEFAULT 'P2',
-    points INTEGER DEFAULT 0,
-    labels TEXT DEFAULT '',
-    parent_id TEXT DEFAULT '',
-    acceptance TEXT DEFAULT '',
-    implementer_session TEXT DEFAULT '',
-    reviewer_session TEXT DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    closed_at DATETIME,
-    deleted_at DATETIME,
-    minor INTEGER DEFAULT 0,
-    created_branch TEXT DEFAULT ''
-);
-
-CREATE TABLE logs (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT DEFAULT '',
-    session_id TEXT NOT NULL,
-    work_session_id TEXT DEFAULT '',
-    message TEXT NOT NULL,
-    type TEXT NOT NULL DEFAULT 'progress',
-    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE handoffs (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    done TEXT DEFAULT '[]',
-    remaining TEXT DEFAULT '[]',
-    decisions TEXT DEFAULT '[]',
-    uncertain TEXT DEFAULT '[]',
-    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE comments (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    text TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE boards (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    last_viewed_at DATETIME,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    query TEXT NOT NULL DEFAULT '',
-    is_builtin INTEGER NOT NULL DEFAULT 0,
-    view_mode TEXT NOT NULL DEFAULT 'swimlanes'
-);
-
-CREATE TABLE work_sessions (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at DATETIME,
-    start_sha TEXT DEFAULT '',
-    end_sha TEXT DEFAULT ''
-);
-
-CREATE TABLE board_issue_positions (
-    id TEXT PRIMARY KEY,
-    board_id TEXT NOT NULL,
-    issue_id TEXT NOT NULL,
-    position INTEGER NOT NULL,
-    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(board_id, issue_id)
-);
-
-CREATE TABLE issue_dependencies (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-    depends_on_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL DEFAULT 'depends_on',
-    UNIQUE(issue_id, depends_on_id, relation_type)
-);
-
-CREATE TABLE issue_files (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'implementation',
-    linked_sha TEXT DEFAULT '',
-    linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(issue_id, file_path)
-);
-
-CREATE TABLE action_log (
+// syncExtensionSchema creates tables and columns not in the base schema
+// that are needed for sync testing (from migrations v2, v6, v7, v9, v10, v11, v16, v17).
+const syncExtensionSchema = `
+-- action_log (migration v2) with sync columns (migration v16)
+CREATE TABLE IF NOT EXISTS action_log (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     action_type TEXT NOT NULL,
@@ -127,15 +32,76 @@ CREATE TABLE action_log (
     synced_at DATETIME,
     server_seq INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
 
-CREATE TABLE sync_state (
+-- boards (migration v9/v10/v11)
+CREATE TABLE IF NOT EXISTS boards (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    last_viewed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    query TEXT NOT NULL DEFAULT '',
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    view_mode TEXT NOT NULL DEFAULT 'swimlanes'
+);
+
+-- board_issue_positions (migration v9, renamed in v10)
+CREATE TABLE IF NOT EXISTS board_issue_positions (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(board_id, issue_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_board_positions_position
+    ON board_issue_positions(board_id, position);
+
+-- issue_session_history (migration v7)
+CREATE TABLE IF NOT EXISTS issue_session_history (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ish_issue ON issue_session_history(issue_id);
+CREATE INDEX IF NOT EXISTS idx_ish_session ON issue_session_history(session_id);
+
+-- sync_state (migration v16)
+CREATE TABLE IF NOT EXISTS sync_state (
     project_id TEXT PRIMARY KEY,
     last_pushed_action_id INTEGER DEFAULT 0,
     last_pulled_server_seq INTEGER DEFAULT 0,
     last_sync_at DATETIME,
     sync_disabled INTEGER DEFAULT 0
 );
+
+-- sync_conflicts (migration v17)
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    server_seq INTEGER NOT NULL,
+    local_data JSON,
+    remote_data JSON,
+    overwritten_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
 `
+
+// migrationColumns are ALTER TABLE statements for columns added by migrations
+// that aren't in the base schema (v6: creator_session, v10: sprint).
+var migrationColumns = []string{
+	"ALTER TABLE issues ADD COLUMN creator_session TEXT DEFAULT ''",
+	"ALTER TABLE issues ADD COLUMN sprint TEXT DEFAULT ''",
+}
 
 // entityTables lists the tables that hold user data (not action_log or sync_state).
 var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files"}
@@ -205,7 +171,7 @@ func NewHarness(t *testing.T, numClients int, projectID string) *Harness {
 		if err != nil {
 			t.Fatalf("open client %s db: %v", clientID, err)
 		}
-		if _, err := db.Exec(clientSchema); err != nil {
+		if err := initClientSchema(db); err != nil {
 			t.Fatalf("create schema client %s: %v", clientID, err)
 		}
 		t.Cleanup(func() { db.Close() })
@@ -219,6 +185,25 @@ func NewHarness(t *testing.T, numClients int, projectID string) *Harness {
 	}
 
 	return h
+}
+
+// initClientSchema sets up a client database with the real td schema plus sync extensions.
+func initClientSchema(clientDB *sql.DB) error {
+	// Base schema from internal/db
+	if _, err := clientDB.Exec(db.BaseSchema()); err != nil {
+		return fmt.Errorf("base schema: %w", err)
+	}
+	// Migration columns not in base schema
+	for _, stmt := range migrationColumns {
+		if _, err := clientDB.Exec(stmt); err != nil {
+			return fmt.Errorf("migration column %q: %w", stmt, err)
+		}
+	}
+	// Sync-specific tables and columns
+	if _, err := clientDB.Exec(syncExtensionSchema); err != nil {
+		return fmt.Errorf("sync extension schema: %w", err)
+	}
+	return nil
 }
 
 // Mutate performs a local mutation on a client's database and records it in action_log.
