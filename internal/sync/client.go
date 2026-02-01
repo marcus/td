@@ -49,7 +49,15 @@ func normalizeEntityType(entityType string) (string, bool) {
 
 // GetPendingEvents reads unsynced, non-undone action_log rows and returns them as Events.
 // It uses rowid for ordering and as ClientActionID.
+// Before querying, it backfills synthetic "create" entries for any entities that
+// exist in syncable tables but have no action_log row (e.g. pre-existing data).
 func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
+	if n, err := BackfillOrphanEntities(tx, sessionID); err != nil {
+		slog.Warn("backfill orphans", "err", err)
+	} else if n > 0 {
+		slog.Info("backfilled orphan entities", "count", n)
+	}
+
 	rows, err := tx.Query(`
 		SELECT rowid, id, action_type, entity_type, entity_id, new_data, previous_data, timestamp
 		FROM action_log
