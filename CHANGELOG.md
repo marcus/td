@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.28.1] - 2026-01-31
+
+### Bug Fixes
+- Fix scan error on databases with unmigrated integer primary keys (CAST id AS TEXT in all SELECT queries)
+
 ## [v0.28.0] - 2026-01-30
 
 ### Features
