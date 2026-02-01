@@ -14,21 +14,33 @@ set -euo pipefail
 # --- Parse flags ---
 MODE="auto"
 AUTO_SYNC=false
+SEED_DB=""
 for arg in "$@"; do
     case "$arg" in
         --manual)    MODE="manual" ;;
         --auto-sync) AUTO_SYNC=true ;;
+        --seed)      SEED_DB="next" ;;
         --help|-h)
-            echo "Usage: $0 [--manual] [--auto-sync]"
+            echo "Usage: $0 [--manual] [--auto-sync] [--seed <path>]"
             echo ""
             echo "  (default)      Run automated convergence test"
             echo "  --manual       Set up server + 2 clients, print shell instructions, wait"
             echo "  --auto-sync    Enable auto-sync (default: off, manual td sync)"
+            echo "  --seed <path>  Seed both clients with an existing issues.db"
             exit 0
             ;;
-        *) echo "Unknown flag: $arg"; exit 1 ;;
+        *)
+            if [ "$SEED_DB" = "next" ]; then
+                SEED_DB="$arg"
+            else
+                echo "Unknown flag: $arg"; exit 1
+            fi
+            ;;
     esac
 done
+if [ "$SEED_DB" = "next" ]; then
+    echo "Error: --seed requires a path argument"; exit 1
+fi
 
 # --- Config ---
 PORT=9876
@@ -165,8 +177,10 @@ EOF
 }
 
 # --- Helpers: run td as each client ---
-td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" "$TD_BIN" "$@"); }
-td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" "$TD_BIN" "$@"); }
+SESSION_ID_A="e2e-alice-$$"
+SESSION_ID_B="e2e-bob-$$"
+td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" "$TD_BIN" "$@"); }
+td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" "$TD_BIN" "$@"); }
 
 # --- Common setup (both modes) ---
 step "Initializing client projects"
@@ -198,6 +212,24 @@ ok "Invited bob as writer"
 td_b sync-project link "$PROJECT_ID"
 ok "Client B linked"
 
+# --- Seed DBs if --seed was provided ---
+if [ -n "$SEED_DB" ]; then
+    [ -f "$SEED_DB" ] || fail "Seed DB not found: $SEED_DB"
+    SEED_COUNT=$(sqlite3 "$SEED_DB" 'SELECT COUNT(*) FROM issues' 2>/dev/null || echo "?")
+    step "Seeding bob from $SEED_DB ($SEED_COUNT issues)"
+    sqlite3 "$SEED_DB" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
+    cp "$SEED_DB" "$CLIENT_B_DIR/.todos/issues.db"
+    sqlite3 "$CLIENT_B_DIR/.todos/issues.db" <<'SQL'
+DELETE FROM sync_state;
+DELETE FROM action_log WHERE id IS NULL OR entity_id IS NULL OR entity_id = '';
+UPDATE action_log SET synced_at = NULL, server_seq = NULL;
+SQL
+    # Re-create session and re-link after DB replacement
+    td_b status >/dev/null 2>&1 || true
+    td_b sync-project link "$PROJECT_ID" >/dev/null
+    ok "Seeded bob with $SEED_COUNT issues"
+fi
+
 # =====================================================================
 # Manual mode: open tmux session (or print instructions as fallback)
 # =====================================================================
@@ -220,6 +252,7 @@ if [ "$MODE" = "manual" ]; then
     cat > "$WORKDIR/shell-a.env" <<ENVEOF
 export HOME="$HOME_A"
 export PATH="$WORKDIR:\$PATH"
+export TD_SESSION_ID="$SESSION_ID_A"
 $PROMPT_A
 cd "$CLIENT_A_DIR"
 ENVEOF
@@ -227,6 +260,7 @@ ENVEOF
     cat > "$WORKDIR/shell-b.env" <<ENVEOF
 export HOME="$HOME_B"
 export PATH="$WORKDIR:\$PATH"
+export TD_SESSION_ID="$SESSION_ID_B"
 $PROMPT_B
 cd "$CLIENT_B_DIR"
 ENVEOF

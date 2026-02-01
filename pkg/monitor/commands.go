@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"time"
@@ -9,11 +10,44 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/config"
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
+
+// logPositionSet logs an ActionBoardSetPosition to the action log.
+func (m *Model) logPositionSet(boardID, issueID string, position int) {
+	bipID := db.BoardIssuePosID(boardID, issueID)
+	data, _ := json.Marshal(map[string]interface{}{
+		"id": bipID, "board_id": boardID, "issue_id": issueID,
+		"position": position, "added_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionBoardSetPosition,
+		EntityType: "board_issue_positions",
+		EntityID:   bipID,
+		NewData:    string(data),
+	})
+}
+
+// logPositionRemove logs an ActionBoardUnposition to the action log.
+func (m *Model) logPositionRemove(boardID, issueID string, oldPosition int) {
+	bipID := db.BoardIssuePosID(boardID, issueID)
+	data, _ := json.Marshal(map[string]interface{}{
+		"id": bipID, "board_id": boardID, "issue_id": issueID,
+		"position": oldPosition,
+	})
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:    m.SessionID,
+		ActionType:   models.ActionBoardUnposition,
+		EntityType:   "board_issue_positions",
+		EntityID:     bipID,
+		NewData: string(data),
+	})
+}
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
@@ -1546,6 +1580,7 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.logPositionSet(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos)
 		m.BoardMode.Issues[targetIdx].HasPosition = true
 		m.BoardMode.Issues[targetIdx].Position = targetPos
 		targetIssue = m.BoardMode.Issues[targetIdx] // Refresh local variable
@@ -1565,15 +1600,21 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.logPositionSet(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos)
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	} else {
 		// Both now positioned - swap positions
+		curPos := currentIssue.Position
+		tgtPos := targetIssue.Position
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
+		// Log both sides of the swap (positions are exchanged)
+		m.logPositionSet(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos)
+		m.logPositionSet(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1643,6 +1684,7 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.logPositionSet(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos)
 		targetBIV.HasPosition = true
 		targetBIV.Position = targetPos
 	}
@@ -1661,15 +1703,21 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.logPositionSet(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos)
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	} else {
 		// Both now positioned - swap positions
+		curPos := currentBIV.Position
+		tgtPos := targetBIV.Position
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
+		// Log both sides of the swap (positions are exchanged)
+		m.logPositionSet(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos)
+		m.logPositionSet(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
@@ -1724,6 +1772,7 @@ func (m Model) moveIssueToTop() (Model, tea.Cmd) {
 		m.StatusIsError = true
 		return m, nil
 	}
+	m.logPositionSet(boardID, issueID, 1)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)
@@ -1770,8 +1819,20 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
 	}
 
+	// Capture old position from local state (avoids extra DB call)
+	var oldPos int
+	for _, biv := range m.BoardMode.Issues {
+		if biv.Issue.ID == issueID && biv.HasPosition {
+			oldPos = biv.Position
+			break
+		}
+	}
+
 	// Remove current position first (if any) to not count it in max
 	_ = m.DB.RemoveIssuePosition(boardID, issueID)
+	if oldPos > 0 {
+		m.logPositionRemove(boardID, issueID, oldPos)
+	}
 
 	// Get max position and add to end
 	maxPos, err := m.DB.GetMaxBoardPosition(boardID)
@@ -1787,6 +1848,7 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		m.StatusIsError = true
 		return m, nil
 	}
+	m.logPositionSet(boardID, issueID, maxPos+1)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)

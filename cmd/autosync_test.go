@@ -183,6 +183,116 @@ func TestAutoSyncOnStartup_SkipCommands(t *testing.T) {
 	}
 }
 
+// TestAutoSyncOnStartup_DoesNotDebouncePostMutation verifies that on_start
+// sync does not set lastAutoSyncAt, so the post-mutation sync in
+// PersistentPostRun still fires even if the command completes quickly.
+// Regression test for: on_start debounced away post-mutation push.
+func TestAutoSyncOnStartup_DoesNotDebouncePostMutation(t *testing.T) {
+	// Reset state
+	autoSyncMu.Lock()
+	lastAutoSyncAt = time.Time{}
+	autoSyncMu.Unlock()
+	atomic.StoreInt32(&autoSyncInFlight, 0)
+
+	t.Setenv("TD_SYNC_AUTO_START", "true")
+	t.Setenv("TD_SYNC_AUTO_DEBOUNCE", "2s")
+
+	// Simulate PersistentPreRun: autoSyncOnStartup for a mutating command.
+	// autoSyncOnce will bail early (no auth/db) but the debounce behavior
+	// is what we're testing — lastAutoSyncAt must remain zero.
+	autoSyncOnStartup("create")
+
+	autoSyncMu.Lock()
+	ts := lastAutoSyncAt
+	autoSyncMu.Unlock()
+
+	if !ts.IsZero() {
+		t.Errorf("autoSyncOnStartup should NOT set lastAutoSyncAt, got %v", ts)
+	}
+
+	// Now simulate PersistentPostRun: autoSyncAfterMutation should NOT be
+	// debounced since lastAutoSyncAt is still zero.
+	debounce := syncconfig.GetAutoSyncDebounce()
+	autoSyncMu.Lock()
+	wouldDebounce := time.Since(lastAutoSyncAt) < debounce
+	autoSyncMu.Unlock()
+
+	if wouldDebounce {
+		t.Error("post-mutation sync would be debounced — on_start leaked the timestamp")
+	}
+}
+
+// TestAutoSyncAfterMutation_SetsDebounce verifies that autoSyncAfterMutation
+// does set lastAutoSyncAt so that rapid sequential commands are debounced.
+func TestAutoSyncAfterMutation_SetsDebounce(t *testing.T) {
+	// Reset state
+	autoSyncMu.Lock()
+	lastAutoSyncAt = time.Time{}
+	autoSyncMu.Unlock()
+	atomic.StoreInt32(&autoSyncInFlight, 0)
+
+	t.Setenv("TD_SYNC_AUTO", "true")
+	t.Setenv("TD_SYNC_AUTO_DEBOUNCE", "5s")
+
+	// autoSyncAfterMutation should set lastAutoSyncAt
+	autoSyncAfterMutation()
+
+	autoSyncMu.Lock()
+	ts := lastAutoSyncAt
+	autoSyncMu.Unlock()
+
+	if ts.IsZero() {
+		t.Error("autoSyncAfterMutation should set lastAutoSyncAt")
+	}
+
+	// A second call immediately after should be debounced
+	debounce := syncconfig.GetAutoSyncDebounce()
+	autoSyncMu.Lock()
+	wouldDebounce := time.Since(lastAutoSyncAt) < debounce
+	autoSyncMu.Unlock()
+
+	if !wouldDebounce {
+		t.Error("second mutation should be debounced")
+	}
+}
+
+// TestStartupThenMutation_FullSequence simulates the PersistentPreRun →
+// command → PersistentPostRun lifecycle and verifies the post-mutation
+// sync is not debounced by the startup sync.
+func TestStartupThenMutation_FullSequence(t *testing.T) {
+	// Reset state
+	autoSyncMu.Lock()
+	lastAutoSyncAt = time.Time{}
+	autoSyncMu.Unlock()
+	atomic.StoreInt32(&autoSyncInFlight, 0)
+
+	t.Setenv("TD_SYNC_AUTO", "true")
+	t.Setenv("TD_SYNC_AUTO_START", "true")
+	t.Setenv("TD_SYNC_AUTO_DEBOUNCE", "2s")
+
+	// PersistentPreRun
+	autoSyncOnStartup("create")
+
+	// Command runs (fast — well within debounce window)
+
+	// PersistentPostRun — must not be debounced
+	autoSyncMu.Lock()
+	before := lastAutoSyncAt
+	autoSyncMu.Unlock()
+
+	autoSyncAfterMutation()
+
+	autoSyncMu.Lock()
+	after := lastAutoSyncAt
+	autoSyncMu.Unlock()
+
+	// autoSyncAfterMutation should have set lastAutoSyncAt (meaning it ran,
+	// not returned early from debounce)
+	if after.IsZero() || after.Equal(before) {
+		t.Error("post-mutation sync was debounced by startup sync — regression")
+	}
+}
+
 func TestAutoSyncInFlightGuard(t *testing.T) {
 	// Set the in-flight flag to simulate a sync already running
 	atomic.StoreInt32(&autoSyncInFlight, 1)

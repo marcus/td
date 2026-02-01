@@ -270,6 +270,8 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+const pushBatchSize = 500
+
 func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
 	sess, err := session.Get(database)
 	if err != nil {
@@ -296,56 +298,89 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		return nil
 	}
 
-	pushReq := &syncclient.PushRequest{
-		DeviceID:  deviceID,
-		SessionID: sess.ID,
-	}
-	for _, ev := range events {
-		pushReq.Events = append(pushReq.Events, syncclient.EventInput{
-			ClientActionID:  ev.ClientActionID,
-			ActionType:      ev.ActionType,
-			EntityType:      ev.EntityType,
-			EntityID:        ev.EntityID,
-			Payload:         ev.Payload,
-			ClientTimestamp: ev.ClientTimestamp.Format(time.RFC3339),
-		})
-	}
-
-	pushResp, err := client.Push(state.ProjectID, pushReq)
-	if err != nil {
-		if errors.Is(err, syncclient.ErrUnauthorized) {
-			output.Error("unauthorized - re-login may be needed")
-		} else {
-			output.Error("push: %v", err)
-		}
-		return err
-	}
-
-	acks := make([]tdsync.Ack, 0, len(pushResp.Acks)+len(pushResp.Rejected))
+	var allAcks []tdsync.Ack
 	var maxActionID int64
-	for _, a := range pushResp.Acks {
-		acks = append(acks, tdsync.Ack{
-			ClientActionID: a.ClientActionID,
-			ServerSeq:      a.ServerSeq,
-		})
-		if a.ClientActionID > maxActionID {
-			maxActionID = a.ClientActionID
+	totalAccepted := 0
+	var allHistoryEntries []db.SyncHistoryEntry
+
+	// Push in batches to stay within server limits
+	for i := 0; i < len(events); i += pushBatchSize {
+		end := i + pushBatchSize
+		if end > len(events) {
+			end = len(events)
 		}
-	}
-	// Treat duplicate rejections as idempotent success — mark them synced too
-	for _, r := range pushResp.Rejected {
-		if r.Reason == "duplicate" && r.ServerSeq > 0 {
-			acks = append(acks, tdsync.Ack{
-				ClientActionID: r.ClientActionID,
-				ServerSeq:      r.ServerSeq,
+		batch := events[i:end]
+
+		pushReq := &syncclient.PushRequest{
+			DeviceID:  deviceID,
+			SessionID: sess.ID,
+		}
+		for _, ev := range batch {
+			pushReq.Events = append(pushReq.Events, syncclient.EventInput{
+				ClientActionID:  ev.ClientActionID,
+				ActionType:      ev.ActionType,
+				EntityType:      ev.EntityType,
+				EntityID:        ev.EntityID,
+				Payload:         ev.Payload,
+				ClientTimestamp: ev.ClientTimestamp.Format(time.RFC3339),
 			})
-			if r.ClientActionID > maxActionID {
-				maxActionID = r.ClientActionID
+		}
+
+		pushResp, err := client.Push(state.ProjectID, pushReq)
+		if err != nil {
+			if errors.Is(err, syncclient.ErrUnauthorized) {
+				output.Error("unauthorized - re-login may be needed")
+			} else {
+				output.Error("push: %v", err)
+			}
+			return err
+		}
+
+		totalAccepted += pushResp.Accepted
+
+		for _, a := range pushResp.Acks {
+			allAcks = append(allAcks, tdsync.Ack{
+				ClientActionID: a.ClientActionID,
+				ServerSeq:      a.ServerSeq,
+			})
+			if a.ClientActionID > maxActionID {
+				maxActionID = a.ClientActionID
+			}
+		}
+		// Treat duplicate rejections as idempotent success — mark them synced too
+		for _, r := range pushResp.Rejected {
+			if r.Reason == "duplicate" && r.ServerSeq > 0 {
+				allAcks = append(allAcks, tdsync.Ack{
+					ClientActionID: r.ClientActionID,
+					ServerSeq:      r.ServerSeq,
+				})
+				if r.ClientActionID > maxActionID {
+					maxActionID = r.ClientActionID
+				}
+			}
+		}
+
+		// Build history entries for this batch
+		ackMap := make(map[int64]int64)
+		for _, a := range pushResp.Acks {
+			ackMap[a.ClientActionID] = a.ServerSeq
+		}
+		for _, ev := range batch {
+			if seq, ok := ackMap[ev.ClientActionID]; ok {
+				allHistoryEntries = append(allHistoryEntries, db.SyncHistoryEntry{
+					Direction:  "push",
+					ActionType: ev.ActionType,
+					EntityType: ev.EntityType,
+					EntityID:   ev.EntityID,
+					ServerSeq:  seq,
+					DeviceID:   deviceID,
+					Timestamp:  time.Now(),
+				})
 			}
 		}
 	}
 
-	if err := tdsync.MarkEventsSynced(tx, acks); err != nil {
+	if err := tdsync.MarkEventsSynced(tx, allAcks); err != nil {
 		output.Error("mark synced: %v", err)
 		return err
 	}
@@ -358,26 +393,7 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		}
 	}
 
-	// Record sync history
-	ackMap := make(map[int64]int64) // clientActionID -> serverSeq
-	for _, a := range acks {
-		ackMap[a.ClientActionID] = a.ServerSeq
-	}
-	var historyEntries []db.SyncHistoryEntry
-	for _, ev := range events {
-		if seq, ok := ackMap[ev.ClientActionID]; ok {
-			historyEntries = append(historyEntries, db.SyncHistoryEntry{
-				Direction:  "push",
-				ActionType: ev.ActionType,
-				EntityType: ev.EntityType,
-				EntityID:   ev.EntityID,
-				ServerSeq:  seq,
-				DeviceID:   deviceID,
-				Timestamp:  time.Now(),
-			})
-		}
-	}
-	if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+	if err := db.RecordSyncHistoryTx(tx, allHistoryEntries); err != nil {
 		slog.Debug("sync: record push history", "err", err)
 	}
 
@@ -386,7 +402,7 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		return err
 	}
 
-	fmt.Printf("Pushed %d events.\n", pushResp.Accepted)
+	fmt.Printf("Pushed %d events.\n", totalAccepted)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -343,15 +344,42 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 	isNew := m.BoardEditorMode == "create"
 	board := m.BoardEditorBoard
 
+	// Capture previous data before mutation for update logging
+	var prevData []byte
+	if !isNew && board != nil {
+		prevData, _ = json.Marshal(board)
+	}
+
 	return m, func() tea.Msg {
 		if isNew {
 			newBoard, err := m.DB.CreateBoard(name, queryStr)
+			if err == nil {
+				newData, _ := json.Marshal(newBoard)
+				m.DB.LogAction(&models.ActionLog{
+					SessionID:  m.SessionID,
+					ActionType: models.ActionBoardCreate,
+					EntityType: "board",
+					EntityID:   newBoard.ID,
+					NewData:    string(newData),
+				})
+			}
 			return BoardEditorSaveResultMsg{Board: newBoard, IsNew: true, Error: err}
 		}
 		// Update existing
 		board.Name = name
 		board.Query = queryStr
 		err := m.DB.UpdateBoard(board)
+		if err == nil {
+			newData, _ := json.Marshal(board)
+			m.DB.LogAction(&models.ActionLog{
+				SessionID:    m.SessionID,
+				ActionType:   models.ActionBoardUpdate,
+				EntityType:   "board",
+				EntityID:     board.ID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
+		}
 		return BoardEditorSaveResultMsg{Board: board, IsNew: false, Error: err}
 	}
 }
@@ -363,8 +391,20 @@ func (m Model) executeBoardEditorDelete() (Model, tea.Cmd) {
 	}
 	boardID := m.BoardEditorBoard.ID
 
+	// Capture board state before deletion for undo logging
+	prevData, _ := json.Marshal(m.BoardEditorBoard)
+
 	return m, func() tea.Msg {
 		err := m.DB.DeleteBoard(boardID)
+		if err == nil {
+			m.DB.LogAction(&models.ActionLog{
+				SessionID:    m.SessionID,
+				ActionType:   models.ActionBoardDelete,
+				EntityType:   "board",
+				EntityID:     boardID,
+				PreviousData: string(prevData),
+			})
+		}
 		return BoardEditorDeleteResultMsg{BoardID: boardID, Error: err}
 	}
 }

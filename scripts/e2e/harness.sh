@@ -98,8 +98,11 @@ wait_for() {
 
 # ---- Helpers: run td as each client ----
 
-td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" "$TD_BIN" "$@"); }
-td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" "$TD_BIN" "$@"); }
+SESSION_ID_A="e2e-alice-$$"
+SESSION_ID_B="e2e-bob-$$"
+
+td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" "$TD_BIN" "$@"); }
+td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" "$TD_BIN" "$@"); }
 
 # ---- Teardown ----
 

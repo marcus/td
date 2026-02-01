@@ -1,11 +1,13 @@
 package monitor
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -84,7 +86,19 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		// Add dependencies
 		for _, depID := range deps {
 			if depID != "" {
-				_ = m.DB.AddDependency(issue.ID, depID, "depends_on")
+				if err := m.DB.AddDependency(issue.ID, depID, "depends_on"); err == nil {
+					depEntityID := db.DependencyID(issue.ID, depID, "depends_on")
+					depData, _ := json.Marshal(map[string]string{
+						"id": depEntityID, "issue_id": issue.ID, "depends_on_id": depID, "relation_type": "depends_on",
+					})
+					m.DB.LogAction(&models.ActionLog{
+						SessionID:  m.SessionID,
+						ActionType: models.ActionAddDep,
+						EntityType: "issue_dependencies",
+						EntityID:   depEntityID,
+						NewData:    string(depData),
+					})
+				}
 			}
 		}
 
