@@ -556,21 +556,15 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 			return fmt.Errorf("issue %s not positioned on board", id2)
 		}
 
-		// Swap using a temp position to avoid unique constraint
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = -1 WHERE board_id = ? AND issue_id = ?`,
-			boardID, id1)
+		// Swap positions directly (no UNIQUE constraint on position)
+		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
+			pos2, boardID, id1)
 		if err != nil {
 			return err
 		}
 
 		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
 			pos1, boardID, id2)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
-			pos2, boardID, id1)
 		if err != nil {
 			return err
 		}
