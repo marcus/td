@@ -175,6 +175,8 @@ func parseTimestamp(s string) (time.Time, error) {
 		"2006-01-02T15:04:05.999999999-07:00",
 		"2006-01-02T15:04:05.999999999Z07:00",
 		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05 -0700 -0700", // Go time.Time.String() with numeric tz
+		"2006-01-02 15:04:05 -0700 MST",   // Go time.Time.String() standard
 	}
 	for _, f := range formats {
 		if t, err := time.Parse(f, s); err == nil {
