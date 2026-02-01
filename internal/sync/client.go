@@ -15,7 +15,7 @@ func mapActionType(tdAction string) string {
 		return "create"
 	case "delete", "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
 		return "delete"
-	case "board_unposition", "board_remove_issue":
+	case "board_unposition", "board_remove_issue", "soft_delete":
 		return "soft_delete"
 	default:
 		return "update"

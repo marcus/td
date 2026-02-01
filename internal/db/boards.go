@@ -565,13 +565,13 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 		}
 
 		// Swap positions directly (no UNIQUE constraint on position)
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
+		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			pos2, boardID, id1)
 		if err != nil {
 			return err
 		}
 
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
+		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			pos1, boardID, id2)
 		if err != nil {
 			return err

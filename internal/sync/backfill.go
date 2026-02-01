@@ -14,25 +14,26 @@ import (
 // syncableTable describes a table whose rows should be backfilled into action_log
 // when no corresponding event exists.
 type syncableTable struct {
-	Table       string   // canonical table name (e.g. "issues")
-	ActionType  string   // entity_type to use in the synthetic action_log row
-	Aliases     []string // all entity_type strings that may appear in action_log for this table
-	CreateTypes []string // action_type values that indicate a create event for this table
+	Table         string   // canonical table name (e.g. "issues")
+	ActionType    string   // entity_type to use in the synthetic action_log row
+	Aliases       []string // all entity_type strings that may appear in action_log for this table
+	CreateTypes   []string // action_type values that indicate a create event for this table
+	HasSoftDelete bool     // true if table has deleted_at column; backfill excludes soft-deleted rows
 }
 
 // syncableTables lists every table the sync engine pushes/pulls.
 // Aliases must cover both singular and plural forms used by existing code paths.
 var syncableTables = []syncableTable{
-	{"issues", "issue", []string{"issue", "issues"}, []string{"create"}},
-	{"logs", "logs", []string{"log", "logs"}, []string{"create"}},
-	{"comments", "comments", []string{"comment", "comments"}, []string{"create"}},
-	{"handoffs", "handoff", []string{"handoff", "handoffs"}, []string{"handoff"}},
-	{"boards", "boards", []string{"board", "boards"}, []string{"board_create"}},
-	{"work_sessions", "work_sessions", []string{"work_session", "work_sessions"}, []string{"create"}},
-	{"board_issue_positions", "board_position", []string{"board_position", "board_issue_positions"}, []string{"board_set_position", "board_add_issue"}},
-	{"issue_dependencies", "dependency", []string{"dependency", "issue_dependencies"}, []string{"add_dependency"}},
-	{"issue_files", "file_link", []string{"file_link", "issue_files"}, []string{"link_file"}},
-	{"work_session_issues", "work_session_issues", []string{"work_session_issue", "work_session_issues"}, []string{"work_session_tag"}},
+	{"issues", "issue", []string{"issue", "issues"}, []string{"create"}, false},
+	{"logs", "logs", []string{"log", "logs"}, []string{"create"}, false},
+	{"comments", "comments", []string{"comment", "comments"}, []string{"create"}, false},
+	{"handoffs", "handoff", []string{"handoff", "handoffs"}, []string{"handoff"}, false},
+	{"boards", "boards", []string{"board", "boards"}, []string{"board_create"}, false},
+	{"work_sessions", "work_sessions", []string{"work_session", "work_sessions"}, []string{"create"}, false},
+	{"board_issue_positions", "board_position", []string{"board_position", "board_issue_positions"}, []string{"board_set_position", "board_add_issue"}, true},
+	{"issue_dependencies", "dependency", []string{"dependency", "issue_dependencies"}, []string{"add_dependency"}, false},
+	{"issue_files", "file_link", []string{"file_link", "issue_files"}, []string{"link_file"}, false},
+	{"work_session_issues", "work_session_issues", []string{"work_session_issue", "work_session_issues"}, []string{"work_session_tag"}, false},
 }
 
 // BackfillOrphanEntities scans all syncable tables for rows that have no
@@ -230,13 +231,18 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 		args = append(args, a)
 	}
 
+	softDeleteFilter := ""
+	if st.HasSoftDelete {
+		softDeleteFilter = " AND t.deleted_at IS NULL"
+	}
+
 	query := fmt.Sprintf(
 		`SELECT * FROM %s t WHERE NOT EXISTS (
 			SELECT 1 FROM action_log al
 			WHERE al.entity_id = t.id
 			AND al.entity_type IN (%s)
 			AND al.action_type IN (%s)
-		)`, st.Table, strings.Join(typePH, ","), strings.Join(createPH, ","))
+		)%s`, st.Table, strings.Join(typePH, ","), strings.Join(createPH, ","), softDeleteFilter)
 
 	rows, err := tx.Query(query, args...)
 	if err != nil {
