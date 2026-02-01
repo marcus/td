@@ -69,24 +69,24 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 		return nil, fmt.Errorf("database error: %w", err)
 	}
 
-	// Apply in-memory filtering for complex conditions
-	matcher, err := evaluator.ToMatcher()
-	if err != nil {
-		return nil, fmt.Errorf("matcher error: %w", err)
-	}
-
 	var filtered []models.Issue
-	for _, issue := range issues {
-		if matcher(issue) {
-			filtered = append(filtered, issue)
-		}
-	}
-
-	// Handle cross-entity queries
 	if hasCrossEntity {
-		filtered, err = applyCrossEntityFilters(database, filtered, query, ctx)
+		// When cross-entity conditions exist, use the AST-walking evaluator
+		// which handles both cross-entity and regular fields with correct boolean logic
+		filtered, err = applyCrossEntityFilters(database, issues, query, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cross-entity filter error: %w", err)
+		}
+	} else {
+		// Pure regular-field queries: use in-memory matcher (faster, no DB lookups)
+		matcher, err := evaluator.ToMatcher()
+		if err != nil {
+			return nil, fmt.Errorf("matcher error: %w", err)
+		}
+		for _, issue := range issues {
+			if matcher(issue) {
+				filtered = append(filtered, issue)
+			}
 		}
 	}
 
@@ -103,53 +103,208 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 		return issues, nil
 	}
 
-	// Find cross-entity conditions in the AST
-	crossFilters := extractCrossEntityConditions(query.Root)
-	if len(crossFilters) == 0 {
-		return issues, nil
+	// Pre-fetch bulk data for efficiency
+	prefetch, err := prefetchCrossEntityData(database, query.Root)
+	if err != nil {
+		return nil, err
 	}
 
-	// Pre-fetch data for efficiency - call once, not per issue
-	var reworkIDs map[string]bool
-	var issuesWithOpenDeps map[string]bool
-	var err error
-	for _, filter := range crossFilters {
-		if filter.field == "rework" && reworkIDs == nil {
-			reworkIDs, err = database.GetRejectedInProgressIssueIDs()
-			if err != nil {
-				return nil, fmt.Errorf("failed to fetch rework IDs: %w", err)
-			}
-		}
-		if (filter.field == "is_ready" || filter.field == "has_open_deps") && issuesWithOpenDeps == nil {
-			issuesWithOpenDeps, err = database.GetIssuesWithOpenDeps()
-			if err != nil {
-				return nil, fmt.Errorf("failed to fetch dependency data: %w", err)
-			}
-		}
-	}
-
+	// Build a per-issue matcher that walks the AST and respects OR/AND/NOT
 	var result []models.Issue
 	for _, issue := range issues {
-		matches := true
-		for _, filter := range crossFilters {
-			match, err := applyCrossEntityFilter(database, issue, filter, ctx, reworkIDs, issuesWithOpenDeps)
-			if err != nil {
-				return nil, err
-			}
-			// Apply negation if the filter was wrapped in NOT
-			if filter.negated {
-				match = !match
-			}
-			if !match {
-				matches = false
-				break
-			}
+		match, err := evalCrossEntityNode(database, issue, query.Root, ctx, prefetch)
+		if err != nil {
+			return nil, err
 		}
-		if matches {
+		if match {
 			result = append(result, issue)
 		}
 	}
 	return result, nil
+}
+
+// crossEntityPrefetch holds pre-fetched bulk data to avoid per-issue queries
+type crossEntityPrefetch struct {
+	reworkIDs        map[string]bool
+	issuesWithOpenDeps map[string]bool
+}
+
+// prefetchCrossEntityData walks the AST to find what bulk data needs pre-fetching
+func prefetchCrossEntityData(database *db.DB, n Node) (*crossEntityPrefetch, error) {
+	p := &crossEntityPrefetch{}
+	needs := collectFunctionNames(n)
+	var err error
+	if needs["rework"] {
+		p.reworkIDs, err = database.GetRejectedInProgressIssueIDs()
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch rework IDs: %w", err)
+		}
+	}
+	if needs["is_ready"] || needs["has_open_deps"] {
+		p.issuesWithOpenDeps, err = database.GetIssuesWithOpenDeps()
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch dependency data: %w", err)
+		}
+	}
+	return p, nil
+}
+
+func collectFunctionNames(n Node) map[string]bool {
+	names := make(map[string]bool)
+	switch node := n.(type) {
+	case *BinaryExpr:
+		for k, v := range collectFunctionNames(node.Left) {
+			names[k] = v
+		}
+		for k, v := range collectFunctionNames(node.Right) {
+			names[k] = v
+		}
+	case *UnaryExpr:
+		for k, v := range collectFunctionNames(node.Expr) {
+			names[k] = v
+		}
+	case *FunctionCall:
+		names[node.Name] = true
+	}
+	return names
+}
+
+// evalCrossEntityNode recursively evaluates the AST for a single issue,
+// respecting AND/OR/NOT boolean operators for all conditions.
+// When hasMixedOR is true, regular field conditions are also evaluated here
+// (not just passed through) so that OR between cross-entity and regular fields works correctly.
+func evalCrossEntityNode(database *db.DB, issue models.Issue, n Node, ctx *EvalContext, pf *crossEntityPrefetch) (bool, error) {
+	switch node := n.(type) {
+	case *BinaryExpr:
+		left, err := evalCrossEntityNode(database, issue, node.Left, ctx, pf)
+		if err != nil {
+			return false, err
+		}
+		// Short-circuit for AND/OR
+		if node.Op == OpAnd && !left {
+			return false, nil
+		}
+		if node.Op == OpOr && left {
+			return true, nil
+		}
+		right, err := evalCrossEntityNode(database, issue, node.Right, ctx, pf)
+		if err != nil {
+			return false, err
+		}
+		if node.Op == OpAnd {
+			return right, nil
+		}
+		return right, nil
+
+	case *UnaryExpr:
+		inner, err := evalCrossEntityNode(database, issue, node.Expr, ctx, pf)
+		if err != nil {
+			return false, err
+		}
+		return !inner, nil
+
+	case *FieldExpr:
+		filter := fieldExprToFilter(node, false)
+		if filter != nil {
+			return applyCrossEntityFilter(database, issue, *filter, ctx, pf.reworkIDs, pf.issuesWithOpenDeps)
+		}
+		// Regular field - evaluate in-memory
+		evaluator := NewEvaluator(ctx, &Query{})
+		matcher, err := evaluator.fieldExprToMatcher(node)
+		if err != nil {
+			return true, nil
+		}
+		return matcher(issue), nil
+
+	case *FunctionCall:
+		filter := functionCallToFilter(node, false)
+		if filter != nil {
+			return applyCrossEntityFilter(database, issue, *filter, ctx, pf.reworkIDs, pf.issuesWithOpenDeps)
+		}
+		// Regular function - evaluate in-memory
+		evaluator := NewEvaluator(ctx, &Query{})
+		matcher, err := evaluator.functionToMatcher(node)
+		if err != nil {
+			return true, nil
+		}
+		return matcher(issue), nil
+
+	case *TextSearch:
+		evaluator := NewEvaluator(ctx, &Query{})
+		matcher, err := evaluator.nodeToMatcher(node)
+		if err != nil {
+			return true, nil
+		}
+		return matcher(issue), nil
+
+	default:
+		return true, nil
+	}
+}
+
+// fieldExprToFilter converts a FieldExpr to a crossEntityFilter if it's a cross-entity field.
+// Returns nil for non-cross-entity fields.
+func fieldExprToFilter(node *FieldExpr, negated bool) *crossEntityFilter {
+	if node.Field == "epic" {
+		return &crossEntityFilter{
+			entity:   "epic",
+			field:    "id",
+			operator: node.Operator,
+			value:    node.Value,
+			negated:  negated,
+		}
+	}
+	parts := strings.Split(node.Field, ".")
+	if len(parts) > 1 {
+		prefix := parts[0]
+		if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "epic" {
+			return &crossEntityFilter{
+				entity:   prefix,
+				field:    parts[1],
+				operator: node.Operator,
+				value:    node.Value,
+				negated:  negated,
+			}
+		}
+	}
+	return nil
+}
+
+// functionCallToFilter converts a FunctionCall to a crossEntityFilter if it's a cross-entity function.
+// Returns nil for non-cross-entity functions.
+func functionCallToFilter(node *FunctionCall, negated bool) *crossEntityFilter {
+	if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" || node.Name == "is_ready" || node.Name == "has_open_deps" {
+		return &crossEntityFilter{
+			entity:   "function",
+			field:    node.Name,
+			operator: "",
+			value:    node.Args,
+			negated:  negated,
+		}
+	}
+	return nil
+}
+
+// countCrossEntityConditions counts the number of cross-entity leaf conditions in the AST.
+// Used by tests to verify cross-entity condition detection.
+func countCrossEntityConditions(n Node) int {
+	count := 0
+	switch node := n.(type) {
+	case *BinaryExpr:
+		count += countCrossEntityConditions(node.Left)
+		count += countCrossEntityConditions(node.Right)
+	case *UnaryExpr:
+		count += countCrossEntityConditions(node.Expr)
+	case *FieldExpr:
+		if fieldExprToFilter(node, false) != nil {
+			count++
+		}
+	case *FunctionCall:
+		if functionCallToFilter(node, false) != nil {
+			count++
+		}
+	}
+	return count
 }
 
 type crossEntityFilter struct {
@@ -157,61 +312,7 @@ type crossEntityFilter struct {
 	field    string // message, type, text, etc.
 	operator string
 	value    interface{}
-	negated  bool // true if wrapped in NOT
-}
-
-func extractCrossEntityConditions(n Node) []crossEntityFilter {
-	return extractCrossEntityConditionsWithNegation(n, false)
-}
-
-func extractCrossEntityConditionsWithNegation(n Node, negated bool) []crossEntityFilter {
-	var filters []crossEntityFilter
-
-	switch node := n.(type) {
-	case *BinaryExpr:
-		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Left, negated)...)
-		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Right, negated)...)
-	case *UnaryExpr:
-		// NOT flips the negation state
-		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Expr, !negated)...)
-	case *FieldExpr:
-		// "epic" without dot (e.g., "epic = td-123") matches by ancestor epic ID
-		if node.Field == "epic" {
-			filters = append(filters, crossEntityFilter{
-				entity:   "epic",
-				field:    "id",
-				operator: node.Operator,
-				value:    node.Value,
-				negated:  negated,
-			})
-			break
-		}
-		parts := strings.Split(node.Field, ".")
-		if len(parts) > 1 {
-			prefix := parts[0]
-			if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "epic" {
-				filters = append(filters, crossEntityFilter{
-					entity:   prefix,
-					field:    parts[1],
-					operator: node.Operator,
-					value:    node.Value,
-					negated:  negated,
-				})
-			}
-		}
-	case *FunctionCall:
-		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" || node.Name == "is_ready" || node.Name == "has_open_deps" {
-			filters = append(filters, crossEntityFilter{
-				entity:   "function",
-				field:    node.Name,
-				operator: "",
-				value:    node.Args,
-				negated:  negated,
-			})
-		}
-	}
-
-	return filters
+	negated  bool // true if wrapped in NOT (unused in new AST-walk approach)
 }
 
 func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
@@ -436,8 +537,8 @@ func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntity
 
 	switch filter.field {
 	case "blocks":
-		// Check if this issue blocks the target
-		deps, err := database.GetBlockedBy(targetID)
+		// Check if this issue blocks the target (i.e., target depends on this issue)
+		deps, err := database.GetDependencies(targetID)
 		if err != nil {
 			return false, err
 		}
@@ -449,7 +550,7 @@ func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntity
 		return false, nil
 
 	case "blocked_by":
-		// Check if this issue is blocked by the target
+		// Check if this issue is blocked by the target (i.e., this issue depends on target)
 		deps, err := database.GetDependencies(issue.ID)
 		if err != nil {
 			return false, err

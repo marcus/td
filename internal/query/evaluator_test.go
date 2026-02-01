@@ -682,9 +682,9 @@ func TestExtractCrossEntityConditions(t *testing.T) {
 				return
 			}
 
-			filters := extractCrossEntityConditions(query.Root)
-			if len(filters) != tt.expectCount {
-				t.Errorf("extractCrossEntityConditions() returned %d filters, want %d", len(filters), tt.expectCount)
+			count := countCrossEntityConditions(query.Root)
+			if count != tt.expectCount {
+				t.Errorf("countCrossEntityConditions() returned %d, want %d", count, tt.expectCount)
 			}
 		})
 	}

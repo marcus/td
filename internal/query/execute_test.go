@@ -754,6 +754,727 @@ func TestReworkFunction(t *testing.T) {
 	})
 }
 
+func TestExecuteEpicOR(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create two epics with children
+	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicA); err != nil {
+		t.Fatal(err)
+	}
+	epicB := &models.Issue{Title: "Epic B", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicB); err != nil {
+		t.Fatal(err)
+	}
+
+	taskA1 := &models.Issue{Title: "Task A1", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicA.ID}
+	if err := database.CreateIssue(taskA1); err != nil {
+		t.Fatal(err)
+	}
+	taskA2 := &models.Issue{Title: "Task A2", Status: models.StatusClosed, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicA.ID}
+	if err := database.CreateIssue(taskA2); err != nil {
+		t.Fatal(err)
+	}
+	taskB1 := &models.Issue{Title: "Task B1", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicB.ID}
+	if err := database.CreateIssue(taskB1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unrelated issue (no epic parent)
+	standalone := &models.Issue{Title: "Standalone", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(standalone); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("epic = X OR epic = Y returns union", func(t *testing.T) {
+		q := "epic = " + epicA.ID + " OR epic = " + epicB.ID
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskA1.ID: true, taskA2.ID: true, taskB1.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("epic OR with AND status filter", func(t *testing.T) {
+		q := "(epic = " + epicA.ID + " OR epic = " + epicB.ID + ") AND status = open"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskA1.ID: true, taskB1.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("epic OR status returns union of cross-entity and regular", func(t *testing.T) {
+		q := "epic = " + epicA.ID + " OR status = closed"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		// taskA1 and taskA2 from epic, taskA2 also from status=closed (dedup)
+		if !got[taskA1.ID] || !got[taskA2.ID] {
+			t.Errorf("got %v, should include taskA1 and taskA2", got)
+		}
+	})
+
+	t.Run("epic = nonexistent returns empty", func(t *testing.T) {
+		results, err := Execute(database, "epic = td-nonexistent", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(results) != 0 {
+			t.Errorf("got %d results, want 0", len(results))
+		}
+	})
+
+	t.Run("epic = X OR epic = nonexistent returns just X descendants", func(t *testing.T) {
+		q := "epic = " + epicA.ID + " OR epic = td-nonexistent"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskA1.ID: true, taskA2.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteDescendantOfOR(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// hierarchy: epicX -> taskX1 -> subtaskX1; epicY -> taskY1
+	epicX := &models.Issue{Title: "Epic X", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicX); err != nil {
+		t.Fatal(err)
+	}
+	taskX1 := &models.Issue{Title: "Task X1", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicX.ID}
+	if err := database.CreateIssue(taskX1); err != nil {
+		t.Fatal(err)
+	}
+	subtaskX1 := &models.Issue{Title: "Subtask X1", Status: models.StatusClosed, Type: models.TypeTask, Priority: models.PriorityP3, ParentID: taskX1.ID}
+	if err := database.CreateIssue(subtaskX1); err != nil {
+		t.Fatal(err)
+	}
+	epicY := &models.Issue{Title: "Epic Y", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicY); err != nil {
+		t.Fatal(err)
+	}
+	taskY1 := &models.Issue{Title: "Task Y1", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicY.ID}
+	if err := database.CreateIssue(taskY1); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := &models.Issue{Title: "Unrelated", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(unrelated); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("descendant_of(X) OR descendant_of(Y) returns union", func(t *testing.T) {
+		q := "descendant_of(" + epicX.ID + ") OR descendant_of(" + epicY.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskX1.ID: true, subtaskX1.ID: true, taskY1.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("descendant_of(X) AND status = open", func(t *testing.T) {
+		q := "descendant_of(" + epicX.ID + ") AND status = open"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskX1.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT descendant_of(X) excludes descendants", func(t *testing.T) {
+		q := "NOT descendant_of(" + epicX.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[taskX1.ID] || got[subtaskX1.ID] {
+			t.Errorf("should not include descendants of epicX, got %v", got)
+		}
+		if !got[epicX.ID] || !got[epicY.ID] || !got[taskY1.ID] || !got[unrelated.ID] {
+			t.Errorf("should include non-descendants, got %v", got)
+		}
+	})
+}
+
+func TestExecuteLogBooleanCombinations(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	issueC := createTestIssue(t, database, "", "Issue C", models.StatusClosed, models.TypeTask, models.PriorityP3)
+
+	// issueA has "deploy" log
+	if err := database.AddLog(&models.Log{IssueID: issueA.ID, SessionID: "ses_test", Message: "deployed to staging", Type: models.LogTypeProgress}); err != nil {
+		t.Fatal(err)
+	}
+	// issueB has "rollback" log with blocker type
+	if err := database.AddLog(&models.Log{IssueID: issueB.ID, SessionID: "ses_test", Message: "rollback needed", Type: models.LogTypeBlocker}); err != nil {
+		t.Fatal(err)
+	}
+	// issueC has "decision" log
+	if err := database.AddLog(&models.Log{IssueID: issueC.ID, SessionID: "ses_test", Message: "decided to proceed", Type: models.LogTypeDecision}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("log.message OR log.message returns union", func(t *testing.T) {
+		results, err := Execute(database, `log.message ~ "deploy" OR log.message ~ "rollback"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true, issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT log.message excludes matches", func(t *testing.T) {
+		results, err := Execute(database, `NOT log.message ~ "deploy"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[issueA.ID] {
+			t.Errorf("should not include issueA with deploy log, got %v", got)
+		}
+		if !got[issueB.ID] || !got[issueC.ID] {
+			t.Errorf("should include issueB and issueC, got %v", got)
+		}
+	})
+
+	t.Run("log.type OR log.type", func(t *testing.T) {
+		results, err := Execute(database, `log.type = blocker OR log.type = decision`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueB.ID: true, issueC.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("log.message AND status combined", func(t *testing.T) {
+		results, err := Execute(database, `log.message ~ "decided" AND status = closed`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueC.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteCommentCrossEntity(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	issueC := createTestIssue(t, database, "", "Issue C", models.StatusClosed, models.TypeTask, models.PriorityP3)
+
+	if err := database.AddComment(&models.Comment{IssueID: issueA.ID, SessionID: "ses_test", Text: "approved for production"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddComment(&models.Comment{IssueID: issueB.ID, SessionID: "ses_test", Text: "needs revision"}); err != nil {
+		t.Fatal(err)
+	}
+	// issueC has no comments
+
+	t.Run("comment.text basic match", func(t *testing.T) {
+		results, err := Execute(database, `comment.text ~ "approved"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("comment.text OR comment.text", func(t *testing.T) {
+		results, err := Execute(database, `comment.text ~ "approved" OR comment.text ~ "revision"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true, issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT comment.text excludes matches", func(t *testing.T) {
+		results, err := Execute(database, `NOT comment.text ~ "approved"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[issueA.ID] {
+			t.Errorf("should not include issueA, got %v", got)
+		}
+		if !got[issueB.ID] || !got[issueC.ID] {
+			t.Errorf("should include issueB and issueC, got %v", got)
+		}
+	})
+
+	t.Run("comment.text AND status combined", func(t *testing.T) {
+		results, err := Execute(database, `comment.text ~ "revision" AND status = open`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteHandoffCrossEntity(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	issueC := createTestIssue(t, database, "", "Issue C", models.StatusOpen, models.TypeTask, models.PriorityP3)
+
+	if err := database.AddHandoff(&models.Handoff{
+		IssueID:   issueA.ID,
+		SessionID: "ses_test",
+		Done:      []string{"completed database migration"},
+		Remaining: []string{"update API endpoints"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddHandoff(&models.Handoff{
+		IssueID:   issueB.ID,
+		SessionID: "ses_test",
+		Done:      []string{"wrote unit tests"},
+		Remaining: []string{"TODO: fix flaky test"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// issueC has no handoff
+
+	t.Run("handoff.done basic match", func(t *testing.T) {
+		results, err := Execute(database, `handoff.done ~ "database"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("handoff.remaining OR handoff.done across fields", func(t *testing.T) {
+		results, err := Execute(database, `handoff.remaining ~ "TODO" OR handoff.done ~ "database"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true, issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT handoff.remaining excludes matches", func(t *testing.T) {
+		results, err := Execute(database, `NOT handoff.remaining ~ "TODO"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[issueB.ID] {
+			t.Errorf("should not include issueB with TODO remaining, got %v", got)
+		}
+		// issueA and issueC should be included (issueA has different remaining, issueC has no handoff)
+		if !got[issueA.ID] || !got[issueC.ID] {
+			t.Errorf("should include issueA and issueC, got %v", got)
+		}
+	})
+}
+
+func TestExecuteFileCrossEntity(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	issueC := createTestIssue(t, database, "", "Issue C", models.StatusOpen, models.TypeTask, models.PriorityP3)
+
+	if err := database.LinkFile(issueA.ID, "cmd/main.go", models.FileRoleImplementation, "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.LinkFile(issueA.ID, "cmd/main_test.go", models.FileRoleTest, "abc124"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.LinkFile(issueB.ID, "config/app.yaml", models.FileRoleConfig, "def456"); err != nil {
+		t.Fatal(err)
+	}
+	// issueC has no files
+
+	t.Run("file.path basic match", func(t *testing.T) {
+		results, err := Execute(database, `file.path ~ "main.go"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		// issueA has both main.go and main_test.go matching "main.go"
+		want := map[string]bool{issueA.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("file.role match", func(t *testing.T) {
+		results, err := Execute(database, `file.role = test`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("file.role OR file.role", func(t *testing.T) {
+		results, err := Execute(database, `file.role = test OR file.role = config`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true, issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT file.path excludes match", func(t *testing.T) {
+		results, err := Execute(database, `NOT file.path ~ "main.go"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[issueA.ID] {
+			t.Errorf("should not include issueA, got %v", got)
+		}
+		if !got[issueB.ID] || !got[issueC.ID] {
+			t.Errorf("should include issueB and issueC, got %v", got)
+		}
+	})
+}
+
+func TestExecuteMixedCrossEntityOR(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	createTestIssue(t, database, "", "Issue C", models.StatusOpen, models.TypeTask, models.PriorityP3)
+
+	// issueA has a log
+	if err := database.AddLog(&models.Log{IssueID: issueA.ID, SessionID: "ses_test", Message: "deploy complete", Type: models.LogTypeProgress}); err != nil {
+		t.Fatal(err)
+	}
+	// issueB has a comment
+	if err := database.AddComment(&models.Comment{IssueID: issueB.ID, SessionID: "ses_test", Text: "looks good"}); err != nil {
+		t.Fatal(err)
+	}
+	// issueC has nothing
+
+	t.Run("log OR comment across different cross-entity types", func(t *testing.T) {
+		results, err := Execute(database, `log.message ~ "deploy" OR comment.text ~ "looks good"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{issueA.ID: true, issueB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteMixedCrossEntityEpicAndDescendant(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicA); err != nil {
+		t.Fatal(err)
+	}
+	taskA := &models.Issue{Title: "Task A", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicA.ID}
+	if err := database.CreateIssue(taskA); err != nil {
+		t.Fatal(err)
+	}
+
+	// Separate parent (not an epic) with a child
+	parentB := &models.Issue{Title: "Parent B", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(parentB); err != nil {
+		t.Fatal(err)
+	}
+	taskB := &models.Issue{Title: "Task B", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: parentB.ID}
+	if err := database.CreateIssue(taskB); err != nil {
+		t.Fatal(err)
+	}
+
+	unrelated := &models.Issue{Title: "Unrelated", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(unrelated); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("epic = X OR descendant_of(Y)", func(t *testing.T) {
+		q := "epic = " + epicA.ID + " OR descendant_of(" + parentB.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskA.ID: true, taskB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteComplexNested(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicA); err != nil {
+		t.Fatal(err)
+	}
+	epicB := &models.Issue{Title: "Epic B", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
+	if err := database.CreateIssue(epicB); err != nil {
+		t.Fatal(err)
+	}
+	taskA := &models.Issue{Title: "Task A", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicA.ID}
+	if err := database.CreateIssue(taskA); err != nil {
+		t.Fatal(err)
+	}
+	taskB := &models.Issue{Title: "Task B", Status: models.StatusClosed, Type: models.TypeTask, Priority: models.PriorityP2, ParentID: epicB.ID}
+	if err := database.CreateIssue(taskB); err != nil {
+		t.Fatal(err)
+	}
+	standalone := &models.Issue{Title: "Standalone", Status: models.StatusOpen, Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(standalone); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add logs/comments for mixed tests
+	if err := database.AddLog(&models.Log{IssueID: taskA.ID, SessionID: "ses_test", Message: "progress update", Type: models.LogTypeProgress}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddComment(&models.Comment{IssueID: taskB.ID, SessionID: "ses_test", Text: "reviewed and approved"}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("NOT (epic = X OR epic = Y) excludes both epics descendants", func(t *testing.T) {
+		q := "NOT (epic = " + epicA.ID + " OR epic = " + epicB.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[taskA.ID] || got[taskB.ID] {
+			t.Errorf("should not include tasks under either epic, got %v", got)
+		}
+		// Should include epics themselves and standalone
+		if !got[epicA.ID] || !got[epicB.ID] || !got[standalone.ID] {
+			t.Errorf("should include epics and standalone, got %v", got)
+		}
+	})
+
+	t.Run("cross-entity OR with AND status", func(t *testing.T) {
+		q := `(log.message ~ "progress" OR comment.text ~ "approved") AND status = open`
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		// taskA has log + open, taskB has comment but closed
+		want := map[string]bool{taskA.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("(epic = X AND status = open) OR (epic = Y AND status = closed)", func(t *testing.T) {
+		q := "(epic = " + epicA.ID + " AND status = open) OR (epic = " + epicB.ID + " AND status = closed)"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{taskA.ID: true, taskB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestExecuteBlocksOR(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	targetX := createTestIssue(t, database, "", "Target X", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	targetY := createTestIssue(t, database, "", "Target Y", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	blockerA := createTestIssue(t, database, "", "Blocker A", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	blockerB := createTestIssue(t, database, "", "Blocker B", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	unrelated := createTestIssue(t, database, "", "Unrelated", models.StatusOpen, models.TypeTask, models.PriorityP3)
+
+	// blockerA blocks targetX; blockerB blocks targetY
+	if err := database.AddDependency(targetX.ID, blockerA.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(targetY.ID, blockerB.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("blocks(X) OR blocks(Y) returns union", func(t *testing.T) {
+		q := "blocks(" + targetX.ID + ") OR blocks(" + targetY.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{blockerA.ID: true, blockerB.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("NOT blocked_by(X) excludes issues blocked by X", func(t *testing.T) {
+		q := "NOT blocked_by(" + blockerA.ID + ")"
+		results, err := Execute(database, q, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		if got[targetX.ID] {
+			t.Errorf("should not include targetX (blocked by blockerA), got %v", got)
+		}
+		if !got[blockerA.ID] || !got[blockerB.ID] || !got[targetY.ID] || !got[unrelated.ID] {
+			t.Errorf("should include non-blocked issues, got %v", got)
+		}
+	})
+}
+
+func TestExecuteIsReadyOR(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	blocker := createTestIssue(t, database, "", "Blocker", models.StatusOpen, models.TypeTask, models.PriorityP1)
+	blocked := createTestIssue(t, database, "", "Blocked", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	ready := createTestIssue(t, database, "", "Ready", models.StatusOpen, models.TypeTask, models.PriorityP2)
+	closed := createTestIssue(t, database, "", "Closed", models.StatusClosed, models.TypeTask, models.PriorityP3)
+
+	if err := database.AddDependency(blocked.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("is_ready() OR status = closed", func(t *testing.T) {
+		results, err := Execute(database, "is_ready() OR status = closed", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		// blocker, ready, closed are ready (no open deps); closed also matches status=closed
+		// blocked is NOT ready and NOT closed, should be excluded
+		if got[blocked.ID] {
+			t.Errorf("blocked should not be included, got %v", got)
+		}
+		if !got[blocker.ID] || !got[ready.ID] || !got[closed.ID] {
+			t.Errorf("should include ready and closed issues, got %v", got)
+		}
+	})
+
+	t.Run("NOT is_ready() AND status = open", func(t *testing.T) {
+		results, err := Execute(database, "NOT is_ready() AND status = open", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := idSet(results)
+		want := map[string]bool{blocked.ID: true}
+		if !equalSets(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("is_ready() AND NOT has_open_deps() is equivalent", func(t *testing.T) {
+		readyResults, err := Execute(database, "is_ready()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		combinedResults, err := Execute(database, "is_ready() AND NOT has_open_deps()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		gotReady := idSet(readyResults)
+		gotCombined := idSet(combinedResults)
+		if !equalSets(gotReady, gotCombined) {
+			t.Errorf("is_ready() = %v, is_ready() AND NOT has_open_deps() = %v, should be equal", gotReady, gotCombined)
+		}
+	})
+}
+
+// Helper functions for test assertions
+
+func idSet(issues []models.Issue) map[string]bool {
+	m := make(map[string]bool, len(issues))
+	for _, i := range issues {
+		m[i.ID] = true
+	}
+	return m
+}
+
+func equalSets(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestMain(m *testing.M) {
 	// Run tests
 	code := m.Run()
