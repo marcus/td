@@ -919,6 +919,186 @@ func TestWorkSessionIssueUntag_Sync(t *testing.T) {
 	}
 }
 
+// ─── Board query field sync tests ───
+
+func TestBoardQueryUpdate_Sync(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	boardID := "bd-query1"
+
+	// Client A creates a board with empty query
+	err := h.Mutate("client-A", "create", "boards", boardID, map[string]any{
+		"name":       "Query Board",
+		"query":      "",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("create board: %v", err)
+	}
+
+	// Client A updates the board query
+	err = h.Mutate("client-A", "update", "boards", boardID, map[string]any{
+		"name":       "Query Board",
+		"query":      "status:open priority:high",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("update board query: %v", err)
+	}
+
+	// Push A's events (both create and update) to server
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+
+	// Client B pulls — should get both events and end up with updated query
+	if _, err := h.Pull("client-B", compProj); err != nil {
+		t.Fatalf("pull B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Verify both clients have the updated query
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "boards", boardID)
+		if ent == nil {
+			t.Fatalf("%s: board %s not found", cid, boardID)
+		}
+		q, _ := ent["query"].(string)
+		if q != "status:open priority:high" {
+			t.Fatalf("%s: expected query %q, got %q", cid, "status:open priority:high", q)
+		}
+	}
+}
+
+func TestBoardQueryUpdate_OutOfOrder(t *testing.T) {
+	// Tests that board_update (mapped to "create" action) uses INSERT OR REPLACE,
+	// so even if the update event is processed, the board data is correct.
+	h := NewHarness(t, 2, compProj)
+
+	boardID := "bd-query2"
+
+	// Client A creates board and updates query
+	err := h.Mutate("client-A", "create", "boards", boardID, map[string]any{
+		"name":       "OOO Board",
+		"query":      "",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	err = h.Mutate("client-A", "update", "boards", boardID, map[string]any{
+		"name":       "OOO Board",
+		"query":      "type:bug",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	// Push both events from A
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+
+	// B pulls both events — board should have updated query
+	if _, err := h.Pull("client-B", compProj); err != nil {
+		t.Fatalf("pull B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "boards", boardID)
+		if ent == nil {
+			t.Fatalf("%s: board not found", cid)
+		}
+		q, _ := ent["query"].(string)
+		if q != "type:bug" {
+			t.Fatalf("%s: expected query %q, got %q", cid, "type:bug", q)
+		}
+	}
+}
+
+func TestBoardQueryUpdate_ConcurrentEdits_LWW(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	boardID := "bd-query3"
+
+	// Both clients create the same board
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "boards", boardID, map[string]any{
+			"name":       "LWW Board",
+			"query":      "",
+			"is_builtin": 0,
+			"view_mode":  "swimlanes",
+		}); err != nil {
+			t.Fatalf("create on %s: %v", cid, err)
+		}
+	}
+
+	// Sync so both have the board
+	if err := h.Sync("client-A", compProj); err != nil {
+		t.Fatalf("sync A1: %v", err)
+	}
+	if err := h.Sync("client-B", compProj); err != nil {
+		t.Fatalf("sync B1: %v", err)
+	}
+
+	// A sets query to "status:open", B sets query to "priority:high" concurrently
+	if err := h.Mutate("client-A", "update", "boards", boardID, map[string]any{
+		"name":       "LWW Board",
+		"query":      "status:open",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	}); err != nil {
+		t.Fatalf("update A: %v", err)
+	}
+	if err := h.Mutate("client-B", "update", "boards", boardID, map[string]any{
+		"name":       "LWW Board",
+		"query":      "priority:high",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	}); err != nil {
+		t.Fatalf("update B: %v", err)
+	}
+
+	// A pushes first, B pushes second (B gets higher server_seq => wins LWW)
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll to converge via server ordering
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// B pushed last => higher server_seq => B's query "priority:high" wins
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "boards", boardID)
+		if ent == nil {
+			t.Fatalf("%s: board not found", cid)
+		}
+		q, _ := ent["query"].(string)
+		if q != "priority:high" {
+			t.Fatalf("%s: expected query %q (last-write-wins), got %q", cid, "priority:high", q)
+		}
+	}
+}
+
 func TestWorkSessionIssue_LastWriteWins(t *testing.T) {
 	h := NewHarness(t, 2, compProj)
 
