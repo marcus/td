@@ -162,6 +162,18 @@ func TestInsertServerEvents_ValidationReject(t *testing.T) {
 	}
 }
 
+func TestParseTimestamp_GoTimeStringDoubleTZ(t *testing.T) {
+	ts := "2025-01-02 03:04:05 -0700 -0700"
+	parsed, err := parseTimestamp(ts)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := time.Date(2025, 1, 2, 3, 4, 5, 0, time.FixedZone("", -7*3600))
+	if !parsed.Equal(want) {
+		t.Fatalf("parsed=%v, want %v", parsed, want)
+	}
+}
+
 func TestGetEventsSince_All(t *testing.T) {
 	db := setupEngineDB(t)
 	tx, _ := db.Begin()
