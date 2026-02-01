@@ -57,6 +57,11 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 	} else if n > 0 {
 		slog.Info("backfilled orphan entities", "count", n)
 	}
+	if n, err := BackfillStaleIssues(tx, sessionID); err != nil {
+		slog.Warn("backfill stale issues", "err", err)
+	} else if n > 0 {
+		slog.Info("backfilled stale issues", "count", n)
+	}
 
 	rows, err := tx.Query(`
 		SELECT rowid, id, action_type, entity_type, entity_id, new_data, previous_data, timestamp

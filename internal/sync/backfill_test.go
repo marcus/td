@@ -235,6 +235,53 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 	}
 }
 
+func TestBackfillStaleIssues_AddsUpdate(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	base := time.Now().UTC()
+	updatedAt := base.Add(2 * time.Second).Format("2006-01-02 15:04:05")
+	_, _ = db.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES ('td-700', 'Stale', 'closed', ?)`, updatedAt)
+	_, _ = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-create', 'ses-old', 'create', 'issue', 'td-700', '{"id":"td-700"}', ?, 0)`, base.Format("2006-01-02 15:04:05"))
+
+	tx, _ := db.Begin()
+	n, err := BackfillStaleIssues(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+
+	if n != 1 {
+		t.Fatalf("expected 1 stale update, got %d", n)
+	}
+
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='update'`).Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 update entry for td-700, got %d", count)
+	}
+}
+
+func TestBackfillStaleIssues_SkipsWhenUpToDate(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, _ = db.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES ('td-701', 'Fresh', 'open', ?)`, now)
+	_, _ = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-create2', 'ses-old', 'create', 'issue', 'td-701', '{"id":"td-701"}', ?, 0)`, now)
+
+	tx, _ := db.Begin()
+	n, err := BackfillStaleIssues(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+
+	if n != 0 {
+		t.Fatalf("expected 0 stale updates, got %d", n)
+	}
+}
+
 func TestBackfillOrphanEntities_MultipleEntityTypes(t *testing.T) {
 	db := setupBackfillDB(t)
 

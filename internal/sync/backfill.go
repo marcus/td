@@ -68,6 +68,120 @@ func BackfillOrphanEntities(tx *sql.Tx, sessionID string) (int, error) {
 	return total, nil
 }
 
+// BackfillStaleIssues inserts synthetic update events for issues whose
+// updated_at timestamp is newer than the latest action_log entry.
+// This helps sync older data where status changes weren't logged.
+//
+// Only runs when the client has never pulled from the server.
+func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
+	// Only backfill before the first pull.
+	var lastPulled int64
+	err := tx.QueryRow(`SELECT COALESCE(MAX(last_pulled_server_seq), 0) FROM sync_state`).Scan(&lastPulled)
+	if err != nil || lastPulled > 0 {
+		return 0, nil
+	}
+
+	var tableExists int
+	if err := tx.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='issues'`,
+	).Scan(&tableExists); err != nil || tableExists == 0 {
+		return 0, nil
+	}
+
+	rows, err := tx.Query(`
+		SELECT i.*, al.last_ts
+		FROM issues i
+		LEFT JOIN (
+			SELECT entity_id, MAX(timestamp) AS last_ts
+			FROM action_log
+			WHERE entity_type IN ('issue', 'issues')
+			GROUP BY entity_id
+		) al ON al.entity_id = i.id
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("query issues for stale backfill: %w", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return 0, fmt.Errorf("get columns: %w", err)
+	}
+
+	stmt, err := tx.Prepare(`INSERT INTO action_log
+		(id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone)
+		VALUES (?, ?, 'update', 'issue', ?, ?, '', ?, 0)`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare insert: %w", err)
+	}
+	defer stmt.Close()
+
+	const staleThreshold = time.Second
+	count := 0
+
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return count, fmt.Errorf("scan row: %w", err)
+		}
+
+		rowMap := make(map[string]any, len(cols))
+		var entityID string
+		var updatedAtVal any
+		var lastActionVal any
+		for i, c := range cols {
+			switch c {
+			case "last_ts":
+				lastActionVal = vals[i]
+				continue
+			case "id":
+				entityID = fmt.Sprint(vals[i])
+			case "updated_at":
+				updatedAtVal = vals[i]
+			}
+			rowMap[c] = vals[i]
+		}
+		if entityID == "" || updatedAtVal == nil || lastActionVal == nil {
+			continue
+		}
+
+		updatedAt, ok := parseAnyTime(updatedAtVal)
+		if !ok {
+			continue
+		}
+		lastActionAt, ok := parseAnyTime(lastActionVal)
+		if !ok {
+			continue
+		}
+
+		if !updatedAt.After(lastActionAt.Add(staleThreshold)) {
+			continue
+		}
+
+		newData, err := json.Marshal(rowMap)
+		if err != nil {
+			slog.Warn("stale backfill: marshal row", "id", entityID, "err", err)
+			continue
+		}
+
+		actionID, err := generateBackfillActionID()
+		if err != nil {
+			return count, fmt.Errorf("generate action id: %w", err)
+		}
+
+		if _, err := stmt.Exec(actionID, sessionID, entityID, string(newData), updatedAt); err != nil {
+			return count, fmt.Errorf("insert stale update %s: %w", entityID, err)
+		}
+		count++
+	}
+
+	return count, rows.Err()
+}
+
 // backfillTable finds orphan rows in a single table and inserts synthetic action_log entries.
 func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) {
 	// Check the table exists (it may not if schema is old)
@@ -196,4 +310,20 @@ func extractEntityTimestamp(fields map[string]any) time.Time {
 		}
 	}
 	return time.Now()
+}
+
+func parseAnyTime(val any) (time.Time, bool) {
+	switch v := val.(type) {
+	case time.Time:
+		return v, true
+	case string:
+		if t, err := parseTimestamp(v); err == nil {
+			return t, true
+		}
+	case []byte:
+		if t, err := parseTimestamp(string(v)); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
