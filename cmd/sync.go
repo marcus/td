@@ -160,11 +160,7 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	}
 
 	// Check for pending local changes before overwriting DB
-	var pendingCount int64
-	err := database.Conn().QueryRow(
-		`SELECT COUNT(*) FROM action_log WHERE id > ? AND undone = 0`,
-		state.LastPushedActionID,
-	).Scan(&pendingCount)
+	pendingCount, err := database.CountPendingEvents()
 	if err == nil && pendingCount > 0 {
 		output.Warning("bootstrap skipped: local changes pending push")
 		return nil, errBootstrapNotNeeded
