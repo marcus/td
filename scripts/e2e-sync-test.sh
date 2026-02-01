@@ -58,6 +58,7 @@ SERVER_PID=""
 cleanup() {
     echo ""
     step "Cleaning up"
+    tmux kill-session -t "td-e2e" 2>/dev/null && ok "Killed tmux session" || true
     if [ -n "$SERVER_PID" ]; then
         kill "$SERVER_PID" 2>/dev/null && ok "Killed server (PID $SERVER_PID)" || true
         wait "$SERVER_PID" 2>/dev/null || true
@@ -206,18 +207,27 @@ if [ "$MODE" = "manual" ]; then
         SYNC_MODE_LABEL="auto-sync (2s debounce, 10s interval)"
     fi
 
-    # Write sourceable env files for each shell
+    # Write sourceable env files for each shell (handle bash vs zsh prompts)
+    USER_SHELL="${SHELL:-/bin/bash}"
+    if [[ "$USER_SHELL" == *zsh* ]]; then
+        PROMPT_A='export PROMPT="%F{green}[alice]%f %~ %# "'
+        PROMPT_B='export PROMPT="%F{cyan}[bob]%f %~ %# "'
+    else
+        PROMPT_A='export PS1="\[\e[0;32m\][alice]\[\e[0m\] \w \$ "'
+        PROMPT_B='export PS1="\[\e[0;36m\][bob]\[\e[0m\] \w \$ "'
+    fi
+
     cat > "$WORKDIR/shell-a.env" <<ENVEOF
 export HOME="$HOME_A"
 export PATH="$WORKDIR:\$PATH"
-export PS1="\[\033[0;32m\][alice]\[\033[0m\] \w \$ "
+$PROMPT_A
 cd "$CLIENT_A_DIR"
 ENVEOF
 
     cat > "$WORKDIR/shell-b.env" <<ENVEOF
 export HOME="$HOME_B"
 export PATH="$WORKDIR:\$PATH"
-export PS1="\[\033[0;36m\][bob]\[\033[0m\] \w \$ "
+$PROMPT_B
 cd "$CLIENT_B_DIR"
 ENVEOF
 
@@ -229,9 +239,6 @@ ENVEOF
 
         # Kill stale session if one exists
         tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
-
-        # Detect user's shell
-        USER_SHELL="${SHELL:-/bin/bash}"
 
         # Create session with first pane (alice)
         tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50 "$USER_SHELL"
