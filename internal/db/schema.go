@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 20
+const SchemaVersion = 21
 
 const schema = `
 -- Issues table
@@ -378,5 +378,22 @@ CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
 		Description: "Normalize legacy action_log entries for composite-key entities",
 		// Handled by custom Go code in migrations.go (migrateLegacyActionLogCompositeIDs)
 		SQL: "",
+	},
+	{
+		Version:     21,
+		Description: "Add sync_history table for tracking sync operations",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    direction TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    server_seq INTEGER,
+    device_id TEXT DEFAULT '',
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_history_ts ON sync_history(timestamp);
+`,
 	},
 }
