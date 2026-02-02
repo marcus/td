@@ -370,7 +370,7 @@ rand_handoff_items() {
 # Parallel arrays for action names and weights (bash 3.2 compatible)
 _CHAOS_ACTION_NAMES=(
     "create" "update" "update_append" "delete" "restore" "update_bulk"
-    "start" "unstart" "review" "approve" "reject" "close" "reopen" "block" "unblock"
+    "start" "unstart" "review" "approve" "reject" "close" "reopen" "bulk_start" "bulk_review" "bulk_close" "block" "unblock"
     "comment" "log_progress" "log_blocker" "log_decision" "log_hypothesis" "log_result"
     "dep_add" "dep_rm"
     "board_create" "board_edit" "board_move" "board_unposition" "board_delete"
@@ -380,7 +380,7 @@ _CHAOS_ACTION_NAMES=(
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 2 1 2
-    7 1 5 5 2 2 2 1 1
+    7 1 5 5 2 2 2 1 1 1 1 1
     10 4 2 2 1 1
     3 2
     2 1 2 1 1
@@ -902,6 +902,112 @@ exec_reopen() {
         return 0
     else
         [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected reopen: $output"
+        return 2
+    fi
+}
+
+# --- Bulk status transitions ---
+
+exec_bulk_start() {
+    local actor="$1"
+    rand_int 2 4; local count="$_RAND_RESULT"
+    local ids=()
+    for _ in $(seq 1 "$count"); do
+        select_issue open; local id="$_CHAOS_SELECTED_ISSUE"
+        if [ -n "$id" ]; then
+            # Avoid duplicates
+            local dup=0
+            for existing in "${ids[@]+"${ids[@]}"}"; do
+                [ "$existing" = "$id" ] && dup=1 && break
+            done
+            [ "$dup" -eq 0 ] && ids+=("$id")
+        fi
+    done
+    [ "${#ids[@]}" -lt 2 ] && return 1
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" start "${ids[@]}" --reason "chaos bulk start" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        for id in "${ids[@]}"; do
+            kv_set CHAOS_ISSUE_STATUS "$id" "in_progress"
+        done
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "bulk_start: ${ids[*]} by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected bulk_start: $output"
+        return 2
+    fi
+}
+
+exec_bulk_review() {
+    local actor="$1"
+    rand_int 2 4; local count="$_RAND_RESULT"
+    local ids=()
+    for _ in $(seq 1 "$count"); do
+        select_issue in_progress; local id="$_CHAOS_SELECTED_ISSUE"
+        if [ -n "$id" ]; then
+            local dup=0
+            for existing in "${ids[@]+"${ids[@]}"}"; do
+                [ "$existing" = "$id" ] && dup=1 && break
+            done
+            [ "$dup" -eq 0 ] && ids+=("$id")
+        fi
+    done
+    [ "${#ids[@]}" -lt 2 ] && return 1
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" review "${ids[@]}" --reason "chaos bulk review" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        for id in "${ids[@]}"; do
+            kv_set CHAOS_ISSUE_STATUS "$id" "in_review"
+        done
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "bulk_review: ${ids[*]} by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected bulk_review: $output"
+        return 2
+    fi
+}
+
+exec_bulk_close() {
+    local actor="$1"
+    rand_int 2 4; local count="$_RAND_RESULT"
+    local ids=()
+    for _ in $(seq 1 "$count"); do
+        select_issue not_deleted; local id="$_CHAOS_SELECTED_ISSUE"
+        if [ -n "$id" ]; then
+            local st
+            st=$(kv_get CHAOS_ISSUE_STATUS "$id")
+            if [ "$st" != "closed" ]; then
+                local dup=0
+                for existing in "${ids[@]+"${ids[@]}"}"; do
+                    [ "$existing" = "$id" ] && dup=1 && break
+                done
+                [ "$dup" -eq 0 ] && ids+=("$id")
+            fi
+        fi
+    done
+    [ "${#ids[@]}" -lt 2 ] && return 1
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" close "${ids[@]}" --reason "chaos bulk close" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        for id in "${ids[@]}"; do
+            kv_set CHAOS_ISSUE_STATUS "$id" "closed"
+        done
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "bulk_close: ${ids[*]} by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected bulk_close: $output"
         return 2
     fi
 }
