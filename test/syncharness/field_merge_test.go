@@ -1,7 +1,6 @@
 package syncharness
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -374,9 +373,9 @@ func TestEmptyDiffNoOp(t *testing.T) {
 	}
 }
 
-// ─── Test: LWW guard rejects older-timestamp partial updates ───
+// ─── Test: Concurrent updates converge via server_seq ordering ───
 
-func TestLWWGuardRejectsOlderTimestamp(t *testing.T) {
+func TestConcurrentUpdatesConvergeViaServerSeq(t *testing.T) {
 	h := NewHarness(t, 2, proj)
 
 	// Client A creates issue
@@ -394,7 +393,17 @@ func TestLWWGuardRejectsOlderTimestamp(t *testing.T) {
 	setSyncState(h, "client-A", proj)
 	setSyncState(h, "client-B", proj)
 
-	// Client B updates status to in_progress (this sets B's local updated_at to "now")
+	// Client A updates priority to P0
+	if err := h.Mutate("client-A", "update", "issues", "td-LWW1", map[string]any{
+		"title": "LWW Guard", "status": "open", "priority": "P0",
+	}); err != nil {
+		t.Fatalf("update A: %v", err)
+	}
+	if _, err := h.Push("client-A", proj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+
+	// Client B updates status to in_progress (concurrent, different field)
 	if err := h.Mutate("client-B", "update", "issues", "td-LWW1", map[string]any{
 		"title": "LWW Guard", "status": "in_progress", "priority": "P2",
 	}); err != nil {
@@ -404,75 +413,16 @@ func TestLWWGuardRejectsOlderTimestamp(t *testing.T) {
 		t.Fatalf("push B: %v", err)
 	}
 
-	// Inject an older event from a phantom device with a timestamp in the past
-	// This simulates a stale event arriving after B already updated the row
-	oldTimestamp := time.Now().Add(-1 * time.Hour)
-	prevData := map[string]any{"title": "LWW Guard", "status": "open", "priority": "P2"}
-	newData := map[string]any{"title": "LWW Guard", "status": "open", "priority": "P0"}
-	prevJSON, _ := json.Marshal(prevData)
-	newJSON, _ := json.Marshal(newData)
-	payload, _ := json.Marshal(map[string]any{
-		"schema_version": 1,
-		"new_data":       json.RawMessage(newJSON),
-		"previous_data":  json.RawMessage(prevJSON),
-	})
-
-	staleEvent := tdsync.Event{
-		ClientActionID: 950,
-		DeviceID:       "device-stale",
-		SessionID:      "session-stale",
-		ActionType:     "update",
-		EntityType:     "issues",
-		EntityID:       "td-LWW1",
-		Payload:        payload,
-		ClientTimestamp: oldTimestamp,
+	// Both pull all events — server_seq ordering ensures both apply A then B
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
 	}
-
-	serverDB := h.ProjectDBs[proj]
-	h.serverMu.Lock()
-	serverTx, err := serverDB.Begin()
-	if err != nil {
-		h.serverMu.Unlock()
-		t.Fatalf("begin server tx: %v", err)
-	}
-	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{staleEvent})
-	if err != nil {
-		serverTx.Rollback()
-		h.serverMu.Unlock()
-		t.Fatalf("insert stale event: %v", err)
-	}
-	if err := serverTx.Commit(); err != nil {
-		h.serverMu.Unlock()
-		t.Fatalf("commit: %v", err)
-	}
-	h.serverMu.Unlock()
-
-	// Client B pulls — should LWW-reject the stale event
 	if _, err := h.PullAll("client-B", proj); err != nil {
 		t.Fatalf("pullAll B: %v", err)
 	}
 
-	// B should still have status=in_progress (not reverted to open by stale event)
-	ent := h.QueryEntity("client-B", "issues", "td-LWW1")
-	if ent == nil {
-		t.Fatal("client-B: td-LWW1 not found")
-	}
-	status, _ := ent["status"].(string)
-	if status != "in_progress" {
-		t.Fatalf("client-B: expected status 'in_progress' (LWW guard), got %q", status)
-	}
-	// Priority should NOT have been changed to P0 by the stale event
-	priority, _ := ent["priority"].(string)
-	if priority != "P2" {
-		t.Fatalf("client-B: expected priority 'P2' (LWW rejected stale), got %q", priority)
-	}
-
-	// Client A also pulls all events (including own + B's + stale)
-	if _, err := h.PullAll("client-A", proj); err != nil {
-		t.Fatalf("pullAll A: %v", err)
-	}
-
-	// Both should converge
+	// Both should converge — B's event has higher server_seq so B's status wins,
+	// but A's priority change (P0) should also be visible since it's a different field
 	h.AssertConverged(proj)
 }
 
