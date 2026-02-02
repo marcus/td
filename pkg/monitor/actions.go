@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"encoding/json"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -51,28 +50,14 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Capture previous state for undo
-	prevData, _ := json.Marshal(issue)
-
 	// Update status
 	issue.Status = models.StatusInReview
 	if issue.ImplementerSession == "" {
 		issue.ImplementerSession = m.SessionID
 	}
-	if err := m.DB.UpdateIssue(issue); err != nil {
+	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionReview); err != nil {
 		return m, nil
 	}
-
-	// Log action for undo
-	newData, _ := json.Marshal(issue)
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionReview,
-		EntityType:   "issue",
-		EntityID:     issueID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
 	if hasChildren, _ := m.DB.HasChildren(issueID); hasChildren {
@@ -82,21 +67,11 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		})
 		if err == nil && len(descendants) > 0 {
 			for _, child := range descendants {
-				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusInReview
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssue(child)
-				childNew, _ := json.Marshal(child)
-				m.DB.LogAction(&models.ActionLog{
-					SessionID:    m.SessionID,
-					ActionType:   models.ActionReview,
-					EntityType:   "issue",
-					EntityID:     child.ID,
-					PreviousData: string(childPrev),
-					NewData:      string(childNew),
-				})
+				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionReview)
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -157,27 +132,11 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 
 	deletedID := m.ConfirmIssueID
 
-	// Capture previous state for undo (before deletion)
-	issue, err := m.DB.GetIssue(deletedID)
-	var prevData []byte
-	if err == nil && issue != nil {
-		prevData, _ = json.Marshal(issue)
-	}
-
-	// Delete issue
-	if err := m.DB.DeleteIssue(deletedID); err != nil {
+	// Delete issue (captures previous state and logs atomically)
+	if err := m.DB.DeleteIssueLogged(deletedID, m.SessionID); err != nil {
 		m.closeDeleteConfirmModal()
 		return m, nil
 	}
-
-	// Log action for undo
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionDelete,
-		EntityType:   "issue",
-		EntityID:     deletedID,
-		PreviousData: string(prevData),
-	})
 
 	// Close the delete confirmation modal
 	m.closeDeleteConfirmModal()
@@ -259,28 +218,14 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Capture previous state for undo
-	prevData, _ := json.Marshal(issue)
-
 	// Update status
 	now := time.Now()
 	issue.Status = models.StatusClosed
 	issue.ClosedAt = &now
-	if err := m.DB.UpdateIssue(issue); err != nil {
+	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionClose); err != nil {
 		m.closeCloseConfirmModal()
 		return m, nil
 	}
-
-	// Log action for undo
-	newData, _ := json.Marshal(issue)
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionClose,
-		EntityType:   "issue",
-		EntityID:     issueID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	})
 
 	// Add progress log with optional reason
 	logMsg := "Closed"
@@ -304,22 +249,12 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		if err == nil && len(descendants) > 0 {
 			now := time.Now()
 			for _, child := range descendants {
-				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssue(child)
-				childNew, _ := json.Marshal(child)
-				m.DB.LogAction(&models.ActionLog{
-					SessionID:    m.SessionID,
-					ActionType:   models.ActionClose,
-					EntityType:   "issue",
-					EntityID:     child.ID,
-					PreviousData: string(childPrev),
-					NewData:      string(childNew),
-				})
+				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionClose)
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -384,31 +319,17 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Capture previous state for undo
-	prevData, _ := json.Marshal(issue)
-
 	// Update status
 	now := time.Now()
 	issue.Status = models.StatusClosed
 	issue.ReviewerSession = m.SessionID
 	issue.ClosedAt = &now
-	if err := m.DB.UpdateIssue(issue); err != nil {
+	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionApprove); err != nil {
 		return m, nil
 	}
 
 	// Record session action for bypass prevention
 	m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
-
-	// Log action for undo
-	newData, _ := json.Marshal(issue)
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionApprove,
-		EntityType:   "issue",
-		EntityID:     issue.ID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
 	if hasChildren, _ := m.DB.HasChildren(issue.ID); hasChildren {
@@ -420,23 +341,13 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		if err == nil && len(descendants) > 0 {
 			now := time.Now()
 			for _, child := range descendants {
-				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				child.ReviewerSession = m.SessionID
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssue(child)
-				childNew, _ := json.Marshal(child)
-				m.DB.LogAction(&models.ActionLog{
-					SessionID:    m.SessionID,
-					ActionType:   models.ActionApprove,
-					EntityType:   "issue",
-					EntityID:     child.ID,
-					PreviousData: string(childPrev),
-					NewData:      string(childNew),
-				})
+				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionApprove)
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -504,31 +415,17 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 		})
 	}
 
-	// Capture previous state for undo
-	prevData, _ := json.Marshal(issue)
-
 	// Update status
 	issue.Status = models.StatusOpen
 	issue.ReviewerSession = ""
 	issue.ClosedAt = nil
-	if err := m.DB.UpdateIssue(issue); err != nil {
+	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionReopen); err != nil {
 		m.StatusMessage = "Failed to reopen: " + err.Error()
 		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}
 		})
 	}
-
-	// Log action for undo
-	newData, _ := json.Marshal(issue)
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionReopen,
-		EntityType:   "issue",
-		EntityID:     issueID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	})
 
 	m.StatusMessage = "REOPENED " + issueID
 	m.StatusIsError = false
