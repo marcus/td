@@ -18,6 +18,7 @@ CONFLICT_RATE=20
 BATCH_MIN=3
 BATCH_MAX=10
 ACTORS=2
+INJECT_FAILURES=false
 
 # ---- Usage ----
 usage() {
@@ -37,6 +38,7 @@ Options:
   --batch-min N      Min actions between syncs (default: 3)
   --batch-max N      Max actions between syncs (default: 10)
   --actors N         Number of actors: 2 or 3 (default: 2)
+  --inject-failures  Inject partial sync failures (~7% of syncs) (default: false)
   -h, --help         Show this help
 
 Examples:
@@ -55,6 +57,9 @@ Examples:
   # Reproducible run
   bash scripts/e2e/test_chaos_sync.sh --seed 42 --actions 50
 
+  # With sync failure injection
+  bash scripts/e2e/test_chaos_sync.sh --actions 50 --inject-failures
+
   # Time-based
   bash scripts/e2e/test_chaos_sync.sh --duration 60
 EOF
@@ -72,6 +77,7 @@ while [[ $# -gt 0 ]]; do
         --batch-min)      BATCH_MIN="$2"; shift 2 ;;
         --batch-max)      BATCH_MAX="$2"; shift 2 ;;
         --actors)         ACTORS="$2"; shift 2 ;;
+        --inject-failures) INJECT_FAILURES=true; shift ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
@@ -90,6 +96,7 @@ CHAOS_SYNC_MODE="$SYNC_MODE"
 CHAOS_SYNC_BATCH_MIN="$BATCH_MIN"
 CHAOS_SYNC_BATCH_MAX="$BATCH_MAX"
 CHAOS_VERBOSE="$VERBOSE"
+CHAOS_INJECT_FAILURES="$INJECT_FAILURES"
 
 # ---- Initial sync ----
 td_a sync >/dev/null 2>&1 || true
@@ -99,10 +106,14 @@ if [ "$ACTORS" -ge 3 ]; then
 fi
 
 # ---- Config summary ----
+_chaos_inject_label=""
+if [ "$INJECT_FAILURES" = "true" ]; then
+    _chaos_inject_label=", inject-failures: on"
+fi
 if [ "$DURATION" -gt 0 ] 2>/dev/null; then
-    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS)"
+    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label})"
 else
-    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS)"
+    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label})"
 fi
 
 # ---- Main loop ----
@@ -249,6 +260,7 @@ echo "  Skipped (no target):    $CHAOS_SKIPPED"
 echo "  Field collisions:       $CHAOS_FIELD_COLLISIONS"
 echo "  Delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
 echo "  Bursts:                 $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS actions)"
+echo "  Injected sync failures: $CHAOS_INJECTED_FAILURES"
 echo "  Edge-case data used:    $CHAOS_EDGE_DATA_USED"
 echo "  Issues created:         ${#CHAOS_ISSUE_IDS[@]}"
 echo "  Boards created:         ${#CHAOS_BOARD_NAMES[@]}"

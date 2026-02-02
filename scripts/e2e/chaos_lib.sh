@@ -93,6 +93,9 @@ CHAOS_DELETE_MUTATE_CONFLICTS=0
 CHAOS_BURST_COUNT=0
 CHAOS_BURST_ACTIONS=0
 CHAOS_CASCADE_ACTIONS=0
+CHAOS_INJECTED_FAILURES=0
+CHAOS_INJECT_FAILURES="${CHAOS_INJECT_FAILURES:-false}"
+CHAOS_INJECT_FAILURE_RATE="${CHAOS_INJECT_FAILURE_RATE:-7}"  # percentage (5-10% range)
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
 # ============================================================
@@ -2020,38 +2023,65 @@ should_sync() {
     esac
 }
 
+_sync_one_actor() {
+    # Sync a single actor, possibly injecting a partial failure.
+    # Usage: _sync_one_actor <actor_letter>
+    local actor="$1"
+    if [ "$CHAOS_INJECT_FAILURES" = "true" ] && [ $(( RANDOM % 100 )) -lt "$CHAOS_INJECT_FAILURE_RATE" ]; then
+        # Inject a partial sync: push-only or pull-only
+        CHAOS_INJECTED_FAILURES=$(( CHAOS_INJECTED_FAILURES + 1 ))
+        rand_bool
+        if [ "$_RAND_RESULT" -eq 1 ]; then
+            [ "$CHAOS_VERBOSE" = "true" ] && _ok "INJECTED FAILURE: push-only for actor $actor [#$CHAOS_INJECTED_FAILURES]"
+            case "$actor" in
+                a) td_a sync --push >/dev/null 2>&1 || true ;;
+                b) td_b sync --push >/dev/null 2>&1 || true ;;
+                c) td_c sync --push >/dev/null 2>&1 || true ;;
+            esac
+        else
+            [ "$CHAOS_VERBOSE" = "true" ] && _ok "INJECTED FAILURE: pull-only for actor $actor [#$CHAOS_INJECTED_FAILURES]"
+            case "$actor" in
+                a) td_a sync --pull >/dev/null 2>&1 || true ;;
+                b) td_b sync --pull >/dev/null 2>&1 || true ;;
+                c) td_c sync --pull >/dev/null 2>&1 || true ;;
+            esac
+        fi
+        return 0
+    fi
+    # Normal full sync
+    case "$actor" in
+        a) td_a sync >/dev/null 2>&1 || true ;;
+        b) td_b sync >/dev/null 2>&1 || true ;;
+        c) td_c sync >/dev/null 2>&1 || true ;;
+    esac
+}
+
 do_chaos_sync() {
     local who="$1"
     case "$who" in
-        a)
-            td_a sync >/dev/null 2>&1 || true
-            ;;
-        b)
-            td_b sync >/dev/null 2>&1 || true
-            ;;
-        c)
-            td_c sync >/dev/null 2>&1 || true
+        a|b|c)
+            _sync_one_actor "$who"
             ;;
         both|all)
             # Randomize sync order among active actors
             if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
                 rand_int 1 6
                 case "$_RAND_RESULT" in
-                    1) td_a sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true ;;
-                    2) td_a sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true ;;
-                    3) td_b sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true ;;
-                    4) td_b sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true ;;
-                    5) td_c sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true ;;
-                    6) td_c sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true ;;
+                    1) _sync_one_actor a; _sync_one_actor b; _sync_one_actor c ;;
+                    2) _sync_one_actor a; _sync_one_actor c; _sync_one_actor b ;;
+                    3) _sync_one_actor b; _sync_one_actor a; _sync_one_actor c ;;
+                    4) _sync_one_actor b; _sync_one_actor c; _sync_one_actor a ;;
+                    5) _sync_one_actor c; _sync_one_actor a; _sync_one_actor b ;;
+                    6) _sync_one_actor c; _sync_one_actor b; _sync_one_actor a ;;
                 esac
             else
                 rand_bool
                 if [ "$_RAND_RESULT" -eq 1 ]; then
-                    td_a sync >/dev/null 2>&1 || true
-                    td_b sync >/dev/null 2>&1 || true
+                    _sync_one_actor a
+                    _sync_one_actor b
                 else
-                    td_b sync >/dev/null 2>&1 || true
-                    td_a sync >/dev/null 2>&1 || true
+                    _sync_one_actor b
+                    _sync_one_actor a
                 fi
             fi
             ;;
@@ -2444,6 +2474,7 @@ chaos_report() {
     _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
     _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
     _ok "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
+    _ok "injected sync failures: $CHAOS_INJECTED_FAILURES"
     _ok "edge-case data injections: $CHAOS_EDGE_DATA_USED"
     local pc_count
     pc_count=$(kv_count CHAOS_PARENT_CHILDREN)
