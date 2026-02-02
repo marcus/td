@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -120,6 +121,7 @@ type Model struct {
 	GettingStartedMouseHandler *mouse.Handler // Mouse handler for getting started modal
 	AgentFilePath              string         // Detected agent file path (may be empty)
 	AgentFileHasTD             bool           // Whether agent file already has td instructions
+	IsFirstRunInit             bool           // Whether we're in real first-run flow (not H-key reopen)
 
 	// Sync prompt modal state
 	SyncPromptOpen      bool
@@ -620,6 +622,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.AgentFilePath = msg.AgentFilePath
 		m.AgentFileHasTD = msg.HasInstructions
 		if msg.IsFirstRun {
+			m.IsFirstRunInit = true
 			m.GettingStartedOpen = true
 			m.GettingStartedModal = m.createGettingStartedModal()
 			m.GettingStartedModal.Reset()
@@ -782,6 +785,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SearchInput.SetValue(msg.SearchQuery)
 		// Refresh data with restored filters
 		return m, m.fetchData()
+
+	case SyncPromptDataMsg:
+		if msg.Error != nil || msg.Projects == nil {
+			return m, nil
+		}
+		m.SyncPromptOpen = true
+		m.SyncPromptPhase = syncPromptPhaseList
+		m.SyncPromptProjects = msg.Projects
+		m.SyncPromptCursor = 0
+		m.SyncPromptModal = m.buildSyncPromptListModal(msg.Projects)
+		m.SyncPromptMouse = mouse.NewHandler()
+		return m, nil
+
+	case SyncPromptLinkResultMsg:
+		if msg.Success {
+			m.StatusMessage = fmt.Sprintf("Linked to %s", msg.ProjectName)
+			m.StatusIsError = false
+		} else {
+			m.StatusMessage = fmt.Sprintf("Link failed: %v", msg.Error)
+			m.StatusIsError = true
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+
+	case SyncPromptCreateResultMsg:
+		if msg.Success {
+			m.StatusMessage = fmt.Sprintf("Created and linked %s", msg.ProjectName)
+			m.StatusIsError = false
+		} else {
+			m.StatusMessage = fmt.Sprintf("Create failed: %v", msg.Error)
+			m.StatusIsError = true
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 
 	case OpenIssueByIDMsg:
 		if msg.IssueID != "" {

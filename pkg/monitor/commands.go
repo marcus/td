@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"encoding/json"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
+	"github.com/marcus/td/internal/syncconfig"
+	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -35,6 +38,9 @@ func (m *Model) logPositionSet(boardID, issueID string, position int) {
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
+	if m.SyncPromptOpen {
+		return keymap.ContextSyncPrompt
+	}
 	if m.GettingStartedOpen {
 		return keymap.ContextGettingStarted
 	}
@@ -205,6 +211,18 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey processes key input using the centralized keymap registry
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := m.currentContext()
+
+	// Sync Prompt modal: let declarative modal handle keys first
+	if m.SyncPromptOpen && m.SyncPromptModal != nil {
+		action, cmd := m.SyncPromptModal.HandleKey(msg)
+		if action != "" {
+			return m, m.handleSyncPromptAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, etc.
+	}
 
 	// Getting Started modal: let declarative modal handle keys first
 	if m.GettingStartedOpen && m.GettingStartedModal != nil {
@@ -1959,9 +1977,37 @@ func (m Model) handleGettingStartedAction(action string) (Model, tea.Cmd) {
 		m.GettingStartedOpen = false
 		m.GettingStartedModal = nil
 		m.GettingStartedMouseHandler = nil
+		if m.IsFirstRunInit {
+			m.IsFirstRunInit = false
+			return m, checkSyncPrompt()
+		}
 		return m, nil
 	}
 	return m, nil
+}
+
+// checkSyncPrompt returns a tea.Cmd that checks if the user is authenticated
+// and has remote projects, returning SyncPromptDataMsg if so.
+func checkSyncPrompt() tea.Cmd {
+	return func() tea.Msg {
+		if !syncconfig.IsAuthenticated() {
+			return nil // no auth, skip silently
+		}
+		serverURL := syncconfig.GetServerURL()
+		apiKey := syncconfig.GetAPIKey()
+		deviceID, err := syncconfig.GetDeviceID()
+		if err != nil {
+			slog.Debug("sync prompt: device id failed", "err", err)
+			return nil
+		}
+		client := syncclient.New(serverURL, apiKey, deviceID)
+		projects, err := client.ListProjects()
+		if err != nil {
+			slog.Debug("sync prompt: list projects failed", "err", err)
+			return nil
+		}
+		return SyncPromptDataMsg{Projects: projects}
+	}
 }
 
 // handleStatsAction handles actions from the stats modal

@@ -33,6 +33,7 @@ const (
 	ContextTDQHelp           Context = "tdq-help"           // When TDQ help modal is open
 	ContextBoardEditor       Context = "board-editor"       // When board edit/create modal is open
 	ContextCloseConfirm      Context = "close-confirm"      // When close confirmation modal is open (has text input)
+	ContextSyncPrompt        Context = "td-sync-prompt"    // When sync prompt modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
