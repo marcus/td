@@ -43,7 +43,7 @@ func TestCreateIssueLogged(t *testing.T) {
 	// Verify action_log entry
 	var actionType, entityType, entityID, newData, previousData string
 	err = database.conn.QueryRow(
-		`SELECT action_type, entity_type, entity_id, new_data, previous_data FROM action_log WHERE entity_id = ? AND entity_type = 'issues'`,
+		`SELECT action_type, entity_type, entity_id, new_data, previous_data FROM action_log WHERE entity_id = ? AND entity_type = 'issue'`,
 		issue.ID,
 	).Scan(&actionType, &entityType, &entityID, &newData, &previousData)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestCreateIssueLogged(t *testing.T) {
 	if actionType != "create" {
 		t.Errorf("action_type: got %s, want create", actionType)
 	}
-	if entityType != "issues" {
-		t.Errorf("entity_type: got %s, want issues", entityType)
+	if entityType != "issue" {
+		t.Errorf("entity_type: got %s, want issue", entityType)
 	}
 	if previousData != "" {
 		t.Errorf("previous_data should be empty for create, got %s", previousData)
@@ -116,7 +116,7 @@ func TestUpdateIssueLogged(t *testing.T) {
 	// Verify action_log entry
 	var actionType, previousData, newData string
 	err = database.conn.QueryRow(
-		`SELECT action_type, previous_data, new_data FROM action_log WHERE entity_id = ? AND entity_type = 'issues'`,
+		`SELECT action_type, previous_data, new_data FROM action_log WHERE entity_id = ? AND entity_type = 'issue'`,
 		issue.ID,
 	).Scan(&actionType, &previousData, &newData)
 	if err != nil {
@@ -186,7 +186,7 @@ func TestDeleteIssueLogged(t *testing.T) {
 	// Verify action_log entry
 	var actionType, previousData, newData string
 	err = database.conn.QueryRow(
-		`SELECT action_type, previous_data, new_data FROM action_log WHERE entity_id = ? AND entity_type = 'issues'`,
+		`SELECT action_type, previous_data, new_data FROM action_log WHERE entity_id = ? AND entity_type = 'issue'`,
 		issue.ID,
 	).Scan(&actionType, &previousData, &newData)
 	if err != nil {
@@ -266,7 +266,7 @@ func TestUnloggedVariants_NoActionLog(t *testing.T) {
 	// Verify no action_log entry for the create
 	var count int
 	err = database.conn.QueryRow(
-		`SELECT COUNT(*) FROM action_log WHERE entity_id = ? AND entity_type = 'issues'`,
+		`SELECT COUNT(*) FROM action_log WHERE entity_id = ? AND entity_type = 'issue'`,
 		issue.ID,
 	).Scan(&count)
 	if err != nil {
@@ -284,7 +284,7 @@ func TestUnloggedVariants_NoActionLog(t *testing.T) {
 
 	// Verify still no action_log entries
 	err = database.conn.QueryRow(
-		`SELECT COUNT(*) FROM action_log WHERE entity_id = ? AND entity_type = 'issues'`,
+		`SELECT COUNT(*) FROM action_log WHERE entity_id = ? AND entity_type = 'issue'`,
 		issue.ID,
 	).Scan(&count)
 	if err != nil {
