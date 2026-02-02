@@ -17,13 +17,14 @@ VERBOSE=false
 CONFLICT_RATE=20
 BATCH_MIN=3
 BATCH_MAX=10
+ACTORS=2
 
 # ---- Usage ----
 usage() {
     cat <<EOF
 Usage: bash scripts/e2e/test_chaos_sync.sh [OPTIONS]
 
-Randomized chaos sync test: two actors perform random mutations with
+Randomized chaos sync test: multiple actors perform random mutations with
 configurable sync timing, conflict injection, and convergence verification.
 
 Options:
@@ -35,6 +36,7 @@ Options:
   --conflict-rate N  Percentage of actions with simultaneous mutations (default: 20)
   --batch-min N      Min actions between syncs (default: 3)
   --batch-max N      Max actions between syncs (default: 10)
+  --actors N         Number of actors: 2 or 3 (default: 2)
   -h, --help         Show this help
 
 Examples:
@@ -43,6 +45,9 @@ Examples:
 
   # Standard run
   bash scripts/e2e/test_chaos_sync.sh --actions 100
+
+  # Three-actor fan-out test
+  bash scripts/e2e/test_chaos_sync.sh --actions 50 --actors 3
 
   # Stress test with conflicts
   bash scripts/e2e/test_chaos_sync.sh --actions 500 --conflict-rate 30
@@ -66,12 +71,15 @@ while [[ $# -gt 0 ]]; do
         --conflict-rate)  CONFLICT_RATE="$2"; shift 2 ;;
         --batch-min)      BATCH_MIN="$2"; shift 2 ;;
         --batch-max)      BATCH_MAX="$2"; shift 2 ;;
+        --actors)         ACTORS="$2"; shift 2 ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
 done
 
 # ---- Setup ----
+HARNESS_ACTORS="$ACTORS"
+export HARNESS_ACTORS
 setup
 
 # ---- Seed RANDOM for reproducibility ----
@@ -86,12 +94,15 @@ CHAOS_VERBOSE="$VERBOSE"
 # ---- Initial sync ----
 td_a sync >/dev/null 2>&1 || true
 td_b sync >/dev/null 2>&1 || true
+if [ "$ACTORS" -ge 3 ]; then
+    td_c sync >/dev/null 2>&1 || true
+fi
 
 # ---- Config summary ----
 if [ "$DURATION" -gt 0 ] 2>/dev/null; then
-    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%)"
+    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS)"
 else
-    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%)"
+    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS)"
 fi
 
 # ---- Main loop ----
@@ -115,13 +126,30 @@ while ! is_done; do
         _fail "Safety valve: $ITERATIONS iterations without completing $ACTIONS actions (completed: $CHAOS_ACTION_COUNT, skipped: $CHAOS_SKIPPED)"
         break
     fi
+    # Helper: pick a random actor
+    if [ "$ACTORS" -ge 3 ]; then
+        rand_choice a b c; _chaos_actor="$_RAND_RESULT"
+    else
+        rand_choice a b; _chaos_actor="$_RAND_RESULT"
+    fi
+
     # Burst mode: ~10% chance, single actor rapid-fires on one issue without sync
     if [ $(( RANDOM % 100 )) -lt 10 ]; then
-        rand_choice a b; burst_actor="$_RAND_RESULT"
-        exec_burst "$burst_actor"
+        exec_burst "$_chaos_actor"
     # Conflict round
     elif [ $(( RANDOM % 100 )) -lt "$CONFLICT_RATE" ] && [ "${#CHAOS_ISSUE_IDS[@]}" -gt 0 ]; then
-        # Conflict round: both actors mutate without sync between
+        # Conflict round: pick a pair (or triple) of actors to conflict
+        if [ "$ACTORS" -ge 3 ]; then
+            rand_int 1 4
+            case "$_RAND_RESULT" in
+                1) _conf_a="a"; _conf_b="b" ;;
+                2) _conf_a="a"; _conf_b="c" ;;
+                3) _conf_a="b"; _conf_b="c" ;;
+                4) _conf_a="a"; _conf_b="b"; _conf_c="c" ;;  # triple
+            esac
+        else
+            _conf_a="a"; _conf_b="b"; _conf_c=""
+        fi
         select_issue not_deleted; local_id="$_CHAOS_SELECTED_ISSUE"
         if [ -n "$local_id" ]; then
             conflict_roll=$(( RANDOM % 100 ))
@@ -132,23 +160,26 @@ while ! is_done; do
                 # Delete-while-mutate: actor A deletes, actor B mutates unaware
                 exec_delete_while_mutate "$local_id"
             else
-                # Random action conflict (existing behavior)
+                # Random action conflict
                 select_action; action_a="$_CHAOS_SELECTED_ACTION"
                 select_action; action_b="$_CHAOS_SELECTED_ACTION"
-                safe_exec "$action_a" "a"
-                safe_exec "$action_b" "b"
+                safe_exec "$action_a" "$_conf_a"
+                safe_exec "$action_b" "$_conf_b"
+                if [ -n "${_conf_c:-}" ]; then
+                    select_action; action_c="$_CHAOS_SELECTED_ACTION"
+                    safe_exec "$action_c" "$_conf_c"
+                fi
             fi
+            _conf_c=""
         else
             # No valid target, fall through to normal round
             select_action; action="$_CHAOS_SELECTED_ACTION"
-            rand_choice a b; actor="$_RAND_RESULT"
-            safe_exec "$action" "$actor"
+            safe_exec "$action" "$_chaos_actor"
         fi
     else
         # Normal round: single actor, single action
         select_action; action="$_CHAOS_SELECTED_ACTION"
-        rand_choice a b; actor="$_RAND_RESULT"
-        safe_exec "$action" "$actor"
+        safe_exec "$action" "$_chaos_actor"
     fi
 
     # Sync check
@@ -165,27 +196,51 @@ while ! is_done; do
     fi
 done
 
-# ---- Final sync (double round-trip for convergence) ----
+# ---- Final sync (full round-robin for convergence) ----
 _step "Final sync"
-td_a sync >/dev/null 2>&1 || true
-td_b sync >/dev/null 2>&1 || true
-sleep 1
-td_b sync >/dev/null 2>&1 || true
-td_a sync >/dev/null 2>&1 || true
+if [ "$ACTORS" -ge 3 ]; then
+    # Full round-robin: A B C A B C
+    td_a sync >/dev/null 2>&1 || true
+    td_b sync >/dev/null 2>&1 || true
+    td_c sync >/dev/null 2>&1 || true
+    sleep 1
+    td_a sync >/dev/null 2>&1 || true
+    td_b sync >/dev/null 2>&1 || true
+    td_c sync >/dev/null 2>&1 || true
+else
+    td_a sync >/dev/null 2>&1 || true
+    td_b sync >/dev/null 2>&1 || true
+    sleep 1
+    td_b sync >/dev/null 2>&1 || true
+    td_a sync >/dev/null 2>&1 || true
+fi
 
 # ---- Convergence verification ----
 DB_A="$CLIENT_A_DIR/.todos/issues.db"
 DB_B="$CLIENT_B_DIR/.todos/issues.db"
 verify_convergence "$DB_A" "$DB_B"
 
+if [ "$ACTORS" -ge 3 ]; then
+    DB_C="$CLIENT_C_DIR/.todos/issues.db"
+    _step "Convergence verification (A vs C)"
+    verify_convergence "$DB_A" "$DB_C"
+    _step "Convergence verification (B vs C)"
+    verify_convergence "$DB_B" "$DB_C"
+fi
+
 # ---- Idempotency verification ----
 verify_idempotency "$DB_A" "$DB_B"
 
 # ---- Event count verification ----
 verify_event_counts "$DB_A" "$DB_B"
+if [ "$ACTORS" -ge 3 ]; then
+    _step "Event count verification (A vs C)"
+    verify_event_counts "$DB_A" "$DB_C"
+fi
 
 # ---- Summary stats ----
 _step "Summary"
+echo "  Actors:                 $ACTORS"
 echo "  Total actions:          $CHAOS_ACTION_COUNT"
 echo "  Total syncs:            $CHAOS_SYNC_COUNT"
 echo "  Expected failures:      $CHAOS_EXPECTED_FAILURES"

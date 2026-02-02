@@ -12,7 +12,8 @@
 #
 # Env after setup:
 #   WORKDIR, TD_BIN, SERVER_URL, PROJECT_ID, SERVER_PID,
-#   CLIENT_A_DIR, CLIENT_B_DIR, HOME_A, HOME_B
+#   CLIENT_A_DIR, CLIENT_B_DIR, CLIENT_C_DIR (if HARNESS_ACTORS>=3),
+#   HOME_A, HOME_B, HOME_C (if HARNESS_ACTORS>=3)
 #
 set -euo pipefail
 
@@ -100,9 +101,11 @@ wait_for() {
 
 SESSION_ID_A="e2e-alice-$$"
 SESSION_ID_B="e2e-bob-$$"
+SESSION_ID_C="e2e-carol-$$"
 
 td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" "$TD_BIN" "$@"); }
 td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" "$TD_BIN" "$@"); }
+td_c() { (cd "$CLIENT_C_DIR" && HOME="$HOME_C" TD_SESSION_ID="$SESSION_ID_C" "$TD_BIN" "$@"); }
 
 # ---- Teardown ----
 
@@ -145,13 +148,18 @@ setup() {
     SERVER_DATA="$WORKDIR/server-data"
     CLIENT_A_DIR="$WORKDIR/client-a"
     CLIENT_B_DIR="$WORKDIR/client-b"
+    CLIENT_C_DIR="$WORKDIR/client-c"
     HOME_A="$WORKDIR/home-a"
     HOME_B="$WORKDIR/home-b"
+    HOME_C="$WORKDIR/home-c"
     TD_BIN="$WORKDIR/td"
     SYNC_BIN="$WORKDIR/td-sync"
 
     mkdir -p "$SERVER_DATA" "$CLIENT_A_DIR" "$CLIENT_B_DIR" \
              "$HOME_A/.config/td" "$HOME_B/.config/td"
+    if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+        mkdir -p "$CLIENT_C_DIR" "$HOME_C/.config/td"
+    fi
 
     # Build
     _step "Building"
@@ -219,7 +227,14 @@ EOF
     td_a sync-project invite "bob@test.local" writer >/dev/null
     td_b sync-project link "$PROJECT_ID" >/dev/null
 
-    _ok "Ready (project $PROJECT_ID)"
+    if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+        echo "n" | td_c init >/dev/null 2>&1
+        _auth "carol@test.local" "$HOME_C"
+        td_a sync-project invite "carol@test.local" writer >/dev/null
+        td_c sync-project link "$PROJECT_ID" >/dev/null
+    fi
+
+    _ok "Ready (project $PROJECT_ID, actors: ${HARNESS_ACTORS:-2})"
 }
 
 # ---- Report ----

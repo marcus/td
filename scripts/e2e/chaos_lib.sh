@@ -76,8 +76,10 @@ CHAOS_DEP_PAIRS=""       # from_to:1 (colon in key replaced with underscore)
 CHAOS_ISSUE_FILES=""     # issueId~filePath:role
 CHAOS_ACTIVE_WS_A=""     # Active work session name for actor a
 CHAOS_ACTIVE_WS_B=""     # Active work session name for actor b
+CHAOS_ACTIVE_WS_C=""     # Active work session name for actor c
 CHAOS_WS_TAGGED_A=""     # KV: issueId:1 for issues tagged in actor a's session
 CHAOS_WS_TAGGED_B=""     # KV: issueId:1 for issues tagged in actor b's session
+CHAOS_WS_TAGGED_C=""     # KV: issueId:1 for issues tagged in actor c's session
 
 CHAOS_ACTION_COUNT=0
 CHAOS_EXPECTED_FAILURES=0
@@ -423,7 +425,12 @@ select_action() {
 
 chaos_run_td() {
     local who="$1"; shift
-    if [ "$who" = "a" ]; then td_a "$@"; else td_b "$@"; fi
+    case "$who" in
+        a) td_a "$@" ;;
+        b) td_b "$@" ;;
+        c) td_c "$@" ;;
+        *) td_b "$@" ;;
+    esac
 }
 
 # ============================================================
@@ -1281,10 +1288,39 @@ exec_unlink() {
 
 # --- Work sessions ---
 
+_get_active_ws() {
+    case "$1" in
+        a) echo "$CHAOS_ACTIVE_WS_A" ;;
+        b) echo "$CHAOS_ACTIVE_WS_B" ;;
+        c) echo "$CHAOS_ACTIVE_WS_C" ;;
+    esac
+}
+_set_active_ws() {
+    case "$1" in
+        a) CHAOS_ACTIVE_WS_A="$2" ;;
+        b) CHAOS_ACTIVE_WS_B="$2" ;;
+        c) CHAOS_ACTIVE_WS_C="$2" ;;
+    esac
+}
+_get_tagged_var() {
+    case "$1" in
+        a) echo "CHAOS_WS_TAGGED_A" ;;
+        b) echo "CHAOS_WS_TAGGED_B" ;;
+        c) echo "CHAOS_WS_TAGGED_C" ;;
+    esac
+}
+_clear_ws_state() {
+    case "$1" in
+        a) CHAOS_ACTIVE_WS_A=""; CHAOS_WS_TAGGED_A="" ;;
+        b) CHAOS_ACTIVE_WS_B=""; CHAOS_WS_TAGGED_B="" ;;
+        c) CHAOS_ACTIVE_WS_C=""; CHAOS_WS_TAGGED_C="" ;;
+    esac
+}
+
 exec_ws_start() {
     local actor="$1"
     local active_val
-    if [ "$actor" = "a" ]; then active_val="$CHAOS_ACTIVE_WS_A"; else active_val="$CHAOS_ACTIVE_WS_B"; fi
+    active_val=$(_get_active_ws "$actor")
 
     # Can't start two sessions at once
     if [ -n "$active_val" ]; then
@@ -1296,7 +1332,7 @@ exec_ws_start() {
     local output rc=0
     output=$(chaos_run_td "$actor" ws start "$name" 2>&1) || rc=$?
     if [ $rc -eq 0 ]; then
-        if [ "$actor" = "a" ]; then CHAOS_ACTIVE_WS_A="$name"; else CHAOS_ACTIVE_WS_B="$name"; fi
+        _set_active_ws "$actor" "$name"
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "ws_start: $name by $actor"
         return 0
     elif is_expected_failure "$output"; then
@@ -1311,7 +1347,7 @@ exec_ws_start() {
 exec_ws_tag() {
     local actor="$1"
     local active_val
-    if [ "$actor" = "a" ]; then active_val="$CHAOS_ACTIVE_WS_A"; else active_val="$CHAOS_ACTIVE_WS_B"; fi
+    active_val=$(_get_active_ws "$actor")
 
     # Need active session
     [ -z "$active_val" ] && return 1
@@ -1322,7 +1358,7 @@ exec_ws_tag() {
     local output rc=0
     output=$(chaos_run_td "$actor" ws tag "$id" --no-start 2>&1) || rc=$?
     if [ $rc -eq 0 ]; then
-        if [ "$actor" = "a" ]; then kv_set CHAOS_WS_TAGGED_A "$id" "1"; else kv_set CHAOS_WS_TAGGED_B "$id" "1"; fi
+        local tv; tv=$(_get_tagged_var "$actor"); kv_set "$tv" "$id" "1"
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "ws_tag: $id by $actor"
         return 0
     elif is_expected_failure "$output"; then
@@ -1337,13 +1373,8 @@ exec_ws_tag() {
 exec_ws_untag() {
     local actor="$1"
     local active_val tagged_var
-    if [ "$actor" = "a" ]; then
-        active_val="$CHAOS_ACTIVE_WS_A"
-        tagged_var="CHAOS_WS_TAGGED_A"
-    else
-        active_val="$CHAOS_ACTIVE_WS_B"
-        tagged_var="CHAOS_WS_TAGGED_B"
-    fi
+    active_val=$(_get_active_ws "$actor")
+    tagged_var=$(_get_tagged_var "$actor")
 
     # Need active session with tagged issues
     [ -z "$active_val" ] && return 1
@@ -1376,7 +1407,7 @@ exec_ws_untag() {
 exec_ws_end() {
     local actor="$1"
     local active_val
-    if [ "$actor" = "a" ]; then active_val="$CHAOS_ACTIVE_WS_A"; else active_val="$CHAOS_ACTIVE_WS_B"; fi
+    active_val=$(_get_active_ws "$actor")
 
     # Need active session
     [ -z "$active_val" ] && return 1
@@ -1384,7 +1415,7 @@ exec_ws_end() {
     local output rc=0
     output=$(chaos_run_td "$actor" ws end 2>&1) || rc=$?
     if [ $rc -eq 0 ]; then
-        if [ "$actor" = "a" ]; then CHAOS_ACTIVE_WS_A=""; CHAOS_WS_TAGGED_A=""; else CHAOS_ACTIVE_WS_B=""; CHAOS_WS_TAGGED_B=""; fi
+        _clear_ws_state "$actor"
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "ws_end: by $actor"
         return 0
     elif is_expected_failure "$output"; then
@@ -1399,7 +1430,7 @@ exec_ws_end() {
 exec_ws_handoff() {
     local actor="$1"
     local active_val
-    if [ "$actor" = "a" ]; then active_val="$CHAOS_ACTIVE_WS_A"; else active_val="$CHAOS_ACTIVE_WS_B"; fi
+    active_val=$(_get_active_ws "$actor")
 
     # Need active session
     [ -z "$active_val" ] && return 1
@@ -1416,7 +1447,7 @@ exec_ws_handoff() {
         --decision "$decision_items" \
         --uncertain "$uncertain_items" 2>&1) || rc=$?
     if [ $rc -eq 0 ]; then
-        if [ "$actor" = "a" ]; then CHAOS_ACTIVE_WS_A=""; CHAOS_WS_TAGGED_A=""; else CHAOS_ACTIVE_WS_B=""; CHAOS_WS_TAGGED_B=""; fi
+        _clear_ws_state "$actor"
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "ws_handoff: by $actor"
         return 0
     elif is_expected_failure "$output"; then
@@ -1689,14 +1720,30 @@ do_chaos_sync() {
         b)
             td_b sync >/dev/null 2>&1 || true
             ;;
-        both)
-            rand_bool
-            if [ "$_RAND_RESULT" -eq 1 ]; then
-                td_a sync >/dev/null 2>&1 || true
-                td_b sync >/dev/null 2>&1 || true
+        c)
+            td_c sync >/dev/null 2>&1 || true
+            ;;
+        both|all)
+            # Randomize sync order among active actors
+            if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+                rand_int 1 6
+                case "$_RAND_RESULT" in
+                    1) td_a sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true ;;
+                    2) td_a sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true ;;
+                    3) td_b sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true ;;
+                    4) td_b sync >/dev/null 2>&1 || true; td_c sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true ;;
+                    5) td_c sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true ;;
+                    6) td_c sync >/dev/null 2>&1 || true; td_b sync >/dev/null 2>&1 || true; td_a sync >/dev/null 2>&1 || true ;;
+                esac
             else
-                td_b sync >/dev/null 2>&1 || true
-                td_a sync >/dev/null 2>&1 || true
+                rand_bool
+                if [ "$_RAND_RESULT" -eq 1 ]; then
+                    td_a sync >/dev/null 2>&1 || true
+                    td_b sync >/dev/null 2>&1 || true
+                else
+                    td_b sync >/dev/null 2>&1 || true
+                    td_a sync >/dev/null 2>&1 || true
+                fi
             fi
             ;;
     esac
@@ -1709,7 +1756,11 @@ do_chaos_sync() {
 
 maybe_sync() {
     if should_sync; then
-        rand_choice a b both; local direction="$_RAND_RESULT"
+        if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+            rand_choice a b c all; local direction="$_RAND_RESULT"
+        else
+            rand_choice a b both; local direction="$_RAND_RESULT"
+        fi
         do_chaos_sync "$direction"
     fi
 }
@@ -2021,11 +2072,17 @@ verify_idempotency() {
 
     local failed=false
     for round in $(seq 1 "$rounds"); do
-        # Full round-trip: A sync, B sync, B sync, A sync
+        # Full round-trip
         td_a sync >/dev/null 2>&1 || true
         td_b sync >/dev/null 2>&1 || true
+        if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+            td_c sync >/dev/null 2>&1 || true
+        fi
         td_b sync >/dev/null 2>&1 || true
         td_a sync >/dev/null 2>&1 || true
+        if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+            td_c sync >/dev/null 2>&1 || true
+        fi
 
         local hash_a hash_b
         hash_a=$(_db_content_hash "$db_a")
