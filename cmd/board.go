@@ -312,6 +312,13 @@ var boardEditCmd = &cobra.Command{
 		if query, _ := cmd.Flags().GetString("query"); cmd.Flags().Changed("query") {
 			board.Query = query
 		}
+		if viewMode, _ := cmd.Flags().GetString("view-mode"); cmd.Flags().Changed("view-mode") {
+			if err := database.UpdateBoardViewMode(board.ID, viewMode); err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			board.ViewMode = viewMode
+		}
 
 		if err := database.UpdateBoard(board); err != nil {
 			output.Error("%v", err)
@@ -484,7 +491,7 @@ var boardUnpositionCmd = &cobra.Command{
 }
 
 // logActionWithSession logs an action if a session exists, filling in the SessionID.
-func logActionWithSession(baseDir string, database *db.DB, action *models.ActionLog) {
+func logActionWithSession(_ string, database *db.DB, action *models.ActionLog) {
 	sess, _ := session.GetOrCreate(database)
 	if sess != nil {
 		action.SessionID = sess.ID
@@ -526,4 +533,5 @@ func init() {
 	boardShowCmd.Flags().StringArrayP("status", "s", nil, "Filter by status")
 	boardEditCmd.Flags().StringP("name", "n", "", "New name for the board")
 	boardEditCmd.Flags().StringP("query", "q", "", "New query for the board")
+	boardEditCmd.Flags().String("view-mode", "", "View mode: swimlanes or backlog")
 }

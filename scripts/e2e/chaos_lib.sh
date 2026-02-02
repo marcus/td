@@ -375,7 +375,7 @@ _CHAOS_ACTION_NAMES=(
     "start" "unstart" "review" "approve" "reject" "close" "reopen" "bulk_start" "bulk_review" "bulk_close" "block" "unblock"
     "comment" "log_progress" "log_blocker" "log_decision" "log_hypothesis" "log_result"
     "dep_add" "dep_rm"
-    "board_create" "board_edit" "board_move" "board_unposition" "board_delete"
+    "board_create" "board_edit" "board_move" "board_unposition" "board_delete" "board_view_mode"
     "handoff"
     "link" "unlink"
     "ws_start" "ws_tag" "ws_untag" "ws_end" "ws_handoff"
@@ -386,7 +386,7 @@ _CHAOS_ACTION_WEIGHTS=(
     7 1 5 5 2 2 2 1 1 1 1 1
     10 4 2 2 1 1
     3 2
-    2 1 2 1 1
+    2 1 2 1 1 1
     3
     3 1
     2 3 1 1 1
@@ -1313,6 +1313,28 @@ exec_board_delete() {
     fi
 }
 
+exec_board_view_mode() {
+    local actor="$1"
+    [ "${#CHAOS_BOARD_NAMES[@]}" -eq 0 ] && return 1
+
+    local name="${CHAOS_BOARD_NAMES[$(( RANDOM % ${#CHAOS_BOARD_NAMES[@]} ))]}"
+    rand_choice "swimlanes" "backlog"
+    local mode="$_RAND_RESULT"
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" board edit "$name" --view-mode "$mode" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "board_view_mode: $name → $mode by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected board_view_mode: $output"
+        return 2
+    fi
+}
+
 # --- Handoffs ---
 
 exec_handoff() {
@@ -2142,8 +2164,8 @@ verify_convergence() {
 
     # Boards — all fields must match exactly after sync convergence.
     local boards_struct_a boards_struct_b
-    boards_struct_a=$(sqlite3 "$db_a" "SELECT name, is_builtin, query FROM boards ORDER BY name;")
-    boards_struct_b=$(sqlite3 "$db_b" "SELECT name, is_builtin, query FROM boards ORDER BY name;")
+    boards_struct_a=$(sqlite3 "$db_a" "SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;")
+    boards_struct_b=$(sqlite3 "$db_b" "SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;")
     assert_eq "boards match" "$boards_struct_a" "$boards_struct_b"
 
     # Board issue positions — must match exactly after sync convergence.
@@ -2266,7 +2288,7 @@ _db_content_dump() {
         "logs:SELECT issue_id, type, message, session_id FROM logs ORDER BY issue_id, id"
         "handoffs:SELECT issue_id, session_id, done, remaining, decisions, uncertain FROM handoffs ORDER BY issue_id, id"
         "issue_dependencies:SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id"
-        "boards:SELECT name, is_builtin, query FROM boards ORDER BY name"
+        "boards:SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name"
         "board_issue_positions:SELECT board_id, issue_id, position FROM board_issue_positions ORDER BY board_id, issue_id"
         "issue_files:SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path"
         "work_sessions:SELECT id, name, session_id FROM work_sessions ORDER BY id"
