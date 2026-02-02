@@ -73,6 +73,7 @@ CHAOS_ISSUE_STATUS=""    # id:status
 CHAOS_ISSUE_OWNER=""     # id:a or id:b
 CHAOS_ISSUE_MINOR=""     # id:0 or id:1
 CHAOS_DEP_PAIRS=""       # from_to:1 (colon in key replaced with underscore)
+CHAOS_ISSUE_FILES=""     # issueId~filePath:role
 
 CHAOS_ACTION_COUNT=0
 CHAOS_EXPECTED_FAILURES=0
@@ -273,6 +274,7 @@ _CHAOS_ACTION_NAMES=(
     "dep_add" "dep_rm"
     "board_create" "board_edit" "board_move" "board_unposition" "board_delete"
     "handoff"
+    "link" "unlink"
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 1 2
@@ -281,6 +283,7 @@ _CHAOS_ACTION_WEIGHTS=(
     3 2
     2 1 2 1 1
     3
+    3 1
 )
 
 _CHAOS_TOTAL_WEIGHT=0
@@ -1043,6 +1046,102 @@ exec_handoff() {
     fi
 }
 
+# --- File links ---
+
+exec_link() {
+    local actor="$1"
+    if [ ${#CHAOS_ISSUE_IDS[@]} -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Pick random non-deleted issue
+    select_issue not_deleted; local issue_id="$_CHAOS_SELECTED_ISSUE"
+    if [ -z "$issue_id" ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Generate random file path
+    local dirs=("src" "tests" "docs" "internal" "cmd" "pkg")
+    local exts=("go" "md" "sh" "yaml" "json")
+    rand_choice "${dirs[@]}"; local dir="$_RAND_RESULT"
+    rand_choice "${exts[@]}"; local ext="$_RAND_RESULT"
+    rand_int 1 999; local num="$_RAND_RESULT"
+    local file_path="${dir}_file_${num}.${ext}"
+
+    # Pick random role
+    rand_choice implementation test reference config
+    local role="$_RAND_RESULT"
+
+    # Create the file so td link can find it (td link requires files to exist)
+    local abs_file_path
+    if [ "$actor" = "a" ]; then
+        abs_file_path="$CLIENT_A_DIR/$file_path"
+    else
+        abs_file_path="$CLIENT_B_DIR/$file_path"
+    fi
+    mkdir -p "$(dirname "$abs_file_path")"
+    echo "chaos-generated" > "$abs_file_path"
+
+    # Execute link command
+    local output rc=0
+    output=$(chaos_run_td "$actor" link "$issue_id" "$file_path" --role "$role" 2>&1) || rc=$?
+
+    if [ "$rc" -eq 0 ]; then
+        # Track in KV store using issue~filePath as key, role as value
+        kv_set CHAOS_ISSUE_FILES "${issue_id}~${file_path}" "$role"
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "link: $issue_id -> $file_path ($role) by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected link: $output"
+        return 2
+    fi
+}
+
+exec_unlink() {
+    local actor="$1"
+
+    # Need at least one linked file
+    local count
+    count=$(kv_count CHAOS_ISSUE_FILES)
+    if [ "$count" -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Pick a random linked file
+    local keys
+    keys=$(kv_keys CHAOS_ISSUE_FILES)
+    local keys_arr=($keys)
+    rand_int 0 $(( ${#keys_arr[@]} - 1 ))
+    local picked_key="${keys_arr[$_RAND_RESULT]}"
+
+    # Parse issue_id and file_path from key (separator is ~)
+    local issue_id="${picked_key%%~*}"
+    local file_path="${picked_key#*~}"
+
+    # Execute unlink command
+    local output rc=0
+    output=$(chaos_run_td "$actor" unlink "$issue_id" "$file_path" 2>&1) || rc=$?
+
+    if [ "$rc" -eq 0 ]; then
+        kv_del CHAOS_ISSUE_FILES "$picked_key"
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "unlink: $issue_id -> $file_path by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        # Unlink might fail if issue was deleted or file already unlinked by other actor
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected unlink: $output"
+        return 2
+    fi
+}
+
 # ============================================================
 # 8. Safe Execution Wrapper
 # ============================================================
@@ -1280,7 +1379,8 @@ chaos_report() {
     # These are correct rejections, not bugs. See is_expected_failure() for patterns.
     _ok "expected failures: $CHAOS_EXPECTED_FAILURES, unexpected: $CHAOS_UNEXPECTED_FAILURES"
     _ok "issues: ${#CHAOS_ISSUE_IDS[@]} created, ${#CHAOS_DELETED_IDS[@]} deleted"
-    local dep_count
+    local dep_count file_count
     dep_count=$(kv_count CHAOS_DEP_PAIRS)
-    _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked"
+    file_count=$(kv_count CHAOS_ISSUE_FILES)
+    _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
 }
