@@ -85,20 +85,73 @@ func diffJSON(previous, current map[string]any) map[string]any {
 	return changed
 }
 
+// getTimestampColumn returns the timestamp column used for LWW comparison per entity type.
+// Returns empty string for junction tables where LWW is not applicable.
+func getTimestampColumn(entityType string) string {
+	switch entityType {
+	case "issues":
+		return "updated_at"
+	case "logs":
+		return "timestamp"
+	case "comments":
+		return "created_at"
+	case "handoffs":
+		return "timestamp"
+	case "boards":
+		return "updated_at"
+	case "work_sessions":
+		return "started_at"
+	default:
+		// Junction tables (issue_dependencies, issue_files, work_session_issues,
+		// board_issue_positions) use create/delete, not field-level updates.
+		return ""
+	}
+}
+
 // applyPartialUpdate builds and executes an UPDATE statement for only the changed fields.
-// Returns the number of rows affected. Returns nil error if changedFields is empty (no-op).
-func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedFields map[string]any) (int64, error) {
+// When eventTimestamp is provided and the entity type has a timestamp column, a LWW guard
+// rejects the update if the local row has a newer timestamp.
+// Returns (rowsAffected, lwwRejected, error). Returns nil error if changedFields is empty (no-op).
+func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedFields map[string]any, eventTimestamp time.Time) (int64, bool, error) {
 	if len(changedFields) == 0 {
-		return 0, nil
+		return 0, false, nil
 	}
 	if entityID == "" {
-		return 0, fmt.Errorf("partial update %s: empty entity ID", entityType)
+		return 0, false, fmt.Errorf("partial update %s: empty entity ID", entityType)
+	}
+
+	// LWW guard: reject update if local row has a newer timestamp
+	tsCol := getTimestampColumn(entityType)
+	if tsCol != "" && !eventTimestamp.IsZero() {
+		var localTS sql.NullString
+		checkQuery := fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", tsCol, entityType)
+		err := tx.QueryRow(checkQuery, entityID).Scan(&localTS)
+		if err == sql.ErrNoRows {
+			// Row missing — not an LWW rejection, caller should handle
+			return 0, false, nil
+		}
+		if err != nil {
+			return 0, false, fmt.Errorf("partial update %s/%s: LWW check: %w", entityType, entityID, err)
+		}
+		if localTS.Valid && localTS.String != "" {
+			localTime, parseErr := time.Parse(time.RFC3339, localTS.String)
+			if parseErr != nil {
+				// Try other common SQLite datetime formats
+				localTime, parseErr = time.Parse("2006-01-02 15:04:05", localTS.String)
+			}
+			if parseErr == nil && eventTimestamp.Before(localTime) {
+				slog.Debug("LWW rejected partial update", "table", entityType, "id", entityID,
+					"event_ts", eventTimestamp, "local_ts", localTime)
+				return 0, true, nil
+			}
+		}
+		// If localTS is NULL or unparseable, incoming event wins
 	}
 
 	// Validate column names against schema
 	validCols, err := getTableColumns(tx, entityType)
 	if err != nil {
-		return 0, fmt.Errorf("partial update %s/%s: get columns: %w", entityType, entityID, err)
+		return 0, false, fmt.Errorf("partial update %s/%s: get columns: %w", entityType, entityID, err)
 	}
 
 	// Normalize values for DB storage
@@ -117,7 +170,7 @@ func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedF
 		keys = append(keys, k)
 	}
 	if len(keys) == 0 {
-		return 0, nil
+		return 0, false, nil
 	}
 	sort.Strings(keys)
 
@@ -133,9 +186,10 @@ func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedF
 	slog.Debug("partial update", "table", entityType, "id", entityID, "fields", len(keys))
 	res, err := tx.Exec(query, vals...)
 	if err != nil {
-		return 0, fmt.Errorf("partial update %s/%s: %w", entityType, entityID, err)
+		return 0, false, fmt.Errorf("partial update %s/%s: %w", entityType, entityID, err)
 	}
-	return res.RowsAffected()
+	rows, err := res.RowsAffected()
+	return rows, false, err
 }
 
 // applyEvent is the internal version that also returns old row data on overwrite.
@@ -193,10 +247,16 @@ func applyPartialUpdateEvent(tx *sql.Tx, event Event, previousData json.RawMessa
 		return applyResult{}, nil
 	}
 
-	rowsAffected, err := applyPartialUpdate(tx, event.EntityType, event.EntityID, changed)
+	rowsAffected, lwwRejected, err := applyPartialUpdate(tx, event.EntityType, event.EntityID, changed, event.ClientTimestamp)
 	if err != nil {
 		slog.Debug("partial update failed, falling back", "err", err)
 		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	if lwwRejected {
+		// LWW says local is newer — skip this event entirely (don't fall back to upsert)
+		slog.Debug("partial update: LWW rejected", "table", event.EntityType, "id", event.EntityID)
+		return applyResult{}, nil
 	}
 
 	if rowsAffected == 0 {

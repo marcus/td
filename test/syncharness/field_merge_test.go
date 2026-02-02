@@ -1,6 +1,7 @@
 package syncharness
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -370,5 +371,212 @@ func TestEmptyDiffNoOp(t *testing.T) {
 	priority, _ := entAfter["priority"].(string)
 	if priority != "P2" {
 		t.Fatalf("client-B: expected priority 'P2', got %q", priority)
+	}
+}
+
+// ─── Test: LWW guard rejects older-timestamp partial updates ───
+
+func TestLWWGuardRejectsOlderTimestamp(t *testing.T) {
+	h := NewHarness(t, 2, proj)
+
+	// Client A creates issue
+	if err := h.Mutate("client-A", "create", "issues", "td-LWW1", map[string]any{
+		"title": "LWW Guard", "status": "open", "priority": "P2",
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := h.Sync("client-A", proj); err != nil {
+		t.Fatalf("sync A: %v", err)
+	}
+	if err := h.Sync("client-B", proj); err != nil {
+		t.Fatalf("sync B: %v", err)
+	}
+	setSyncState(h, "client-A", proj)
+	setSyncState(h, "client-B", proj)
+
+	// Client B updates status to in_progress (this sets B's local updated_at to "now")
+	if err := h.Mutate("client-B", "update", "issues", "td-LWW1", map[string]any{
+		"title": "LWW Guard", "status": "in_progress", "priority": "P2",
+	}); err != nil {
+		t.Fatalf("update B: %v", err)
+	}
+	if _, err := h.Push("client-B", proj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Inject an older event from a phantom device with a timestamp in the past
+	// This simulates a stale event arriving after B already updated the row
+	oldTimestamp := time.Now().Add(-1 * time.Hour)
+	prevData := map[string]any{"title": "LWW Guard", "status": "open", "priority": "P2"}
+	newData := map[string]any{"title": "LWW Guard", "status": "open", "priority": "P0"}
+	prevJSON, _ := json.Marshal(prevData)
+	newJSON, _ := json.Marshal(newData)
+	payload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       json.RawMessage(newJSON),
+		"previous_data":  json.RawMessage(prevJSON),
+	})
+
+	staleEvent := tdsync.Event{
+		ClientActionID: 950,
+		DeviceID:       "device-stale",
+		SessionID:      "session-stale",
+		ActionType:     "update",
+		EntityType:     "issues",
+		EntityID:       "td-LWW1",
+		Payload:        payload,
+		ClientTimestamp: oldTimestamp,
+	}
+
+	serverDB := h.ProjectDBs[proj]
+	h.serverMu.Lock()
+	serverTx, err := serverDB.Begin()
+	if err != nil {
+		h.serverMu.Unlock()
+		t.Fatalf("begin server tx: %v", err)
+	}
+	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{staleEvent})
+	if err != nil {
+		serverTx.Rollback()
+		h.serverMu.Unlock()
+		t.Fatalf("insert stale event: %v", err)
+	}
+	if err := serverTx.Commit(); err != nil {
+		h.serverMu.Unlock()
+		t.Fatalf("commit: %v", err)
+	}
+	h.serverMu.Unlock()
+
+	// Client B pulls — should LWW-reject the stale event
+	if _, err := h.PullAll("client-B", proj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	// B should still have status=in_progress (not reverted to open by stale event)
+	ent := h.QueryEntity("client-B", "issues", "td-LWW1")
+	if ent == nil {
+		t.Fatal("client-B: td-LWW1 not found")
+	}
+	status, _ := ent["status"].(string)
+	if status != "in_progress" {
+		t.Fatalf("client-B: expected status 'in_progress' (LWW guard), got %q", status)
+	}
+	// Priority should NOT have been changed to P0 by the stale event
+	priority, _ := ent["priority"].(string)
+	if priority != "P2" {
+		t.Fatalf("client-B: expected priority 'P2' (LWW rejected stale), got %q", priority)
+	}
+
+	// Client A also pulls all events (including own + B's + stale)
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+
+	// Both should converge
+	h.AssertConverged(proj)
+}
+
+// ─── Test: Dependency add/remove converges when both clients replay all events ───
+
+func TestDependencyAddRemoveConverges(t *testing.T) {
+	h := NewHarness(t, 2, proj)
+
+	// Create two issues on A
+	for _, id := range []string{"td-DEP1", "td-DEP2", "td-DEP3"} {
+		if err := h.Mutate("client-A", "create", "issues", id, map[string]any{
+			"title": id, "status": "open",
+		}); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	if err := h.Sync("client-A", proj); err != nil {
+		t.Fatalf("sync A1: %v", err)
+	}
+	if err := h.Sync("client-B", proj); err != nil {
+		t.Fatalf("sync B1: %v", err)
+	}
+	setSyncState(h, "client-A", proj)
+	setSyncState(h, "client-B", proj)
+
+	// Client A adds dependency: DEP1 depends_on DEP2
+	depID1 := "dep-1-2"
+	if err := h.Mutate("client-A", "create", "issue_dependencies", depID1, map[string]any{
+		"issue_id": "td-DEP1", "depends_on_id": "td-DEP2", "relation_type": "depends_on",
+	}); err != nil {
+		t.Fatalf("add dep A: %v", err)
+	}
+
+	// Client B adds dependency: DEP1 depends_on DEP3
+	depID2 := "dep-1-3"
+	if err := h.Mutate("client-B", "create", "issue_dependencies", depID2, map[string]any{
+		"issue_id": "td-DEP1", "depends_on_id": "td-DEP3", "relation_type": "depends_on",
+	}); err != nil {
+		t.Fatalf("add dep B: %v", err)
+	}
+
+	// Both push
+	if _, err := h.Push("client-A", proj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", proj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll — since own events are now included, both see all events
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", proj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(proj)
+
+	// Both clients should have both dependencies
+	for _, cid := range []string{"client-A", "client-B"} {
+		dep1 := h.QueryEntity(cid, "issue_dependencies", depID1)
+		if dep1 == nil {
+			t.Fatalf("%s: dependency %s should exist", cid, depID1)
+		}
+		dep2 := h.QueryEntity(cid, "issue_dependencies", depID2)
+		if dep2 == nil {
+			t.Fatalf("%s: dependency %s should exist", cid, depID2)
+		}
+	}
+
+	// Now Client A removes dep-1-2, Client B removes dep-1-3 concurrently
+	if err := h.Mutate("client-A", "delete", "issue_dependencies", depID1, nil); err != nil {
+		t.Fatalf("delete dep A: %v", err)
+	}
+	if err := h.Mutate("client-B", "delete", "issue_dependencies", depID2, nil); err != nil {
+		t.Fatalf("delete dep B: %v", err)
+	}
+
+	// Both push and pull all
+	if _, err := h.Push("client-A", proj); err != nil {
+		t.Fatalf("push A2: %v", err)
+	}
+	if _, err := h.Push("client-B", proj); err != nil {
+		t.Fatalf("push B2: %v", err)
+	}
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A2: %v", err)
+	}
+	if _, err := h.PullAll("client-B", proj); err != nil {
+		t.Fatalf("pullAll B2: %v", err)
+	}
+
+	h.AssertConverged(proj)
+
+	// Both dependencies should be deleted on both clients
+	for _, cid := range []string{"client-A", "client-B"} {
+		dep1 := h.QueryEntity(cid, "issue_dependencies", depID1)
+		if dep1 != nil {
+			t.Fatalf("%s: dependency %s should be deleted", cid, depID1)
+		}
+		dep2 := h.QueryEntity(cid, "issue_dependencies", depID2)
+		if dep2 != nil {
+			t.Fatalf("%s: dependency %s should be deleted", cid, depID2)
+		}
 	}
 }

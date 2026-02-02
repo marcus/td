@@ -414,7 +414,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	var allConflicts []tdsync.ConflictRecord
 
 	for {
-		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, deviceID)
+		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, "")
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
 				output.Error("unauthorized - re-login may be needed")
