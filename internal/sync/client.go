@@ -145,9 +145,10 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 	var result ApplyResult
 
 	for _, ev := range events {
-		// Extract new_data from the payload wrapper
+		// Extract new_data and previous_data from the payload wrapper
 		var wrapper struct {
-			NewData json.RawMessage `json:"new_data"`
+			NewData      json.RawMessage `json:"new_data"`
+			PreviousData json.RawMessage `json:"previous_data"`
 		}
 		if err := json.Unmarshal(ev.Payload, &wrapper); err != nil {
 			slog.Warn("apply remote: unmarshal payload", "seq", ev.ServerSeq, "err", err)
@@ -168,7 +169,7 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 			ServerSeq:       ev.ServerSeq,
 		}
 
-		res, err := applyEvent(tx, applyEv, validator)
+		res, err := applyEventWithPrevious(tx, applyEv, validator, wrapper.PreviousData)
 		if err != nil {
 			slog.Warn("apply remote: apply event", "seq", ev.ServerSeq, "err", err)
 			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})

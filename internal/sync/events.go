@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -54,8 +55,96 @@ func ApplyEvent(tx *sql.Tx, event Event, validator EntityValidator) (bool, error
 	return res.Overwritten, nil
 }
 
+// diffJSON compares previous and current JSON objects field by field and returns
+// only the fields that changed (added, modified, or removed/set-to-null).
+// The "id" field is always skipped — primary keys are never updated.
+func diffJSON(previous, current map[string]any) map[string]any {
+	changed := make(map[string]any)
+
+	// Fields in current that are new or modified
+	for k, v := range current {
+		if k == "id" {
+			continue
+		}
+		oldVal, existed := previous[k]
+		if !existed || !reflect.DeepEqual(oldVal, v) {
+			changed[k] = v
+		}
+	}
+
+	// Fields removed in current (existed in previous but not in current)
+	for k := range previous {
+		if k == "id" {
+			continue
+		}
+		if _, exists := current[k]; !exists {
+			changed[k] = nil
+		}
+	}
+
+	return changed
+}
+
+// applyPartialUpdate builds and executes an UPDATE statement for only the changed fields.
+// Returns the number of rows affected. Returns nil error if changedFields is empty (no-op).
+func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedFields map[string]any) (int64, error) {
+	if len(changedFields) == 0 {
+		return 0, nil
+	}
+	if entityID == "" {
+		return 0, fmt.Errorf("partial update %s: empty entity ID", entityType)
+	}
+
+	// Validate column names against schema
+	validCols, err := getTableColumns(tx, entityType)
+	if err != nil {
+		return 0, fmt.Errorf("partial update %s/%s: get columns: %w", entityType, entityID, err)
+	}
+
+	// Normalize values for DB storage
+	normalizeFieldsForDB(entityType, changedFields)
+
+	// Build SET clause with only valid, changed columns
+	keys := make([]string, 0, len(changedFields))
+	for k := range changedFields {
+		if !validCols[k] {
+			slog.Debug("partial update: dropping unknown column", "table", entityType, "column", k)
+			continue
+		}
+		if !validColumnName.MatchString(k) {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	if len(keys) == 0 {
+		return 0, nil
+	}
+	sort.Strings(keys)
+
+	setClauses := make([]string, len(keys))
+	vals := make([]any, len(keys)+1) // +1 for WHERE id=?
+	for i, k := range keys {
+		setClauses[i] = fmt.Sprintf("%s = ?", k)
+		vals[i] = changedFields[k]
+	}
+	vals[len(keys)] = entityID
+
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = ?", entityType, strings.Join(setClauses, ", "))
+	slog.Debug("partial update", "table", entityType, "id", entityID, "fields", len(keys))
+	res, err := tx.Exec(query, vals...)
+	if err != nil {
+		return 0, fmt.Errorf("partial update %s/%s: %w", entityType, entityID, err)
+	}
+	return res.RowsAffected()
+}
+
 // applyEvent is the internal version that also returns old row data on overwrite.
 func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult, error) {
+	return applyEventWithPrevious(tx, event, validator, nil)
+}
+
+// applyEventWithPrevious is like applyEvent but accepts optional previousData for partial updates.
+func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, previousData json.RawMessage) (applyResult, error) {
 	if !validator(event.EntityType) {
 		return applyResult{}, fmt.Errorf("invalid entity type: %q", event.EntityType)
 	}
@@ -67,6 +156,10 @@ func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult
 	switch event.ActionType {
 	case "create", "update":
 		if event.ActionType == "update" {
+			// Try partial update when previous_data is available
+			if len(previousData) > 0 && string(previousData) != "{}" {
+				return applyPartialUpdateEvent(tx, event, previousData)
+			}
 			return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
 		}
 		return upsertEntity(tx, event.EntityType, event.EntityID, event.Payload)
@@ -77,6 +170,42 @@ func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult
 	default:
 		return applyResult{}, fmt.Errorf("unknown action type: %q", event.ActionType)
 	}
+}
+
+// applyPartialUpdateEvent diffs previous_data vs new_data and applies only changed fields.
+// Falls back to full upsert if the partial update fails or the row doesn't exist.
+func applyPartialUpdateEvent(tx *sql.Tx, event Event, previousData json.RawMessage) (applyResult, error) {
+	var prevFields map[string]any
+	if err := json.Unmarshal(previousData, &prevFields); err != nil {
+		slog.Debug("partial update: bad previous_data, falling back", "err", err)
+		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	var newFields map[string]any
+	if err := json.Unmarshal(event.Payload, &newFields); err != nil {
+		slog.Debug("partial update: bad new_data, falling back", "err", err)
+		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	changed := diffJSON(prevFields, newFields)
+	if len(changed) == 0 {
+		// No fields changed — no-op
+		return applyResult{}, nil
+	}
+
+	rowsAffected, err := applyPartialUpdate(tx, event.EntityType, event.EntityID, changed)
+	if err != nil {
+		slog.Debug("partial update failed, falling back", "err", err)
+		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	if rowsAffected == 0 {
+		// Row doesn't exist locally — fall back to full upsert with new_data
+		slog.Debug("partial update: row missing, falling back to upsert", "table", event.EntityType, "id", event.EntityID)
+		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	return applyResult{}, nil
 }
 
 // upsertEntity inserts or replaces a row using the JSON payload fields.
