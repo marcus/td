@@ -3,7 +3,6 @@ package cmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -129,8 +128,8 @@ Examples:
 				return err
 			}
 
-			// Use the dependency module to validate and add
-			err = dependency.ValidateAndAdd(database, issueID, dependsOnID)
+			// Validate and add with atomic logging
+			err = dependency.Validate(database, issueID, dependsOnID)
 			if err == dependency.ErrDependencyExists {
 				output.Warning("%s already depends on %s", issueID, dependsOnID)
 				return nil
@@ -139,19 +138,10 @@ Examples:
 				output.Error("%v", err)
 				return err
 			}
-
-			// Log dependency addition for undo and sync
-			depID := db.DependencyID(issueID, dependsOnID, "depends_on")
-			depData, _ := json.Marshal(map[string]string{
-				"id": depID, "issue_id": issueID, "depends_on_id": dependsOnID, "relation_type": "depends_on",
-			})
-			database.LogAction(&models.ActionLog{
-				SessionID:  sess.ID,
-				ActionType: models.ActionAddDep,
-				EntityType: "issue_dependencies",
-				EntityID:   depID,
-				NewData:    string(depData),
-			})
+			if err := database.AddDependencyLogged(issueID, dependsOnID, "depends_on", sess.ID); err != nil {
+				output.Error("%v", err)
+				return err
+			}
 
 			fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
 			fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
