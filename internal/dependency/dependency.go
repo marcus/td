@@ -33,9 +33,9 @@ func hasCyclePath(database *db.DB, from, to string, visited map[string]bool) boo
 	return false
 }
 
-// ValidateAndAdd validates the dependency (no cycles, both issues exist, not duplicate) and adds it.
-// Returns nil on success, or an error describing what went wrong.
-func ValidateAndAdd(database *db.DB, issueID, dependsOnID string) error {
+// Validate checks that a dependency can be added (both issues exist, no cycles, not duplicate).
+// Returns nil if valid, or an error describing what went wrong.
+func Validate(database *db.DB, issueID, dependsOnID string) error {
 	// Verify both issues exist
 	_, err := database.GetIssue(issueID)
 	if err != nil {
@@ -58,6 +58,16 @@ func ValidateAndAdd(database *db.DB, issueID, dependsOnID string) error {
 		if d == dependsOnID {
 			return ErrDependencyExists
 		}
+	}
+
+	return nil
+}
+
+// ValidateAndAdd validates the dependency (no cycles, both issues exist, not duplicate) and adds it.
+// Returns nil on success, or an error describing what went wrong.
+func ValidateAndAdd(database *db.DB, issueID, dependsOnID string) error {
+	if err := Validate(database, issueID, dependsOnID); err != nil {
+		return err
 	}
 
 	// Add the dependency

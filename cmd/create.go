@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -192,44 +191,18 @@ var createCmd = &cobra.Command{
 		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
 			for _, dep := range strings.Split(dependsOn, ",") {
 				dep = strings.TrimSpace(dep)
-				if err := database.AddDependency(issue.ID, dep, "depends_on"); err != nil {
+				if err := database.AddDependencyLogged(issue.ID, dep, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add dependency %s: %v", dep, err)
-					continue
 				}
-				// Log dependency addition for undo and sync
-				depID := db.DependencyID(issue.ID, dep, "depends_on")
-				depData, _ := json.Marshal(map[string]string{
-					"id": depID, "issue_id": issue.ID, "depends_on_id": dep, "relation_type": "depends_on",
-				})
-				database.LogAction(&models.ActionLog{
-					SessionID:  sess.ID,
-					ActionType: models.ActionAddDep,
-					EntityType: "issue_dependencies",
-					EntityID:   depID,
-					NewData:    string(depData),
-				})
 			}
 		}
 
 		if blocks, _ := cmd.Flags().GetString("blocks"); blocks != "" {
 			for _, blocked := range strings.Split(blocks, ",") {
 				blocked = strings.TrimSpace(blocked)
-				if err := database.AddDependency(blocked, issue.ID, "depends_on"); err != nil {
+				if err := database.AddDependencyLogged(blocked, issue.ID, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add blocks %s: %v", blocked, err)
-					continue
 				}
-				// Log dependency addition for undo and sync
-				depID := db.DependencyID(blocked, issue.ID, "depends_on")
-				depData, _ := json.Marshal(map[string]string{
-					"id": depID, "issue_id": blocked, "depends_on_id": issue.ID, "relation_type": "depends_on",
-				})
-				database.LogAction(&models.ActionLog{
-					SessionID:  sess.ID,
-					ActionType: models.ActionAddDep,
-					EntityType: "issue_dependencies",
-					EntityID:   depID,
-					NewData:    string(depData),
-				})
 			}
 		}
 
