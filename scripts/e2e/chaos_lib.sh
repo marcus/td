@@ -607,6 +607,8 @@ is_expected_failure() {
     [[ "$lower" == *"no active"* ]] && return 0
     [[ "$lower" == *"no work session"* ]] && return 0
     [[ "$lower" == *"session"*"not found"* ]] && return 0
+    [[ "$lower" == *"no files found"* ]] && return 0
+    [[ "$lower" == *"no matches"* ]] && return 0
     return 1
 }
 
