@@ -141,6 +141,29 @@ See [e2e-sync-test-guide.md](../scripts/e2e/e2e-sync-test-guide.md) for writing 
 | [sync-mvp-testing-spec.md](sync-mvp-testing-spec.md) | Original MVP test spec (18 cases, all implemented) |
 | [implemented/sync-plan-03-merged.md](implemented/sync-plan-03-merged.md) | Original v3 spec (reference only, implementation is source of truth) |
 
+## Mutation logging contract
+
+Every mutation to a synced entity **must** write to `action_log` with `PreviousData` and `NewData` JSON snapshots, or the change won't sync. The pattern is:
+
+```go
+prevData, _ := json.Marshal(issue)   // snapshot before
+issue.Status = models.StatusClosed
+m.DB.UpdateIssue(issue)
+newData, _ := json.Marshal(issue)    // snapshot after
+m.DB.LogAction(&models.ActionLog{
+    SessionID:    sessionID,
+    ActionType:   models.ActionClose,
+    EntityType:   "issue",
+    EntityID:     issue.ID,
+    PreviousData: string(prevData),
+    NewData:      string(newData),
+})
+```
+
+This applies to **all** mutation sites: CLI commands (`cmd/`), TUI monitor actions (`pkg/monitor/actions.go`, `pkg/monitor/form_operations.go`), and cascade helpers (`internal/db/issue_relations.go`). Cascaded child updates (e.g. closing all children of an epic) need individual `LogAction` calls per child — not just for the parent.
+
+If you add a new mutation path (new command, new TUI action, new cascade), verify it writes to `action_log` with both snapshots. Missing `NewData` means the sync engine has nothing to push.
+
 ## Known issues
 
 - **Event replay ordering**: "update" events with full JSON snapshots use `INSERT OR REPLACE`, which can re-create rows that were hard-deleted during replay. `board_issue_positions` is fixed — it now uses soft deletes (`deleted_at` column) so replayed updates don't resurrect removed positions. Other entity types can still re-create hard-deleted rows in rare cases; e2e real-data tests use `assert_ge` for this reason.

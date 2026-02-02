@@ -102,12 +102,14 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Log action for undo
+		// Log action for undo/sync
+		newData, _ := json.Marshal(issue)
 		m.DB.LogAction(&models.ActionLog{
 			SessionID:  m.SessionID,
 			ActionType: models.ActionCreate,
 			EntityType: "issue",
 			EntityID:   issue.ID,
+			NewData:    string(newData),
 		})
 
 		m.closeForm()
@@ -120,6 +122,9 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			m.Err = err
 			return m, nil
 		}
+
+		// Capture previous state for undo/sync
+		prevData, _ := json.Marshal(existingIssue)
 
 		// Update fields
 		existingIssue.Title = issue.Title
@@ -137,12 +142,15 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Log action for undo
+		// Log action for undo/sync
+		newData, _ := json.Marshal(existingIssue)
 		m.DB.LogAction(&models.ActionLog{
-			SessionID:  m.SessionID,
-			ActionType: models.ActionUpdate,
-			EntityType: "issue",
-			EntityID:   existingIssue.ID,
+			SessionID:    m.SessionID,
+			ActionType:   models.ActionUpdate,
+			EntityType:   "issue",
+			EntityID:     existingIssue.ID,
+			PreviousData: string(prevData),
+			NewData:      string(newData),
 		})
 
 		m.closeForm()

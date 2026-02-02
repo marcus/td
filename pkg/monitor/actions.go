@@ -82,11 +82,21 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		})
 		if err == nil && len(descendants) > 0 {
 			for _, child := range descendants {
+				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusInReview
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
 				m.DB.UpdateIssue(child)
+				childNew, _ := json.Marshal(child)
+				m.DB.LogAction(&models.ActionLog{
+					SessionID:    m.SessionID,
+					ActionType:   models.ActionReview,
+					EntityType:   "issue",
+					EntityID:     child.ID,
+					PreviousData: string(childPrev),
+					NewData:      string(childNew),
+				})
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -294,12 +304,22 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		if err == nil && len(descendants) > 0 {
 			now := time.Now()
 			for _, child := range descendants {
+				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
 				m.DB.UpdateIssue(child)
+				childNew, _ := json.Marshal(child)
+				m.DB.LogAction(&models.ActionLog{
+					SessionID:    m.SessionID,
+					ActionType:   models.ActionClose,
+					EntityType:   "issue",
+					EntityID:     child.ID,
+					PreviousData: string(childPrev),
+					NewData:      string(childNew),
+				})
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -400,6 +420,7 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		if err == nil && len(descendants) > 0 {
 			now := time.Now()
 			for _, child := range descendants {
+				childPrev, _ := json.Marshal(child)
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				child.ReviewerSession = m.SessionID
@@ -407,6 +428,15 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 					child.ImplementerSession = m.SessionID
 				}
 				m.DB.UpdateIssue(child)
+				childNew, _ := json.Marshal(child)
+				m.DB.LogAction(&models.ActionLog{
+					SessionID:    m.SessionID,
+					ActionType:   models.ActionApprove,
+					EntityType:   "issue",
+					EntityID:     child.ID,
+					PreviousData: string(childPrev),
+					NewData:      string(childNew),
+				})
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
