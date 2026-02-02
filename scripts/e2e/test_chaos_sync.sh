@@ -115,8 +115,12 @@ while ! is_done; do
         _fail "Safety valve: $ITERATIONS iterations without completing $ACTIONS actions (completed: $CHAOS_ACTION_COUNT, skipped: $CHAOS_SKIPPED)"
         break
     fi
-    # Decide if this is a conflict round
-    if [ $(( RANDOM % 100 )) -lt "$CONFLICT_RATE" ] && [ "${#CHAOS_ISSUE_IDS[@]}" -gt 0 ]; then
+    # Burst mode: ~10% chance, single actor rapid-fires on one issue without sync
+    if [ $(( RANDOM % 100 )) -lt 10 ]; then
+        rand_choice a b; burst_actor="$_RAND_RESULT"
+        exec_burst "$burst_actor"
+    # Conflict round
+    elif [ $(( RANDOM % 100 )) -lt "$CONFLICT_RATE" ] && [ "${#CHAOS_ISSUE_IDS[@]}" -gt 0 ]; then
         # Conflict round: both actors mutate without sync between
         select_issue not_deleted; local_id="$_CHAOS_SELECTED_ISSUE"
         if [ -n "$local_id" ]; then
@@ -183,6 +187,7 @@ echo "  Unexpected failures:    $CHAOS_UNEXPECTED_FAILURES"
 echo "  Skipped (no target):    $CHAOS_SKIPPED"
 echo "  Field collisions:       $CHAOS_FIELD_COLLISIONS"
 echo "  Delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
+echo "  Bursts:                 $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS actions)"
 echo "  Issues created:         ${#CHAOS_ISSUE_IDS[@]}"
 echo "  Boards created:         ${#CHAOS_BOARD_NAMES[@]}"
 echo "  Seed:                   $SEED (use --seed $SEED to reproduce)"

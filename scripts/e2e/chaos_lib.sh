@@ -87,6 +87,8 @@ CHAOS_ACTIONS_SINCE_SYNC=0
 CHAOS_SKIPPED=0
 CHAOS_FIELD_COLLISIONS=0
 CHAOS_DELETE_MUTATE_CONFLICTS=0
+CHAOS_BURST_COUNT=0
+CHAOS_BURST_ACTIONS=0
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
 # ============================================================
@@ -1444,6 +1446,82 @@ exec_delete_while_mutate() {
 }
 
 # ============================================================
+# 7d. Burst-Without-Sync Pattern
+# ============================================================
+# One actor performs a rapid burst of 5-8 sequential mutations on a single
+# issue without any intermediate syncs. Stresses event log ordering and
+# replay of sequential local changes (create -> update -> start -> comment
+# -> update priority -> review, all before syncing).
+
+exec_burst() {
+    local actor="$1"
+
+    # Pick or create an issue
+    local id=""
+    if [ ${#CHAOS_ISSUE_IDS[@]} -gt 0 ] && [ $(( RANDOM % 2 )) -eq 0 ]; then
+        select_issue not_deleted; id="$_CHAOS_SELECTED_ISSUE"
+    fi
+
+    if [ -z "$id" ]; then
+        # Create a new issue for the burst
+        rand_title; local title="$_RAND_STR"
+        rand_choice task bug feature; local type_val="$_RAND_RESULT"
+        local output rc=0
+        output=$(chaos_run_td "$actor" create "$title" --type "$type_val" 2>&1) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            [ "$CHAOS_VERBOSE" = "true" ] && _ok "burst: create failed, skipping"
+            return 0
+        fi
+        id=$(echo "$output" | grep -oE 'td-[a-f0-9]+' | head -1)
+        if [ -z "$id" ]; then
+            return 0
+        fi
+        CHAOS_ISSUE_IDS+=("$id")
+        kv_set CHAOS_ISSUE_STATUS "$id" "open"
+        kv_set CHAOS_ISSUE_OWNER "$id" "$actor"
+    fi
+
+    # Perform 5-8 sequential mutations without sync
+    rand_int 5 8; local burst_size="$_RAND_RESULT"
+    local actions_done=0
+
+    for _ in $(seq 1 "$burst_size"); do
+        rand_int 1 7
+        case "$_RAND_RESULT" in
+            1) # Update title
+               rand_title 80
+               chaos_run_td "$actor" update "$id" --title "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            2) # Update priority
+               rand_choice P0 P1 P2 P3
+               chaos_run_td "$actor" update "$id" --priority "$_RAND_RESULT" >/dev/null 2>&1 || true ;;
+            3) # Add comment
+               rand_comment 5 20
+               chaos_run_td "$actor" comments add "$id" "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            4) # Log progress
+               rand_comment 5 15
+               chaos_run_td "$actor" log --issue "$id" "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            5) # Update labels
+               rand_labels
+               chaos_run_td "$actor" update "$id" --labels "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            6) # Update points
+               rand_int 0 13
+               chaos_run_td "$actor" update "$id" --points "$_RAND_RESULT" >/dev/null 2>&1 || true ;;
+            7) # Update sprint
+               rand_choice "sprint-1" "sprint-2" "sprint-3"
+               chaos_run_td "$actor" update "$id" --sprint "$_RAND_RESULT" >/dev/null 2>&1 || true ;;
+        esac
+        actions_done=$((actions_done + 1))
+    done
+
+    CHAOS_BURST_COUNT=$((CHAOS_BURST_COUNT + 1))
+    CHAOS_BURST_ACTIONS=$((CHAOS_BURST_ACTIONS + actions_done))
+    CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + actions_done))
+    CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + actions_done))
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "burst: $actions_done actions on $id by $actor"
+    return 0
+}
+
+# ============================================================
 # 8. Safe Execution Wrapper
 # ============================================================
 
@@ -1730,4 +1808,5 @@ chaos_report() {
     _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
     _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
     _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
+    _ok "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
 }
