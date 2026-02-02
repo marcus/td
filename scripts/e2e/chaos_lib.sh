@@ -1840,6 +1840,67 @@ _db_content_dump() {
     done
 }
 
+verify_event_counts() {
+    local db_a="$1" db_b="$2"
+
+    _step "Event count verification"
+
+    # Total synced events (server_seq IS NOT NULL) should match
+    local synced_a synced_b
+    synced_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL;")
+    synced_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL;")
+    if [ "$synced_a" -eq "$synced_b" ]; then
+        _ok "synced event count: $synced_a"
+    else
+        _ok "WARN synced event count mismatch: A=$synced_a B=$synced_b (delta=$(( synced_a - synced_b )))"
+    fi
+
+    # Total events (including unsynced local)
+    local total_a total_b
+    total_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM action_log;")
+    total_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM action_log;")
+    if [ "$total_a" -eq "$total_b" ]; then
+        _ok "total event count: $total_a"
+    else
+        _ok "WARN total event count mismatch: A=$total_a B=$total_b"
+    fi
+
+    # Per entity_type distribution for synced events
+    local dist_a dist_b
+    dist_a=$(sqlite3 "$db_a" "SELECT entity_type, COUNT(*) FROM action_log WHERE server_seq IS NOT NULL GROUP BY entity_type ORDER BY entity_type;")
+    dist_b=$(sqlite3 "$db_b" "SELECT entity_type, COUNT(*) FROM action_log WHERE server_seq IS NOT NULL GROUP BY entity_type ORDER BY entity_type;")
+    if [ "$dist_a" = "$dist_b" ]; then
+        _ok "entity_type distribution matches"
+    else
+        _ok "WARN entity_type distribution differs:"
+        # Show side-by-side comparison
+        local types
+        types=$(sqlite3 "$db_a" "SELECT DISTINCT entity_type FROM action_log WHERE server_seq IS NOT NULL ORDER BY entity_type;")
+        types+=$'\n'
+        types+=$(sqlite3 "$db_b" "SELECT DISTINCT entity_type FROM action_log WHERE server_seq IS NOT NULL ORDER BY entity_type;")
+        types=$(echo "$types" | sort -u)
+        while IFS= read -r etype; do
+            [ -z "$etype" ] && continue
+            local ca cb
+            ca=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL AND entity_type='$etype';")
+            cb=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL AND entity_type='$etype';")
+            if [ "$ca" -ne "$cb" ]; then
+                _ok "  $etype: A=$ca B=$cb"
+            fi
+        done <<< "$types"
+    fi
+
+    # Per action_type distribution for synced events
+    local adist_a adist_b
+    adist_a=$(sqlite3 "$db_a" "SELECT action_type, COUNT(*) FROM action_log WHERE server_seq IS NOT NULL GROUP BY action_type ORDER BY action_type;")
+    adist_b=$(sqlite3 "$db_b" "SELECT action_type, COUNT(*) FROM action_log WHERE server_seq IS NOT NULL GROUP BY action_type ORDER BY action_type;")
+    if [ "$adist_a" = "$adist_b" ]; then
+        _ok "action_type distribution matches"
+    else
+        _ok "WARN action_type distribution differs"
+    fi
+}
+
 verify_idempotency() {
     local db_a="$1" db_b="$2"
     local rounds=3

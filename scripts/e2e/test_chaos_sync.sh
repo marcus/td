@@ -181,6 +181,9 @@ verify_convergence "$DB_A" "$DB_B"
 # ---- Idempotency verification ----
 verify_idempotency "$DB_A" "$DB_B"
 
+# ---- Event count verification ----
+verify_event_counts "$DB_A" "$DB_B"
+
 # ---- Summary stats ----
 _step "Summary"
 echo "  Total actions:          $CHAOS_ACTION_COUNT"
