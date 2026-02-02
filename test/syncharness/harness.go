@@ -243,10 +243,20 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 		return fmt.Errorf("unknown action type: %s", actionType)
 	}
 
-	// Build JSON strings
+	// Build JSON strings — new_data is the full row snapshot after the mutation
+	// (mirrors real td behavior where new_data = full entity state after action)
 	prevJSON, _ := json.Marshal(prevData)
 	var newJSON []byte
-	if data != nil {
+	if actionType == "create" || actionType == "update" {
+		postData := readEntity(tx, entityType, entityID)
+		if postData != nil {
+			newJSON, _ = json.Marshal(postData)
+		} else if data != nil {
+			newJSON, _ = json.Marshal(data)
+		} else {
+			newJSON = []byte("{}")
+		}
+	} else if data != nil {
 		newJSON, _ = json.Marshal(data)
 	} else {
 		newJSON = []byte("{}")
