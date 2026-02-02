@@ -327,7 +327,9 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 // Dependency Functions
 // ============================================================================
 
-// AddDependency adds a dependency between issues
+// AddDependency adds a dependency between issues WITHOUT logging to action_log.
+// For local mutations, use AddDependencyLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) AddDependency(issueID, dependsOnID, relationType string) error {
 	return db.withWriteLock(func() error {
 		depID := DependencyID(issueID, dependsOnID, relationType)
@@ -339,7 +341,9 @@ func (db *DB) AddDependency(issueID, dependsOnID, relationType string) error {
 	})
 }
 
-// RemoveDependency removes a dependency
+// RemoveDependency removes a dependency WITHOUT logging to action_log.
+// For local mutations, use RemoveDependencyLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) RemoveDependency(issueID, dependsOnID string) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID)
@@ -484,7 +488,9 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 // Issue File Functions
 // ============================================================================
 
-// LinkFile links a file to an issue
+// LinkFile links a file to an issue WITHOUT logging to action_log.
+// For local mutations, use LinkFileLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha string) error {
 	return db.withWriteLock(func() error {
 		id := IssueFileID(issueID, filePath)
@@ -496,7 +502,9 @@ func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha strin
 	})
 }
 
-// UnlinkFile removes a file link
+// UnlinkFile removes a file link WITHOUT logging to action_log.
+// For local mutations, use UnlinkFileLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) UnlinkFile(issueID, filePath string) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`DELETE FROM issue_files WHERE issue_id = ? AND file_path = ?`, issueID, filePath)

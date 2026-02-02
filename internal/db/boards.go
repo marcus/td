@@ -25,7 +25,9 @@ func parseAndValidateQuery(queryStr string) error {
 	return QueryValidator(queryStr)
 }
 
-// CreateBoard creates a new board with a TDQ query
+// CreateBoard creates a new board with a TDQ query WITHOUT logging to action_log.
+// For local mutations, use CreateBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) CreateBoard(name, queryStr string) (*models.Board, error) {
 	var board *models.Board
 	err := db.withWriteLock(func() error {
@@ -167,7 +169,9 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 	return boards, nil
 }
 
-// UpdateBoard updates a board's name and/or query
+// UpdateBoard updates a board's name and/or query WITHOUT logging to action_log.
+// For local mutations, use UpdateBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) UpdateBoard(board *models.Board) error {
 	return db.withWriteLock(func() error {
 		// Check if builtin
@@ -197,7 +201,9 @@ func (db *DB) UpdateBoard(board *models.Board) error {
 	})
 }
 
-// DeleteBoard deletes a board (fails for builtin boards)
+// DeleteBoard deletes a board (fails for builtin boards) WITHOUT logging to action_log.
+// For local mutations, use DeleteBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) DeleteBoard(id string) error {
 	return db.withWriteLock(func() error {
 		// Check if builtin
@@ -302,6 +308,9 @@ type BoardIssuePosition struct {
 
 // SetIssuePosition sets an explicit sort-key position for an issue on a board.
 // This directly sets the position value without shifting other rows.
+// WARNING: This does NOT log to action_log.
+// For local mutations, use SetIssuePositionLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
@@ -473,6 +482,9 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 }
 
 // RemoveIssuePosition soft-deletes an explicit position for an issue by setting deleted_at.
+// WARNING: This does NOT log to action_log.
+// For local mutations, use RemoveIssuePositionLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) RemoveIssuePosition(boardID, issueID string) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
