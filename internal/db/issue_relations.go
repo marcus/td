@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -149,6 +148,19 @@ func (db *DB) GetDescendantIssues(issueID string, statuses []models.Status) ([]*
 // and if so, updates the parent to that status. Works recursively up the parent chain.
 // Returns the number of parents that were cascaded and the list of cascaded parent IDs.
 func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, sessionID string) (int, []string) {
+	var cascadedCount int
+	var cascadedIDs []string
+
+	_ = db.withWriteLock(func() error {
+		cascadedCount, cascadedIDs = db.cascadeUpParentStatusLocked(issueID, targetStatus, sessionID)
+		return nil
+	})
+
+	return cascadedCount, cascadedIDs
+}
+
+// cascadeUpParentStatusLocked is the inner implementation that assumes the write lock is held.
+func (db *DB) cascadeUpParentStatusLocked(issueID string, targetStatus models.Status, sessionID string) (int, []string) {
 	cascadedCount := 0
 	var cascadedIDs []string
 
@@ -203,52 +215,37 @@ func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, 
 	}
 
 	// All children at target - update parent
-	prevData, _ := json.Marshal(parent)
-
 	parent.Status = targetStatus
 	if targetStatus == models.StatusClosed {
 		now := time.Now()
 		parent.ClosedAt = &now
 	}
 
-	if err := db.UpdateIssue(parent); err != nil {
-		return cascadedCount, cascadedIDs
-	}
-
-	// Log action for undo
-	newData, _ := json.Marshal(parent)
 	actionType := models.ActionReview
 	if targetStatus == models.StatusClosed {
 		actionType = models.ActionClose
 	}
-	db.LogAction(&models.ActionLog{
-		SessionID:    sessionID,
-		ActionType:   actionType,
-		EntityType:   "issue",
-		EntityID:     parent.ID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	})
+
+	if err := db.updateIssueAndLog(parent, sessionID, actionType); err != nil {
+		return cascadedCount, cascadedIDs
+	}
 
 	// Add log entry
 	logMsg := fmt.Sprintf("Auto-cascaded to %s (all children complete)", targetStatus)
-	db.AddLog(&models.Log{
-		IssueID:   parent.ID,
-		SessionID: sessionID,
-		Message:   logMsg,
-		Type:      models.LogTypeProgress,
-	})
+	db.addLogEntry(parent.ID, sessionID, logMsg, models.LogTypeProgress)
 
 	cascadedIDs = append(cascadedIDs, parent.ID)
 	cascadedCount++
 
 	// Auto-unblock issues that depend on this newly-closed parent
 	if targetStatus == models.StatusClosed {
-		db.CascadeUnblockDependents(parent.ID, sessionID)
+		uCount, uIDs := db.cascadeUnblockDependentsLocked(parent.ID, sessionID)
+		_ = uCount
+		_ = uIDs
 	}
 
 	// Recursively check parent's parent
-	moreCount, moreIDs := db.CascadeUpParentStatus(parent.ID, targetStatus, sessionID)
+	moreCount, moreIDs := db.cascadeUpParentStatusLocked(parent.ID, targetStatus, sessionID)
 	cascadedCount += moreCount
 	cascadedIDs = append(cascadedIDs, moreIDs...)
 
@@ -260,6 +257,19 @@ func (db *DB) CascadeUpParentStatus(issueID string, targetStatus models.Status, 
 // it transitions the dependent from blocked → open.
 // Returns the count and IDs of unblocked issues.
 func (db *DB) CascadeUnblockDependents(closedIssueID, sessionID string) (int, []string) {
+	var count int
+	var ids []string
+
+	_ = db.withWriteLock(func() error {
+		count, ids = db.cascadeUnblockDependentsLocked(closedIssueID, sessionID)
+		return nil
+	})
+
+	return count, ids
+}
+
+// cascadeUnblockDependentsLocked is the inner implementation that assumes the write lock is held.
+func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (int, []string) {
 	dependents, err := db.GetBlockedBy(closedIssueID)
 	if err != nil || len(dependents) == 0 {
 		return 0, nil
@@ -300,28 +310,12 @@ func (db *DB) CascadeUnblockDependents(closedIssueID, sessionID string) (int, []
 			continue
 		}
 
-		prevData, _ := json.Marshal(issue)
 		issue.Status = models.StatusOpen
-		if err := db.UpdateIssue(issue); err != nil {
+		if err := db.updateIssueAndLog(issue, sessionID, models.ActionUnblock); err != nil {
 			continue
 		}
 
-		newData, _ := json.Marshal(issue)
-		db.LogAction(&models.ActionLog{
-			SessionID:    sessionID,
-			ActionType:   models.ActionUnblock,
-			EntityType:   "issue",
-			EntityID:     depID,
-			PreviousData: string(prevData),
-			NewData:      string(newData),
-		})
-
-		db.AddLog(&models.Log{
-			IssueID:   depID,
-			SessionID: sessionID,
-			Message:   fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID),
-			Type:      models.LogTypeProgress,
-		})
+		db.addLogEntry(depID, sessionID, fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID), models.LogTypeProgress)
 
 		unblockedIDs = append(unblockedIDs, depID)
 	}

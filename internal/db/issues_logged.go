@@ -121,48 +121,70 @@ func (db *DB) CreateIssueLogged(issue *models.Issue, sessionID string) error {
 	})
 }
 
+// updateIssueAndLog updates an issue and logs the action WITHOUT acquiring withWriteLock.
+// Caller MUST already hold the write lock. This is the inner logic shared by
+// UpdateIssueLogged and the cascade helpers.
+func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionType models.ActionType) error {
+	// Read current state for PreviousData
+	prev, err := db.scanIssueRow(issue.ID)
+	if err != nil {
+		return err
+	}
+	previousData := marshalIssue(prev)
+
+	// Apply update
+	issue.UpdatedAt = time.Now()
+	labels := strings.Join(issue.Labels, ",")
+
+	_, err = db.conn.Exec(`
+		UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
+		                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
+		                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
+		                  closed_at = ?, deleted_at = ?
+		WHERE id = ?
+	`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
+		issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
+		issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
+		issue.ClosedAt, issue.DeletedAt, issue.ID)
+	if err != nil {
+		return err
+	}
+
+	// Log the action
+	actionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate action ID: %w", err)
+	}
+	newData := marshalIssue(issue)
+	_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		actionID, sessionID, string(actionType), "issues", issue.ID, previousData, newData, issue.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("log action: %w", err)
+	}
+
+	return nil
+}
+
+// addLogEntry inserts a progress log entry WITHOUT acquiring withWriteLock.
+// Caller MUST already hold the write lock.
+func (db *DB) addLogEntry(issueID, sessionID, message string, logType models.LogType) error {
+	id, err := generateLogID()
+	if err != nil {
+		return fmt.Errorf("generate log ID: %w", err)
+	}
+	now := time.Now()
+	_, err = db.conn.Exec(`
+		INSERT INTO logs (id, issue_id, session_id, work_session_id, message, type, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, issueID, sessionID, "", message, logType, now)
+	return err
+}
+
 // UpdateIssueLogged updates an issue and logs the action atomically within a single withWriteLock call.
 // It reads the current DB state for PreviousData before applying the update.
 func (db *DB) UpdateIssueLogged(issue *models.Issue, sessionID string, actionType models.ActionType) error {
 	return db.withWriteLock(func() error {
-		// Read current state for PreviousData
-		prev, err := db.scanIssueRow(issue.ID)
-		if err != nil {
-			return err
-		}
-		previousData := marshalIssue(prev)
-
-		// Apply update
-		issue.UpdatedAt = time.Now()
-		labels := strings.Join(issue.Labels, ",")
-
-		_, err = db.conn.Exec(`
-			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
-			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
-			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
-			                  closed_at = ?, deleted_at = ?
-			WHERE id = ?
-		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
-			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
-			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
-			issue.ClosedAt, issue.DeletedAt, issue.ID)
-		if err != nil {
-			return err
-		}
-
-		// Log the action
-		actionID, err := generateActionID()
-		if err != nil {
-			return fmt.Errorf("generate action ID: %w", err)
-		}
-		newData := marshalIssue(issue)
-		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(actionType), "issues", issue.ID, previousData, newData, issue.UpdatedAt)
-		if err != nil {
-			return fmt.Errorf("log action: %w", err)
-		}
-
-		return nil
+		return db.updateIssueAndLog(issue, sessionID, actionType)
 	})
 }
 
