@@ -89,6 +89,9 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	var issue models.Issue
 	var labels string
 	var closedAt, deletedAt sql.NullTime
+	var parentID, acceptance, sprint sql.NullString
+	var implSession, creatorSession, reviewerSession sql.NullString
+	var createdBranch sql.NullString
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
@@ -96,8 +99,8 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-		&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-		&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+		&issue.Points, &labels, &parentID, &acceptance, &sprint,
+		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 	)
 
 	if err == sql.ErrNoRows {
@@ -116,6 +119,13 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	if deletedAt.Valid {
 		issue.DeletedAt = &deletedAt.Time
 	}
+	issue.ParentID = parentID.String
+	issue.Acceptance = acceptance.String
+	issue.Sprint = sprint.String
+	issue.ImplementerSession = implSession.String
+	issue.CreatorSession = creatorSession.String
+	issue.ReviewerSession = reviewerSession.String
+	issue.CreatedBranch = createdBranch.String
 
 	return &issue, nil
 }
@@ -161,10 +171,13 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		var issue models.Issue
 		var labels string
 		var closedAt, deletedAt sql.NullTime
+		var parentID, acceptance, sprint sql.NullString
+		var implSession, creatorSession, reviewerSession sql.NullString
+		var createdBranch sql.NullString
 		if err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		); err != nil {
 			return nil, err
 		}
@@ -177,6 +190,13 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.ParentID = parentID.String
+		issue.Acceptance = acceptance.String
+		issue.Sprint = sprint.String
+		issue.ImplementerSession = implSession.String
+		issue.CreatorSession = creatorSession.String
+		issue.ReviewerSession = reviewerSession.String
+		issue.CreatedBranch = createdBranch.String
 		issues = append(issues, issue)
 	}
 
@@ -465,11 +485,14 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		var issue models.Issue
 		var labels string
 		var closedAt, deletedAt sql.NullTime
+		var parentID, acceptance, sprint sql.NullString
+		var implSession, creatorSession, reviewerSession sql.NullString
+		var createdBranch sql.NullString
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		)
 		if err != nil {
 			return nil, err
@@ -484,6 +507,13 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.ParentID = parentID.String
+		issue.Acceptance = acceptance.String
+		issue.Sprint = sprint.String
+		issue.ImplementerSession = implSession.String
+		issue.CreatorSession = creatorSession.String
+		issue.ReviewerSession = reviewerSession.String
+		issue.CreatedBranch = createdBranch.String
 
 		issues = append(issues, issue)
 	}

@@ -81,11 +81,14 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		var issue models.Issue
 		var labels string
 		var closedAt, deletedAt sql.NullTime
+		var parentID, acceptance, sprint sql.NullString
+		var implSession, creatorSession, reviewerSession sql.NullString
+		var createdBranch sql.NullString
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		)
 		if err != nil {
 			return nil, err
@@ -100,6 +103,13 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.ParentID = parentID.String
+		issue.Acceptance = acceptance.String
+		issue.Sprint = sprint.String
+		issue.ImplementerSession = implSession.String
+		issue.CreatorSession = creatorSession.String
+		issue.ReviewerSession = reviewerSession.String
+		issue.CreatedBranch = createdBranch.String
 
 		children = append(children, &issue)
 	}
