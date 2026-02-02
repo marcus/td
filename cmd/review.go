@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/config"
@@ -54,33 +53,17 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 		}
 	}
 
-	// Capture previous state for undo
-	prevData, _ := json.Marshal(issue)
-
-	// Update issue
+	// Update issue (atomic update + action log)
 	issue.Status = models.StatusInReview
 	if issue.ImplementerSession == "" {
 		issue.ImplementerSession = sess.ID
 	}
 
-	if err := database.UpdateIssue(issue); err != nil {
+	if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReview); err != nil {
 		return SubmitReviewResult{
 			Success: false,
 			Message: fmt.Sprintf("failed to update %s: %v", issue.ID, err),
 		}
-	}
-
-	// Log action for undo
-	newData, _ := json.Marshal(issue)
-	if err := database.LogAction(&models.ActionLog{
-		SessionID:    sess.ID,
-		ActionType:   models.ActionReview,
-		EntityType:   "issue",
-		EntityID:     issue.ID,
-		PreviousData: string(prevData),
-		NewData:      string(newData),
-	}); err != nil {
-		output.Warning("log action failed: %v", err)
 	}
 
 	// Add session log
@@ -364,16 +347,13 @@ Supports bulk operations:
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
-			// Update issue
+			// Update issue (atomic update + action log)
 			issue.Status = models.StatusClosed
 			issue.ReviewerSession = sess.ID
 			now := issue.UpdatedAt
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionApprove); err != nil {
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
@@ -398,19 +378,6 @@ Supports bulk operations:
 				Type:      models.LogTypeProgress,
 			}); err != nil {
 				output.Warning("add log failed: %v", err)
-			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			if err := database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionApprove,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			}); err != nil {
-				output.Warning("log action failed: %v", err)
 			}
 
 			// Clear focus if this was the focused issue
@@ -502,13 +469,10 @@ Supports bulk operations:
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
-			// Update issue
+			// Update issue (atomic update + action log)
 			issue.Status = models.StatusInProgress
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, err.Error())
 				} else {
@@ -532,19 +496,6 @@ Supports bulk operations:
 				Type:      models.LogTypeProgress,
 			}); err != nil {
 				output.Warning("add log failed: %v", err)
-			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			if err := database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionReject,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			}); err != nil {
-				output.Warning("log action failed: %v", err)
 			}
 
 			if jsonOutput {
@@ -682,31 +633,15 @@ Examples:
 				output.Warning("  Reason: %s", selfCloseException)
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
-			// Update issue
+			// Update issue (atomic update + action log)
 			issue.Status = models.StatusClosed
 			now := issue.UpdatedAt
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionClose); err != nil {
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
-			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			if err := database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionClose,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			}); err != nil {
-				output.Warning("log action failed: %v", err)
 			}
 
 			// Log (supports --reason, --comment, --message, and --self-close-exception)

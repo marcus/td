@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/config"
@@ -109,14 +108,11 @@ Examples:
 				}
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
-			// Update issue
+			// Update issue (atomic update + action log)
 			issue.Status = models.StatusInProgress
 			issue.ImplementerSession = sess.ID
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
@@ -126,17 +122,6 @@ Examples:
 			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted); err != nil {
 				output.Warning("failed to record session history: %v", err)
 			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionStart,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			})
 
 			// Log the start
 			logMsg := "Started work"

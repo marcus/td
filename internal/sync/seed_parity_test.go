@@ -41,12 +41,15 @@ func TestSeedSyncStatusParity(t *testing.T) {
 	}
 	defer bobDB.Close()
 
-	// Clear sync_state and reset action_log synced_at to trigger backfill
-	if _, err := bobDB.Exec(`DELETE FROM sync_state`); err != nil {
-		t.Fatalf("clear sync_state: %v", err)
-	}
-	if _, err := bobDB.Exec(`UPDATE action_log SET synced_at = NULL`); err != nil {
-		t.Fatalf("reset synced_at: %v", err)
+	// Clear sync_state and reset action_log (matches e2e-sync-test.sh seed cleanup)
+	for _, q := range []string{
+		`DELETE FROM sync_state`,
+		`DELETE FROM action_log WHERE id IS NULL OR entity_id IS NULL OR entity_id = ''`,
+		`UPDATE action_log SET synced_at = NULL, server_seq = NULL`,
+	} {
+		if _, err := bobDB.Exec(q); err != nil {
+			t.Fatalf("seed cleanup %q: %v", q, err)
+		}
 	}
 
 	// Get bob's status counts before sync
@@ -116,6 +119,13 @@ func TestSeedSyncStatusParity(t *testing.T) {
 	}
 
 	t.Logf("Applied %d events to alice (%d failed)", result.Applied, len(result.Failed))
+	if len(result.Failed) > 0 {
+		for i, f := range result.Failed {
+			if i < 10 {
+				t.Logf("  Failed seq %d: %v", f.ServerSeq, f.Error)
+			}
+		}
+	}
 
 	// Get alice's status counts after sync
 	aliceCounts := getStatusCounts(t, aliceDB)
@@ -215,6 +225,7 @@ func extractSchema(t *testing.T, db *sql.DB) []string {
 	rows, err := db.Query(`
 		SELECT sql FROM sqlite_master
 		WHERE sql IS NOT NULL AND type IN ('table', 'index')
+		AND name NOT LIKE 'sqlite_%'
 		ORDER BY type DESC, name
 	`)
 	if err != nil {

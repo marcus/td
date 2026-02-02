@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -583,24 +582,11 @@ var depRmCmd = &cobra.Command{
 			return err
 		}
 
-		err = dependency.Remove(database, issueID, dependsOnID)
+		err = database.RemoveDependencyLogged(issueID, dependsOnID, sess.ID)
 		if err != nil {
 			output.Error("failed to remove dependency: %v", err)
 			return err
 		}
-
-		// Log dependency removal for undo and sync
-		depID := db.DependencyID(issueID, dependsOnID, "depends_on")
-		depData, _ := json.Marshal(map[string]string{
-			"id": depID, "issue_id": issueID, "depends_on_id": dependsOnID, "relation_type": "depends_on",
-		})
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionRemoveDep,
-			EntityType: "issue_dependencies",
-			EntityID:   depID,
-			NewData:    string(depData),
-		})
 
 		fmt.Printf("REMOVED: %s no longer depends on %s\n", issue.ID, depIssue.ID)
 		return nil
@@ -621,7 +607,7 @@ func addDependency(database *db.DB, issueID, dependsOnID, sessionID string) erro
 		return err
 	}
 
-	err = dependency.ValidateAndAdd(database, issueID, dependsOnID)
+	err = dependency.Validate(database, issueID, dependsOnID)
 	if err == dependency.ErrDependencyExists {
 		output.Warning("%s already depends on %s", issueID, dependsOnID)
 		return nil
@@ -631,18 +617,10 @@ func addDependency(database *db.DB, issueID, dependsOnID, sessionID string) erro
 		return err
 	}
 
-	// Log dependency addition for undo and sync
-	depID := db.DependencyID(issueID, dependsOnID, "depends_on")
-	depData, _ := json.Marshal(map[string]string{
-		"id": depID, "issue_id": issueID, "depends_on_id": dependsOnID, "relation_type": "depends_on",
-	})
-	database.LogAction(&models.ActionLog{
-		SessionID:  sessionID,
-		ActionType: models.ActionAddDep,
-		EntityType: "issue_dependencies",
-		EntityID:   depID,
-		NewData:    string(depData),
-	})
+	if err := database.AddDependencyLogged(issueID, dependsOnID, "depends_on", sessionID); err != nil {
+		output.Error("failed to add dependency: %v", err)
+		return err
+	}
 
 	fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
 	fmt.Printf("  %s: %s\n", issue.ID, issue.Title)

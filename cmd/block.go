@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/db"
@@ -49,26 +48,12 @@ var blockCmd = &cobra.Command{
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
 			issue.Status = models.StatusBlocked
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionBlock); err != nil {
 				output.Error("failed to block %s: %v", issueID, err)
 				continue
 			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionBlock,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			})
 
 			// Log
 			logMsg := "Blocked"
@@ -142,29 +127,15 @@ Examples:
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
 			issue.Status = models.StatusOpen
 			issue.ReviewerSession = ""
 			issue.ClosedAt = nil
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
 				output.Warning("failed to reopen %s: %v", issueID, err)
 				skipped++
 				continue
 			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionReopen,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			})
 
 			// Log
 			logMsg := "Reopened"
@@ -242,27 +213,13 @@ Examples:
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
 			issue.Status = models.StatusOpen
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUnblock); err != nil {
 				output.Warning("failed to unblock %s: %v", issueID, err)
 				skipped++
 				continue
 			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionUnblock,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			})
 
 			// Log
 			logMsg := "Unblocked"

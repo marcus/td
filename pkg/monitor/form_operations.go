@@ -1,13 +1,11 @@
 package monitor
 
 import (
-	"encoding/json"
 	"os"
 	"os/exec"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -78,7 +76,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	if m.FormState.Mode == FormModeCreate {
 		// Create new issue with all fields
 		issue.Status = models.StatusOpen
-		if err := m.DB.CreateIssue(issue); err != nil {
+		if err := m.DB.CreateIssueLogged(issue, m.SessionID); err != nil {
 			m.Err = err
 			return m, nil
 		}
@@ -86,29 +84,9 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		// Add dependencies
 		for _, depID := range deps {
 			if depID != "" {
-				if err := m.DB.AddDependency(issue.ID, depID, "depends_on"); err == nil {
-					depEntityID := db.DependencyID(issue.ID, depID, "depends_on")
-					depData, _ := json.Marshal(map[string]string{
-						"id": depEntityID, "issue_id": issue.ID, "depends_on_id": depID, "relation_type": "depends_on",
-					})
-					m.DB.LogAction(&models.ActionLog{
-						SessionID:  m.SessionID,
-						ActionType: models.ActionAddDep,
-						EntityType: "issue_dependencies",
-						EntityID:   depEntityID,
-						NewData:    string(depData),
-					})
-				}
+				m.DB.AddDependencyLogged(issue.ID, depID, "depends_on", m.SessionID)
 			}
 		}
-
-		// Log action for undo
-		m.DB.LogAction(&models.ActionLog{
-			SessionID:  m.SessionID,
-			ActionType: models.ActionCreate,
-			EntityType: "issue",
-			EntityID:   issue.ID,
-		})
 
 		m.closeForm()
 		return m, m.fetchData()
@@ -132,18 +110,10 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		existingIssue.Acceptance = issue.Acceptance
 		existingIssue.Minor = issue.Minor
 
-		if err := m.DB.UpdateIssue(existingIssue); err != nil {
+		if err := m.DB.UpdateIssueLogged(existingIssue, m.SessionID, models.ActionUpdate); err != nil {
 			m.Err = err
 			return m, nil
 		}
-
-		// Log action for undo
-		m.DB.LogAction(&models.ActionLog{
-			SessionID:  m.SessionID,
-			ActionType: models.ActionUpdate,
-			EntityType: "issue",
-			EntityID:   existingIssue.ID,
-		})
 
 		m.closeForm()
 

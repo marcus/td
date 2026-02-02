@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -92,22 +91,19 @@ var boardCreateCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		query, _ := cmd.Flags().GetString("query")
+		queryStr, _ := cmd.Flags().GetString("query")
 
-		board, err := database.CreateBoard(name, query)
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
+		board, err := database.CreateBoardLogged(name, queryStr, sessionID)
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType: models.ActionBoardCreate,
-			EntityType: "board",
-			EntityID:   board.ID,
-			NewData:    string(newData),
-		})
 
 		output.Success("Created board %s (%s)", board.Name, board.ID)
 		return nil
@@ -135,16 +131,13 @@ var boardDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		prevData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType:   models.ActionBoardDelete,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-		})
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
 
-		if err := database.DeleteBoard(board.ID); err != nil {
+		if err := database.DeleteBoardLogged(board.ID, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
@@ -302,15 +295,12 @@ var boardEditCmd = &cobra.Command{
 			return err
 		}
 
-		// Capture previous state for undo
-		prevData, _ := json.Marshal(board)
-
 		// Apply updates
 		if name, _ := cmd.Flags().GetString("name"); name != "" {
 			board.Name = name
 		}
-		if query, _ := cmd.Flags().GetString("query"); cmd.Flags().Changed("query") {
-			board.Query = query
+		if queryStr, _ := cmd.Flags().GetString("query"); cmd.Flags().Changed("query") {
+			board.Query = queryStr
 		}
 		if viewMode, _ := cmd.Flags().GetString("view-mode"); cmd.Flags().Changed("view-mode") {
 			if err := database.UpdateBoardViewMode(board.ID, viewMode); err != nil {
@@ -320,20 +310,16 @@ var boardEditCmd = &cobra.Command{
 			board.ViewMode = viewMode
 		}
 
-		if err := database.UpdateBoard(board); err != nil {
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
+		if err := database.UpdateBoardLogged(board, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType:   models.ActionBoardUpdate,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-			NewData:      string(newData),
-		})
 
 		output.Success("Updated board %s", board.Name)
 		return nil
@@ -369,6 +355,12 @@ var boardMoveCmd = &cobra.Command{
 			return err
 		}
 
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
 		// Verify issue exists
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
@@ -386,43 +378,17 @@ var boardMoveCmd = &cobra.Command{
 		// Log respace events for sync if gap exhaustion triggered re-spacing
 		if len(respaced) > 0 {
 			for _, r := range respaced {
-				bipID := db.BoardIssuePosID(board.ID, r.IssueID)
-				rData, _ := json.Marshal(map[string]interface{}{
-					"id":       bipID,
-					"board_id": board.ID,
-					"issue_id": r.IssueID,
-					"position": r.NewPosition,
-					"added_at": time.Now().Format(time.RFC3339),
-				})
-				logActionWithSession(baseDir, database, &models.ActionLog{
-					ActionType: models.ActionBoardSetPosition,
-					EntityType: "board_issue_positions",
-					EntityID:   bipID,
-					NewData:    string(rData),
-				})
+				if err := database.SetIssuePositionLogged(board.ID, r.IssueID, r.NewPosition, sessionID); err != nil {
+					output.Error("respace log: %v", err)
+					return err
+				}
 			}
 		}
 
-		if err := database.SetIssuePosition(board.ID, issue.ID, sortKey); err != nil {
+		if err := database.SetIssuePositionLogged(board.ID, issue.ID, sortKey, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		// Log action for undo — full row data for sync
-		bipID := db.BoardIssuePosID(board.ID, issue.ID)
-		bipData, _ := json.Marshal(map[string]interface{}{
-			"id":       bipID,
-			"board_id": board.ID,
-			"issue_id": issue.ID,
-			"position": sortKey,
-			"added_at": time.Now().Format(time.RFC3339),
-		})
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType: models.ActionBoardSetPosition,
-			EntityType: "board_issue_positions",
-			EntityID:   bipID,
-			NewData:    string(bipData),
-		})
 
 		output.Success("Set %s to position %d on %s", issue.ID, position, board.Name)
 		return nil
@@ -451,6 +417,12 @@ var boardUnpositionCmd = &cobra.Command{
 			return err
 		}
 
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
 		// Verify issue exists
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
@@ -458,45 +430,14 @@ var boardUnpositionCmd = &cobra.Command{
 			return err
 		}
 
-		// Capture current position before removal (for undo)
-		oldPos, err := database.GetIssuePosition(board.ID, issue.ID)
-		if err != nil {
+		if err := database.RemoveIssuePositionLogged(board.ID, issue.ID, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		if err := database.RemoveIssuePosition(board.ID, issue.ID); err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
-		// Log action for undo — full row data for sync
-		ubipID := db.BoardIssuePosID(board.ID, issue.ID)
-		ubipData, _ := json.Marshal(map[string]any{
-			"id":       ubipID,
-			"board_id": board.ID,
-			"issue_id": issue.ID,
-			"position": oldPos,
-		})
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType: models.ActionBoardUnposition,
-			EntityType: "board_issue_positions",
-			EntityID:   ubipID,
-			NewData:    string(ubipData),
-		})
 
 		output.Success("Removed explicit position for %s on %s", issue.ID, board.Name)
 		return nil
 	},
-}
-
-// logActionWithSession logs an action if a session exists, filling in the SessionID.
-func logActionWithSession(_ string, database *db.DB, action *models.ActionLog) {
-	sess, _ := session.GetOrCreate(database)
-	if sess != nil {
-		action.SessionID = sess.ID
-		database.LogAction(action)
-	}
 }
 
 func getStatusIcon(status models.Status) string {

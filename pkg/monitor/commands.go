@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"encoding/json"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -19,22 +18,6 @@ import (
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
-
-// logPositionSet logs an ActionBoardSetPosition to the action log.
-func (m *Model) logPositionSet(boardID, issueID string, position int) {
-	bipID := db.BoardIssuePosID(boardID, issueID)
-	data, _ := json.Marshal(map[string]interface{}{
-		"id": bipID, "board_id": boardID, "issue_id": issueID,
-		"position": position, "added_at": time.Now().UTC().Format(time.RFC3339),
-	})
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionBoardSetPosition,
-		EntityType: "board_issue_positions",
-		EntityID:   bipID,
-		NewData:    string(data),
-	})
-}
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
@@ -1571,12 +1554,11 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			// Neither positioned - assign first sparse key
 			targetPos = db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.logPositionSet(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos)
 		m.BoardMode.Issues[targetIdx].HasPosition = true
 		m.BoardMode.Issues[targetIdx].Position = targetPos
 		targetIssue = m.BoardMode.Issues[targetIdx] // Refresh local variable
@@ -1591,12 +1573,11 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 		} else {
 			insertPos = targetIssue.Position + db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.logPositionSet(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos)
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	} else {
@@ -1609,8 +1590,8 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.logPositionSet(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos)
-		m.logPositionSet(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1675,12 +1656,11 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			// Neither positioned - assign first sparse key
 			targetPos = db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.logPositionSet(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos)
 		targetBIV.HasPosition = true
 		targetBIV.Position = targetPos
 	}
@@ -1694,12 +1674,11 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		} else {
 			insertPos = targetBIV.Position + db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.logPositionSet(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos)
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	} else {
@@ -1712,8 +1691,8 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.logPositionSet(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos)
-		m.logPositionSet(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
@@ -1779,12 +1758,11 @@ func (m Model) moveIssueToTop() (Model, tea.Cmd) {
 		}
 		newPos = positions[0].Position - db.PositionGap
 	}
-	if err := m.DB.SetIssuePosition(boardID, issueID, newPos); err != nil {
+	if err := m.DB.SetIssuePositionLogged(boardID, issueID, newPos, m.SessionID); err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
 	}
-	m.logPositionSet(boardID, issueID, newPos)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)
@@ -1845,12 +1823,11 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 	} else {
 		newPos = maxPos + db.PositionGap
 	}
-	if err := m.DB.SetIssuePosition(boardID, issueID, newPos); err != nil {
+	if err := m.DB.SetIssuePositionLogged(boardID, issueID, newPos, m.SessionID); err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
 	}
-	m.logPositionSet(boardID, issueID, newPos)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)

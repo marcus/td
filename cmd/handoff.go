@@ -155,7 +155,7 @@ Or use flags with values, stdin (-), or file (@path):
 		}
 
 		// Update issue timestamp
-		if err := database.UpdateIssue(issue); err != nil {
+		if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
 			output.Warning("failed to update issue: %v", err)
 		}
 

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/db"
@@ -68,35 +67,21 @@ Examples:
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
 			// Record session action BEFORE clearing ImplementerSession (for bypass prevention)
 			// This tracks that this session touched the issue, even though it's being unstarted
 			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionUnstarted); err != nil {
 				output.Warning("failed to record session history: %v", err)
 			}
 
-			// Update issue
+			// Update issue (atomic update + action log)
 			issue.Status = models.StatusOpen
 			issue.ImplementerSession = ""
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
 			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionReopen, // Reusing reopen action type
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			})
 
 			// Log the unstart
 			logMsg := "Reverted to open"

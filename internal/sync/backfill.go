@@ -97,7 +97,18 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_ts,
 		       (SELECT new_data FROM action_log
 		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
-		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_data
+		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_data,
+		       (SELECT COUNT(*) FROM action_log
+		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
+		        AND action_type = 'delete' AND undone = 0
+		        AND rowid > COALESCE(
+		            (SELECT MAX(rowid) FROM action_log
+		             WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
+		             AND action_type = 'create' AND undone = 0), 0)
+		       ) AS has_delete_after_create,
+		       (SELECT COUNT(*) FROM action_log
+		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
+		        AND undone = 0) AS active_event_count
 		FROM issues i
 	`)
 	if err != nil {
@@ -136,6 +147,8 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 		var updatedAtVal any
 		var lastActionVal any
 		var lastDataVal any
+		var hasDeleteAfterCreate int64
+		var activeEventCount int64
 		for i, c := range cols {
 			switch c {
 			case "last_ts":
@@ -143,6 +156,16 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 				continue
 			case "last_data":
 				lastDataVal = vals[i]
+				continue
+			case "has_delete_after_create":
+				if v, ok := vals[i].(int64); ok {
+					hasDeleteAfterCreate = v
+				}
+				continue
+			case "active_event_count":
+				if v, ok := vals[i].(int64); ok {
+					activeEventCount = v
+				}
 				continue
 			case "id":
 				entityID = fmt.Sprint(vals[i])
@@ -157,8 +180,13 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 
 		needsUpdate := false
 
+		// Issue was deleted after its last create — needs re-creation on receiver
+		if hasDeleteAfterCreate > 0 {
+			needsUpdate = true
+		}
+
 		// Check updated_at staleness when we have timestamps
-		if updatedAtVal != nil && lastActionVal != nil {
+		if !needsUpdate && updatedAtVal != nil && lastActionVal != nil {
 			if updatedAt, ok := parseAnyTime(updatedAtVal); ok {
 				if lastActionAt, ok := parseAnyTime(lastActionVal); ok {
 					if updatedAt.After(lastActionAt.Add(staleThreshold)) {
@@ -170,8 +198,17 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 
 		// Check status mismatch or invalid/empty JSON in last action
 		currentStatus := fmt.Sprint(rowMap["status"])
-		if currentStatus != "" {
+		if !needsUpdate && currentStatus != "" {
 			if !statusMatches(lastDataVal, currentStatus) {
+				needsUpdate = true
+			}
+		}
+
+		// Issue has events but none would set the correct status on the receiver.
+		// This catches cases where partial updates skip status because prev/new
+		// have the same status, but the create event had a different status.
+		if !needsUpdate && activeEventCount > 0 && currentStatus != "" {
+			if !anyEventSetsStatus(tx, entityID, currentStatus) {
 				needsUpdate = true
 			}
 		}
@@ -242,6 +279,7 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 			WHERE al.entity_id = t.id
 			AND al.entity_type IN (%s)
 			AND al.action_type IN (%s)
+			AND al.undone = 0
 		)%s`, st.Table, strings.Join(typePH, ","), strings.Join(createPH, ","), softDeleteFilter)
 
 	rows, err := tx.Query(query, args...)
@@ -356,6 +394,56 @@ func parseAnyTime(val any) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// anyEventSetsStatus checks whether any non-undone action_log entry for an issue
+// would effectively set the given status on the receiver. This happens when:
+//   - A "create" event has new_data with the target status, OR
+//   - An "update" event's previous_data status differs from new_data status
+//     (meaning the diff would include the status change)
+func anyEventSetsStatus(tx *sql.Tx, entityID, status string) bool {
+	pattern := fmt.Sprintf(`%%"status":"%s"%%`, status)
+
+	// Check if any create event has the target status
+	var createCount int
+	_ = tx.QueryRow(`
+		SELECT COUNT(*) FROM action_log
+		WHERE entity_id = ? AND entity_type IN ('issue', 'issues')
+		AND undone = 0 AND action_type = 'create' AND new_data LIKE ?`,
+		entityID, pattern,
+	).Scan(&createCount)
+	if createCount > 0 {
+		return true
+	}
+
+	// Check update events: status must differ between previous_data and new_data
+	rows, err := tx.Query(`
+		SELECT new_data, previous_data FROM action_log
+		WHERE entity_id = ? AND entity_type IN ('issue', 'issues')
+		AND undone = 0 AND action_type != 'create' AND new_data LIKE ?`,
+		entityID, pattern,
+	)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var newData, prevData sql.NullString
+		if err := rows.Scan(&newData, &prevData); err != nil {
+			continue
+		}
+		// If previous_data is empty/missing, this event will do a full upsert
+		// (not a partial update), so status will be set
+		if !prevData.Valid || prevData.String == "" || prevData.String == "{}" {
+			return true
+		}
+		// If previous_data has a different status, the diff will include status
+		if !statusMatches(prevData.String, status) {
+			return true
+		}
+	}
+	return false
 }
 
 func statusMatches(lastData any, currentStatus string) bool {

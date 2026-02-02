@@ -37,7 +37,9 @@ type ListIssuesOptions struct {
 	IDs            []string
 }
 
-// CreateIssue creates a new issue
+// CreateIssue creates a new issue WITHOUT logging to action_log.
+// For local mutations, use CreateIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) CreateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
 		if issue.Status == "" {
@@ -247,7 +249,9 @@ func (db *DB) GetIssueTitles(ids []string) (map[string]string, error) {
 	return titles, nil
 }
 
-// UpdateIssue updates an issue
+// UpdateIssue updates an issue WITHOUT logging to action_log.
+// For local mutations, use UpdateIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) UpdateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
 		issue.UpdatedAt = time.Now()
@@ -268,7 +272,9 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 	})
 }
 
-// DeleteIssue soft-deletes an issue
+// DeleteIssue soft-deletes an issue WITHOUT logging to action_log.
+// For local mutations, use DeleteIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) DeleteIssue(id string) error {
 	return db.withWriteLock(func() error {
 		now := time.Now()
