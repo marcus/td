@@ -122,6 +122,99 @@ func (db *DB) UpdateBoardLogged(board *models.Board, sessionID string) error {
 	})
 }
 
+// SetIssuePositionLogged sets an issue's board position and logs the action atomically.
+func (db *DB) SetIssuePositionLogged(boardID, issueID string, position int, sessionID string) error {
+	issueID = NormalizeIssueID(issueID)
+	return db.withWriteLock(func() error {
+		now := time.Now()
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		// Check if a (possibly soft-deleted) row exists
+		var existing int
+		err = tx.QueryRow(`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+			boardID, issueID).Scan(&existing)
+		if err != nil {
+			return err
+		}
+
+		if existing > 0 {
+			_, err = tx.Exec(`UPDATE board_issue_positions SET position = ?, deleted_at = NULL, added_at = ? WHERE board_id = ? AND issue_id = ?`,
+				position, now, boardID, issueID)
+		} else {
+			bipID := BoardIssuePosID(boardID, issueID)
+			_, err = tx.Exec(`INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at) VALUES (?, ?, ?, ?, ?)`,
+				bipID, boardID, issueID, position, now)
+		}
+		if err != nil {
+			return err
+		}
+
+		// Log the action
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		bipID := BoardIssuePosID(boardID, issueID)
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": bipID, "board_id": boardID, "issue_id": issueID,
+			"position": position, "added_at": now.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
+		_, err = tx.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionBoardSetPosition), "board_issue_positions", bipID, "", string(newData), now)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return tx.Commit()
+	})
+}
+
+// RemoveIssuePositionLogged soft-deletes an issue's board position and logs the action atomically.
+func (db *DB) RemoveIssuePositionLogged(boardID, issueID, sessionID string) error {
+	issueID = NormalizeIssueID(issueID)
+	return db.withWriteLock(func() error {
+		now := time.Now()
+
+		// Read current position for PreviousData
+		var pos int
+		err := db.conn.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
+			boardID, issueID).Scan(&pos)
+		if err != nil {
+			return fmt.Errorf("issue not positioned on board: %w", err)
+		}
+
+		bipID := BoardIssuePosID(boardID, issueID)
+		prevData, _ := json.Marshal(map[string]interface{}{
+			"id": bipID, "board_id": boardID, "issue_id": issueID,
+			"position": pos,
+		})
+
+		// Soft-delete
+		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
+			now.UTC(), boardID, issueID)
+		if err != nil {
+			return err
+		}
+
+		// Log the action
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", now)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // DeleteBoardLogged deletes a board and logs the action atomically within a single withWriteLock call.
 func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 	return db.withWriteLock(func() error {
