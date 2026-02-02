@@ -19,6 +19,8 @@ BATCH_MIN=3
 BATCH_MAX=10
 ACTORS=2
 INJECT_FAILURES=false
+JSON_REPORT=""
+REPORT_FILE=""
 
 # ---- Usage ----
 usage() {
@@ -39,6 +41,8 @@ Options:
   --batch-max N      Max actions between syncs (default: 10)
   --actors N         Number of actors: 2 or 3 (default: 2)
   --inject-failures  Inject partial sync failures (~7% of syncs) (default: false)
+  --json-report PATH Write JSON summary to file (for CI integration)
+  --report-file PATH Write text report to file instead of stdout
   -h, --help         Show this help
 
 Examples:
@@ -78,6 +82,8 @@ while [[ $# -gt 0 ]]; do
         --batch-max)      BATCH_MAX="$2"; shift 2 ;;
         --actors)         ACTORS="$2"; shift 2 ;;
         --inject-failures) INJECT_FAILURES=true; shift ;;
+        --json-report)    JSON_REPORT="$2"; shift 2 ;;
+        --report-file)    REPORT_FILE="$2"; shift 2 ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
@@ -117,7 +123,8 @@ else
 fi
 
 # ---- Main loop ----
-START_TIME=$(date +%s)
+CHAOS_TIME_START=$(date +%s)
+START_TIME=$CHAOS_TIME_START
 MAX_ITERATIONS=$((ACTIONS * 5))
 ITERATIONS=0
 
@@ -229,14 +236,45 @@ fi
 # ---- Convergence verification ----
 DB_A="$CLIENT_A_DIR/.todos/issues.db"
 DB_B="$CLIENT_B_DIR/.todos/issues.db"
+
+# Track convergence results: capture failures before/after each verify
+_conv_failures_before=$HARNESS_FAILURES
 verify_convergence "$DB_A" "$DB_B"
+_conv_failures_after=$HARNESS_FAILURES
+if [ "$_conv_failures_after" -eq "$_conv_failures_before" ]; then
+    kv_set CHAOS_CONVERGENCE_RESULTS "A_vs_B" "pass"
+    CHAOS_CONVERGENCE_PASSED=$(( CHAOS_CONVERGENCE_PASSED + 1 ))
+else
+    kv_set CHAOS_CONVERGENCE_RESULTS "A_vs_B" "fail"
+    CHAOS_CONVERGENCE_FAILED=$(( CHAOS_CONVERGENCE_FAILED + 1 ))
+fi
 
 if [ "$ACTORS" -ge 3 ]; then
     DB_C="$CLIENT_C_DIR/.todos/issues.db"
+
     _step "Convergence verification (A vs C)"
+    _conv_failures_before=$HARNESS_FAILURES
     verify_convergence "$DB_A" "$DB_C"
+    _conv_failures_after=$HARNESS_FAILURES
+    if [ "$_conv_failures_after" -eq "$_conv_failures_before" ]; then
+        kv_set CHAOS_CONVERGENCE_RESULTS "A_vs_C" "pass"
+        CHAOS_CONVERGENCE_PASSED=$(( CHAOS_CONVERGENCE_PASSED + 1 ))
+    else
+        kv_set CHAOS_CONVERGENCE_RESULTS "A_vs_C" "fail"
+        CHAOS_CONVERGENCE_FAILED=$(( CHAOS_CONVERGENCE_FAILED + 1 ))
+    fi
+
     _step "Convergence verification (B vs C)"
+    _conv_failures_before=$HARNESS_FAILURES
     verify_convergence "$DB_B" "$DB_C"
+    _conv_failures_after=$HARNESS_FAILURES
+    if [ "$_conv_failures_after" -eq "$_conv_failures_before" ]; then
+        kv_set CHAOS_CONVERGENCE_RESULTS "B_vs_C" "pass"
+        CHAOS_CONVERGENCE_PASSED=$(( CHAOS_CONVERGENCE_PASSED + 1 ))
+    else
+        kv_set CHAOS_CONVERGENCE_RESULTS "B_vs_C" "fail"
+        CHAOS_CONVERGENCE_FAILED=$(( CHAOS_CONVERGENCE_FAILED + 1 ))
+    fi
 fi
 
 # ---- Idempotency verification ----
@@ -266,7 +304,14 @@ echo "  Issues created:         ${#CHAOS_ISSUE_IDS[@]}"
 echo "  Boards created:         ${#CHAOS_BOARD_NAMES[@]}"
 echo "  Seed:                   $SEED (use --seed $SEED to reproduce)"
 
-chaos_report
+CHAOS_TIME_END=$(date +%s)
+
+chaos_report "$REPORT_FILE"
+
+# JSON report for CI
+if [ -n "$JSON_REPORT" ]; then
+    chaos_report_json "$JSON_REPORT"
+fi
 
 # ---- Final check ----
 if [ "$CHAOS_UNEXPECTED_FAILURES" -gt 0 ]; then

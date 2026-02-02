@@ -98,6 +98,67 @@ CHAOS_INJECT_FAILURES="${CHAOS_INJECT_FAILURES:-false}"
 CHAOS_INJECT_FAILURE_RATE="${CHAOS_INJECT_FAILURE_RATE:-7}"  # percentage (5-10% range)
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
+# Per-action-type counters (KV stores: actionName:count)
+CHAOS_PER_ACTION_OK=""         # action_name:count
+CHAOS_PER_ACTION_EXPFAIL=""    # action_name:count
+CHAOS_PER_ACTION_UNEXPFAIL=""  # action_name:count
+
+# Timing tracking (epoch seconds)
+CHAOS_TIME_START=0
+CHAOS_TIME_END=0
+CHAOS_TIME_SYNCING=0           # cumulative seconds spent in sync
+CHAOS_TIME_MUTATING=0          # cumulative seconds spent in mutations
+_CHAOS_PHASE_START=0           # temp: start of current phase
+
+# Convergence results (populated by verify_convergence_tracked)
+CHAOS_CONVERGENCE_RESULTS=""   # table_name:pass or table_name:fail
+CHAOS_CONVERGENCE_PASSED=0
+CHAOS_CONVERGENCE_FAILED=0
+
+# ============================================================
+# 1b. Per-Action & Timing Helpers
+# ============================================================
+
+_chaos_inc_action_ok() {
+    local action="$1"
+    local cur
+    cur=$(kv_get CHAOS_PER_ACTION_OK "$action" || true)
+    cur=${cur:-0}
+    kv_set CHAOS_PER_ACTION_OK "$action" "$(( cur + 1 ))"
+}
+
+_chaos_inc_action_expfail() {
+    local action="$1"
+    local cur
+    cur=$(kv_get CHAOS_PER_ACTION_EXPFAIL "$action" || true)
+    cur=${cur:-0}
+    kv_set CHAOS_PER_ACTION_EXPFAIL "$action" "$(( cur + 1 ))"
+}
+
+_chaos_inc_action_unexpfail() {
+    local action="$1"
+    local cur
+    cur=$(kv_get CHAOS_PER_ACTION_UNEXPFAIL "$action" || true)
+    cur=${cur:-0}
+    kv_set CHAOS_PER_ACTION_UNEXPFAIL "$action" "$(( cur + 1 ))"
+}
+
+_chaos_timer_start() {
+    _CHAOS_PHASE_START=$(date +%s)
+}
+
+_chaos_timer_stop_sync() {
+    local now
+    now=$(date +%s)
+    CHAOS_TIME_SYNCING=$(( CHAOS_TIME_SYNCING + now - _CHAOS_PHASE_START ))
+}
+
+_chaos_timer_stop_mutate() {
+    local now
+    now=$(date +%s)
+    CHAOS_TIME_MUTATING=$(( CHAOS_TIME_MUTATING + now - _CHAOS_PHASE_START ))
+}
+
 # ============================================================
 # 2. Random Content Generators
 # ============================================================
@@ -1835,6 +1896,8 @@ exec_field_collision() {
     CHAOS_FIELD_COLLISIONS=$((CHAOS_FIELD_COLLISIONS + 1))
     CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + 2))
     CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + 2))
+    _chaos_inc_action_ok "field_collision"
+    _chaos_inc_action_ok "field_collision"
     [ "$CHAOS_VERBOSE" = "true" ] && _ok "field_collision: $field_name on $id"
     return 0
 }
@@ -1886,6 +1949,11 @@ exec_delete_while_mutate() {
     CHAOS_DELETE_MUTATE_CONFLICTS=$((CHAOS_DELETE_MUTATE_CONFLICTS + 1))
     CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + 1 + mutations_done))
     CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + 1 + mutations_done))
+    local _dwm_i=0
+    while [ "$_dwm_i" -lt "$(( 1 + mutations_done ))" ]; do
+        _chaos_inc_action_ok "delete_while_mutate"
+        _dwm_i=$(( _dwm_i + 1 ))
+    done
     [ "$CHAOS_VERBOSE" = "true" ] && _ok "delete_while_mutate: $id ($mutations_done mutations after delete)"
     return 0
 }
@@ -1962,6 +2030,11 @@ exec_burst() {
     CHAOS_BURST_ACTIONS=$((CHAOS_BURST_ACTIONS + actions_done))
     CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + actions_done))
     CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + actions_done))
+    local _burst_i=0
+    while [ "$_burst_i" -lt "$actions_done" ]; do
+        _chaos_inc_action_ok "burst"
+        _burst_i=$(( _burst_i + 1 ))
+    done
     [ "$CHAOS_VERBOSE" = "true" ] && _ok "burst: $actions_done actions on $id by $actor"
     return 0
 }
@@ -1976,19 +2049,35 @@ safe_exec() {
     local func="exec_${action}"
 
     # Call function directly — NOT in a subshell $() — so state changes persist
+    _chaos_timer_start
+    _CHAOS_CURRENT_ACTION="$action"
+    local _expfail_before=$CHAOS_EXPECTED_FAILURES
     local rc=0
     $func "$actor" || rc=$?
+    _chaos_timer_stop_mutate
+
+    # Track expected failures that occurred inside the executor
+    local _expfail_delta=$(( CHAOS_EXPECTED_FAILURES - _expfail_before ))
+    if [ "$_expfail_delta" -gt 0 ]; then
+        local _ef_i=0
+        while [ "$_ef_i" -lt "$_expfail_delta" ]; do
+            _chaos_inc_action_expfail "$action"
+            _ef_i=$(( _ef_i + 1 ))
+        done
+    fi
 
     if [ "$rc" -eq 0 ]; then
         # Success (includes expected failures already counted by executors)
         CHAOS_ACTION_COUNT=$(( CHAOS_ACTION_COUNT + 1 ))
         CHAOS_ACTIONS_SINCE_SYNC=$(( CHAOS_ACTIONS_SINCE_SYNC + 1 ))
+        _chaos_inc_action_ok "$action"
     elif [ "$rc" -eq 1 ]; then
         # Skip — no valid target
         CHAOS_SKIPPED=$(( CHAOS_SKIPPED + 1 ))
     elif [ "$rc" -eq 2 ]; then
         # Unexpected failure from executor
         CHAOS_UNEXPECTED_FAILURES=$(( CHAOS_UNEXPECTED_FAILURES + 1 ))
+        _chaos_inc_action_unexpfail "$action"
     fi
 }
 
@@ -2058,6 +2147,7 @@ _sync_one_actor() {
 
 do_chaos_sync() {
     local who="$1"
+    _chaos_timer_start
     case "$who" in
         a|b|c)
             _sync_one_actor "$who"
@@ -2086,6 +2176,7 @@ do_chaos_sync() {
             fi
             ;;
     esac
+    _chaos_timer_stop_sync
     CHAOS_SYNC_COUNT=$(( CHAOS_SYNC_COUNT + 1 ))
     CHAOS_ACTIONS_SINCE_SYNC=0
     _CHAOS_NEXT_SYNC_AT=0
@@ -2460,23 +2551,229 @@ verify_idempotency() {
 # ============================================================
 
 chaos_report() {
+    local report_file="${1:-}"
+
+    # Capture timing
+    if [ "$CHAOS_TIME_END" -eq 0 ]; then
+        CHAOS_TIME_END=$(date +%s)
+    fi
+    local wall_clock=0
+    if [ "$CHAOS_TIME_START" -gt 0 ]; then
+        wall_clock=$(( CHAOS_TIME_END - CHAOS_TIME_START ))
+    fi
+
+    # Build report lines into a variable for optional file output
+    local report_lines=""
+    _report_line() {
+        local line="$1"
+        report_lines="${report_lines}${line}
+"
+        if [ -z "$report_file" ]; then
+            _ok "$line"
+        fi
+    }
+
     _step "Chaos stats"
-    _ok "actions: $CHAOS_ACTION_COUNT, syncs: $CHAOS_SYNC_COUNT, skipped: $CHAOS_SKIPPED"
+    _report_line "actions: $CHAOS_ACTION_COUNT, syncs: $CHAOS_SYNC_COUNT, skipped: $CHAOS_SKIPPED"
     # "Expected failures" = td commands that hit business-logic guardrails during
     # random chaos actions (self-review, circular deps, invalid transitions, etc.).
     # These are correct rejections, not bugs. See is_expected_failure() for patterns.
-    _ok "expected failures: $CHAOS_EXPECTED_FAILURES, unexpected: $CHAOS_UNEXPECTED_FAILURES"
-    _ok "issues: ${#CHAOS_ISSUE_IDS[@]} created, ${#CHAOS_DELETED_IDS[@]} deleted"
+    _report_line "expected failures: $CHAOS_EXPECTED_FAILURES, unexpected: $CHAOS_UNEXPECTED_FAILURES"
+    _report_line "issues: ${#CHAOS_ISSUE_IDS[@]} created, ${#CHAOS_DELETED_IDS[@]} deleted"
     local dep_count file_count
     dep_count=$(kv_count CHAOS_DEP_PAIRS)
     file_count=$(kv_count CHAOS_ISSUE_FILES)
-    _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
-    _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
-    _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
-    _ok "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
-    _ok "injected sync failures: $CHAOS_INJECTED_FAILURES"
-    _ok "edge-case data injections: $CHAOS_EDGE_DATA_USED"
+    _report_line "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
+    _report_line "field collisions: $CHAOS_FIELD_COLLISIONS"
+    _report_line "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
+    _report_line "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
+    _report_line "injected sync failures: $CHAOS_INJECTED_FAILURES"
+    _report_line "edge-case data injections: $CHAOS_EDGE_DATA_USED"
     local pc_count
     pc_count=$(kv_count CHAOS_PARENT_CHILDREN)
-    _ok "parent-child pairs: $pc_count, cascade actions: $CHAOS_CASCADE_ACTIONS"
+    _report_line "parent-child pairs: $pc_count, cascade actions: $CHAOS_CASCADE_ACTIONS"
+    _report_line "wall-clock: ${wall_clock}s, syncing: ${CHAOS_TIME_SYNCING}s, mutating: ${CHAOS_TIME_MUTATING}s"
+
+    # Convergence summary
+    if [ -n "$CHAOS_CONVERGENCE_RESULTS" ]; then
+        _report_line "convergence: $CHAOS_CONVERGENCE_PASSED passed, $CHAOS_CONVERGENCE_FAILED failed"
+    fi
+
+    # Per-action breakdown table (verbose mode or file output)
+    if [ "$CHAOS_VERBOSE" = "true" ] || [ -n "$report_file" ]; then
+        _step "Per-action breakdown"
+        # Collect all action names from the three KV stores
+        local all_action_names=""
+        local _aname
+        for _aname in $(kv_keys CHAOS_PER_ACTION_OK || true); do
+            case " $all_action_names " in
+                *" $_aname "*) ;;
+                *) all_action_names="$all_action_names $_aname" ;;
+            esac
+        done
+        for _aname in $(kv_keys CHAOS_PER_ACTION_EXPFAIL || true); do
+            case " $all_action_names " in
+                *" $_aname "*) ;;
+                *) all_action_names="$all_action_names $_aname" ;;
+            esac
+        done
+        for _aname in $(kv_keys CHAOS_PER_ACTION_UNEXPFAIL || true); do
+            case " $all_action_names " in
+                *" $_aname "*) ;;
+                *) all_action_names="$all_action_names $_aname" ;;
+            esac
+        done
+
+        # Print header
+        local header
+        header=$(printf "  %-22s | %5s | %7s | %9s" "Action" "OK" "ExpFail" "UnexpFail")
+        if [ -n "$report_file" ]; then
+            report_lines="${report_lines}${header}
+"
+            report_lines="${report_lines}  $(printf '%0.s-' $(seq 1 52))
+"
+        else
+            echo "$header"
+            echo "  $(printf '%0.s-' $(seq 1 52))"
+        fi
+
+        # Print each action row (sorted)
+        for _aname in $(echo "$all_action_names" | tr ' ' '\n' | sort); do
+            [ -z "$_aname" ] && continue
+            local _ok_c _ef_c _uf_c
+            _ok_c=$(kv_get CHAOS_PER_ACTION_OK "$_aname" || true); _ok_c=${_ok_c:-0}
+            _ef_c=$(kv_get CHAOS_PER_ACTION_EXPFAIL "$_aname" || true); _ef_c=${_ef_c:-0}
+            _uf_c=$(kv_get CHAOS_PER_ACTION_UNEXPFAIL "$_aname" || true); _uf_c=${_uf_c:-0}
+            local row
+            row=$(printf "  %-22s | %5s | %7s | %9s" "$_aname" "$_ok_c" "$_ef_c" "$_uf_c")
+            if [ -n "$report_file" ]; then
+                report_lines="${report_lines}${row}
+"
+            else
+                echo "$row"
+            fi
+        done
+    fi
+
+    # Write to file if requested
+    if [ -n "$report_file" ]; then
+        echo "$report_lines" > "$report_file"
+        _ok "report written to $report_file"
+    fi
+}
+
+# Generate JSON report for CI integration
+chaos_report_json() {
+    local json_file="$1"
+
+    # Timing
+    if [ "$CHAOS_TIME_END" -eq 0 ]; then
+        CHAOS_TIME_END=$(date +%s)
+    fi
+    local wall_clock=0
+    if [ "$CHAOS_TIME_START" -gt 0 ]; then
+        wall_clock=$(( CHAOS_TIME_END - CHAOS_TIME_START ))
+    fi
+
+    local dep_count file_count pc_count
+    dep_count=$(kv_count CHAOS_DEP_PAIRS)
+    file_count=$(kv_count CHAOS_ISSUE_FILES)
+    pc_count=$(kv_count CHAOS_PARENT_CHILDREN)
+
+    # Build per-action JSON
+    local per_action_json=""
+    local all_action_names=""
+    local _aname
+    for _aname in $(kv_keys CHAOS_PER_ACTION_OK || true); do
+        case " $all_action_names " in
+            *" $_aname "*) ;;
+            *) all_action_names="$all_action_names $_aname" ;;
+        esac
+    done
+    for _aname in $(kv_keys CHAOS_PER_ACTION_EXPFAIL || true); do
+        case " $all_action_names " in
+            *" $_aname "*) ;;
+            *) all_action_names="$all_action_names $_aname" ;;
+        esac
+    done
+    for _aname in $(kv_keys CHAOS_PER_ACTION_UNEXPFAIL || true); do
+        case " $all_action_names " in
+            *" $_aname "*) ;;
+            *) all_action_names="$all_action_names $_aname" ;;
+        esac
+    done
+
+    local first=true
+    for _aname in $(echo "$all_action_names" | tr ' ' '\n' | sort); do
+        [ -z "$_aname" ] && continue
+        local _ok_c _ef_c _uf_c
+        _ok_c=$(kv_get CHAOS_PER_ACTION_OK "$_aname" || true); _ok_c=${_ok_c:-0}
+        _ef_c=$(kv_get CHAOS_PER_ACTION_EXPFAIL "$_aname" || true); _ef_c=${_ef_c:-0}
+        _uf_c=$(kv_get CHAOS_PER_ACTION_UNEXPFAIL "$_aname" || true); _uf_c=${_uf_c:-0}
+        if [ "$first" = "true" ]; then
+            first=false
+        else
+            per_action_json="${per_action_json},"
+        fi
+        per_action_json="${per_action_json}
+      \"${_aname}\": {\"ok\": ${_ok_c}, \"expected_failures\": ${_ef_c}, \"unexpected_failures\": ${_uf_c}}"
+    done
+
+    # Build convergence JSON
+    local convergence_json=""
+    if [ -n "$CHAOS_CONVERGENCE_RESULTS" ]; then
+        local cfirst=true
+        for _centry in $(echo "$CHAOS_CONVERGENCE_RESULTS" | tr ' ' '\n' | grep ':'); do
+            local _ckey _cval
+            _ckey=$(echo "$_centry" | cut -d: -f1)
+            _cval=$(echo "$_centry" | cut -d: -f2)
+            if [ "$cfirst" = "true" ]; then
+                cfirst=false
+            else
+                convergence_json="${convergence_json},"
+            fi
+            convergence_json="${convergence_json}
+      \"${_ckey}\": \"${_cval}\""
+        done
+    fi
+
+    # Write JSON
+    cat > "$json_file" <<ENDJSON
+{
+  "summary": {
+    "actions": $CHAOS_ACTION_COUNT,
+    "syncs": $CHAOS_SYNC_COUNT,
+    "skipped": $CHAOS_SKIPPED,
+    "expected_failures": $CHAOS_EXPECTED_FAILURES,
+    "unexpected_failures": $CHAOS_UNEXPECTED_FAILURES,
+    "issues_created": ${#CHAOS_ISSUE_IDS[@]},
+    "issues_deleted": ${#CHAOS_DELETED_IDS[@]},
+    "boards_created": ${#CHAOS_BOARD_NAMES[@]},
+    "deps_tracked": $dep_count,
+    "files_linked": $file_count,
+    "field_collisions": $CHAOS_FIELD_COLLISIONS,
+    "delete_mutate_conflicts": $CHAOS_DELETE_MUTATE_CONFLICTS,
+    "bursts": $CHAOS_BURST_COUNT,
+    "burst_actions": $CHAOS_BURST_ACTIONS,
+    "injected_failures": $CHAOS_INJECTED_FAILURES,
+    "edge_data_used": $CHAOS_EDGE_DATA_USED,
+    "parent_child_pairs": $pc_count,
+    "cascade_actions": $CHAOS_CASCADE_ACTIONS
+  },
+  "timing": {
+    "wall_clock_seconds": $wall_clock,
+    "sync_seconds": $CHAOS_TIME_SYNCING,
+    "mutate_seconds": $CHAOS_TIME_MUTATING
+  },
+  "per_action": {$per_action_json
+  },
+  "convergence": {
+    "passed": $CHAOS_CONVERGENCE_PASSED,
+    "failed": $CHAOS_CONVERGENCE_FAILED,
+    "details": {$convergence_json
+    }
+  }
+}
+ENDJSON
+    _ok "JSON report written to $json_file"
 }
