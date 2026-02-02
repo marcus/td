@@ -141,7 +141,7 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssue(issue)
+				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
 
 				// Record session action for bypass prevention
 				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)

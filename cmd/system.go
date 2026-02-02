@@ -532,12 +532,18 @@ var importCmd = &cobra.Command{
 			return err
 		}
 
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		var imported int
 
 		if format == "md" {
-			imported, err = importMarkdown(database, string(data), dryRun, force)
+			imported, err = importMarkdown(database, string(data), dryRun, force, sess.ID)
 		} else {
-			imported, err = importJSON(database, data, dryRun, force)
+			imported, err = importJSON(database, data, dryRun, force, sess.ID)
 		}
 
 		if err != nil {
@@ -552,7 +558,7 @@ var importCmd = &cobra.Command{
 }
 
 // importJSON imports issues from JSON format
-func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
+func importJSON(database *db.DB, data []byte, dryRun, force bool, sessionID string) (int, error) {
 	var importData []map[string]interface{}
 	if err := json.Unmarshal(data, &importData); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON: %v", err)
@@ -620,14 +626,14 @@ func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
 			// Update existing issue
 			issue.ID = existingID
 			issue.CreatedAt = existing.CreatedAt
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sessionID, models.ActionUpdate); err != nil {
 				output.Warning("failed to overwrite '%s': %v", existingID, err)
 				continue
 			}
 			fmt.Printf("OVERWRITTEN %s: %s\n", existingID, title)
 			imported++
 		} else {
-			if err := database.CreateIssue(issue); err != nil {
+			if err := database.CreateIssueLogged(issue, sessionID); err != nil {
 				output.Warning("failed to import '%s': %v", title, err)
 				continue
 			}
@@ -649,7 +655,7 @@ func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
 //	- Points: 3
 //	- Labels: label1, label2
 //	Description text
-func importMarkdown(database *db.DB, data string, dryRun, force bool) (int, error) {
+func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID string) (int, error) {
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	imported := 0
 
@@ -697,14 +703,14 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool) (int, erro
 			} else if existing != nil && force {
 				currentIssue.ID = currentIssueID
 				currentIssue.CreatedAt = existing.CreatedAt
-				if err := database.UpdateIssue(currentIssue); err != nil {
+				if err := database.UpdateIssueLogged(currentIssue, sessionID, models.ActionUpdate); err != nil {
 					output.Warning("failed to overwrite '%s': %v", currentIssueID, err)
 				} else {
 					fmt.Printf("OVERWRITTEN %s: %s\n", currentIssueID, currentIssue.Title)
 					imported++
 				}
 			} else {
-				if err := database.CreateIssue(currentIssue); err != nil {
+				if err := database.CreateIssueLogged(currentIssue, sessionID); err != nil {
 					output.Warning("failed to import '%s': %v", currentIssue.Title, err)
 				} else {
 					fmt.Printf("IMPORTED %s: %s\n", currentIssue.ID, currentIssue.Title)
