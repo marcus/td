@@ -1794,6 +1794,112 @@ verify_convergence() {
 # Chaos Stats Summary
 # ============================================================
 
+# ============================================================
+# 10b. Idempotency Verification
+# ============================================================
+# After convergence, run additional sync round-trips and verify
+# databases don't change — proving sync is idempotent.
+
+_db_content_hash() {
+    local db="$1"
+    local issue_cols="id, title, description, status, type, priority, points, labels, parent_id, acceptance, minor, sprint, created_branch, implementer_session, reviewer_session, creator_session, deleted_at"
+    {
+        sqlite3 "$db" "SELECT $issue_cols FROM issues ORDER BY id;"
+        sqlite3 "$db" "SELECT issue_id, text, session_id FROM comments ORDER BY issue_id, id;"
+        sqlite3 "$db" "SELECT issue_id, type, message, session_id FROM logs ORDER BY issue_id, id;"
+        sqlite3 "$db" "SELECT issue_id, session_id, done, remaining, decisions, uncertain FROM handoffs ORDER BY issue_id, id;"
+        sqlite3 "$db" "SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id;"
+        sqlite3 "$db" "SELECT name, is_builtin, query FROM boards ORDER BY name;"
+        sqlite3 "$db" "SELECT board_id, issue_id, position FROM board_issue_positions ORDER BY board_id, issue_id;"
+        sqlite3 "$db" "SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;"
+        sqlite3 "$db" "SELECT id, name, session_id FROM work_sessions ORDER BY id;"
+        sqlite3 "$db" "SELECT work_session_id, issue_id FROM work_session_issues ORDER BY work_session_id, issue_id;"
+    } | shasum -a 256 | cut -d' ' -f1
+}
+
+_db_content_dump() {
+    local db="$1"
+    local issue_cols="id, title, description, status, type, priority, points, labels, parent_id, acceptance, minor, sprint, created_branch, implementer_session, reviewer_session, creator_session, deleted_at"
+    local tables=(
+        "issues:SELECT $issue_cols FROM issues ORDER BY id"
+        "comments:SELECT issue_id, text, session_id FROM comments ORDER BY issue_id, id"
+        "logs:SELECT issue_id, type, message, session_id FROM logs ORDER BY issue_id, id"
+        "handoffs:SELECT issue_id, session_id, done, remaining, decisions, uncertain FROM handoffs ORDER BY issue_id, id"
+        "issue_dependencies:SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id"
+        "boards:SELECT name, is_builtin, query FROM boards ORDER BY name"
+        "board_issue_positions:SELECT board_id, issue_id, position FROM board_issue_positions ORDER BY board_id, issue_id"
+        "issue_files:SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path"
+        "work_sessions:SELECT id, name, session_id FROM work_sessions ORDER BY id"
+        "work_session_issues:SELECT work_session_id, issue_id FROM work_session_issues ORDER BY work_session_id, issue_id"
+    )
+    for entry in "${tables[@]}"; do
+        local tname="${entry%%:*}"
+        local query="${entry#*:}"
+        echo "=== $tname ==="
+        sqlite3 "$db" "$query"
+    done
+}
+
+verify_idempotency() {
+    local db_a="$1" db_b="$2"
+    local rounds=3
+
+    _step "Idempotency verification ($rounds round-trips)"
+
+    # Capture baseline hashes and dumps after convergence
+    local baseline_a baseline_b
+    baseline_a=$(_db_content_hash "$db_a")
+    baseline_b=$(_db_content_hash "$db_b")
+
+    local dump_dir
+    dump_dir=$(mktemp -d "${TMPDIR:-/tmp}/td-idempotency-XXXX")
+    _db_content_dump "$db_a" > "$dump_dir/baseline_a.txt"
+    _db_content_dump "$db_b" > "$dump_dir/baseline_b.txt"
+
+    local failed=false
+    for round in $(seq 1 "$rounds"); do
+        # Full round-trip: A sync, B sync, B sync, A sync
+        td_a sync >/dev/null 2>&1 || true
+        td_b sync >/dev/null 2>&1 || true
+        td_b sync >/dev/null 2>&1 || true
+        td_a sync >/dev/null 2>&1 || true
+
+        local hash_a hash_b
+        hash_a=$(_db_content_hash "$db_a")
+        hash_b=$(_db_content_hash "$db_b")
+
+        if [ "$hash_a" != "$baseline_a" ]; then
+            _fail "idempotency round $round: DB_A changed (hash $baseline_a -> $hash_a)"
+            _db_content_dump "$db_a" > "$dump_dir/round${round}_a.txt"
+            diff "$dump_dir/baseline_a.txt" "$dump_dir/round${round}_a.txt" || true
+            failed=true
+            break
+        fi
+
+        if [ "$hash_b" != "$baseline_b" ]; then
+            _fail "idempotency round $round: DB_B changed (hash $baseline_b -> $hash_b)"
+            _db_content_dump "$db_b" > "$dump_dir/round${round}_b.txt"
+            diff "$dump_dir/baseline_b.txt" "$dump_dir/round${round}_b.txt" || true
+            failed=true
+            break
+        fi
+
+        _ok "round $round: stable (A=${baseline_a:0:12}... B=${baseline_b:0:12}...)"
+    done
+
+    rm -rf "$dump_dir"
+
+    if [ "$failed" = "true" ]; then
+        return 1
+    fi
+
+    _ok "idempotency verified: $rounds round-trips with no changes"
+}
+
+# ============================================================
+# Chaos Stats Summary
+# ============================================================
+
 chaos_report() {
     _step "Chaos stats"
     _ok "actions: $CHAOS_ACTION_COUNT, syncs: $CHAOS_SYNC_COUNT, skipped: $CHAOS_SKIPPED"
