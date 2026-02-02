@@ -252,13 +252,13 @@ func TestBackfillStaleIssues_AddsUpdate(t *testing.T) {
 	tx.Commit()
 
 	if n != 1 {
-		t.Fatalf("expected 1 stale update, got %d", n)
+		t.Fatalf("expected 1 stale backfill, got %d", n)
 	}
 
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='update'`).Scan(&count)
-	if count != 1 {
-		t.Fatalf("expected 1 update entry for td-700, got %d", count)
+	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='create'`).Scan(&count)
+	if count != 2 {
+		t.Fatalf("expected 2 create entries for td-700 (original + backfill), got %d", count)
 	}
 }
 

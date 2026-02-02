@@ -112,7 +112,7 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 
 	stmt, err := tx.Prepare(`INSERT INTO action_log
 		(id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone)
-		VALUES (?, ?, 'update', 'issue', ?, ?, '', ?, 0)`)
+		VALUES (?, ?, 'create', 'issue', ?, ?, '', ?, 0)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}

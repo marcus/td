@@ -190,8 +190,9 @@ func applyPartialUpdateEvent(tx *sql.Tx, event Event, previousData json.RawMessa
 
 	changed := diffJSON(prevFields, newFields)
 	if len(changed) == 0 {
-		// No fields changed — no-op
-		return applyResult{}, nil
+		// No fields changed — fall back to full upsert to ensure entity exists
+		slog.Debug("partial update: no diff, falling back to upsert", "table", event.EntityType, "id", event.EntityID)
+		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
 	}
 
 	rowsAffected, err := applyPartialUpdate(tx, event.EntityType, event.EntityID, changed)
