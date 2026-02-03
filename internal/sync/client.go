@@ -13,9 +13,9 @@ func mapActionType(tdAction string) string {
 	switch tdAction {
 	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_update", "board_add_issue", "board_set_position", "work_session_tag":
 		return "create"
-	case "delete", "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
+	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
 		return "delete"
-	case "board_unposition", "board_remove_issue", "soft_delete":
+	case "delete", "board_unposition", "board_remove_issue", "soft_delete":
 		return "soft_delete"
 	default:
 		return "update"

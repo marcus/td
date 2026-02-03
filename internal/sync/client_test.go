@@ -202,7 +202,7 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 		{"al-00000001", "create", "issues", "create"},
 		{"al-00000002", "update", "issues", "update"},
 		{"al-00000003", "start", "issues", "update"},
-		{"al-00000004", "delete", "issues", "delete"},
+		{"al-00000004", "delete", "issues", "soft_delete"},
 		{"al-00000005", "review", "issues", "update"},
 		{"al-00000006", "approve", "issues", "update"},
 		{"al-00000007", "close", "issues", "update"},
