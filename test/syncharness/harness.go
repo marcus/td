@@ -211,6 +211,8 @@ func initClientSchema(clientDB *sql.DB) error {
 }
 
 // Mutate performs a local mutation on a client's database and records it in action_log.
+// For "delete" action: uses soft-delete on tables with deleted_at column (issues, board_issue_positions),
+// hard delete on tables without it (issue_dependencies, issue_files, work_session_issues).
 func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data map[string]any) error {
 	c, ok := h.Clients[clientID]
 	if !ok {
@@ -226,16 +228,25 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 	// Read previous data
 	prevData := readEntity(tx, entityType, entityID)
 
-	switch actionType {
+	// Determine effective action type for local mutation
+	effectiveAction := actionType
+	if actionType == "delete" && softDeleteTables[entityType] {
+		// For tables with deleted_at, "delete" becomes soft_delete to match sync behavior
+		effectiveAction = "soft_delete"
+	}
+
+	switch effectiveAction {
 	case "create", "update":
 		if err := upsertLocal(tx, entityType, entityID, data); err != nil {
 			return fmt.Errorf("upsert: %w", err)
 		}
 	case "delete":
+		// Hard delete for tables without deleted_at column
 		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", entityType), entityID); err != nil {
 			return fmt.Errorf("delete: %w", err)
 		}
 	case "soft_delete":
+		// Soft delete for tables with deleted_at column
 		if _, err := tx.Exec(fmt.Sprintf("UPDATE %s SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", entityType), entityID); err != nil {
 			return fmt.Errorf("soft_delete: %w", err)
 		}
@@ -265,10 +276,19 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 	seq := h.actionSeq.Add(1)
 	alID := fmt.Sprintf("al-%08d", seq)
 
+	// Determine the action type to log. For tables without deleted_at, map "delete"
+	// to the specific action type that sync engine treats as hard delete.
+	logActionType := actionType
+	if actionType == "delete" && !softDeleteTables[entityType] {
+		if hardAction, ok := hardDeleteActionTypes[entityType]; ok {
+			logActionType = hardAction
+		}
+	}
+
 	_, err = tx.Exec(
 		`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		alID, c.SessionID, actionType, entityType, entityID, string(newJSON), string(prevJSON),
+		alID, c.SessionID, logActionType, entityType, entityID, string(newJSON), string(prevJSON),
 	)
 	if err != nil {
 		return fmt.Errorf("insert action_log: %w", err)
@@ -279,7 +299,16 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 
 // readEntity reads all columns for a given entity, returning a map.
 func readEntity(tx *sql.Tx, entityType, entityID string) map[string]any {
-	row, err := tx.Query(fmt.Sprintf("SELECT * FROM %s WHERE id = ?", entityType), entityID)
+	return readEntityFiltered(tx, entityType, entityID, false)
+}
+
+// readEntityFiltered reads all columns for a given entity, optionally filtering out soft-deleted rows.
+func readEntityFiltered(tx *sql.Tx, entityType, entityID string, filterSoftDeleted bool) map[string]any {
+	query := fmt.Sprintf("SELECT * FROM %s WHERE id = ?", entityType)
+	if filterSoftDeleted {
+		query = fmt.Sprintf("SELECT * FROM %s WHERE id = ? AND deleted_at IS NULL", entityType)
+	}
+	row, err := tx.Query(query, entityID)
 	if err != nil {
 		return nil
 	}
@@ -536,10 +565,32 @@ var timestampCols = map[string]bool{
 	"tagged_at": true, "added_at": true,
 }
 
+// softDeleteTables lists tables that use soft-delete via deleted_at column.
+var softDeleteTables = map[string]bool{
+	"issues":                true,
+	"board_issue_positions": true,
+}
+
+// hardDeleteActionTypes maps entity types without deleted_at to action types
+// that mapActionType() converts to hard "delete" (not "soft_delete").
+// Without this, "delete" action on these tables would become "soft_delete" and fail.
+var hardDeleteActionTypes = map[string]string{
+	"issue_dependencies":    "remove_dependency",
+	"issue_files":           "unlink_file",
+	"work_session_issues":   "work_session_untag",
+	"boards":                "board_delete",
+}
+
 // dumpTable returns a deterministic string representation of all rows in a table.
 // Timestamp columns are excluded from the dump to avoid false divergence.
+// Soft-deleted rows are filtered out for tables that support soft-delete.
 func dumpTable(db *sql.DB, table string) string {
-	rows, err := db.Query(fmt.Sprintf("SELECT * FROM %s ORDER BY id", table))
+	query := fmt.Sprintf("SELECT * FROM %s", table)
+	if softDeleteTables[table] {
+		query += " WHERE deleted_at IS NULL"
+	}
+	query += " ORDER BY id"
+	rows, err := db.Query(query)
 	if err != nil {
 		return fmt.Sprintf("ERROR: %v", err)
 	}
@@ -576,6 +627,7 @@ func dumpTable(db *sql.DB, table string) string {
 }
 
 // QueryEntity reads a single entity from a client's DB, returning nil if not found.
+// For soft-delete tables (issues, board_issue_positions), filters out rows where deleted_at is set.
 func (h *Harness) QueryEntity(clientID, entityType, entityID string) map[string]any {
 	h.t.Helper()
 	c, ok := h.Clients[clientID]
@@ -589,7 +641,25 @@ func (h *Harness) QueryEntity(clientID, entityType, entityID string) map[string]
 	}
 	defer tx.Rollback()
 
-	return readEntity(tx, entityType, entityID)
+	return readEntityFiltered(tx, entityType, entityID, softDeleteTables[entityType])
+}
+
+// QueryEntityRaw reads a single entity from a client's DB without soft-delete filtering.
+// Use this when you need to verify soft-deleted rows exist (e.g., checking deleted_at is set).
+func (h *Harness) QueryEntityRaw(clientID, entityType, entityID string) map[string]any {
+	h.t.Helper()
+	c, ok := h.Clients[clientID]
+	if !ok {
+		h.t.Fatalf("unknown client: %s", clientID)
+	}
+
+	tx, err := c.DB.Begin()
+	if err != nil {
+		h.t.Fatalf("begin tx: %v", err)
+	}
+	defer tx.Rollback()
+
+	return readEntityFiltered(tx, entityType, entityID, false)
 }
 
 // CountEntities returns the number of rows in an entity table for a client.
