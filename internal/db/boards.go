@@ -231,6 +231,22 @@ func (db *DB) DeleteBoard(id string) error {
 	})
 }
 
+// RestoreBoard re-inserts a previously deleted board from its stored state.
+// This is used by undo to restore a deleted board.
+func (db *DB) RestoreBoard(board *models.Board) error {
+	return db.withWriteLock(func() error {
+		isBuiltin := 0
+		if board.IsBuiltin {
+			isBuiltin = 1
+		}
+		_, err := db.conn.Exec(`
+			INSERT INTO boards (id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, board.ID, board.Name, board.Query, isBuiltin, board.ViewMode, board.LastViewedAt, board.CreatedAt, board.UpdatedAt)
+		return err
+	})
+}
+
 // GetLastViewedBoard returns the most recently viewed board
 func (db *DB) GetLastViewedBoard() (*models.Board, error) {
 	var board models.Board

@@ -114,6 +114,8 @@ func performUndo(database *db.DB, action *models.ActionLog) error {
 		return undoFileLinkAction(database, action)
 	case "board_position", "board_issue_positions":
 		return undoBoardPositionAction(database, action)
+	case "board", "boards":
+		return undoBoardAction(database, action)
 	case "handoff":
 		return undoHandoffAction(database, action)
 	case "logs", "comments", "work_sessions":
@@ -226,6 +228,39 @@ func undoHandoffAction(database *db.DB, action *models.ActionLog) error {
 		return database.DeleteHandoff(action.EntityID)
 	default:
 		return fmt.Errorf("cannot undo handoff action: %s", action.ActionType)
+	}
+}
+
+func undoBoardAction(database *db.DB, action *models.ActionLog) error {
+	switch action.ActionType {
+	case models.ActionBoardCreate, models.ActionCreate:
+		// Undo create by deleting (handles both "board_create" and backfill "create")
+		return database.DeleteBoard(action.EntityID)
+
+	case models.ActionBoardDelete, models.ActionDelete:
+		// Undo delete by restoring from previous data
+		if action.PreviousData == "" {
+			return fmt.Errorf("no previous data to restore")
+		}
+		var board models.Board
+		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {
+			return fmt.Errorf("failed to parse previous data: %w", err)
+		}
+		return database.RestoreBoard(&board)
+
+	case models.ActionBoardUpdate, models.ActionUpdate:
+		// Restore previous state (handles both "board_update" and generic "update")
+		if action.PreviousData == "" {
+			return fmt.Errorf("no previous data to restore")
+		}
+		var board models.Board
+		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {
+			return fmt.Errorf("failed to parse previous data: %w", err)
+		}
+		return database.UpdateBoard(&board)
+
+	default:
+		return fmt.Errorf("cannot undo board action: %s", action.ActionType)
 	}
 }
 
