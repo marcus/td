@@ -10,6 +10,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// VerifyResult records the outcome of a single verification check.
+type VerifyResult struct {
+	Name    string
+	Passed  bool
+	Details string // explanation on failure
+}
+
+// truncate shortens a string to maxLen, replacing newlines.
+func truncate(s string, maxLen int) string {
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
+}
+
 func pass(name string) VerifyResult {
 	return VerifyResult{Name: name, Passed: true}
 }
