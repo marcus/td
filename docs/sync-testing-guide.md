@@ -20,6 +20,16 @@ go test ./test/syncharness/...
 
 # Verbose output
 go test -v ./test/syncharness/...
+
+# E2E chaos oracle (black-box, builds real binaries, starts real server)
+go test -v -count=1 -timeout 5m -run TestSmoke ./test/e2e/
+
+# Full chaos run
+go test -v -count=1 -timeout 30m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.actions=500 -chaos.seed=42
+
+# Individual conflict scenarios
+go test -v -count=1 -timeout 5m -run TestPartitionRecovery ./test/e2e/
 ```
 
 ## Test Architecture
@@ -27,6 +37,9 @@ go test -v ./test/syncharness/...
 Tests are layered from low-level to high-level:
 
 ```
+test/e2e/                  ← Black-box chaos oracle (builds real binaries)
+  │  Spawns td + td-sync, authenticates actors, runs CLI commands
+  │
 test/syncharness/          ← Multi-client integration (18 scenarios)
   │  Uses real sync functions, simulates N devices
   │
@@ -42,9 +55,9 @@ internal/serverdb/         ← Database unit tests (30+ tests)
      Users, API keys, projects, memberships, role enforcement
 ```
 
-All tests use in-memory SQLite for isolation and speed.
+The `test/syncharness/` and lower layers use in-memory SQLite for isolation and speed. The `test/e2e/` layer builds real binaries, starts a real server on a random port, and exercises the full CLI-to-server path.
 
-## Test Harness
+## Test Harness (syncharness)
 
 The harness in `test/syncharness/harness.go` simulates multiple devices syncing through a shared server database. It uses the real sync functions (not mocks), so it validates the actual code paths.
 
@@ -127,6 +140,161 @@ func TestConflict(t *testing.T) {
 }
 ```
 
+## E2E Chaos Oracle (`test/e2e/`)
+
+The chaos oracle is a black-box test layer that builds real `td` and `td-sync` binaries, starts a real sync server, authenticates multiple actors via the device auth flow, and drives randomized mutations through the CLI. It then verifies sync correctness using 8 independent oracle checks.
+
+### How It Works
+
+1. **Setup**: Builds binaries, starts server on random port, creates project, authenticates 2-3 actors (alice, bob, optionally carol)
+2. **Chaos loop**: Weighted random action selection (43 action types), configurable sync timing, conflict injection
+3. **Final sync**: Round-robin convergence sync with rate-limit retry
+4. **Verification**: 8 correctness oracle checks run against actor databases
+
+### Test Functions
+
+| Test | What it does |
+|---|---|
+| `TestSmoke` | 10-action quick run, convergence + idempotency checks |
+| `TestChaosSync` | Full configurable chaos run with all 8 verifications |
+| `TestPartitionRecovery` | 50+ mutations per side without sync, then converge |
+| `TestUndoSync` | Create, sync, undo, sync, verify convergence |
+| `TestMultiFieldCollision` | Concurrent updates to different fields on same issue |
+| `TestRapidCreateDelete` | Create 10, delete all, restore 5, delete 3 — convergence at each stage |
+| `TestCascadeConflict` | Parent cascade vs independent child close |
+| `TestDependencyCycle` | A->B->C->A cycle detection |
+| `TestThunderingHerd` | Concurrent goroutine sync (both actors sync simultaneously) |
+| `TestBurstNoSync` | 20 sequential mutations without sync, then converge |
+| `TestServerRestart` | Create, sync, kill server, offline mutations, restart, converge |
+
+### CLI Flags
+
+All flags are passed after `-args`:
+
+```bash
+go test -run TestChaosSync ./test/e2e/ -args [FLAGS]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `-chaos.seed` | 0 (time-based) | PRNG seed for reproducibility |
+| `-chaos.actions` | 100 | Total actions to perform |
+| `-chaos.duration` | 0 | Seconds to run (overrides actions when >0) |
+| `-chaos.actors` | 2 | Number of actors: 2 or 3 |
+| `-chaos.verbose` | false | Per-action output |
+| `-chaos.sync-mode` | adaptive | Sync strategy: adaptive, aggressive, random |
+| `-chaos.conflict-rate` | 20 | Percentage of conflict rounds |
+| `-chaos.json-report` | "" | Write JSON report to file |
+
+### Example Runs
+
+```bash
+# Quick CI smoke test
+go test -v -count=1 -timeout 5m -run TestSmoke ./test/e2e/
+
+# Standard chaos run
+go test -v -count=1 -timeout 30m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.actions=500 -chaos.seed=42
+
+# Three-actor test
+go test -v -count=1 -timeout 30m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.actions=100 -chaos.actors=3
+
+# Aggressive sync (sync every 1-3 actions)
+go test -v -count=1 -timeout 10m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.actions=200 -chaos.sync-mode=aggressive
+
+# Time-based with JSON report
+go test -v -count=1 -timeout 10m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.duration=60 -chaos.json-report=report.json
+
+# Reproducible failure investigation
+go test -v -count=1 -timeout 30m -run TestChaosSync ./test/e2e/ \
+    -args -chaos.seed=1770081563082117000 -chaos.verbose
+```
+
+### Correctness Verifications
+
+The oracle runs these checks after the chaos loop completes:
+
+| Verification | What it checks |
+|---|---|
+| **Entity convergence** | All synced tables (issues, comments, logs, handoffs, deps, boards, positions, files, work sessions) match across actors |
+| **Action log convergence** | For every common server_seq, the (entity_type, action_type, entity_id) tuple matches |
+| **Monotonic sequence** | server_seq is strictly increasing with no duplicates per actor |
+| **Causal ordering** | Create events precede updates/deletes for same entity; start precedes review |
+| **Idempotency** | SHA-256 hash of all table dumps is stable across N additional sync rounds |
+| **Event counts** | Synced event counts and type distributions match (warnings for expected init divergence) |
+| **Read-your-writes** | Each actor can `td show` every non-deleted issue they created |
+| **Field-level merge** | Concurrent updates to different fields on same issue both survive sync |
+
+### Action Coverage
+
+The chaos engine executes 43 weighted-random action types:
+
+- **CRUD**: create, update, update_append, delete, restore, update_bulk
+- **Status**: start, unstart, review, approve, reject, close, reopen, block, unblock
+- **Bulk**: bulk_start, bulk_review, bulk_close
+- **Content**: comment, log_progress, log_blocker, log_decision, log_hypothesis, log_result
+- **Dependencies**: dep_add, dep_rm
+- **Boards**: board_create, board_edit, board_move, board_unposition, board_delete, board_view_mode
+- **Handoffs**: handoff
+- **File links**: link, unlink
+- **Work sessions**: ws_start, ws_tag, ws_untag, ws_end, ws_handoff
+- **Parent-child**: create_child, cascade_handoff, cascade_review
+
+15% of generated content uses edge-case strings (emoji, CJK, RTL Arabic, SQL injection attempts, XSS payloads, long strings, format specifiers, embedded JSON, etc.).
+
+### JSON Report
+
+When `-chaos.json-report=path` is set, the test writes a structured report:
+
+```json
+{
+  "seed": 42,
+  "actions": 500,
+  "duration_ms": 45000,
+  "actors": 2,
+  "results": {
+    "total": 500,
+    "ok": 380,
+    "expected_fail": 45,
+    "unexpected_fail": 0,
+    "skipped": 75
+  },
+  "per_action": { "create": {"ok": 60, ...}, ... },
+  "verifications": [
+    {"name": "issues match", "passed": true},
+    {"name": "monotonic server_seq", "passed": true, "details": "450 events, range [1..620]"}
+  ],
+  "sync_stats": {"count": 85},
+  "pass": true
+}
+```
+
+### File Layout
+
+```
+test/e2e/
+├── harness.go          # Build binaries, start server, auth, project setup
+├── harness_test.go     # Basic create-sync-verify test
+├── engine.go           # ChaosEngine: state tracking, action execution
+├── engine_test.go      # Engine smoke test + weight distribution
+├── actions.go          # 43 action executors
+├── selection.go        # Weighted random action selection
+├── random.go           # Edge-case content generators
+├── history.go          # Thread-safe operation history (JSON/text reports)
+├── history_test.go     # History concurrency + serialization tests
+├── verify.go           # 8 correctness oracle verifications
+├── verify_test.go      # Verification unit tests
+├── conflicts.go        # 8 advanced conflict scenarios
+├── conflicts_test.go   # Scenario test runners
+├── restart.go          # Server restart resilience scenario
+├── restart_test.go     # Restart test runner
+├── chaos_test.go       # TestSmoke + TestChaosSync (main entry points)
+└── report.go           # JSON report generation
+```
+
 ## What's Tested
 
 ### Sync Engine (`internal/sync/`)
@@ -190,6 +358,27 @@ func TestConflict(t *testing.T) {
 | SchemaVersionMismatch | Unknown payload fields ignored |
 | PartialBatchFailure | Bad events skipped, good ones applied |
 | PartialPayloadDropsColumns | Partial update resets omitted columns to DEFAULT |
+
+### E2E Chaos Oracle (`test/e2e/`)
+
+See the [E2E Chaos Oracle](#e2e-chaos-oracle-teste2e) section above for full details. In summary:
+
+- 2 main test entry points (TestSmoke, TestChaosSync)
+- 9 targeted conflict/resilience scenarios
+- 43 weighted-random action types with edge-case content injection
+- 8 independent correctness verifications
+- Reproducible via PRNG seed
+- JSON report output for CI
+
+### Bash Smoke Tests (`scripts/e2e/`)
+
+The original bash-based chaos test remains as a fast smoke test layer:
+
+- `test_chaos_sync.sh` — Configurable randomized multi-actor mutations with convergence verification
+- `chaos_lib.sh` — 43 action executors, weighted selection, state tracking, convergence/idempotency/event-count verification
+- `harness.sh` — Build binaries, start server, auth, project setup, teardown
+
+The bash tests are useful for quick smoke testing and shell-level debugging. The Go oracle provides stronger correctness guarantees with typed data structures, reproducible seeds, and programmatic verification.
 
 ## Planned Tests (Phase 3.5)
 

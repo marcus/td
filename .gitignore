@@ -19,3 +19,6 @@ website/.docusaurus/
 # Sidecar worktree state files
 .sidecar-start.sh
 td-sync
+
+# Sidecar worktree state files
+.sidecar-base
