@@ -311,7 +311,7 @@ func ScenarioRapidCreateDelete(h *Harness) []VerifyResult {
 
 	// Create 10 issues
 	for i := 0; i < 10; i++ {
-		out, err := h.TdA("create", fmt.Sprintf("rapid-cd-%d", i), "--type", "task", "--priority", "P2")
+		out, err := h.TdA("create", fmt.Sprintf("rapid-create-delete-%d", i), "--type", "task", "--priority", "P2")
 		if err != nil {
 			results = append(results, fail(fmt.Sprintf("create %d", i), fmt.Sprintf("%v: %s", err, out)))
 			continue
@@ -375,7 +375,7 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	var results []VerifyResult
 
 	// Create parent
-	out, err := h.TdA("create", "cascade-parent", "--type", "task", "--priority", "P1")
+	out, err := h.TdA("create", "cascade-conflict-parent-issue", "--type", "task", "--priority", "P1")
 	if err != nil {
 		return []VerifyResult{fail("create parent", fmt.Sprintf("%v: %s", err, out))}
 	}
@@ -387,7 +387,7 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	// Create children
 	var childIDs []string
 	for i := 0; i < 3; i++ {
-		out, err := h.TdA("create", fmt.Sprintf("cascade-child-%d", i),
+		out, err := h.TdA("create", fmt.Sprintf("cascade-conflict-child-%d", i),
 			"--type", "task", "--priority", "P2", "--parent", parentID)
 		if err != nil {
 			results = append(results, fail(fmt.Sprintf("create child %d", i), fmt.Sprintf("%v: %s", err, out)))
@@ -427,14 +427,15 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	return results
 }
 
-// ScenarioDependencyCycle: create issues A, B, C, sync, add deps A->B, B->C,
-// then try C->A to create a cycle.
+// ScenarioDependencyCycle: tests distributed cycle detection during sync.
+// Both actors add conflicting dependencies simultaneously (A->B and B->A),
+// then sync. The sync should detect the cycle and skip one of the deps.
 func ScenarioDependencyCycle(h *Harness) []VerifyResult {
 	var results []VerifyResult
 
-	// Create three issues
-	var ids [3]string
-	names := [3]string{"dep-cycle-A", "dep-cycle-B", "dep-cycle-C"}
+	// Create two issues
+	var ids [2]string
+	names := [2]string{"dependency-cycle-issue-A", "dependency-cycle-issue-B"}
 	for i, name := range names {
 		out, err := h.TdA("create", name, "--type", "task", "--priority", "P1")
 		if err != nil {
@@ -446,12 +447,13 @@ func ScenarioDependencyCycle(h *Harness) []VerifyResult {
 		}
 	}
 
-	// Sync
+	// Sync so both actors have both issues
 	if err := h.SyncAll(); err != nil {
 		return []VerifyResult{fail("dep cycle sync 1", err.Error())}
 	}
 
-	// Actor A adds dep A->B
+	// Distributed cycle scenario: both actors add conflicting deps BEFORE sync
+	// Actor A adds A->B
 	out, err := h.TdA("dep", "add", ids[0], ids[1])
 	if err != nil {
 		results = append(results, fail("dep A->B", fmt.Sprintf("%v: %s", err, out)))
@@ -459,39 +461,43 @@ func ScenarioDependencyCycle(h *Harness) []VerifyResult {
 		results = append(results, pass("dep A->B"))
 	}
 
-	// Actor B adds dep B->C
-	out, err = h.TdB("dep", "add", ids[1], ids[2])
+	// Actor B adds B->A (creates a cycle if both are applied)
+	out, err = h.TdB("dep", "add", ids[1], ids[0])
 	if err != nil {
-		results = append(results, fail("dep B->C", fmt.Sprintf("%v: %s", err, out)))
+		results = append(results, fail("dep B->A", fmt.Sprintf("%v: %s", err, out)))
 	} else {
-		results = append(results, pass("dep B->C"))
+		results = append(results, pass("dep B->A"))
 	}
 
-	// Sync
+	// Sync -- this is where distributed cycle detection kicks in
+	// One of the deps should be skipped to prevent cycle
 	if err := h.SyncAll(); err != nil {
 		results = append(results, fail("dep cycle sync 2", err.Error()))
 		return results
 	}
 
-	// Actor A tries to add dep C->A (should create cycle)
-	out, err = h.TdA("dep", "add", ids[2], ids[0])
+	// Verify no cycle exists after sync
+	// Query alice's deps to check for cycle
+	aliceDeps, err := queryDB(h, "alice", "SELECT issue_id, depends_on_id FROM issue_dependencies ORDER BY issue_id")
 	if err != nil {
-		// Expected: cycle detection should reject this
-		lower := strings.ToLower(out)
-		if strings.Contains(lower, "cycle") || strings.Contains(lower, "circular") {
-			results = append(results, pass("cycle C->A rejected"))
-		} else {
-			results = append(results, fail("cycle C->A", fmt.Sprintf("rejected but not cycle error: %s", out)))
-		}
+		results = append(results, fail("query alice deps", err.Error()))
 	} else {
-		// The dep was accepted -- this may or may not be correct depending on implementation
-		results = append(results, fail("cycle C->A", "dep was accepted (cycle not detected)"))
+		// Should have at most one dependency (not both A->B and B->A)
+		lines := strings.Split(strings.TrimSpace(aliceDeps), "\n")
+		depCount := 0
+		for _, line := range lines {
+			if line != "" {
+				depCount++
+			}
+		}
+		if depCount <= 1 {
+			results = append(results, pass(fmt.Sprintf("cycle prevented (alice has %d deps)", depCount)))
+		} else {
+			results = append(results, fail("cycle prevention", fmt.Sprintf("alice has %d deps (cycle exists): %s", depCount, aliceDeps)))
+		}
 	}
 
-	// Sync and verify convergence
-	if err := h.SyncAll(); err != nil {
-		results = append(results, fail("dep cycle final sync", err.Error()))
-	}
+	// Verify convergence
 	results = append(results, verifyConvergence(h, "alice", "bob")...)
 
 	return results
@@ -504,8 +510,8 @@ func ScenarioThunderingHerd(h *Harness) []VerifyResult {
 
 	// Both actors create issues
 	for i := 0; i < 5; i++ {
-		h.TdA("create", fmt.Sprintf("herd-alice-%d", i), "--type", "task", "--priority", "P1")
-		h.TdB("create", fmt.Sprintf("herd-bob-%d", i), "--type", "task", "--priority", "P2")
+		h.TdA("create", fmt.Sprintf("thundering-herd-alice-%d", i), "--type", "task", "--priority", "P1")
+		h.TdB("create", fmt.Sprintf("thundering-herd-bob-%d", i), "--type", "task", "--priority", "P2")
 	}
 
 	// Both sync SIMULTANEOUSLY

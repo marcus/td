@@ -463,6 +463,91 @@ export TD_SYNC_SNAPSHOT_THRESHOLD=0
 
 The server caches built snapshots at `{dataDir}/snapshots/{projectID}/{seq}.db`. Repeated bootstrap requests reuse cached snapshots when the sequence number hasn't advanced.
 
+## Server Migration / Recovery
+
+When your sync server changes or you need to re-sync from scratch, these workflows help you reconnect without losing local data.
+
+### When you need this
+
+- **Server died and was recreated** -- the original server lost its data or was replaced
+- **Moving to a different sync server** -- migrating to a new URL or infrastructure
+- **Switching between multiple projects** -- moving your local data to a different remote project
+
+### Automatic handling (link to new project)
+
+The simplest approach is to link directly to the new project. If you're already linked to a different project, the CLI prompts for confirmation:
+
+```bash
+td sync-project link <new-project-id>
+# ⚠ Already linked to project old-proj-id.
+# Re-link to new-proj-id and clear sync state? [y/N]: y
+# ✓ Cleared sync state and linked to project new-proj-id
+```
+
+**Force flag:** Skip the confirmation prompt with `--force`:
+
+```bash
+td sync-project link <new-project-id> --force
+# ✓ Cleared sync state and linked to project new-proj-id
+```
+
+This automatically:
+1. Clears the existing project link
+2. Resets `synced_at` and `server_seq` on all action_log entries
+3. Links to the new project
+
+Your next `td sync` will push all local events to the new server.
+
+### Manual workflow (unlink then link)
+
+For more control, you can unlink first, then link:
+
+```bash
+# Step 1: Unlink from current project
+td sync-project unlink
+# Clear sync state (mark all events as unsynced)? [y/N]: y
+# ✓ Unlinked and cleared sync state
+
+# Step 2: Link to new project
+td sync-project link <new-project-id>
+# ✓ Linked to project new-project-id
+```
+
+**When to use each approach:**
+
+| Scenario | Recommended approach |
+|---|---|
+| Quick migration to new project | `link <new-id> --force` |
+| Careful migration with review | `unlink` then `link` |
+| Unlinking without re-linking yet | `unlink` (answer 'y' to clear prompt) |
+| Keeping sync state during unlink | `unlink` (answer 'n' to clear prompt) |
+
+### Manual recovery (troubleshooting)
+
+In edge cases where the CLI commands don't resolve the issue, you can reset sync state directly in the database:
+
+```bash
+# Mark all events as unsynced (they'll be pushed on next sync)
+sqlite3 .todos/issues.db "UPDATE action_log SET synced_at = NULL, server_seq = NULL WHERE synced_at IS NOT NULL;"
+```
+
+**When to use:**
+- The CLI commands fail or produce unexpected results
+- You need to re-push specific events selectively
+- Debugging sync state inconsistencies
+
+After resetting, link to your target project and run `td sync`.
+
+### What happens after clearing sync state
+
+When sync state is cleared (via any method above):
+
+1. **All events become pending** -- every entry in `action_log` with `synced_at IS NOT NULL` is reset to `synced_at = NULL`
+2. **Backfill runs if needed** -- if the action_log is empty but you have local entities (issues, logs, etc.), a backfill creates synthetic events for them
+3. **Full push to new server** -- your next `td sync` sends all pending events to the newly linked project
+
+This ensures your complete local history reaches the new server, regardless of what was synced to the old one.
+
 ## Configuration Reference
 
 ### Files

@@ -56,7 +56,7 @@ func TestBoardPositionSoftDelete_SyncConvergence(t *testing.T) {
 
 	// Both should have deleted_at set (row exists but soft-deleted)
 	for _, cid := range []string{"client-A", "client-B"} {
-		ent := h.QueryEntity(cid, "board_issue_positions", posID)
+		ent := h.QueryEntityRaw(cid, "board_issue_positions", posID)
 		if ent == nil {
 			t.Fatalf("%s: row should still exist (soft-deleted)", cid)
 		}
@@ -234,7 +234,7 @@ func TestBoardDeleteCascadesPositionSync(t *testing.T) {
 	// Verify B has both positions soft-deleted (row exists with deleted_at set)
 	for _, cid := range []string{"client-A", "client-B"} {
 		for _, pid := range []string{posID1, posID2} {
-			ent := h.QueryEntity(cid, "board_issue_positions", pid)
+			ent := h.QueryEntityRaw(cid, "board_issue_positions", pid)
 			if ent == nil {
 				t.Fatalf("%s: position %s row should still exist (soft-deleted)", cid, pid)
 			}

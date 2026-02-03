@@ -832,6 +832,43 @@ func TestMarkEventsSynced(t *testing.T) {
 	}
 }
 
+// TestGetPendingEvents_NullID verifies that action_log rows with NULL id are
+// skipped without error or panic, while valid rows are still processed.
+func TestGetPendingEvents_NullID(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Insert a row with NULL id directly via SQL (helper requires non-null id)
+	_, err := db.Exec(`
+		INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone, synced_at)
+		VALUES (NULL, 'sess1', 'create', 'issues', 'i-null', '{"title":"Null ID"}', '{}', datetime('now'), 0, NULL)`)
+	if err != nil {
+		t.Fatalf("insert NULL id row: %v", err)
+	}
+
+	// Insert a valid row
+	insertActionLog(t, db, "al-valid-001", "sess1", "create", "issues", "i-valid",
+		`{"title":"Valid ID"}`, `{}`, 0, "")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+
+	events, err := GetPendingEvents(tx, "device1", "sync-sess")
+	if err != nil {
+		t.Fatalf("GetPendingEvents should not error on NULL id: %v", err)
+	}
+
+	// Should return only the valid row
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1 (NULL id row should be skipped)", len(events))
+	}
+	if events[0].EntityID != "i-valid" {
+		t.Errorf("expected entity i-valid, got %q", events[0].EntityID)
+	}
+}
+
 // TestGetPendingEvents_RealActionTypesIntegration inserts action_log rows with
 // real td action types (not pre-mapped "delete") and verifies they produce the
 // correct sync event action types end-to-end through GetPendingEvents.

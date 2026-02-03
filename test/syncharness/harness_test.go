@@ -511,7 +511,7 @@ func TestInterleavedSync(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create 3: %v", err)
 	}
-	if err := h.Mutate("client-B", "delete", "issues", "td-IL2", nil); err != nil {
+	if err := h.Mutate("client-B", "soft_delete", "issues", "td-IL2", nil); err != nil {
 		t.Fatalf("delete IL2: %v", err)
 	}
 
@@ -541,8 +541,12 @@ func TestInterleavedSync(t *testing.T) {
 		if s, _ := e1["status"].(string); s != "in_progress" {
 			t.Fatalf("%s: td-IL1 status expected 'in_progress', got %q", cid, s)
 		}
-		if h.QueryEntity(cid, "issues", "td-IL2") != nil {
-			t.Fatalf("%s: td-IL2 should be deleted", cid)
+		e2 := h.QueryEntityRaw(cid, "issues", "td-IL2")
+		if e2 == nil {
+			t.Fatalf("%s: td-IL2 should exist (soft-deleted)", cid)
+		}
+		if e2["deleted_at"] == nil {
+			t.Fatalf("%s: td-IL2 should be soft-deleted (deleted_at should be set)", cid)
 		}
 		if h.QueryEntity(cid, "issues", "td-IL3") == nil {
 			t.Fatalf("%s: td-IL3 should exist", cid)

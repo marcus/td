@@ -269,9 +269,13 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 		args = append(args, a)
 	}
 
-	softDeleteFilter := ""
+	extraFilter := ""
 	if st.HasSoftDelete {
-		softDeleteFilter = " AND t.deleted_at IS NULL"
+		extraFilter = " AND t.deleted_at IS NULL"
+	}
+	// Exclude builtin boards from backfill - they shouldn't be synced or undone
+	if st.Table == "boards" {
+		extraFilter += " AND t.is_builtin = 0"
 	}
 
 	query := fmt.Sprintf(
@@ -281,7 +285,7 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 			AND al.entity_type IN (%s)
 			AND al.action_type IN (%s)
 			AND al.undone = 0
-		)%s`, st.Table, strings.Join(typePH, ","), strings.Join(createPH, ","), softDeleteFilter)
+		)%s`, st.Table, strings.Join(typePH, ","), strings.Join(createPH, ","), extraFilter)
 
 	rows, err := tx.Query(query, args...)
 	if err != nil {

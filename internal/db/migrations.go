@@ -169,6 +169,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 26 {
+				if err := db.migrateActionLogNotNullID(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 26 (action_log NOT NULL id): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 24 {
 				if err := db.migrateWorkSessionIssueIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 24 (work_session_issue IDs): %w", err)
@@ -1302,4 +1312,70 @@ func (db *DB) migrateBoardPositionSoftDelete() error {
 	}
 	_, err = db.conn.Exec(`ALTER TABLE board_issue_positions ADD COLUMN deleted_at DATETIME`)
 	return err
+}
+
+// migrateActionLogNotNullID fixes NULL/empty ids in action_log and recreates
+// the table with a NOT NULL constraint on the id column.
+func (db *DB) migrateActionLogNotNullID() error {
+	exists, err := db.tableExists("action_log")
+	if err != nil || !exists {
+		return err
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// First fix any NULL or empty ids
+	if _, err := tx.Exec(`UPDATE action_log SET id = 'al-' || lower(hex(randomblob(4))) WHERE id IS NULL OR id = ''`); err != nil {
+		return fmt.Errorf("fix NULL ids: %w", err)
+	}
+
+	// Drop any leftover temp table from previous failed migrations
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS action_log_new`); err != nil {
+		return fmt.Errorf("drop leftover action_log_new: %w", err)
+	}
+
+	// Create new table with NOT NULL constraint on id
+	if _, err := tx.Exec(`CREATE TABLE action_log_new (
+		id TEXT NOT NULL PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		action_type TEXT NOT NULL,
+		entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		previous_data TEXT DEFAULT '',
+		new_data TEXT DEFAULT '',
+		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		undone INTEGER DEFAULT 0,
+		synced_at DATETIME,
+		server_seq INTEGER
+	)`); err != nil {
+		return fmt.Errorf("create action_log_new: %w", err)
+	}
+
+	// Copy data
+	if _, err := tx.Exec(`INSERT INTO action_log_new SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone, synced_at, server_seq FROM action_log`); err != nil {
+		return fmt.Errorf("copy action_log data: %w", err)
+	}
+
+	// Drop old table and rename new
+	if _, err := tx.Exec(`DROP TABLE action_log`); err != nil {
+		return fmt.Errorf("drop action_log: %w", err)
+	}
+	if _, err := tx.Exec(`ALTER TABLE action_log_new RENAME TO action_log`); err != nil {
+		return fmt.Errorf("rename action_log_new: %w", err)
+	}
+
+	// Recreate indexes
+	if _, err := tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
+`); err != nil {
+		return fmt.Errorf("recreate action_log indexes: %w", err)
+	}
+
+	return tx.Commit()
 }

@@ -221,3 +221,42 @@ func (db *DB) DeleteIssueLogged(issueID, sessionID string) error {
 		return nil
 	})
 }
+
+// RestoreIssueLogged restores a soft-deleted issue and logs the action atomically.
+func (db *DB) RestoreIssueLogged(issueID, sessionID string) error {
+	return db.withWriteLock(func() error {
+		// Read current state for PreviousData
+		prev, err := db.scanIssueRow(issueID)
+		if err != nil {
+			return err
+		}
+		previousData := marshalIssue(prev)
+
+		// Restore (clear deleted_at)
+		now := time.Now()
+		_, err = db.conn.Exec(`UPDATE issues SET deleted_at = NULL, updated_at = ? WHERE id = ?`, now, issueID)
+		if err != nil {
+			return err
+		}
+
+		// Read new state for NewData
+		restored, err := db.scanIssueRow(issueID)
+		if err != nil {
+			return err
+		}
+		newData := marshalIssue(restored)
+
+		// Log the action
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionRestore), "issue", issueID, previousData, newData, now)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
+	})
+}

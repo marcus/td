@@ -14,6 +14,105 @@ import (
 
 var validColumnName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+// wouldCreateCycleTx checks if adding a dependency from issueID to dependsOnID would create a cycle.
+// Uses a transaction for consistency with sync event application.
+func wouldCreateCycleTx(tx *sql.Tx, issueID, dependsOnID string) bool {
+	visited := make(map[string]bool)
+	return hasCyclePathTx(tx, dependsOnID, issueID, visited)
+}
+
+// hasCyclePathTx checks if there's a path from 'from' to 'to' through the dependency graph.
+func hasCyclePathTx(tx *sql.Tx, from, to string, visited map[string]bool) bool {
+	if from == to {
+		return true
+	}
+	if visited[from] {
+		return false
+	}
+	visited[from] = true
+
+	deps, err := getDependenciesTx(tx, from)
+	if err != nil {
+		slog.Debug("cycle check: get deps failed", "from", from, "err", err)
+		return false
+	}
+	for _, dep := range deps {
+		if hasCyclePathTx(tx, dep, to, visited) {
+			return true
+		}
+	}
+	return false
+}
+
+// getDependenciesTx returns issue IDs that the given issue depends on.
+func getDependenciesTx(tx *sql.Tx, issueID string) ([]string, error) {
+	rows, err := tx.Query(`SELECT depends_on_id FROM issue_dependencies WHERE issue_id = ? AND relation_type = 'depends_on'`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []string
+	for rows.Next() {
+		var dep string
+		if err := rows.Scan(&dep); err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return deps, rows.Err()
+}
+
+// checkAndResolveCyclicDependency checks if creating a dependency would form a cycle.
+// If so, uses a deterministic rule for convergence: the edge with lexicographically
+// smaller (issue_id, depends_on_id) wins. If incoming edge should win, removes the
+// conflicting edge. Returns true if the incoming event should be skipped.
+func checkAndResolveCyclicDependency(tx *sql.Tx, event Event) bool {
+	var fields map[string]any
+	if err := json.Unmarshal(event.Payload, &fields); err != nil {
+		slog.Debug("cycle check: unmarshal failed", "err", err)
+		return false // can't parse, let upsert handle it
+	}
+
+	issueID, _ := fields["issue_id"].(string)
+	dependsOnID, _ := fields["depends_on_id"].(string)
+	if issueID == "" || dependsOnID == "" {
+		return false // missing fields, let upsert handle validation
+	}
+
+	if !wouldCreateCycleTx(tx, issueID, dependsOnID) {
+		return false // no cycle, proceed with create
+	}
+
+	// Cycle detected. Find the conflicting edge (the reverse: dependsOnID -> issueID path)
+	// For simple A->B vs B->A case, the conflicting edge is dependsOnID -> issueID
+	conflictIssueID := dependsOnID
+	conflictDependsOnID := issueID
+
+	// Deterministic rule: smaller (issue_id, depends_on_id) wins
+	incomingKey := issueID + "|" + dependsOnID
+	conflictKey := conflictIssueID + "|" + conflictDependsOnID
+
+	if incomingKey < conflictKey {
+		// Incoming edge wins - remove the conflicting edge
+		_, err := tx.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`,
+			conflictIssueID, conflictDependsOnID)
+		if err != nil {
+			slog.Warn("cycle resolution: failed to remove conflicting edge",
+				"conflict", conflictKey, "err", err)
+			return true // skip incoming on error
+		}
+		slog.Info("cycle resolution: removed conflicting edge, applying incoming",
+			"removed", conflictKey, "applying", incomingKey)
+		return false // apply incoming
+	}
+
+	// Conflicting edge wins - skip incoming
+	slog.Info("cycle resolution: keeping existing edge, skipping incoming",
+		"kept", conflictKey, "skipped", incomingKey)
+	return true
+}
+
 func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
 	if !validColumnName.MatchString(table) {
 		return nil, fmt.Errorf("invalid table name: %q", table)
@@ -156,6 +255,14 @@ func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, 
 
 	switch event.ActionType {
 	case "create", "update":
+		// Check for dependency cycles before creating issue_dependencies
+		if event.ActionType == "create" && event.EntityType == "issue_dependencies" {
+			if skipped := checkAndResolveCyclicDependency(tx, event); skipped {
+				slog.Warn("sync: skipped dependency create (cycle resolution)",
+					"entity_id", event.EntityID, "seq", event.ServerSeq)
+				return applyResult{}, nil
+			}
+		}
 		if event.ActionType == "update" {
 			// Try partial update when previous_data is available
 			if len(previousData) > 0 && string(previousData) != "{}" {
@@ -168,6 +275,8 @@ func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, 
 		return applyResult{}, deleteEntity(tx, event.EntityType, event.EntityID)
 	case "soft_delete":
 		return applyResult{}, softDeleteEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
+	case "restore":
+		return applyResult{}, restoreEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
 	default:
 		return applyResult{}, fmt.Errorf("unknown action type: %q", event.ActionType)
 	}
@@ -337,6 +446,15 @@ func softDeleteEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Ti
 	return nil
 }
 
+// restoreEntity clears deleted_at on a row. No-op if the row does not exist.
+func restoreEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Time) error {
+	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL, updated_at = ? WHERE id = ?", entityType)
+	if _, err := tx.Exec(query, timestamp, entityID); err != nil {
+		return fmt.Errorf("restore %s/%s: %w", entityType, entityID, err)
+	}
+	return nil
+}
+
 // buildInsert sorts fields alphabetically and returns column list, placeholders, and values.
 // Returns an error if any key is not a valid SQL column name.
 func buildInsert(fields map[string]any) (cols string, placeholders string, vals []any, err error) {
@@ -366,6 +484,12 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 // All other array/object fields are stored as JSON strings.
 func normalizeFieldsForDB(entityType string, fields map[string]any) {
 	for k, v := range fields {
+		if v == nil {
+			if entityType == "issues" && (k == "implementer_session" || k == "reviewer_session" || k == "creator_session") {
+				fields[k] = ""
+			}
+			continue
+		}
 		switch val := v.(type) {
 		case []any:
 			if entityType == "issues" && k == "labels" {

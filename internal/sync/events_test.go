@@ -634,3 +634,163 @@ func TestUpsertEntity_AllFieldsUnknown(t *testing.T) {
 		t.Fatal("expected error when all fields are unknown")
 	}
 }
+
+// depSchema adds the issue_dependencies table for cycle detection tests
+const depSchema = `CREATE TABLE issue_dependencies (
+	id           TEXT PRIMARY KEY,
+	issue_id     TEXT NOT NULL,
+	depends_on_id TEXT NOT NULL,
+	relation_type TEXT NOT NULL DEFAULT 'depends_on',
+	created_at   DATETIME
+);`
+
+// depValidator allows issue_dependencies entity type
+var depValidator EntityValidator = func(t string) bool {
+	return t == "issues" || t == "issue_dependencies"
+}
+
+func setupDepDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(testSchema + depSchema); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func TestWouldCreateCycleTx_NoCycle(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	// Add A->B
+	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert A->B: %v", err)
+	}
+
+	// B->C should not create cycle
+	if wouldCreateCycleTx(tx, "B", "C") {
+		t.Fatal("B->C should not create cycle")
+	}
+}
+
+func TestWouldCreateCycleTx_DirectCycle(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	// Add A->B
+	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert A->B: %v", err)
+	}
+
+	// B->A would create cycle
+	if !wouldCreateCycleTx(tx, "B", "A") {
+		t.Fatal("B->A should create cycle with existing A->B")
+	}
+}
+
+func TestWouldCreateCycleTx_TransitiveCycle(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	// Add A->B, B->C
+	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert A->B: %v", err)
+	}
+	_, err = tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d2', 'B', 'C', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert B->C: %v", err)
+	}
+
+	// C->A would create cycle (C->A->B->C)
+	if !wouldCreateCycleTx(tx, "C", "A") {
+		t.Fatal("C->A should create transitive cycle")
+	}
+}
+
+func TestCheckAndResolveCyclicDependency_NoConflict(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	event := Event{
+		EntityType: "issue_dependencies",
+		EntityID:   "d1",
+		Payload:    []byte(`{"issue_id":"A","depends_on_id":"B","relation_type":"depends_on"}`),
+	}
+
+	if checkAndResolveCyclicDependency(tx, event) {
+		t.Fatal("should not skip when no cycle exists")
+	}
+}
+
+func TestCheckAndResolveCyclicDependency_SkipsLargerKey(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	// Add B->A first (larger key)
+	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'B', 'A', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert B->A: %v", err)
+	}
+
+	// Try to add A->B (smaller key) - should win, remove B->A
+	event := Event{
+		EntityType: "issue_dependencies",
+		EntityID:   "d2",
+		Payload:    []byte(`{"issue_id":"A","depends_on_id":"B","relation_type":"depends_on"}`),
+	}
+
+	// A|B < B|A, so incoming A->B wins and B->A is removed
+	if checkAndResolveCyclicDependency(tx, event) {
+		t.Fatal("A->B (smaller key) should win over B->A (larger key)")
+	}
+
+	// Verify B->A was removed
+	var count int
+	tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='B' AND depends_on_id='A'").Scan(&count)
+	if count != 0 {
+		t.Fatalf("B->A should have been removed, got count=%d", count)
+	}
+}
+
+func TestCheckAndResolveCyclicDependency_KeepsSmallerKey(t *testing.T) {
+	db := setupDepDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	// Add A->B first (smaller key)
+	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
+	if err != nil {
+		t.Fatalf("insert A->B: %v", err)
+	}
+
+	// Try to add B->A (larger key) - should be skipped, A->B stays
+	event := Event{
+		EntityType: "issue_dependencies",
+		EntityID:   "d2",
+		Payload:    []byte(`{"issue_id":"B","depends_on_id":"A","relation_type":"depends_on"}`),
+	}
+
+	// B|A > A|B, so incoming B->A is skipped
+	if !checkAndResolveCyclicDependency(tx, event) {
+		t.Fatal("B->A (larger key) should be skipped in favor of existing A->B (smaller key)")
+	}
+
+	// Verify A->B still exists
+	var count int
+	tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='A' AND depends_on_id='B'").Scan(&count)
+	if count != 1 {
+		t.Fatalf("A->B should still exist, got count=%d", count)
+	}
+}

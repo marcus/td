@@ -145,3 +145,25 @@ func (db *DB) CountPendingEvents() (int64, error) {
 	err := db.conn.QueryRow(`SELECT COUNT(*) FROM action_log WHERE synced_at IS NULL AND undone = 0`).Scan(&count)
 	return count, err
 }
+
+// ClearActionLogSyncState sets synced_at and server_seq to NULL on all action_log entries,
+// allowing them to be re-pushed to a new server. Returns the number of rows affected.
+func (db *DB) ClearActionLogSyncState() (int64, error) {
+	var affected int64
+	err := db.withWriteLock(func() error {
+		result, err := db.conn.Exec(`UPDATE action_log SET synced_at = NULL, server_seq = NULL WHERE synced_at IS NOT NULL`)
+		if err != nil {
+			return err
+		}
+		affected, _ = result.RowsAffected()
+		return nil
+	})
+	return affected, err
+}
+
+// CountSyncedEvents returns the number of action_log entries with synced_at set.
+func (db *DB) CountSyncedEvents() (int64, error) {
+	var count int64
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM action_log WHERE synced_at IS NOT NULL`).Scan(&count)
+	return count, err
+}

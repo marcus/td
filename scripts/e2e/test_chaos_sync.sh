@@ -22,6 +22,9 @@ INJECT_FAILURES=false
 MID_TEST_CHECKS=true
 JSON_REPORT=""
 REPORT_FILE=""
+SOAK_MODE=false
+SOAK_DURATION="${SOAK_DURATION:-30m}"
+SOAK_COLLECT_INTERVAL=30  # seconds between metric collections
 
 # ---- Usage ----
 usage() {
@@ -34,6 +37,8 @@ configurable sync timing, conflict injection, and convergence verification.
 Options:
   --actions N        Total actions to perform (default: 100)
   --duration N       Seconds to run; overrides --actions when >0 (default: 0)
+  --soak [DURATION]  Enable soak/endurance mode; collects metrics every 30s
+                     Duration format: 30m, 1h, 5m (default: 30m, or SOAK_DURATION env)
   --seed N           RANDOM seed for reproducibility (default: \$\$)
   --sync-mode MODE   Sync strategy: adaptive, aggressive, random (default: adaptive)
   --verbose          Detailed per-action output (default: false)
@@ -47,6 +52,20 @@ Options:
   --json-report PATH Write JSON summary to file (for CI integration)
   --report-file PATH Write text report to file instead of stdout
   -h, --help         Show this help
+
+Soak Mode:
+  Soak mode runs for extended periods to detect resource leaks. Metrics collected:
+  - Memory (Go runtime): alloc_mb, sys_mb, num_gc, goroutines
+  - File descriptors: server process FD count
+  - SQLite: WAL file sizes
+  - Disk: .todos directory growth
+
+  Configure thresholds via env vars:
+    SOAK_MEM_GROWTH_PERCENT=50    Max memory growth %
+    SOAK_MAX_FD_COUNT=100         Max file descriptors
+    SOAK_MAX_WAL_MB=50            Max WAL size in MB
+    SOAK_MAX_GOROUTINES=50        Max goroutine count
+    SOAK_MAX_DIR_GROWTH_MB=100    Max directory growth in MB
 
 Examples:
   # Quick smoke test
@@ -69,6 +88,12 @@ Examples:
 
   # Time-based
   bash scripts/e2e/test_chaos_sync.sh --duration 60
+
+  # Soak test (30 minutes, detect resource leaks)
+  bash scripts/e2e/test_chaos_sync.sh --soak 30m --actions 500
+
+  # Quick soak test for CI (5 minutes)
+  bash scripts/e2e/test_chaos_sync.sh --soak 5m --actions 100
 EOF
 }
 
@@ -89,10 +114,39 @@ while [[ $# -gt 0 ]]; do
         --no-mid-test-checks) MID_TEST_CHECKS=false; shift ;;
         --json-report)    JSON_REPORT="$2"; shift 2 ;;
         --report-file)    REPORT_FILE="$2"; shift 2 ;;
+        --soak)
+            SOAK_MODE=true
+            # Check if next arg is a duration (not a flag)
+            if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then
+                SOAK_DURATION="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
         -h|--help)        usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
 done
+
+# ---- Soak mode setup ----
+# Convert soak duration to seconds and set DURATION
+if [ "$SOAK_MODE" = "true" ]; then
+    # Parse duration (supports 30m, 1h, 5m, 60 for seconds)
+    _soak_parse_duration() {
+        local dur="$1"
+        if [[ "$dur" =~ ^([0-9]+)m$ ]]; then
+            echo $(( ${BASH_REMATCH[1]} * 60 ))
+        elif [[ "$dur" =~ ^([0-9]+)h$ ]]; then
+            echo $(( ${BASH_REMATCH[1]} * 3600 ))
+        elif [[ "$dur" =~ ^([0-9]+)s?$ ]]; then
+            echo "${BASH_REMATCH[1]}"
+        else
+            echo "60"  # default 1 minute if unparseable
+        fi
+    }
+    DURATION=$(_soak_parse_duration "$SOAK_DURATION")
+fi
 
 # ---- Setup ----
 HARNESS_ACTORS="$ACTORS"
@@ -112,6 +166,13 @@ CHAOS_SYNC_BATCH_MAX="$BATCH_MAX"
 CHAOS_VERBOSE="$VERBOSE"
 CHAOS_INJECT_FAILURES="$INJECT_FAILURES"
 
+# ---- Soak metrics initialization ----
+if [ "$SOAK_MODE" = "true" ]; then
+    init_soak_metrics
+    _step "Soak mode enabled (duration: ${SOAK_DURATION}, metrics: $SOAK_METRICS_FILE)"
+fi
+_SOAK_LAST_COLLECT=0
+
 # ---- Initial sync ----
 td_a sync >/dev/null 2>&1 || true
 td_b sync >/dev/null 2>&1 || true
@@ -124,16 +185,26 @@ _chaos_inject_label=""
 if [ "$INJECT_FAILURES" = "true" ]; then
     _chaos_inject_label=", inject-failures: on"
 fi
+_soak_label=""
+if [ "$SOAK_MODE" = "true" ]; then
+    _soak_label=", soak: on"
+fi
 if [ "$DURATION" -gt 0 ] 2>/dev/null; then
-    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label})"
+    _step "Chaos sync (duration: ${DURATION}s, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label}${_soak_label})"
 else
-    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label})"
+    _step "Chaos sync (actions: $ACTIONS, seed: $SEED, sync: $SYNC_MODE, conflict: ${CONFLICT_RATE}%, actors: $ACTORS${_chaos_inject_label}${_soak_label})"
 fi
 
 # ---- Main loop ----
 CHAOS_TIME_START=$(date +%s)
 START_TIME=$CHAOS_TIME_START
-MAX_ITERATIONS=$((ACTIONS * 5))
+# Safety valve: in duration mode, don't cap iterations (use duration as limit)
+if [ "$DURATION" -gt 0 ] 2>/dev/null; then
+    # Estimate ~10 actions/second max, with 5x buffer
+    MAX_ITERATIONS=$((DURATION * 50))
+else
+    MAX_ITERATIONS=$((ACTIONS * 5))
+fi
 ITERATIONS=0
 
 is_done() {
@@ -214,6 +285,18 @@ while ! is_done; do
     # Mid-test convergence check (after sync, at configured interval)
     maybe_check_convergence
 
+    # Soak metrics collection (every SOAK_COLLECT_INTERVAL seconds)
+    if [ "$SOAK_MODE" = "true" ]; then
+        local_now=$(date +%s)
+        if [ $(( local_now - _SOAK_LAST_COLLECT )) -ge "$SOAK_COLLECT_INTERVAL" ]; then
+            collect_soak_metrics
+            _SOAK_LAST_COLLECT=$local_now
+            if [ "$VERBOSE" = "true" ]; then
+                _ok "soak: collected metrics at ${local_now}s"
+            fi
+        fi
+    fi
+
     # Progress indicator every 10 actions
     if [ "$CHAOS_ACTION_COUNT" -gt 0 ] && [ $(( CHAOS_ACTION_COUNT % 10 )) -eq 0 ]; then
         if [ "$DURATION" -gt 0 ] 2>/dev/null; then
@@ -224,6 +307,11 @@ while ! is_done; do
         fi
     fi
 done
+
+# Final soak metrics collection
+if [ "$SOAK_MODE" = "true" ]; then
+    collect_soak_metrics
+fi
 
 # ---- Final sync (full round-robin for convergence) ----
 _step "Final sync"
@@ -298,6 +386,18 @@ if [ "$ACTORS" -ge 3 ]; then
     verify_event_counts "$DB_A" "$DB_C"
 fi
 
+# ---- Soak metrics verification ----
+SOAK_THRESHOLD_FAILED=0
+if [ "$SOAK_MODE" = "true" ] && [ -f "$SOAK_METRICS_FILE" ]; then
+    if ! verify_soak_metrics "$SOAK_METRICS_FILE"; then
+        SOAK_THRESHOLD_FAILED=1
+    fi
+
+    _step "Soak metrics summary"
+    soak_metrics_summary "$SOAK_METRICS_FILE"
+    echo "  Metrics file:     $SOAK_METRICS_FILE"
+fi
+
 # ---- Summary stats ----
 _step "Summary"
 echo "  Actors:                 $ACTORS"
@@ -314,6 +414,10 @@ echo "  Edge-case data used:    $CHAOS_EDGE_DATA_USED"
 echo "  Issues created:         ${#CHAOS_ISSUE_IDS[@]}"
 echo "  Boards created:         ${#CHAOS_BOARD_NAMES[@]}"
 echo "  Seed:                   $SEED (use --seed $SEED to reproduce)"
+if [ "$SOAK_MODE" = "true" ]; then
+    echo "  Soak duration:          ${SOAK_DURATION} (${DURATION}s)"
+    echo "  Soak thresholds:        $SOAK_VERIFY_PASSED passed, $SOAK_VERIFY_FAILED failed"
+fi
 
 CHAOS_TIME_END=$(date +%s)
 
@@ -327,6 +431,10 @@ fi
 # ---- Final check ----
 if [ "$CHAOS_UNEXPECTED_FAILURES" -gt 0 ]; then
     _fail "$CHAOS_UNEXPECTED_FAILURES unexpected failures"
+fi
+
+if [ "$SOAK_THRESHOLD_FAILED" -gt 0 ]; then
+    _fail "soak test: resource thresholds exceeded"
 fi
 
 report

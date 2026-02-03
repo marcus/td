@@ -119,9 +119,9 @@ func TestParser(t *testing.T) {
 		{"((status = open))", false},
 
 		// Errors
-		{"status = ", true},     // missing value
+		{"status = ", true},      // missing value
 		{"(status = open", true}, // unclosed paren
-		{"= open", true},        // missing field
+		{"= open", true},         // missing field
 	}
 
 	for _, tt := range tests {
@@ -294,7 +294,7 @@ func TestQueryValidation(t *testing.T) {
 
 		// Invalid field
 		{"stauts = open", 1}, // typo
-		{"foo = bar", 1},    // unknown field
+		{"foo = bar", 1},     // unknown field
 
 		// Invalid enum value
 		{"status = unknown", 1},
@@ -329,10 +329,16 @@ func TestEnumValueNormalization(t *testing.T) {
 		{"priority = p0", "P0"},
 		{"priority = p1", "P1"},
 		{"priority <= p2", "P2"},
+		// Priority: legacy word forms
+		{"priority = high", "P1"},
+		{"priority = critical", "P0"},
 		// Status: uppercase/mixed → lowercase
 		{"status = OPEN", "open"},
 		{"status = Open", "open"},
 		{"status = IN_PROGRESS", "in_progress"},
+		// Status: legacy hyphenated forms
+		{"status = in-review", "in_review"},
+		{"status:open", "open"},
 		// Type: uppercase → lowercase
 		{"type = BUG", "bug"},
 		{"type = Feature", "feature"},
@@ -437,10 +443,10 @@ func containsSubstring(s, substr string) bool {
 
 func TestSortClauseLexer(t *testing.T) {
 	tests := []struct {
-		input       string
-		wantToken   TokenType
-		wantValue   string
-		wantErr     bool
+		input     string
+		wantToken TokenType
+		wantValue string
+		wantErr   bool
 	}{
 		{"sort:created", TokenSort, "created", false},
 		{"sort:-updated", TokenSort, "-updated", false},

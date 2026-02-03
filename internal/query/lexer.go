@@ -15,19 +15,19 @@ const (
 	TokenError
 
 	// Literals
-	TokenIdent   // field names, function names
-	TokenString  // "quoted" or 'quoted' strings
-	TokenNumber  // integers
-	TokenDate    // 2024-01-15
+	TokenIdent  // field names, function names
+	TokenString // "quoted" or 'quoted' strings
+	TokenNumber // integers
+	TokenDate   // 2024-01-15
 
 	// Operators
-	TokenEq       // =
-	TokenNeq      // !=
-	TokenLt       // <
-	TokenGt       // >
-	TokenLte      // <=
-	TokenGte      // >=
-	TokenContains // ~
+	TokenEq          // =
+	TokenNeq         // !=
+	TokenLt          // <
+	TokenGt          // >
+	TokenLte         // <=
+	TokenGte         // >=
+	TokenContains    // ~
 	TokenNotContains // !~
 
 	// Boolean operators
@@ -42,9 +42,9 @@ const (
 	TokenDot    // .
 
 	// Special values
-	TokenAtMe   // @me
-	TokenEmpty  // EMPTY
-	TokenNull   // NULL
+	TokenAtMe  // @me
+	TokenEmpty // EMPTY
+	TokenNull  // NULL
 
 	// Sort clause
 	TokenSort // sort:field or sort:-field
@@ -87,11 +87,11 @@ func (t TokenType) String() string {
 
 // Token represents a lexer token
 type Token struct {
-	Type    TokenType
-	Value   string
-	Pos     int // position in input
-	Line    int
-	Column  int
+	Type   TokenType
+	Value  string
+	Pos    int // position in input
+	Line   int
+	Column int
 }
 
 func (t Token) String() string {
@@ -223,6 +223,10 @@ func (l *Lexer) nextToken() Token {
 	case '!':
 		l.advance()
 		return Token{Type: TokenNot, Value: "!", Pos: startPos, Line: startLine, Column: startCol}
+	case ':':
+		// Legacy syntax: field:value (treat ':' as '=')
+		l.advance()
+		return Token{Type: TokenEq, Value: ":", Pos: startPos, Line: startLine, Column: startCol}
 	}
 
 	// Quoted strings

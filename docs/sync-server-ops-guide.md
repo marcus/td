@@ -167,6 +167,287 @@ SYNC_BASE_URL=https://sync.example.com   # Set to your public URL
 SYNC_SHUTDOWN_TIMEOUT=30s
 ```
 
+## Production Deployment
+
+This section walks through deploying td-sync to a VPS with SSL and nginx.
+
+### Prerequisites
+
+- A VPS running Ubuntu 20.04+ (or similar Linux distro)
+- A domain name with DNS access
+- SSH access to the VPS as root (or sudo user)
+- Docker and Docker Compose on the VPS
+
+### 1. DNS Setup
+
+Create an A record pointing your subdomain to your VPS IP:
+
+```bash
+# Example using DigitalOcean CLI
+doctl compute domain records create example.com \
+  --record-type A \
+  --record-name sync \
+  --record-data <VPS_IP> \
+  --record-ttl 300
+
+# Verify (may take a few minutes to propagate)
+dig sync.example.com +short
+```
+
+For other DNS providers, add an A record through their web interface.
+
+### 2. Install Dependencies (on VPS)
+
+```bash
+ssh root@<VPS_IP>
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+systemctl enable docker
+
+# Install certbot and nginx
+apt update && apt install -y certbot python3-certbot-nginx nginx
+```
+
+### 3. SSL Certificate
+
+Stop any services using port 80, then get a certificate:
+
+```bash
+# Stop nginx/apache if running
+systemctl stop nginx
+systemctl stop apache2 2>/dev/null
+
+# Get certificate (replace with your domain and email)
+certbot certonly --standalone \
+  -d sync.example.com \
+  --non-interactive \
+  --agree-tos \
+  --email you@example.com
+
+# Enable auto-renewal
+systemctl enable --now certbot.timer
+```
+
+### 4. nginx Configuration
+
+Create `/etc/nginx/sites-available/td-sync`:
+
+```nginx
+server {
+    listen 80;
+    server_name sync.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name sync.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/sync.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/sync.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    access_log /var/log/nginx/td-sync.access.log;
+    error_log /var/log/nginx/td-sync.error.log;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        client_max_body_size 12M;
+    }
+}
+```
+
+Enable and start nginx:
+
+```bash
+ln -sf /etc/nginx/sites-available/td-sync /etc/nginx/sites-enabled/
+nginx -t && systemctl start nginx
+```
+
+### 5. Deploy the Application
+
+Use the deploy script (see [Multi-Environment Deployment](#multi-environment-deployment) for details):
+
+```bash
+# 1. Copy and configure the environment template
+cp deploy/envs/.env.staging.example deploy/envs/.env.staging
+
+# 2. Edit with your values
+#    - DEPLOY_HOST: Your VPS IP or hostname
+#    - DEPLOY_USER: SSH user (e.g., root or deploy)
+#    - DEPLOY_PATH: Remote path (e.g., /opt/td-sync)
+#    - SYNC_BASE_URL: Your public URL
+vim deploy/envs/.env.staging
+
+# 3. Deploy
+./deploy/deploy.sh staging --build
+```
+
+The deploy script handles rsync, environment config, and docker compose automatically.
+
+### 6. Firewall Configuration
+
+```bash
+ufw allow 22/tcp   # SSH
+ufw allow 80/tcp   # HTTP (for SSL renewal)
+ufw allow 443/tcp  # HTTPS
+ufw --force enable
+ufw status
+```
+
+### 7. Verification
+
+Run these checks to confirm the deployment:
+
+```bash
+# DNS resolves correctly
+dig sync.example.com +short
+
+# Health check returns OK
+curl -s https://sync.example.com/healthz
+# Expected: {"status":"ok"}
+
+# Auth verification page loads
+curl -s -o /dev/null -w "%{http_code}" https://sync.example.com/auth/verify
+# Expected: 200
+
+# Container is healthy
+docker compose ps
+# Expected: STATUS shows "healthy"
+```
+
+Test the full auth flow from a client machine:
+
+```bash
+td config set sync.url https://sync.example.com
+td auth login
+```
+
+### 8. Post-Deployment Security
+
+After creating your initial user account, disable public signups by editing your local env file:
+
+```bash
+# Edit deploy/envs/.env.staging (or .env.prod)
+# Change: SYNC_ALLOW_SIGNUP=true -> SYNC_ALLOW_SIGNUP=false
+
+# Re-deploy
+./deploy/deploy.sh staging
+```
+
+### Updating the Server
+
+To deploy updates:
+
+```bash
+./deploy/deploy.sh staging
+
+# Or force a rebuild:
+./deploy/deploy.sh staging --build
+```
+
+### Viewing Logs
+
+```bash
+# Quick status check (container status + recent logs + health)
+./deploy/deploy.sh staging --status
+
+# Tail container logs after deploy
+./deploy/deploy.sh staging --logs
+
+# On VPS directly
+ssh root@<VPS_IP>
+cd /opt/td-sync/deploy && docker compose logs -f td-sync
+
+# nginx logs
+tail -f /var/log/nginx/td-sync.access.log
+tail -f /var/log/nginx/td-sync.error.log
+```
+
+## Multi-Environment Deployment
+
+The deploy system supports dev, staging, and production environments with a unified deployment script.
+
+### Quick Start
+
+```bash
+# 1. Copy the environment template
+cp deploy/envs/.env.prod.example deploy/envs/.env.prod
+
+# 2. Fill in your values (DEPLOY_HOST, S3 credentials, etc.)
+vim deploy/envs/.env.prod
+
+# 3. Deploy
+./deploy/deploy.sh prod
+```
+
+### Environments
+
+| Environment | Purpose | Runs On | S3 Backup |
+|-------------|---------|---------|-----------|
+| dev | Local development | localhost | No |
+| staging | Pre-production testing | VPS | Optional |
+| prod | Production | VPS | Required |
+
+### Deploy Script
+
+```bash
+./deploy.sh <env> [options]
+
+Environments: dev, staging, prod
+
+Options:
+  --build      Force Docker rebuild
+  --logs       Tail logs after deployment
+  --dry-run    Validate config only
+  --status     Check deployment status
+  --stop       Stop the deployment
+```
+
+### Environment Configuration
+
+Each environment has a template in `deploy/envs/`:
+
+- `.env.dev.example` - Local development (relaxed rate limits, debug logging)
+- `.env.staging.example` - Staging VPS (production-like settings)
+- `.env.prod.example` - Production VPS (strict settings, S3 backup required)
+
+Copy the template to `.env.<env>` and fill in your values. The actual `.env` files are gitignored to protect secrets.
+
+### Required Variables
+
+**All environments:**
+- `SYNC_BASE_URL` - Public URL of the server
+
+**Remote environments (staging, prod):**
+- `DEPLOY_HOST` - VPS hostname or IP
+- `DEPLOY_USER` - SSH user for deployment
+- `DEPLOY_PATH` - Remote path (e.g., `/opt/td-sync`)
+
+**Production only:**
+- `LITESTREAM_S3_BUCKET` - S3 bucket for backups
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` - AWS credentials
+
+### Adding a New Environment
+
+See `deploy/envs/README.md` for instructions on creating additional environments.
+
 ## Backup and Recovery
 
 ### Default: file-based replica

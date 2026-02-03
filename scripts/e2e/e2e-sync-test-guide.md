@@ -6,10 +6,12 @@ Live integration tests that build real `td` + `td-sync` binaries, start a local 
 
 ```
 scripts/e2e/
-  harness.sh        # shared setup/teardown/assertions — source this
-  run-all.sh        # runs every test_*.sh, reports pass/fail
-  test_*.sh         # individual test scripts
-  GUIDE.md          # this file
+  harness.sh                    # shared setup/teardown/assertions — source this
+  chaos_lib.sh                  # chaos test library (44 actions, verification, state tracking)
+  run-all.sh                    # runs every test_*.sh, reports pass/fail
+  run_regression_seeds.sh       # runs known seeds from regression_seeds.json
+  regression_seeds.json         # database of reproducible test seeds
+  test_*.sh                     # individual test scripts
 ```
 
 ## Running
@@ -42,7 +44,7 @@ bash scripts/e2e/test_alternating_actions.sh --actions 6
 
 ## Chaos sync test
 
-`test_chaos_sync.sh` is a comprehensive stress test that randomly exercises every td mutation type across two syncing clients. It randomly selects from ~28 action types (create, update, delete, status transitions, comments, logs, dependencies, boards, handoffs) with realistic frequency weights, generates arbitrary-length content, and verifies full DB convergence after sync.
+`test_chaos_sync.sh` is a comprehensive stress test that randomly exercises every td mutation type across two or three syncing clients. It randomly selects from 44 action types (create, update, delete, status transitions, comments, logs, dependencies, boards, handoffs, file links, work sessions) with realistic frequency weights, generates arbitrary-length content with edge-case injection, and verifies full DB convergence after sync.
 
 ```bash
 bash scripts/e2e/test_chaos_sync.sh                              # default: 100 actions
@@ -51,6 +53,7 @@ bash scripts/e2e/test_chaos_sync.sh --duration 60                # run for 60 se
 bash scripts/e2e/test_chaos_sync.sh --seed 42 --actions 50       # reproducible
 bash scripts/e2e/test_chaos_sync.sh --sync-mode aggressive       # sync after every action
 bash scripts/e2e/test_chaos_sync.sh --conflict-rate 30 --verbose # 30% simultaneous mutations
+bash scripts/e2e/test_chaos_sync.sh --actors 3                   # three-actor test
 ```
 
 | Flag | Default | Effect |
@@ -63,8 +66,131 @@ bash scripts/e2e/test_chaos_sync.sh --conflict-rate 30 --verbose # 30% simultane
 | `--conflict-rate N` | `20` | % of rounds where both clients mutate before syncing |
 | `--batch-min N` | `3` | Min actions between syncs (adaptive mode) |
 | `--batch-max N` | `10` | Max actions between syncs (adaptive mode) |
+| `--actors N` | `2` | Number of actors (2 or 3) |
+| `--mid-test-checks` | on | Enable periodic convergence checks during chaos |
+| `--inject-failures` | off | Inject ~7% partial sync failures |
+| `--json-report PATH` | — | Write JSON report for CI |
 
 The action library lives in `chaos_lib.sh`. Each action type has an `exec_<action>` function that handles preconditions, state tracking, and expected-failure detection.
+
+## Scenario-based tests
+
+These tests exercise specific sync edge cases:
+
+### Network partition (`test_network_partition.sh`)
+
+Simulates a client going offline, accumulating mutations, then reconnecting:
+
+```bash
+bash scripts/e2e/test_network_partition.sh --phase1-actions 20 --offline-actions 40 --online-actions 30
+```
+
+- Phase 1: Both clients sync normally
+- Phase 2: Actor A goes offline (no sync), accumulates 30-50 mutations while B continues
+- Phase 3: A reconnects and syncs large batch
+- Verifies: Tombstone conflicts, field collisions, batch sync correctness
+
+### Late-joining client (`test_late_join.sh`)
+
+Tests a new client joining after substantial history exists:
+
+```bash
+bash scripts/e2e/test_late_join.sh --phase1-issues 50 --phase3-actions 30
+```
+
+- Phase 1: A and B create 50+ issues with syncs
+- Phase 2: C joins late, links to project, performs initial sync
+- Phase 3: All three actors continue chaos
+- Verifies: Full history transfer, convergence across all actor pairs
+
+### Server restart (`test_server_restart.sh`)
+
+Tests server crash/restart resilience:
+
+```bash
+bash scripts/e2e/test_server_restart.sh --phase1-actions 30 --offline-actions-a 20 --offline-actions-b 20
+```
+
+- Phase 1: Normal chaos with syncs
+- Phase 2: Server stops, clients accumulate local changes
+- Phase 3: Server restarts, clients sync accumulated changes
+- Verifies: Server data durability, client retry logic, convergence
+
+### Create-delete-recreate (`test_create_delete_recreate.sh`)
+
+Stresses tombstone vs new-entity disambiguation:
+
+```bash
+bash scripts/e2e/test_create_delete_recreate.sh --cycles 15 --extra-chaos 20
+```
+
+- Rapid cycles of create → sync → delete → sync → create similar → sync
+- Concurrent conflicts: A deletes while B creates similar-titled issue
+- Verifies: Deleted entities stay deleted, new entities are distinct
+
+### Parent deletion cascade (`test_parent_delete_cascade.sh`)
+
+Tests orphan handling when parent is deleted:
+
+```bash
+bash scripts/e2e/test_parent_delete_cascade.sh --verbose
+```
+
+- Creates parent with children, deletes parent, verifies orphan state
+- Tests concurrent modification: B modifies child while A deletes parent
+- Tests deep hierarchies (grandchildren)
+- Verifies: Orphan state consistency across sync
+
+### Large payload (`test_large_payload.sh`)
+
+Stress tests with large data:
+
+```bash
+bash scripts/e2e/test_large_payload.sh --payload-size large
+```
+
+| Size | Description | Comments | Dependencies |
+|------|-------------|----------|--------------|
+| `normal` | 10K chars | 50 | 20 |
+| `large` | 25K chars | 100 | 40 |
+| `xlarge` | 50K chars | 200 | 80 |
+
+- Verifies: No truncation, performance metrics
+
+### Event ordering (`test_event_ordering.sh`)
+
+Verifies causal ordering in event logs:
+
+```bash
+bash scripts/e2e/test_event_ordering.sh --actors 2
+```
+
+- Creates hierarchical data with parent-child relationships
+- Verifies: Updates don't precede creates, children don't precede parents, monotonic server_seq
+
+## Regression seed suite
+
+Run known seeds that previously caught bugs:
+
+```bash
+bash scripts/e2e/run_regression_seeds.sh              # run all seeds
+bash scripts/e2e/run_regression_seeds.sh --fixed-only # CI: only seeds for fixed bugs (should pass)
+bash scripts/e2e/run_regression_seeds.sh --unfixed-only # verify unfixed bugs still fail
+bash scripts/e2e/run_regression_seeds.sh --json-output # CI-friendly JSON output
+```
+
+Add new seeds to `regression_seeds.json` when bugs are found:
+
+```json
+{
+  "seed": 12345,
+  "test": "chaos_sync",
+  "description": "Field collision causes permanent divergence",
+  "added": "2024-02-01",
+  "args": {"actions": 50, "conflict_rate": 30},
+  "fixed": true
+}
+```
 
 ## Extending the chaos test
 
@@ -135,6 +261,21 @@ report
 ```bash
 td_a <args...>   # run td as alice (cd's into CLIENT_A_DIR, sets HOME)
 td_b <args...>   # run td as bob
+td_c <args...>   # run td as carol (3-actor tests)
+```
+
+### Server lifecycle (for restart tests)
+
+```bash
+stop_server      # kill server, wait for exit
+start_server     # restart with same config, wait for healthz
+restart_server   # stop + start
+```
+
+### Late joiner setup
+
+```bash
+setup_late_joiner "c"   # create client C mid-test, auth, link to project
 ```
 
 ### Assertions
@@ -175,6 +316,20 @@ _fatal "Detail"         # prints red FATAL, exits immediately
 ```
 
 Server logs are at `$WORKDIR/server.log`. On failure, `report` prints the path.
+
+### Verification functions (chaos_lib.sh)
+
+For tests that source `chaos_lib.sh`:
+
+```bash
+verify_convergence "$DB_A" "$DB_B"       # full convergence check (issues, comments, logs, etc.)
+verify_convergence_quick "$DB_A" "$DB_B" # lightweight check (issues, boards, positions only)
+verify_idempotency "$DB_A" "$DB_B" 3     # N round-trips produce no changes
+verify_event_counts "$DB_A" "$DB_B"      # event count and distribution comparison
+verify_event_ordering "$DB_A"            # causal ordering in single DB
+verify_event_ordering_cross_db "$DB_A" "$DB_B"  # cross-DB ordering consistency
+maybe_check_convergence                  # periodic check (call after maybe_sync)
+```
 
 ## Conventions
 

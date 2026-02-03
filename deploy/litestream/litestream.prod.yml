@@ -1,0 +1,11 @@
+# Prod: file backup + required S3
+dbs:
+  - path: /data/server.db
+    replicas:
+      - type: file
+        path: /backups/server.db
+      - type: s3
+        bucket: ${LITESTREAM_S3_BUCKET}
+        path: prod/server.db
+        endpoint: ${LITESTREAM_S3_ENDPOINT}
+        region: ${AWS_DEFAULT_REGION}

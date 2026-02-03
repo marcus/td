@@ -54,8 +54,10 @@ var restoreCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		sess, _ := session.GetOrCreate(database)
+
 		for _, issueID := range args {
-			if err := database.RestoreIssue(issueID); err != nil {
+			if err := database.RestoreIssueLogged(issueID, sess.ID); err != nil {
 				output.Error("failed to restore %s: %v", issueID, err)
 				continue
 			}

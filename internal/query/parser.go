@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/marcus/td/internal/models"
 )
 
 // MaxQueryDepth limits nesting to prevent stack overflow
@@ -199,11 +201,11 @@ func (p *Parser) parsePrimary() (Node, error) {
 		if p.depth > MaxQueryDepth {
 			tok := p.current()
 			return nil, &ParseError{
-				Message:  fmt.Sprintf("query exceeds maximum nesting depth of %d", MaxQueryDepth),
-				Pos:      tok.Pos,
-				Line:     tok.Line,
-				Column:   tok.Column,
-				Token:    tok,
+				Message: fmt.Sprintf("query exceeds maximum nesting depth of %d", MaxQueryDepth),
+				Pos:     tok.Pos,
+				Line:    tok.Line,
+				Column:  tok.Column,
+				Token:   tok,
 			}
 		}
 		expr, err := p.parseQuery()
@@ -627,15 +629,9 @@ func validateFieldExpr(f *FieldExpr, errs *[]error) {
 	// Validate enum values
 	if enumVals, ok := EnumValues[f.Field]; ok {
 		if strVal, ok := f.Value.(string); ok {
-			found := false
-			for _, v := range enumVals {
-				if strings.EqualFold(v, strVal) {
-					f.Value = v // normalize to canonical form
-					found = true
-					break
-				}
-			}
-			if !found {
+			if normalized, ok := normalizeEnumValue(f.Field, strVal); ok {
+				f.Value = normalized // normalize to canonical form
+			} else {
 				*errs = append(*errs, fmt.Errorf("invalid value for %s: %q (expected one of: %s)",
 					f.Field, strVal, strings.Join(enumVals, ", ")))
 			}
@@ -667,13 +663,8 @@ func validateFunctionCall(fn *FunctionCall, errs *[]error) {
 		// is(status) - single arg is a status enum value
 		if len(fn.Args) >= 1 {
 			if strVal, ok := fn.Args[0].(string); ok {
-				if enumVals, ok := EnumValues["status"]; ok {
-					for _, v := range enumVals {
-						if strings.EqualFold(v, strVal) {
-							fn.Args[0] = v
-							break
-						}
-					}
+				if normalized, ok := normalizeEnumValue("status", strVal); ok {
+					fn.Args[0] = normalized
 				}
 			}
 		}
@@ -681,18 +672,45 @@ func validateFunctionCall(fn *FunctionCall, errs *[]error) {
 		// First arg is field name, remaining args are values to match
 		if len(fn.Args) >= 2 {
 			fieldName := fmt.Sprintf("%v", fn.Args[0])
-			if enumVals, ok := EnumValues[fieldName]; ok {
+			if _, ok := EnumValues[fieldName]; ok {
 				for i := 1; i < len(fn.Args); i++ {
 					if strVal, ok := fn.Args[i].(string); ok {
-						for _, v := range enumVals {
-							if strings.EqualFold(v, strVal) {
-								fn.Args[i] = v
-								break
-							}
+						if normalized, ok := normalizeEnumValue(fieldName, strVal); ok {
+							fn.Args[i] = normalized
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+func normalizeEnumValue(field, value string) (string, bool) {
+	switch field {
+	case "status":
+		normalized := models.NormalizeStatus(strings.ToLower(value))
+		if models.IsValidStatus(normalized) {
+			return string(normalized), true
+		}
+	case "type":
+		normalized := models.NormalizeType(strings.ToLower(value))
+		if models.IsValidType(normalized) {
+			return string(normalized), true
+		}
+	case "priority":
+		normalized := models.NormalizePriority(value)
+		if models.IsValidPriority(normalized) {
+			return string(normalized), true
+		}
+	}
+
+	if enumVals, ok := EnumValues[field]; ok {
+		for _, v := range enumVals {
+			if strings.EqualFold(v, value) {
+				return v, true
+			}
+		}
+	}
+
+	return "", false
 }

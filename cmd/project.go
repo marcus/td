@@ -86,6 +86,43 @@ var syncProjectLinkCmd = &cobra.Command{
 		defer database.Close()
 
 		projectID := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+
+		// Check if already linked to a different project
+		currentState, err := database.GetSyncState()
+		if err != nil {
+			output.Error("get sync state: %v", err)
+			return err
+		}
+
+		if currentState != nil && currentState.ProjectID != projectID {
+			syncedCount, err := database.CountSyncedEvents()
+			if err != nil {
+				output.Error("count synced events: %v", err)
+				return err
+			}
+
+			if syncedCount > 0 {
+				if !force {
+					reader := bufio.NewReader(os.Stdin)
+					fmt.Printf("You have %d events synced to previous project. Reset sync state to push to new project? [y/N] ", syncedCount)
+					line, _ := reader.ReadString('\n')
+					line = strings.TrimSpace(strings.ToLower(line))
+					if line != "y" && line != "yes" {
+						output.Warning("link cancelled")
+						return nil
+					}
+				}
+
+				cleared, err := database.ClearActionLogSyncState()
+				if err != nil {
+					output.Error("clear sync state: %v", err)
+					return err
+				}
+				output.Success("Reset %d events for re-sync", cleared)
+			}
+		}
+
 		if err := database.SetSyncState(projectID); err != nil {
 			output.Error("link project: %v", err)
 			return err
@@ -107,6 +144,39 @@ var syncProjectUnlinkCmd = &cobra.Command{
 			return err
 		}
 		defer database.Close()
+
+		force, _ := cmd.Flags().GetBool("force")
+
+		// Check for synced events and offer to clear sync state
+		syncedCount, err := database.CountSyncedEvents()
+		if err != nil {
+			output.Error("count synced events: %v", err)
+			return err
+		}
+
+		if syncedCount > 0 {
+			if !force {
+				reader := bufio.NewReader(os.Stdin)
+				fmt.Printf("You have %d synced events. Clear sync state so they can be pushed to a new project? [y/N] ", syncedCount)
+				line, _ := reader.ReadString('\n')
+				line = strings.TrimSpace(strings.ToLower(line))
+				if line == "y" || line == "yes" {
+					cleared, err := database.ClearActionLogSyncState()
+					if err != nil {
+						output.Error("clear sync state: %v", err)
+						return err
+					}
+					output.Success("Reset %d events for re-sync", cleared)
+				}
+			} else {
+				cleared, err := database.ClearActionLogSyncState()
+				if err != nil {
+					output.Error("clear sync state: %v", err)
+					return err
+				}
+				output.Success("Reset %d events for re-sync", cleared)
+			}
+		}
 
 		if err := database.ClearSyncState(); err != nil {
 			output.Error("unlink project: %v", err)
@@ -408,6 +478,8 @@ var syncProjectJoinCmd = &cobra.Command{
 
 func init() {
 	syncProjectCreateCmd.Flags().String("description", "", "Project description")
+	syncProjectLinkCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompts")
+	syncProjectUnlinkCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompts")
 
 	syncProjectCmd.AddCommand(syncProjectCreateCmd)
 	syncProjectCmd.AddCommand(syncProjectJoinCmd)
