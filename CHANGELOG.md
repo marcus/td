@@ -2,6 +2,13 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.29.0] - 2026-02-02
+
+### Bug Fixes
+- Fix form width for text wrapping in issue modal
+- Fix cross-entity query OR logic and blocks() wrong DB call
+- Stop clipboard tests from clobbering system clipboard
+
 ## [v0.28.1] - 2026-01-31
 
 ### Bug Fixes
