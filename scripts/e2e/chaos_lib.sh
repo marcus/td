@@ -81,6 +81,8 @@ CHAOS_ACTIVE_WS_C=""     # Active work session name for actor c
 CHAOS_WS_TAGGED_A=""     # KV: issueId:1 for issues tagged in actor a's session
 CHAOS_WS_TAGGED_B=""     # KV: issueId:1 for issues tagged in actor b's session
 CHAOS_WS_TAGGED_C=""     # KV: issueId:1 for issues tagged in actor c's session
+CHAOS_NOTE_IDS=()        # Array of note IDs
+CHAOS_DELETED_NOTE_IDS=() # Array of soft-deleted note IDs
 
 CHAOS_ACTION_COUNT=0
 CHAOS_EXPECTED_FAILURES=0
@@ -453,6 +455,7 @@ _CHAOS_ACTION_NAMES=(
     "link" "unlink"
     "ws_start" "ws_tag" "ws_untag" "ws_end" "ws_handoff"
     "create_child" "cascade_handoff" "cascade_review"
+    "note_create" "note_update" "note_delete"
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 2 1 2
@@ -464,6 +467,7 @@ _CHAOS_ACTION_WEIGHTS=(
     3 1
     2 3 1 1 1
     4 2 2
+    5 3 1
 )
 
 _CHAOS_TOTAL_WEIGHT=0
@@ -507,6 +511,30 @@ chaos_run_td() {
         b) td_b "$@" ;;
         c) td_c "$@" ;;
         *) td_b "$@" ;;
+    esac
+}
+
+# Helper: get actor's database path
+_CHAOS_DB_PATH=""
+chaos_get_db_path() {
+    local who="$1"
+    case "$who" in
+        a) _CHAOS_DB_PATH="$CLIENT_A_DIR/.todos/issues.db" ;;
+        b) _CHAOS_DB_PATH="$CLIENT_B_DIR/.todos/issues.db" ;;
+        c) _CHAOS_DB_PATH="$CLIENT_C_DIR/.todos/issues.db" ;;
+        *) _CHAOS_DB_PATH="$CLIENT_B_DIR/.todos/issues.db" ;;
+    esac
+}
+
+# Helper: get actor's session ID
+_CHAOS_SESSION_ID=""
+chaos_get_session_id() {
+    local who="$1"
+    case "$who" in
+        a) _CHAOS_SESSION_ID="$SESSION_ID_A" ;;
+        b) _CHAOS_SESSION_ID="$SESSION_ID_B" ;;
+        c) _CHAOS_SESSION_ID="$SESSION_ID_C" ;;
+        *) _CHAOS_SESSION_ID="$SESSION_ID_B" ;;
     esac
 }
 
@@ -2086,6 +2114,233 @@ exec_burst() {
     return 0
 }
 
+# --- Notes (sidecar entity — direct SQL, not td CLI) ---
+
+# Notes table schema (created if not exists)
+_CHAOS_NOTES_SCHEMA='CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT "",
+    content TEXT NOT NULL DEFAULT "",
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
+);'
+
+_chaos_ensure_notes_table() {
+    local db_path="$1"
+    sqlite3 "$db_path" "$_CHAOS_NOTES_SCHEMA" 2>/dev/null || true
+}
+
+exec_note_create() {
+    local actor="$1"
+    chaos_get_db_path "$actor"; local db_path="$_CHAOS_DB_PATH"
+    chaos_get_session_id "$actor"; local session_id="$_CHAOS_SESSION_ID"
+
+    _chaos_ensure_notes_table "$db_path"
+
+    # Generate note data
+    local note_id="note-$(openssl rand -hex 4)"
+    rand_title 100; local title="$_RAND_STR"
+    rand_description 2; local content="$_RAND_STR"
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local action_id="al-$(openssl rand -hex 6)"
+
+    # Escape single quotes for SQL
+    local title_esc content_esc
+    title_esc=$(echo "$title" | sed "s/'/''/g")
+    content_esc=$(echo "$content" | sed "s/'/''/g")
+
+    # Insert note into notes table
+    sqlite3 "$db_path" "INSERT INTO notes (id, title, content, created_at, updated_at) VALUES ('$note_id', '$title_esc', '$content_esc', '$timestamp', '$timestamp');" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_create: insert failed"
+        return 2
+    }
+
+    # Create action_log entry for sync
+    local new_data
+    new_data=$(printf '{"id":"%s","title":"%s","content":"%s","created_at":"%s","updated_at":"%s"}' \
+        "$note_id" "$(echo "$title" | sed 's/"/\\"/g')" "$(echo "$content" | sed 's/"/\\"/g')" "$timestamp" "$timestamp")
+    local new_data_esc
+    new_data_esc=$(echo "$new_data" | sed "s/'/''/g")
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone) VALUES ('$action_id', '$session_id', 'create', 'notes', '$note_id', '$new_data_esc', '', '$timestamp', 0);" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_create: action_log insert failed"
+        return 2
+    }
+
+    CHAOS_NOTE_IDS+=("$note_id")
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_create: $note_id by $actor"
+    return 0
+}
+
+exec_note_update() {
+    local actor="$1"
+
+    # Need at least one non-deleted note
+    if [ "${#CHAOS_NOTE_IDS[@]}" -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Filter out deleted notes
+    local candidates=()
+    for nid in "${CHAOS_NOTE_IDS[@]}"; do
+        local is_deleted=false
+        for did in "${CHAOS_DELETED_NOTE_IDS[@]+"${CHAOS_DELETED_NOTE_IDS[@]}"}"; do
+            [ "$nid" = "$did" ] && { is_deleted=true; break; }
+        done
+        [ "$is_deleted" = "false" ] && candidates+=("$nid")
+    done
+
+    if [ "${#candidates[@]}" -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Pick random note
+    local note_id="${candidates[$(( RANDOM % ${#candidates[@]} ))]}"
+
+    chaos_get_db_path "$actor"; local db_path="$_CHAOS_DB_PATH"
+    chaos_get_session_id "$actor"; local session_id="$_CHAOS_SESSION_ID"
+
+    _chaos_ensure_notes_table "$db_path"
+
+    # Get current note data for previous_data
+    local prev_row
+    prev_row=$(sqlite3 "$db_path" "SELECT id, title, content, created_at, updated_at FROM notes WHERE id = '$note_id';" 2>/dev/null)
+    if [ -z "$prev_row" ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Parse previous data (pipe-separated by default)
+    local prev_title prev_content prev_created prev_updated
+    prev_title=$(sqlite3 "$db_path" "SELECT title FROM notes WHERE id = '$note_id';")
+    prev_content=$(sqlite3 "$db_path" "SELECT content FROM notes WHERE id = '$note_id';")
+    prev_created=$(sqlite3 "$db_path" "SELECT created_at FROM notes WHERE id = '$note_id';")
+    prev_updated=$(sqlite3 "$db_path" "SELECT updated_at FROM notes WHERE id = '$note_id';")
+
+    # Generate new data (randomly update title or content or both)
+    local new_title="$prev_title"
+    local new_content="$prev_content"
+    rand_int 1 3
+    case "$_RAND_RESULT" in
+        1) rand_title 100; new_title="$_RAND_STR" ;;
+        2) rand_description 2; new_content="$_RAND_STR" ;;
+        3) rand_title 100; new_title="$_RAND_STR"
+           rand_description 2; new_content="$_RAND_STR" ;;
+    esac
+
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local action_id="al-$(openssl rand -hex 6)"
+
+    # Escape for SQL
+    local new_title_esc new_content_esc
+    new_title_esc=$(echo "$new_title" | sed "s/'/''/g")
+    new_content_esc=$(echo "$new_content" | sed "s/'/''/g")
+
+    # Update note
+    sqlite3 "$db_path" "UPDATE notes SET title = '$new_title_esc', content = '$new_content_esc', updated_at = '$timestamp' WHERE id = '$note_id';" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_update: update failed"
+        return 2
+    }
+
+    # Create action_log entry
+    local prev_data new_data
+    prev_data=$(printf '{"id":"%s","title":"%s","content":"%s","created_at":"%s","updated_at":"%s"}' \
+        "$note_id" "$(echo "$prev_title" | sed 's/"/\\"/g')" "$(echo "$prev_content" | sed 's/"/\\"/g')" "$prev_created" "$prev_updated")
+    new_data=$(printf '{"id":"%s","title":"%s","content":"%s","created_at":"%s","updated_at":"%s"}' \
+        "$note_id" "$(echo "$new_title" | sed 's/"/\\"/g')" "$(echo "$new_content" | sed 's/"/\\"/g')" "$prev_created" "$timestamp")
+    local prev_data_esc new_data_esc
+    prev_data_esc=$(echo "$prev_data" | sed "s/'/''/g")
+    new_data_esc=$(echo "$new_data" | sed "s/'/''/g")
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone) VALUES ('$action_id', '$session_id', 'update', 'notes', '$note_id', '$new_data_esc', '$prev_data_esc', '$timestamp', 0);" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_update: action_log insert failed"
+        return 2
+    }
+
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_update: $note_id by $actor"
+    return 0
+}
+
+exec_note_delete() {
+    local actor="$1"
+
+    # Need at least one non-deleted note
+    if [ "${#CHAOS_NOTE_IDS[@]}" -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Filter out already deleted notes
+    local candidates=()
+    for nid in "${CHAOS_NOTE_IDS[@]}"; do
+        local is_deleted=false
+        for did in "${CHAOS_DELETED_NOTE_IDS[@]+"${CHAOS_DELETED_NOTE_IDS[@]}"}"; do
+            [ "$nid" = "$did" ] && { is_deleted=true; break; }
+        done
+        [ "$is_deleted" = "false" ] && candidates+=("$nid")
+    done
+
+    if [ "${#candidates[@]}" -eq 0 ]; then
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    # Pick random note
+    local note_id="${candidates[$(( RANDOM % ${#candidates[@]} ))]}"
+
+    chaos_get_db_path "$actor"; local db_path="$_CHAOS_DB_PATH"
+    chaos_get_session_id "$actor"; local session_id="$_CHAOS_SESSION_ID"
+
+    _chaos_ensure_notes_table "$db_path"
+
+    # Get current note data for previous_data
+    local prev_title prev_content prev_created prev_updated
+    prev_title=$(sqlite3 "$db_path" "SELECT title FROM notes WHERE id = '$note_id';")
+    prev_content=$(sqlite3 "$db_path" "SELECT content FROM notes WHERE id = '$note_id';")
+    prev_created=$(sqlite3 "$db_path" "SELECT created_at FROM notes WHERE id = '$note_id';")
+    prev_updated=$(sqlite3 "$db_path" "SELECT updated_at FROM notes WHERE id = '$note_id';")
+
+    if [ -z "$prev_title" ] && [ -z "$prev_content" ]; then
+        # Note doesn't exist in this actor's DB (maybe not synced yet)
+        CHAOS_SKIPPED=$((CHAOS_SKIPPED + 1))
+        return 0
+    fi
+
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local action_id="al-$(openssl rand -hex 6)"
+
+    # Soft-delete by setting deleted_at
+    sqlite3 "$db_path" "UPDATE notes SET deleted_at = '$timestamp', updated_at = '$timestamp' WHERE id = '$note_id';" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_delete: soft-delete failed"
+        return 2
+    }
+
+    # Create action_log entry (soft_delete action)
+    local prev_data new_data
+    prev_data=$(printf '{"id":"%s","title":"%s","content":"%s","created_at":"%s","updated_at":"%s"}' \
+        "$note_id" "$(echo "$prev_title" | sed 's/"/\\"/g')" "$(echo "$prev_content" | sed 's/"/\\"/g')" "$prev_created" "$prev_updated")
+    new_data=$(printf '{"id":"%s","title":"%s","content":"%s","created_at":"%s","updated_at":"%s","deleted_at":"%s"}' \
+        "$note_id" "$(echo "$prev_title" | sed 's/"/\\"/g')" "$(echo "$prev_content" | sed 's/"/\\"/g')" "$prev_created" "$timestamp" "$timestamp")
+    local prev_data_esc new_data_esc
+    prev_data_esc=$(echo "$prev_data" | sed "s/'/''/g")
+    new_data_esc=$(echo "$new_data" | sed "s/'/''/g")
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp, undone) VALUES ('$action_id', '$session_id', 'soft_delete', 'notes', '$note_id', '$new_data_esc', '$prev_data_esc', '$timestamp', 0);" 2>/dev/null || {
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_delete: action_log insert failed"
+        return 2
+    }
+
+    CHAOS_DELETED_NOTE_IDS+=("$note_id")
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_delete: $note_id by $actor"
+    return 0
+}
+
 # ============================================================
 # 8. Safe Execution Wrapper
 # ============================================================
@@ -2293,6 +2548,29 @@ verify_convergence_quick() {
     if [ "$pos_a" != "$pos_b" ]; then
         diverged=1
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: board positions diverged"
+    fi
+
+    # Notes (sidecar — may not exist)
+    local notes_a notes_b
+    notes_a=$(sqlite3 "$db_a" "SELECT id, title, content FROM notes WHERE deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+    notes_b=$(sqlite3 "$db_b" "SELECT id, title, content FROM notes WHERE deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+    if [ "$notes_a" != "$notes_b" ]; then
+        # Check common set (same pattern as issues)
+        local nids_a nids_b common_nids
+        nids_a=$(sqlite3 "$db_a" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+        nids_b=$(sqlite3 "$db_b" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+        common_nids=$(comm -12 <(echo "$nids_a") <(echo "$nids_b") 2>/dev/null || true)
+        if [ -n "$common_nids" ]; then
+            local common_nwhere
+            common_nwhere=$(echo "$common_nids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+            local common_notes_a common_notes_b
+            common_notes_a=$(sqlite3 "$db_a" "SELECT id, title, content FROM notes WHERE id IN ($common_nwhere) AND deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+            common_notes_b=$(sqlite3 "$db_b" "SELECT id, title, content FROM notes WHERE id IN ($common_nwhere) AND deleted_at IS NULL ORDER BY id;" 2>/dev/null || true)
+            if [ "$common_notes_a" != "$common_notes_b" ]; then
+                diverged=1
+                [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: notes diverged (common set mismatch)"
+            fi
+        fi
     fi
 
     return $diverged
@@ -2514,6 +2792,52 @@ verify_convergence() {
     else
         _ok "work_session_issues row count diverges (known sync limitation: $count_a vs $count_b)"
     fi
+
+    # Notes (sidecar entity — may not exist if no note actions ran)
+    local notes_table_exists_a notes_table_exists_b
+    notes_table_exists_a=$(sqlite3 "$db_a" "SELECT name FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || true)
+    notes_table_exists_b=$(sqlite3 "$db_b" "SELECT name FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || true)
+    if [ -n "$notes_table_exists_a" ] || [ -n "$notes_table_exists_b" ]; then
+        # Ensure table exists on both sides for comparison
+        sqlite3 "$db_a" "$_CHAOS_NOTES_SCHEMA" 2>/dev/null || true
+        sqlite3 "$db_b" "$_CHAOS_NOTES_SCHEMA" 2>/dev/null || true
+
+        local notes_a notes_b
+        notes_a=$(sqlite3 "$db_a" "SELECT id, title, content, deleted_at IS NOT NULL as is_deleted FROM notes ORDER BY id;")
+        notes_b=$(sqlite3 "$db_b" "SELECT id, title, content, deleted_at IS NOT NULL as is_deleted FROM notes ORDER BY id;")
+        if [ "$notes_a" = "$notes_b" ]; then
+            _ok "notes match"
+        else
+            # Check common set (same pattern as issues for resurrection edge cases)
+            local note_ids_a note_ids_b common_note_ids
+            note_ids_a=$(sqlite3 "$db_a" "SELECT id FROM notes ORDER BY id;")
+            note_ids_b=$(sqlite3 "$db_b" "SELECT id FROM notes ORDER BY id;")
+            common_note_ids=$(comm -12 <(echo "$note_ids_a") <(echo "$note_ids_b"))
+            if [ -n "$common_note_ids" ]; then
+                local common_note_where
+                common_note_where=$(echo "$common_note_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+                local common_notes_a common_notes_b
+                common_notes_a=$(sqlite3 "$db_a" "SELECT id, title, content, deleted_at IS NOT NULL as is_deleted FROM notes WHERE id IN ($common_note_where) ORDER BY id;")
+                common_notes_b=$(sqlite3 "$db_b" "SELECT id, title, content, deleted_at IS NOT NULL as is_deleted FROM notes WHERE id IN ($common_note_where) ORDER BY id;")
+                if [ "$common_notes_a" = "$common_notes_b" ]; then
+                    _ok "notes match (common set)"
+                else
+                    _fail "notes diverge (common set mismatch)"
+                fi
+            else
+                _ok "notes diverge (no common IDs)"
+            fi
+        fi
+
+        # Notes row count
+        count_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM notes;")
+        count_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM notes;")
+        if [ "$count_a" -eq "$count_b" ]; then
+            _ok "notes row count: $count_a"
+        else
+            _ok "notes row count diverges: A=$count_a B=$count_b"
+        fi
+    fi
 }
 
 # ============================================================
@@ -2540,6 +2864,8 @@ _db_content_hash() {
         sqlite3 "$db" "SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;"
         sqlite3 "$db" "SELECT id, name, session_id FROM work_sessions ORDER BY id;"
         sqlite3 "$db" "SELECT work_session_id, issue_id FROM work_session_issues ORDER BY work_session_id, issue_id;"
+        # Notes (sidecar — may not exist)
+        sqlite3 "$db" "SELECT id, title, content, deleted_at IS NOT NULL as is_deleted FROM notes ORDER BY id;" 2>/dev/null || true
     } | shasum -a 256 | cut -d' ' -f1
 }
 
