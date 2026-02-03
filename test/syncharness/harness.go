@@ -785,3 +785,164 @@ func (h *Harness) PullAll(clientID, projectID string) (tdsync.PullResult, error)
 
 	return pullResult, nil
 }
+
+// UndoLastAction simulates `td undo` for the last non-undone action on a client.
+// It marks the action as undone=1 and inserts a compensating event:
+//   - "create" action → soft_delete event
+//   - "soft_delete" action → restore event (clears deleted_at)
+//   - "update" action → update event with previous_data fields
+//
+// This mirrors the behavior of cmd/undo.go.
+func (h *Harness) UndoLastAction(clientID string) error {
+	c, ok := h.Clients[clientID]
+	if !ok {
+		return fmt.Errorf("unknown client: %s", clientID)
+	}
+
+	tx, err := c.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Find the last non-undone action (excluding backfill-generated entries)
+	// Harness uses IDs like "al-00000001" (8 decimal digits)
+	// Backfill uses IDs like "al-a1b2c3d4" (8 hex chars, may contain letters)
+	// We filter by checking that the ID matches the harness pattern.
+	var (
+		actionID    string
+		actionType  string
+		entityType  string
+		entityID    string
+		prevDataStr sql.NullString
+		newDataStr  sql.NullString
+	)
+	err = tx.QueryRow(`
+		SELECT id, action_type, entity_type, entity_id, previous_data, new_data
+		FROM action_log
+		WHERE session_id = ? AND undone = 0
+		  AND id GLOB 'al-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+		ORDER BY rowid DESC
+		LIMIT 1
+	`, c.SessionID).Scan(&actionID, &actionType, &entityType, &entityID, &prevDataStr, &newDataStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("no actions to undo for session %s", c.SessionID)
+		}
+		return fmt.Errorf("query last action: %w", err)
+	}
+
+	// Mark the action as undone
+	_, err = tx.Exec(`UPDATE action_log SET undone = 1 WHERE id = ?`, actionID)
+	if err != nil {
+		return fmt.Errorf("mark undone: %w", err)
+	}
+
+	// Insert compensating event based on action type
+	seq := h.actionSeq.Add(1)
+	alID := fmt.Sprintf("al-%08d", seq)
+
+	var compensatingAction string
+	var compensatingNewData, compensatingPrevData []byte
+
+	// For issues, use the mapped action type from mapActionType
+	mappedAction := mapHarnessActionType(actionType)
+
+	switch mappedAction {
+	case "create":
+		// Undo create → soft_delete
+		compensatingAction = "soft_delete"
+		// Soft-delete the entity locally
+		if softDeleteTables[entityType] {
+			_, err = tx.Exec(fmt.Sprintf("UPDATE %s SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", entityType), entityID)
+			if err != nil {
+				return fmt.Errorf("soft_delete entity: %w", err)
+			}
+		}
+		compensatingNewData = []byte("{}")
+		if newDataStr.Valid && newDataStr.String != "" {
+			compensatingPrevData = []byte(newDataStr.String)
+		} else {
+			compensatingPrevData = []byte("{}")
+		}
+
+	case "soft_delete":
+		// Undo soft_delete → restore
+		compensatingAction = "restore"
+		// Restore the entity locally (clear deleted_at)
+		if softDeleteTables[entityType] {
+			_, err = tx.Exec(fmt.Sprintf("UPDATE %s SET deleted_at = NULL WHERE id = ?", entityType), entityID)
+			if err != nil {
+				return fmt.Errorf("restore entity: %w", err)
+			}
+		}
+		// Read current entity state after restore
+		restoredData := readEntity(tx, entityType, entityID)
+		if restoredData != nil {
+			compensatingNewData, _ = json.Marshal(restoredData)
+		} else {
+			compensatingNewData = []byte("{}")
+		}
+		if prevDataStr.Valid && prevDataStr.String != "" {
+			compensatingPrevData = []byte(prevDataStr.String)
+		} else {
+			compensatingPrevData = []byte("{}")
+		}
+
+	case "update":
+		// Undo update → update with previous_data
+		compensatingAction = "update"
+		// Restore previous state locally
+		if prevDataStr.Valid && prevDataStr.String != "" {
+			var prevFields map[string]any
+			if err := json.Unmarshal([]byte(prevDataStr.String), &prevFields); err != nil {
+				return fmt.Errorf("unmarshal previous_data: %w", err)
+			}
+			// Update entity with previous values
+			if err := upsertLocal(tx, entityType, entityID, prevFields); err != nil {
+				return fmt.Errorf("restore previous state: %w", err)
+			}
+			compensatingNewData = []byte(prevDataStr.String)
+		} else {
+			compensatingNewData = []byte("{}")
+		}
+		if newDataStr.Valid && newDataStr.String != "" {
+			compensatingPrevData = []byte(newDataStr.String)
+		} else {
+			compensatingPrevData = []byte("{}")
+		}
+
+	default:
+		return fmt.Errorf("cannot undo action type: %s (mapped: %s)", actionType, mappedAction)
+	}
+
+	// Insert compensating action into action_log
+	_, err = tx.Exec(
+		`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		alID, c.SessionID, compensatingAction, entityType, entityID,
+		string(compensatingNewData), string(compensatingPrevData),
+	)
+	if err != nil {
+		return fmt.Errorf("insert compensating action: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// mapHarnessActionType converts action types to their sync-equivalent categories.
+// This mirrors the logic in internal/sync/client.go mapActionType.
+func mapHarnessActionType(actionType string) string {
+	switch actionType {
+	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_update", "board_add_issue", "board_set_position", "work_session_tag":
+		return "create"
+	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
+		return "delete"
+	case "delete", "board_unposition", "board_remove_issue", "soft_delete":
+		return "soft_delete"
+	case "restore":
+		return "restore"
+	default:
+		return "update"
+	}
+}
