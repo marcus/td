@@ -88,7 +88,7 @@ Use 'td undo --list' to see recent undoable actions.`,
 		}
 
 		// Perform the undo
-		if err := performUndo(database, action); err != nil {
+		if err := performUndo(database, action, sess.ID); err != nil {
 			output.Error("failed to undo: %v", err)
 			return err
 		}
@@ -104,20 +104,20 @@ Use 'td undo --list' to see recent undoable actions.`,
 	},
 }
 
-func performUndo(database *db.DB, action *models.ActionLog) error {
+func performUndo(database *db.DB, action *models.ActionLog, sessionID string) error {
 	switch action.EntityType {
 	case "issue":
-		return undoIssueAction(database, action)
+		return undoIssueAction(database, action, sessionID)
 	case "dependency", "issue_dependencies":
-		return undoDependencyAction(database, action)
+		return undoDependencyAction(database, action, sessionID)
 	case "file_link", "issue_files":
-		return undoFileLinkAction(database, action)
+		return undoFileLinkAction(database, action, sessionID)
 	case "board_position", "board_issue_positions":
-		return undoBoardPositionAction(database, action)
+		return undoBoardPositionAction(database, action, sessionID)
 	case "board", "boards":
-		return undoBoardAction(database, action)
+		return undoBoardAction(database, action, sessionID)
 	case "handoff":
-		return undoHandoffAction(database, action)
+		return undoHandoffAction(database, action, sessionID)
 	case "logs", "comments", "work_sessions":
 		return fmt.Errorf("undo not supported for %s", action.EntityType)
 	default:
@@ -125,15 +125,32 @@ func performUndo(database *db.DB, action *models.ActionLog) error {
 	}
 }
 
-func undoIssueAction(database *db.DB, action *models.ActionLog) error {
+func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	switch action.ActionType {
 	case models.ActionCreate:
-		// Undo create by deleting
-		return database.DeleteIssue(action.EntityID)
+		// Undo create by soft-deleting, log for sync
+		return database.DeleteIssueLogged(action.EntityID, sessionID)
 
 	case models.ActionDelete:
-		// Undo delete by restoring
-		return database.RestoreIssue(action.EntityID)
+		// Undo delete by restoring, log for sync
+		// First restore the issue
+		if err := database.RestoreIssue(action.EntityID); err != nil {
+			return err
+		}
+		// Then log the restore action for sync
+		issue, err := database.GetIssue(action.EntityID)
+		if err != nil {
+			return fmt.Errorf("failed to get issue for logging: %w", err)
+		}
+		newData, _ := json.Marshal(issue)
+		return database.LogAction(&models.ActionLog{
+			SessionID:    sessionID,
+			ActionType:   models.ActionRestore,
+			EntityType:   "issue",
+			EntityID:     action.EntityID,
+			PreviousData: action.PreviousData, // deleted state
+			NewData:      string(newData),
+		})
 
 	case models.ActionUpdate, models.ActionStart, models.ActionReview,
 		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen:
@@ -145,14 +162,15 @@ func undoIssueAction(database *db.DB, action *models.ActionLog) error {
 		if err := json.Unmarshal([]byte(action.PreviousData), &issue); err != nil {
 			return fmt.Errorf("failed to parse previous data: %w", err)
 		}
-		return database.UpdateIssue(&issue)
+		// Use logged variant to generate sync event
+		return database.UpdateIssueLogged(&issue, sessionID, models.ActionUpdate)
 
 	default:
 		return fmt.Errorf("cannot undo action type: %s", action.ActionType)
 	}
 }
 
-func undoDependencyAction(database *db.DB, action *models.ActionLog) error {
+func undoDependencyAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	// Parse the dependency info from entity_id (format: "issueID:dependsOnID")
 	var depInfo struct {
 		IssueID     string `json:"issue_id"`
@@ -164,15 +182,17 @@ func undoDependencyAction(database *db.DB, action *models.ActionLog) error {
 
 	switch action.ActionType {
 	case models.ActionAddDep:
-		return database.RemoveDependency(depInfo.IssueID, depInfo.DependsOnID)
+		// Use logged variant to generate sync event
+		return database.RemoveDependencyLogged(depInfo.IssueID, depInfo.DependsOnID, sessionID)
 	case models.ActionRemoveDep:
-		return database.AddDependency(depInfo.IssueID, depInfo.DependsOnID, "depends_on")
+		// Use logged variant to generate sync event
+		return database.AddDependencyLogged(depInfo.IssueID, depInfo.DependsOnID, "depends_on", sessionID)
 	default:
 		return fmt.Errorf("cannot undo dependency action: %s", action.ActionType)
 	}
 }
 
-func undoFileLinkAction(database *db.DB, action *models.ActionLog) error {
+func undoFileLinkAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	var linkInfo struct {
 		IssueID   string `json:"issue_id"`
 		FilePath  string `json:"file_path"`
@@ -191,30 +211,39 @@ func undoFileLinkAction(database *db.DB, action *models.ActionLog) error {
 
 	switch action.ActionType {
 	case models.ActionLinkFile:
-		return database.UnlinkFile(linkInfo.IssueID, linkInfo.FilePath)
+		// Use logged variant to generate sync event
+		return database.UnlinkFileLogged(linkInfo.IssueID, linkInfo.FilePath, sessionID)
 	case models.ActionUnlinkFile:
-		return database.LinkFile(linkInfo.IssueID, linkInfo.FilePath, models.FileRole(linkInfo.Role), sha)
+		// Use logged variant to generate sync event
+		return database.LinkFileLogged(linkInfo.IssueID, linkInfo.FilePath, models.FileRole(linkInfo.Role), sha, sessionID)
 	default:
 		return fmt.Errorf("cannot undo file link action: %s", action.ActionType)
 	}
 }
 
-func undoBoardPositionAction(database *db.DB, action *models.ActionLog) error {
+func undoBoardPositionAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	var posInfo struct {
 		BoardID  string `json:"board_id"`
 		IssueID  string `json:"issue_id"`
 		Position int    `json:"position"`
 	}
-	if err := json.Unmarshal([]byte(action.NewData), &posInfo); err != nil {
+	// For unposition actions, data is in PreviousData; for setposition, in NewData
+	dataStr := action.NewData
+	if action.ActionType == models.ActionBoardUnposition && action.PreviousData != "" {
+		dataStr = action.PreviousData
+	}
+	if err := json.Unmarshal([]byte(dataStr), &posInfo); err != nil {
 		return fmt.Errorf("failed to parse board position data: %w", err)
 	}
 
 	switch action.ActionType {
 	case models.ActionBoardSetPosition:
-		return database.RemoveIssuePosition(posInfo.BoardID, posInfo.IssueID)
+		// Use logged variant to generate sync event
+		return database.RemoveIssuePositionLogged(posInfo.BoardID, posInfo.IssueID, sessionID)
 	case models.ActionBoardUnposition:
 		if posInfo.Position > 0 {
-			return database.SetIssuePosition(posInfo.BoardID, posInfo.IssueID, posInfo.Position)
+			// Use logged variant to generate sync event
+			return database.SetIssuePositionLogged(posInfo.BoardID, posInfo.IssueID, posInfo.Position, sessionID)
 		}
 		return nil // no position to restore
 	default:
@@ -222,20 +251,33 @@ func undoBoardPositionAction(database *db.DB, action *models.ActionLog) error {
 	}
 }
 
-func undoHandoffAction(database *db.DB, action *models.ActionLog) error {
+func undoHandoffAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	switch action.ActionType {
 	case models.ActionHandoff:
-		return database.DeleteHandoff(action.EntityID)
+		// Delete handoff and log for sync
+		if err := database.DeleteHandoff(action.EntityID); err != nil {
+			return err
+		}
+		// Log the delete action for sync
+		return database.LogAction(&models.ActionLog{
+			SessionID:    sessionID,
+			ActionType:   models.ActionDelete,
+			EntityType:   "handoff",
+			EntityID:     action.EntityID,
+			PreviousData: action.NewData, // the handoff data that was created
+			NewData:      "",
+		})
 	default:
 		return fmt.Errorf("cannot undo handoff action: %s", action.ActionType)
 	}
 }
 
-func undoBoardAction(database *db.DB, action *models.ActionLog) error {
+func undoBoardAction(database *db.DB, action *models.ActionLog, sessionID string) error {
 	switch action.ActionType {
 	case models.ActionBoardCreate, models.ActionCreate:
 		// Undo create by deleting (handles both "board_create" and backfill "create")
-		return database.DeleteBoard(action.EntityID)
+		// Use logged variant to generate sync event
+		return database.DeleteBoardLogged(action.EntityID, sessionID)
 
 	case models.ActionBoardDelete, models.ActionDelete:
 		// Undo delete by restoring from previous data
@@ -246,7 +288,20 @@ func undoBoardAction(database *db.DB, action *models.ActionLog) error {
 		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {
 			return fmt.Errorf("failed to parse previous data: %w", err)
 		}
-		return database.RestoreBoard(&board)
+		// Restore the board
+		if err := database.RestoreBoard(&board); err != nil {
+			return err
+		}
+		// Log the restore action for sync
+		newData, _ := json.Marshal(board)
+		return database.LogAction(&models.ActionLog{
+			SessionID:    sessionID,
+			ActionType:   models.ActionRestore,
+			EntityType:   "board",
+			EntityID:     action.EntityID,
+			PreviousData: "",
+			NewData:      string(newData),
+		})
 
 	case models.ActionBoardUpdate, models.ActionUpdate:
 		// Restore previous state (handles both "board_update" and generic "update")
@@ -257,7 +312,8 @@ func undoBoardAction(database *db.DB, action *models.ActionLog) error {
 		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {
 			return fmt.Errorf("failed to parse previous data: %w", err)
 		}
-		return database.UpdateBoard(&board)
+		// Use logged variant to generate sync event
+		return database.UpdateBoardLogged(&board, sessionID)
 
 	default:
 		return fmt.Errorf("cannot undo board action: %s", action.ActionType)

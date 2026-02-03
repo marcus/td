@@ -124,7 +124,7 @@ func TestUndoIssueCreate(t *testing.T) {
 	}
 
 	// Undo the create (should delete)
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 
 	// Undo the delete (should restore)
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestUndoIssueUpdate(t *testing.T) {
 	}
 
 	// Undo the update
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -259,7 +259,7 @@ func TestUndoIssueStart(t *testing.T) {
 	}
 
 	// Undo start
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -308,7 +308,7 @@ func TestUndoDependencyAdd(t *testing.T) {
 	}
 
 	// Undo add dependency (should remove it)
-	if err := undoDependencyAction(database, action); err != nil {
+	if err := undoDependencyAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoDependencyAction failed: %v", err)
 	}
 
@@ -353,7 +353,7 @@ func TestUndoDependencyRemove(t *testing.T) {
 	}
 
 	// Undo remove dependency (should add it back)
-	if err := undoDependencyAction(database, action); err != nil {
+	if err := undoDependencyAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoDependencyAction failed: %v", err)
 	}
 
@@ -405,7 +405,7 @@ func TestUndoFileLinkAdd(t *testing.T) {
 	}
 
 	// Undo link file (should unlink it)
-	if err := undoFileLinkAction(database, action); err != nil {
+	if err := undoFileLinkAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoFileLinkAction failed: %v", err)
 	}
 
@@ -452,7 +452,7 @@ func TestUndoFileLinkRemove(t *testing.T) {
 	}
 
 	// Undo unlink file (should link it back)
-	if err := undoFileLinkAction(database, action); err != nil {
+	if err := undoFileLinkAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoFileLinkAction failed: %v", err)
 	}
 
@@ -495,7 +495,7 @@ func TestPerformUndoDispatch(t *testing.T) {
 				EntityID:   issue.ID,
 			}
 
-			err := performUndo(database, action)
+			err := performUndo(database, action, "ses_test")
 			if tc.wantError && err == nil {
 				t.Error("Expected error but got nil")
 			}
@@ -526,7 +526,7 @@ func TestUndoUpdateWithoutPreviousData(t *testing.T) {
 		PreviousData: "", // No previous data
 	}
 
-	err = undoIssueAction(database, action)
+	err = undoIssueAction(database, action, "ses_test")
 	if err == nil {
 		t.Error("Expected error when PreviousData is empty")
 	}
@@ -552,7 +552,7 @@ func TestUndoWithInvalidPreviousData(t *testing.T) {
 		PreviousData: "invalid json{",
 	}
 
-	err = undoIssueAction(database, action)
+	err = undoIssueAction(database, action, "ses_test")
 	if err == nil {
 		t.Error("Expected error when PreviousData is invalid JSON")
 	}
@@ -600,7 +600,7 @@ func TestUndoBoardUnposition(t *testing.T) {
 	}
 
 	// Undo unposition (should restore position)
-	if err := undoBoardPositionAction(database, action); err != nil {
+	if err := undoBoardPositionAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoBoardPositionAction failed: %v", err)
 	}
 
@@ -653,7 +653,7 @@ func TestUndoBoardSetPosition(t *testing.T) {
 	}
 
 	// Undo set-position (should remove position)
-	if err := undoBoardPositionAction(database, action); err != nil {
+	if err := undoBoardPositionAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoBoardPositionAction failed: %v", err)
 	}
 

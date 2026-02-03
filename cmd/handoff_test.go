@@ -817,7 +817,7 @@ func TestCascadeAndUndoInteraction(t *testing.T) {
 	}
 
 	// Now undo by deleting the handoff
-	if err := undoHandoffAction(database, action); err != nil {
+	if err := undoHandoffAction(database, action, "ses_cascade"); err != nil {
 		t.Fatalf("undoHandoffAction failed: %v", err)
 	}
 
