@@ -311,7 +311,7 @@ func ScenarioRapidCreateDelete(h *Harness) []VerifyResult {
 
 	// Create 10 issues
 	for i := 0; i < 10; i++ {
-		out, err := h.TdA("create", fmt.Sprintf("rapid-cd-%d", i), "--type", "task", "--priority", "P2")
+		out, err := h.TdA("create", fmt.Sprintf("rapid-create-delete-%d", i), "--type", "task", "--priority", "P2")
 		if err != nil {
 			results = append(results, fail(fmt.Sprintf("create %d", i), fmt.Sprintf("%v: %s", err, out)))
 			continue
@@ -375,7 +375,7 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	var results []VerifyResult
 
 	// Create parent
-	out, err := h.TdA("create", "cascade-parent", "--type", "task", "--priority", "P1")
+	out, err := h.TdA("create", "cascade-conflict-parent-issue", "--type", "task", "--priority", "P1")
 	if err != nil {
 		return []VerifyResult{fail("create parent", fmt.Sprintf("%v: %s", err, out))}
 	}
@@ -387,7 +387,7 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	// Create children
 	var childIDs []string
 	for i := 0; i < 3; i++ {
-		out, err := h.TdA("create", fmt.Sprintf("cascade-child-%d", i),
+		out, err := h.TdA("create", fmt.Sprintf("cascade-conflict-child-%d", i),
 			"--type", "task", "--priority", "P2", "--parent", parentID)
 		if err != nil {
 			results = append(results, fail(fmt.Sprintf("create child %d", i), fmt.Sprintf("%v: %s", err, out)))
@@ -434,7 +434,7 @@ func ScenarioDependencyCycle(h *Harness) []VerifyResult {
 
 	// Create three issues
 	var ids [3]string
-	names := [3]string{"dep-cycle-A", "dep-cycle-B", "dep-cycle-C"}
+	names := [3]string{"dependency-cycle-issue-A", "dependency-cycle-issue-B", "dependency-cycle-issue-C"}
 	for i, name := range names {
 		out, err := h.TdA("create", name, "--type", "task", "--priority", "P1")
 		if err != nil {
@@ -504,8 +504,8 @@ func ScenarioThunderingHerd(h *Harness) []VerifyResult {
 
 	// Both actors create issues
 	for i := 0; i < 5; i++ {
-		h.TdA("create", fmt.Sprintf("herd-alice-%d", i), "--type", "task", "--priority", "P1")
-		h.TdB("create", fmt.Sprintf("herd-bob-%d", i), "--type", "task", "--priority", "P2")
+		h.TdA("create", fmt.Sprintf("thundering-herd-alice-%d", i), "--type", "task", "--priority", "P1")
+		h.TdB("create", fmt.Sprintf("thundering-herd-bob-%d", i), "--type", "task", "--priority", "P2")
 	}
 
 	// Both sync SIMULTANEOUSLY
