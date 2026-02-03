@@ -154,7 +154,7 @@ func (v *Verifier) VerifyConvergence(actorA, actorB string) []VerifyResult {
 		{"handoffs", "SELECT issue_id, session_id, done, remaining, decisions, uncertain FROM handoffs ORDER BY issue_id, id;"},
 		{"issue_dependencies", "SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id;"},
 		{"boards", "SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;"},
-		{"board_issue_positions", "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN issues i ON bp.issue_id = i.id WHERE i.deleted_at IS NULL AND bp.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;"},
+		{"board_issue_positions", "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN boards b ON bp.board_id = b.id WHERE bp.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;"},
 		{"issue_files", "SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;"},
 		{"work_sessions", "SELECT id, name, session_id FROM work_sessions ORDER BY id;"},
 	}
@@ -430,7 +430,7 @@ func (v *Verifier) dbContentHash(actor string) (string, error) {
 		"SELECT issue_id, session_id, done, remaining, decisions, uncertain FROM handoffs ORDER BY issue_id, id;",
 		"SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id;",
 		"SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;",
-		"SELECT board_id, issue_id, position FROM board_issue_positions WHERE deleted_at IS NULL ORDER BY board_id, issue_id;",
+		"SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN boards b ON bp.board_id = b.id WHERE bp.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;",
 		"SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;",
 		"SELECT id, name, session_id FROM work_sessions ORDER BY id;",
 		"SELECT work_session_id, issue_id FROM work_session_issues ORDER BY work_session_id, issue_id;",
