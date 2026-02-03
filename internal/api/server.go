@@ -110,25 +110,25 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /auth/verify", s.handleVerifySubmit)
 
 	// Projects
-	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, rateLimitOther)))
-	mux.HandleFunc("GET /v1/projects", s.requireAuth(s.withRateLimit(s.handleListProjects, rateLimitOther)))
-	mux.HandleFunc("GET /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleGetProject, rateLimitOther)))
-	mux.HandleFunc("PATCH /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleUpdateProject, rateLimitOther)))
-	mux.HandleFunc("DELETE /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleDeleteProject, rateLimitOther)))
+	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/projects", s.requireAuth(s.withRateLimit(s.handleListProjects, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleGetProject, s.config.RateLimitOther)))
+	mux.HandleFunc("PATCH /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleUpdateProject, s.config.RateLimitOther)))
+	mux.HandleFunc("DELETE /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleDeleteProject, s.config.RateLimitOther)))
 
 	// Members
-	mux.HandleFunc("POST /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleAddMember, rateLimitOther)))
-	mux.HandleFunc("GET /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleListMembers, rateLimitOther)))
-	mux.HandleFunc("PATCH /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleUpdateMember, rateLimitOther)))
-	mux.HandleFunc("DELETE /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleRemoveMember, rateLimitOther)))
+	mux.HandleFunc("POST /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleAddMember, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleListMembers, s.config.RateLimitOther)))
+	mux.HandleFunc("PATCH /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleUpdateMember, s.config.RateLimitOther)))
+	mux.HandleFunc("DELETE /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleRemoveMember, s.config.RateLimitOther)))
 
 	// Sync
-	mux.HandleFunc("POST /v1/projects/{id}/sync/push", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleSyncPush, rateLimitPush)))
-	mux.HandleFunc("GET /v1/projects/{id}/sync/pull", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncPull, rateLimitPull)))
-	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncStatus, rateLimitOther)))
-	mux.HandleFunc("GET /v1/projects/{id}/sync/snapshot", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncSnapshot, rateLimitOther)))
+	mux.HandleFunc("POST /v1/projects/{id}/sync/push", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleSyncPush, s.config.RateLimitPush)))
+	mux.HandleFunc("GET /v1/projects/{id}/sync/pull", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncPull, s.config.RateLimitPull)))
+	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncStatus, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/projects/{id}/sync/snapshot", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncSnapshot, s.config.RateLimitOther)))
 
-	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter))
+	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth))
 }
 
 // handleHealth returns a health check response, pinging the server DB.

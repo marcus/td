@@ -52,12 +52,20 @@ type Harness struct {
 	homeDirs   map[string]string // actor -> HOME dir
 	sessionIDs map[string]string // actor -> TD_SESSION_ID
 
-	serverCmd  *exec.Cmd
-	serverLog  string // path to server log file
-	serverPort int    // port the server listens on
-	serverData string // path to server-data directory
-	config     Config
-	t          *testing.T // nil when used standalone
+	serverCmd          *exec.Cmd
+	serverLog          string   // path to server log file
+	serverPort         int      // port the server listens on
+	serverData         string   // path to server-data directory
+	serverEnvOverrides []string // extra env vars for server (set before Setup)
+	config             Config
+	t                  *testing.T // nil when used standalone
+}
+
+// SetServerEnv adds environment variables for the server process.
+// Can be called before Setup() or between StopServer()/StartServer() calls.
+// Later values override earlier ones (appended after defaults).
+func (h *Harness) SetServerEnv(envs ...string) {
+	h.serverEnvOverrides = append(h.serverEnvOverrides, envs...)
 }
 
 // actorNames returns the actor names for the configured number of actors.
@@ -166,7 +174,12 @@ func Setup(t *testing.T, cfg Config) *Harness {
 		fmt.Sprintf("SYNC_BASE_URL=%s", h.ServerURL),
 		"SYNC_LOG_FORMAT=text",
 		"SYNC_LOG_LEVEL=info",
+		"SYNC_RATE_LIMIT_AUTH=1000",
+		"SYNC_RATE_LIMIT_PUSH=10000",
+		"SYNC_RATE_LIMIT_PULL=10000",
+		"SYNC_RATE_LIMIT_OTHER=10000",
 	)
+	h.serverCmd.Env = append(h.serverCmd.Env, h.serverEnvOverrides...)
 	h.serverCmd.Stdout = logFile
 	h.serverCmd.Stderr = logFile
 
@@ -283,13 +296,33 @@ func (h *Harness) TdC(args ...string) (string, error) {
 	return h.Td("carol", args...)
 }
 
+// syncWithRetry runs td sync for an actor, retrying on rate-limit (429) errors.
+func (h *Harness) syncWithRetry(actor string) (string, error) {
+	backoff := 500 * time.Millisecond
+	for attempt := range 5 {
+		out, err := h.Td(actor, "sync")
+		if err == nil {
+			return out, nil
+		}
+		if !strings.Contains(out, "429") && !strings.Contains(strings.ToLower(out), "rate") {
+			return out, err
+		}
+		if attempt == 4 {
+			return out, err
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
+	return "", fmt.Errorf("unreachable")
+}
+
 // SyncAll syncs all actors in round-robin for convergence.
-// Performs 3 rounds of push+pull for each actor.
+// Performs 3 rounds of push+pull for each actor, with rate-limit retry.
 func (h *Harness) SyncAll() error {
 	actors := actorNames(h.config.NumActors)
 	for round := range 3 {
 		for _, actor := range actors {
-			out, err := h.Td(actor, "sync")
+			out, err := h.syncWithRetry(actor)
 			if err != nil {
 				return fmt.Errorf("sync %s round %d: %v\n%s", actor, round, err, out)
 			}
@@ -354,7 +387,12 @@ func (h *Harness) StartServer() error {
 		fmt.Sprintf("SYNC_BASE_URL=%s", h.ServerURL),
 		"SYNC_LOG_FORMAT=text",
 		"SYNC_LOG_LEVEL=info",
+		"SYNC_RATE_LIMIT_AUTH=1000",
+		"SYNC_RATE_LIMIT_PUSH=10000",
+		"SYNC_RATE_LIMIT_PULL=10000",
+		"SYNC_RATE_LIMIT_OTHER=10000",
 	)
+	h.serverCmd.Env = append(h.serverCmd.Env, h.serverEnvOverrides...)
 	h.serverCmd.Stdout = logFile
 	h.serverCmd.Stderr = logFile
 

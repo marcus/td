@@ -61,7 +61,7 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-// Rate limits per endpoint tier.
+// Default rate limits per endpoint tier (used as documentation/fallbacks).
 const (
 	rateLimitAuth  = 10  // /auth/* per IP
 	rateLimitPush  = 60  // /sync/push per API key
@@ -71,7 +71,7 @@ const (
 
 // authRateLimitMiddleware rate-limits auth endpoints by IP address.
 // Applied globally; only acts on /auth/ and /v1/auth/ paths.
-func authRateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
+func authRateLimitMiddleware(rl *RateLimiter, limit int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -81,7 +81,7 @@ func authRateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 					host = r.RemoteAddr
 				}
 				key := "ip:" + host
-				if !rl.Allow(key, rateLimitAuth) {
+				if !rl.Allow(key, limit) {
 					writeError(w, http.StatusTooManyRequests, "rate_limited", "rate limit exceeded")
 					return
 				}

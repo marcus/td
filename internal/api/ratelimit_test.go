@@ -97,7 +97,7 @@ func TestAuthRateLimitMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth)(inner)
 
 	// Auth endpoint should be rate limited
 	for i := 0; i < rateLimitAuth; i++ {
@@ -136,7 +136,7 @@ func TestAuthRateLimitDifferentIPs(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth)(inner)
 
 	// Exhaust IP 1
 	for i := 0; i < rateLimitAuth; i++ {
@@ -157,7 +157,10 @@ func TestAuthRateLimitDifferentIPs(t *testing.T) {
 }
 
 func TestWithRateLimitIntegration(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store := newTestServerWithConfig(t, func(cfg *Config) {
+		cfg.RateLimitPush = rateLimitPush
+		cfg.RateLimitOther = 100000
+	})
 	_, token := createTestUser(t, store, "ratelimit@test.com")
 
 	// Create a project first

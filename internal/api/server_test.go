@@ -34,9 +34,52 @@ func newTestServer(t *testing.T) (*Server, *serverdb.ServerDB) {
 	}
 
 	cfg := Config{
+		RateLimitAuth:  100000,
+		RateLimitPush:  100000,
+		RateLimitPull:  100000,
+		RateLimitOther: 100000,
 		ListenAddr:     ":0",
 		ServerDBPath:   dbPath,
 		ProjectDataDir: projectDir,
+	}
+
+	srv, err := NewServer(cfg, store)
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	t.Cleanup(func() { srv.dbPool.CloseAll() })
+
+	return srv, store
+}
+
+// newTestServerWithConfig creates a test server with a custom config modifier.
+func newTestServerWithConfig(t *testing.T, modCfg func(*Config)) (*Server, *serverdb.ServerDB) {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	dbPath := filepath.Join(tmpDir, "server.db")
+	store, err := serverdb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open server db: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	projectDir := filepath.Join(tmpDir, "projects")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("create project dir: %v", err)
+	}
+
+	cfg := Config{
+		RateLimitAuth:  100000,
+		RateLimitPush:  100000,
+		RateLimitPull:  100000,
+		RateLimitOther: 100000,
+		ListenAddr:     ":0",
+		ServerDBPath:   dbPath,
+		ProjectDataDir: projectDir,
+	}
+	if modCfg != nil {
+		modCfg(&cfg)
 	}
 
 	srv, err := NewServer(cfg, store)
@@ -632,7 +675,9 @@ func TestPushWithWriterSucceeds(t *testing.T) {
 }
 
 func TestPushRateLimit(t *testing.T) {
-	srv, store := newTestServer(t)
+	srv, store := newTestServerWithConfig(t, func(cfg *Config) {
+		cfg.RateLimitPush = 60
+	})
 	_, token := createTestUser(t, store, "ratelimit@test.com")
 
 	// Create project

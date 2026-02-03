@@ -2,6 +2,7 @@ package api
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -15,6 +16,11 @@ type Config struct {
 	BaseURL         string
 	LogFormat       string // "json" (default) or "text"
 	LogLevel        string // "debug", "info" (default), "warn", "error"
+
+	RateLimitAuth  int // /auth/* per IP per minute (default: 10)
+	RateLimitPush  int // /sync/push per API key per minute (default: 60)
+	RateLimitPull  int // /sync/pull per API key per minute (default: 120)
+	RateLimitOther int // all other per API key per minute (default: 300)
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -28,6 +34,11 @@ func LoadConfig() Config {
 		BaseURL:         "http://localhost:8080",
 		LogFormat:       "json",
 		LogLevel:        "info",
+
+		RateLimitAuth:  10,
+		RateLimitPush:  60,
+		RateLimitPull:  120,
+		RateLimitOther: 300,
 	}
 
 	if v := os.Getenv("SYNC_LISTEN_ADDR"); v != "" {
@@ -55,6 +66,27 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("SYNC_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
+	}
+
+	if v := os.Getenv("SYNC_RATE_LIMIT_AUTH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitAuth = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_PUSH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitPush = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_PULL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitPull = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_OTHER"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitOther = n
+		}
 	}
 
 	return cfg
