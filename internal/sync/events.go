@@ -168,6 +168,8 @@ func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, 
 		return applyResult{}, deleteEntity(tx, event.EntityType, event.EntityID)
 	case "soft_delete":
 		return applyResult{}, softDeleteEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
+	case "restore":
+		return applyResult{}, restoreEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
 	default:
 		return applyResult{}, fmt.Errorf("unknown action type: %q", event.ActionType)
 	}
@@ -337,6 +339,15 @@ func softDeleteEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Ti
 	return nil
 }
 
+// restoreEntity clears deleted_at on a row. No-op if the row does not exist.
+func restoreEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Time) error {
+	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL, updated_at = ? WHERE id = ?", entityType)
+	if _, err := tx.Exec(query, timestamp, entityID); err != nil {
+		return fmt.Errorf("restore %s/%s: %w", entityType, entityID, err)
+	}
+	return nil
+}
+
 // buildInsert sorts fields alphabetically and returns column list, placeholders, and values.
 // Returns an error if any key is not a valid SQL column name.
 func buildInsert(fields map[string]any) (cols string, placeholders string, vals []any, err error) {
@@ -366,6 +377,12 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 // All other array/object fields are stored as JSON strings.
 func normalizeFieldsForDB(entityType string, fields map[string]any) {
 	for k, v := range fields {
+		if v == nil {
+			if entityType == "issues" && (k == "implementer_session" || k == "reviewer_session" || k == "creator_session") {
+				fields[k] = ""
+			}
+			continue
+		}
 		switch val := v.(type) {
 		case []any:
 			if entityType == "issues" && k == "labels" {
