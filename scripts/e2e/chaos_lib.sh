@@ -3233,3 +3233,184 @@ verify_event_ordering_cross_db() {
     CHAOS_EVENT_ORDERING_VIOLATIONS=$((CHAOS_EVENT_ORDERING_VIOLATIONS + violations))
     return $violations
 }
+
+# ============================================================
+# 12. Soak/Endurance Test Verification
+# ============================================================
+# Verifies resource usage metrics from soak testing stay within thresholds.
+
+# Configurable thresholds (override via env vars)
+SOAK_MEM_GROWTH_PERCENT="${SOAK_MEM_GROWTH_PERCENT:-50}"
+SOAK_MAX_FD_COUNT="${SOAK_MAX_FD_COUNT:-100}"
+SOAK_MAX_WAL_MB="${SOAK_MAX_WAL_MB:-50}"
+SOAK_MAX_GOROUTINES="${SOAK_MAX_GOROUTINES:-50}"
+SOAK_MAX_DIR_GROWTH_MB="${SOAK_MAX_DIR_GROWTH_MB:-100}"
+
+# Soak verification results
+SOAK_VERIFY_PASSED=0
+SOAK_VERIFY_FAILED=0
+SOAK_VERIFY_RESULTS=""
+
+# verify_soak_metrics: Analyze soak-metrics.jsonl and verify thresholds.
+# Usage: verify_soak_metrics "$METRICS_FILE"
+# Returns 0 if all thresholds pass, 1 if any exceeded.
+verify_soak_metrics() {
+    local metrics_file="$1"
+    local failures=0
+
+    _step "Soak metrics verification"
+
+    if [ ! -f "$metrics_file" ]; then
+        _fail "soak metrics file not found: $metrics_file"
+        return 1
+    fi
+
+    local sample_count
+    sample_count=$(wc -l < "$metrics_file" | tr -d ' ')
+    if [ "$sample_count" -lt 2 ]; then
+        _ok "insufficient samples for soak analysis (need >= 2, have $sample_count)"
+        return 0
+    fi
+
+    # Extract first and last records for comparison
+    local first_record last_record
+    first_record=$(head -1 "$metrics_file")
+    last_record=$(tail -1 "$metrics_file")
+
+    # Memory growth check
+    local first_alloc last_alloc mem_growth_pct
+    first_alloc=$(echo "$first_record" | jq -r '.alloc_mb // 0')
+    last_alloc=$(echo "$last_record" | jq -r '.alloc_mb // 0')
+    if [ "$(echo "$first_alloc > 0" | bc)" -eq 1 ]; then
+        mem_growth_pct=$(echo "scale=2; (($last_alloc - $first_alloc) / $first_alloc) * 100" | bc)
+        if [ "$(echo "$mem_growth_pct > $SOAK_MEM_GROWTH_PERCENT" | bc)" -eq 1 ]; then
+            _fail "memory growth ${mem_growth_pct}% exceeds threshold ${SOAK_MEM_GROWTH_PERCENT}% (${first_alloc}MB -> ${last_alloc}MB)"
+            failures=$((failures + 1))
+            kv_set SOAK_VERIFY_RESULTS "mem_growth" "fail:${mem_growth_pct}%"
+        else
+            _ok "memory growth ${mem_growth_pct}% within threshold ${SOAK_MEM_GROWTH_PERCENT}%"
+            kv_set SOAK_VERIFY_RESULTS "mem_growth" "pass:${mem_growth_pct}%"
+        fi
+    else
+        _ok "memory growth: no baseline (skipped)"
+        kv_set SOAK_VERIFY_RESULTS "mem_growth" "skipped"
+    fi
+
+    # Goroutine check (max value)
+    local max_goroutines
+    max_goroutines=$(jq -s 'map(.num_goroutine) | max' "$metrics_file")
+    if [ "$max_goroutines" -gt "$SOAK_MAX_GOROUTINES" ]; then
+        _fail "max goroutines $max_goroutines exceeds threshold $SOAK_MAX_GOROUTINES"
+        failures=$((failures + 1))
+        kv_set SOAK_VERIFY_RESULTS "goroutines" "fail:$max_goroutines"
+    else
+        _ok "max goroutines $max_goroutines within threshold $SOAK_MAX_GOROUTINES"
+        kv_set SOAK_VERIFY_RESULTS "goroutines" "pass:$max_goroutines"
+    fi
+
+    # File descriptor check (max value from server)
+    local max_fd
+    max_fd=$(jq -s 'map(.fd_count_server) | max' "$metrics_file")
+    if [ "$max_fd" -gt "$SOAK_MAX_FD_COUNT" ]; then
+        _fail "max file descriptors $max_fd exceeds threshold $SOAK_MAX_FD_COUNT"
+        failures=$((failures + 1))
+        kv_set SOAK_VERIFY_RESULTS "fd_count" "fail:$max_fd"
+    else
+        _ok "max file descriptors $max_fd within threshold $SOAK_MAX_FD_COUNT"
+        kv_set SOAK_VERIFY_RESULTS "fd_count" "pass:$max_fd"
+    fi
+
+    # WAL size check (max of both clients, in MB)
+    local max_wal_a max_wal_b max_wal_bytes max_wal_mb
+    max_wal_a=$(jq -s 'map(.wal_size_a) | max' "$metrics_file")
+    max_wal_b=$(jq -s 'map(.wal_size_b) | max' "$metrics_file")
+    max_wal_bytes=$((max_wal_a > max_wal_b ? max_wal_a : max_wal_b))
+    max_wal_mb=$((max_wal_bytes / 1024 / 1024))
+    if [ "$max_wal_mb" -gt "$SOAK_MAX_WAL_MB" ]; then
+        _fail "max WAL size ${max_wal_mb}MB exceeds threshold ${SOAK_MAX_WAL_MB}MB"
+        failures=$((failures + 1))
+        kv_set SOAK_VERIFY_RESULTS "wal_size" "fail:${max_wal_mb}MB"
+    else
+        _ok "max WAL size ${max_wal_mb}MB within threshold ${SOAK_MAX_WAL_MB}MB"
+        kv_set SOAK_VERIFY_RESULTS "wal_size" "pass:${max_wal_mb}MB"
+    fi
+
+    # Directory growth check
+    local first_dir last_dir dir_growth_kb dir_growth_mb
+    first_dir=$(echo "$first_record" | jq -r '.dir_size_kb_a // 0')
+    last_dir=$(echo "$last_record" | jq -r '.dir_size_kb_a // 0')
+    dir_growth_kb=$((last_dir - first_dir))
+    dir_growth_mb=$((dir_growth_kb / 1024))
+    if [ "$dir_growth_mb" -gt "$SOAK_MAX_DIR_GROWTH_MB" ]; then
+        _fail "directory growth ${dir_growth_mb}MB exceeds threshold ${SOAK_MAX_DIR_GROWTH_MB}MB"
+        failures=$((failures + 1))
+        kv_set SOAK_VERIFY_RESULTS "dir_growth" "fail:${dir_growth_mb}MB"
+    else
+        _ok "directory growth ${dir_growth_mb}MB within threshold ${SOAK_MAX_DIR_GROWTH_MB}MB"
+        kv_set SOAK_VERIFY_RESULTS "dir_growth" "pass:${dir_growth_mb}MB"
+    fi
+
+    # Summary
+    SOAK_VERIFY_FAILED=$failures
+    SOAK_VERIFY_PASSED=$((5 - failures))
+
+    if [ "$failures" -gt 0 ]; then
+        return 1
+    fi
+    return 0
+}
+
+# soak_metrics_summary: Print human-readable summary of soak metrics.
+# Usage: soak_metrics_summary "$METRICS_FILE"
+soak_metrics_summary() {
+    local metrics_file="$1"
+
+    if [ ! -f "$metrics_file" ]; then
+        echo "  (no metrics file)"
+        return
+    fi
+
+    local sample_count duration_s
+    sample_count=$(wc -l < "$metrics_file" | tr -d ' ')
+    duration_s=$(jq -s 'if length > 0 then (.[length-1].elapsed_s // 0) else 0 end' "$metrics_file")
+
+    echo "  Samples:          $sample_count"
+    echo "  Duration:         ${duration_s}s"
+
+    if [ "$sample_count" -ge 1 ]; then
+        local first_alloc last_alloc first_goroutines last_goroutines
+        local first_record last_record
+        first_record=$(head -1 "$metrics_file")
+        last_record=$(tail -1 "$metrics_file")
+
+        first_alloc=$(echo "$first_record" | jq -r '.alloc_mb // 0')
+        last_alloc=$(echo "$last_record" | jq -r '.alloc_mb // 0')
+        first_goroutines=$(echo "$first_record" | jq -r '.num_goroutine // 0')
+        last_goroutines=$(echo "$last_record" | jq -r '.num_goroutine // 0')
+
+        echo "  Memory:           ${first_alloc}MB -> ${last_alloc}MB"
+        echo "  Goroutines:       ${first_goroutines} -> ${last_goroutines}"
+
+        local max_fd max_wal_a max_wal_b max_wal_mb
+        max_fd=$(jq -s 'map(.fd_count_server) | max' "$metrics_file")
+        max_wal_a=$(jq -s 'map(.wal_size_a) | max' "$metrics_file")
+        max_wal_b=$(jq -s 'map(.wal_size_b) | max' "$metrics_file")
+        max_wal_mb=$(( (max_wal_a > max_wal_b ? max_wal_a : max_wal_b) / 1024 / 1024 ))
+
+        echo "  Max FDs (server): $max_fd"
+        echo "  Max WAL:          ${max_wal_mb}MB"
+
+        local first_dir last_dir dir_growth_kb
+        first_dir=$(echo "$first_record" | jq -r '.dir_size_kb_a // 0')
+        last_dir=$(echo "$last_record" | jq -r '.dir_size_kb_a // 0')
+        dir_growth_kb=$((last_dir - first_dir))
+
+        echo "  Dir growth:       ${dir_growth_kb}KB"
+    fi
+
+    # Verification results
+    if [ -n "$SOAK_VERIFY_RESULTS" ]; then
+        echo ""
+        echo "  Thresholds:       $SOAK_VERIFY_PASSED passed, $SOAK_VERIFY_FAILED failed"
+    fi
+}

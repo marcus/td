@@ -350,3 +350,109 @@ report() {
         exit 1
     fi
 }
+
+# ---- Soak Testing Support ----
+# These functions collect metrics for endurance/soak testing
+
+# Soak metrics output file (set by caller)
+SOAK_METRICS_FILE=""
+
+# Baseline values (captured at start)
+_SOAK_BASELINE_ALLOC_MB=0
+_SOAK_BASELINE_GOROUTINES=0
+_SOAK_BASELINE_FD_COUNT=0
+_SOAK_BASELINE_DIR_SIZE_KB=0
+
+# Initialize soak metrics collection
+# Usage: init_soak_metrics
+init_soak_metrics() {
+    SOAK_METRICS_FILE="${WORKDIR}/soak-metrics.jsonl"
+    : > "$SOAK_METRICS_FILE"
+
+    # Capture baseline (first collection)
+    _capture_soak_baseline
+}
+
+# Capture baseline metrics for comparison
+_capture_soak_baseline() {
+    local stats
+    stats=$(td_a debug-stats 2>/dev/null || echo '{}')
+
+    _SOAK_BASELINE_ALLOC_MB=$(echo "$stats" | jq -r '.alloc_mb // 0')
+    _SOAK_BASELINE_GOROUTINES=$(echo "$stats" | jq -r '.num_goroutine // 0')
+
+    # File descriptors for td process (uses SERVER_PID as proxy for td activity)
+    if [ -n "$SERVER_PID" ]; then
+        if [[ "$OSTYPE" == darwin* ]]; then
+            _SOAK_BASELINE_FD_COUNT=$(lsof -p "$SERVER_PID" 2>/dev/null | wc -l | tr -d ' ')
+        else
+            _SOAK_BASELINE_FD_COUNT=$(ls /proc/"$SERVER_PID"/fd 2>/dev/null | wc -l | tr -d ' ')
+        fi
+    fi
+    _SOAK_BASELINE_FD_COUNT=${_SOAK_BASELINE_FD_COUNT:-0}
+
+    # Directory size
+    _SOAK_BASELINE_DIR_SIZE_KB=$(du -sk "$CLIENT_A_DIR/.todos" 2>/dev/null | cut -f1)
+    _SOAK_BASELINE_DIR_SIZE_KB=${_SOAK_BASELINE_DIR_SIZE_KB:-0}
+}
+
+# Collect and append soak metrics to JSONL file
+# Usage: collect_soak_metrics
+# Outputs one JSON line per call with timestamp and all metrics
+collect_soak_metrics() {
+    [ -z "$SOAK_METRICS_FILE" ] && return
+
+    local ts elapsed stats alloc_mb sys_mb num_gc num_goroutine heap_objects heap_inuse_mb
+    local fd_count_a fd_count_server wal_size_a wal_size_b dir_size_a dir_size_b
+
+    ts=$(date +%s)
+    elapsed=$(( ts - CHAOS_TIME_START ))
+
+    # Runtime stats from td debug-stats (actor A)
+    stats=$(td_a debug-stats 2>/dev/null || echo '{}')
+    alloc_mb=$(echo "$stats" | jq -r '.alloc_mb // 0')
+    sys_mb=$(echo "$stats" | jq -r '.sys_mb // 0')
+    num_gc=$(echo "$stats" | jq -r '.num_gc // 0')
+    num_goroutine=$(echo "$stats" | jq -r '.num_goroutine // 0')
+    heap_objects=$(echo "$stats" | jq -r '.heap_objects // 0')
+    heap_inuse_mb=$(echo "$stats" | jq -r '.heap_inuse_mb // 0')
+
+    # File descriptors
+    fd_count_server=0
+    if [ -n "$SERVER_PID" ]; then
+        if [[ "$OSTYPE" == darwin* ]]; then
+            fd_count_server=$(lsof -p "$SERVER_PID" 2>/dev/null | wc -l | tr -d ' ')
+        else
+            fd_count_server=$(ls /proc/"$SERVER_PID"/fd 2>/dev/null | wc -l | tr -d ' ')
+        fi
+    fi
+
+    # WAL sizes (bytes)
+    wal_size_a=0
+    wal_size_b=0
+    if [ -f "$CLIENT_A_DIR/.todos/issues.db-wal" ]; then
+        if [[ "$OSTYPE" == darwin* ]]; then
+            wal_size_a=$(stat -f %z "$CLIENT_A_DIR/.todos/issues.db-wal" 2>/dev/null || echo 0)
+        else
+            wal_size_a=$(stat -c %s "$CLIENT_A_DIR/.todos/issues.db-wal" 2>/dev/null || echo 0)
+        fi
+    fi
+    if [ -f "$CLIENT_B_DIR/.todos/issues.db-wal" ]; then
+        if [[ "$OSTYPE" == darwin* ]]; then
+            wal_size_b=$(stat -f %z "$CLIENT_B_DIR/.todos/issues.db-wal" 2>/dev/null || echo 0)
+        else
+            wal_size_b=$(stat -c %s "$CLIENT_B_DIR/.todos/issues.db-wal" 2>/dev/null || echo 0)
+        fi
+    fi
+
+    # Directory sizes (KB)
+    dir_size_a=$(du -sk "$CLIENT_A_DIR/.todos" 2>/dev/null | cut -f1)
+    dir_size_b=$(du -sk "$CLIENT_B_DIR/.todos" 2>/dev/null | cut -f1)
+    dir_size_a=${dir_size_a:-0}
+    dir_size_b=${dir_size_b:-0}
+
+    # Append JSONL record
+    cat >> "$SOAK_METRICS_FILE" <<EOF
+{"ts":$ts,"elapsed_s":$elapsed,"alloc_mb":$alloc_mb,"sys_mb":$sys_mb,"num_gc":$num_gc,"num_goroutine":$num_goroutine,"heap_objects":$heap_objects,"heap_inuse_mb":$heap_inuse_mb,"fd_count_server":$fd_count_server,"wal_size_a":$wal_size_a,"wal_size_b":$wal_size_b,"dir_size_kb_a":$dir_size_a,"dir_size_kb_b":$dir_size_b}
+EOF
+}
