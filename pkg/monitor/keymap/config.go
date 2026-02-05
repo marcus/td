@@ -1,3 +1,5 @@
+// Package keymap provides user-configurable key bindings for the TUI monitor,
+// loaded from .todos/keymap.json.
 package keymap
 
 import (

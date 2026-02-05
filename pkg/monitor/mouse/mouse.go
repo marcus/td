@@ -1,3 +1,5 @@
+// Package mouse provides rectangular hit region tracking and double-click
+// detection for TUI mouse support.
 package mouse
 
 import (

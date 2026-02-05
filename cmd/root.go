@@ -1,3 +1,4 @@
+// Package cmd implements all td CLI commands using cobra.
 package cmd
 
 import (

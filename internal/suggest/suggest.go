@@ -1,3 +1,5 @@
+// Package suggest provides fuzzy matching for CLI flag and command suggestions
+// using Levenshtein distance.
 package suggest
 
 import (

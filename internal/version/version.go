@@ -1,3 +1,5 @@
+// Package version provides update checking against GitHub releases and
+// semantic version comparison.
 package version
 
 import (

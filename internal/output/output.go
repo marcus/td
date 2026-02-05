@@ -1,3 +1,5 @@
+// Package output provides styled terminal output helpers (success, error,
+// warning, issue formatting) using lipgloss.
 package output
 
 import (

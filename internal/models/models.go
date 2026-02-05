@@ -1,3 +1,5 @@
+// Package models defines the core domain types (Issue, Log, Handoff,
+// WorkSession, Board, etc.) and their validation helpers.
 package models
 
 import (

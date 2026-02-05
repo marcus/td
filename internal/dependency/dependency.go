@@ -1,3 +1,5 @@
+// Package dependency provides cycle-safe dependency graph operations between
+// issues.
 package dependency
 
 import (
