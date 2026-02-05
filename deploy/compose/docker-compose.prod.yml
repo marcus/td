@@ -1,0 +1,26 @@
+# Production environment overrides
+# Strict config, required S3 backup, resource limits
+
+services:
+  td-sync:
+    environment:
+      - SYNC_LOG_FORMAT=${SYNC_LOG_FORMAT:-json}
+      - SYNC_LOG_LEVEL=${SYNC_LOG_LEVEL:-info}
+      - SYNC_RATE_LIMIT_AUTH=${SYNC_RATE_LIMIT_AUTH:-10}
+      - SYNC_RATE_LIMIT_PUSH=${SYNC_RATE_LIMIT_PUSH:-60}
+      - SYNC_RATE_LIMIT_PULL=${SYNC_RATE_LIMIT_PULL:-120}
+      - SYNC_RATE_LIMIT_OTHER=${SYNC_RATE_LIMIT_OTHER:-300}
+      # S3 backup (required)
+      - LITESTREAM_S3_BUCKET=${LITESTREAM_S3_BUCKET}
+      - LITESTREAM_S3_ENDPOINT=${LITESTREAM_S3_ENDPOINT}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - ./litestream/litestream.prod.yml:/etc/litestream.yml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M

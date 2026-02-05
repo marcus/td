@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -9,14 +10,21 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/config"
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
+	"github.com/marcus/td/internal/syncclient"
+	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
+	if m.SyncPromptOpen {
+		return keymap.ContextSyncPrompt
+	}
 	if m.GettingStartedOpen {
 		return keymap.ContextGettingStarted
 	}
@@ -191,6 +199,18 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey processes key input using the centralized keymap registry
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := m.currentContext()
+
+	// Sync Prompt modal: let declarative modal handle keys first
+	if m.SyncPromptOpen && m.SyncPromptModal != nil {
+		action, cmd := m.SyncPromptModal.HandleKey(msg)
+		if action != "" {
+			return m, m.handleSyncPromptAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, etc.
+	}
 
 	// Getting Started modal: let declarative modal handle keys first
 	if m.GettingStartedOpen && m.GettingStartedModal != nil {
@@ -1529,23 +1549,17 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 	if !targetIssue.HasPosition {
 		var targetPos int
 		if currentIssue.HasPosition {
-			// Place target relative to current's position
+			// Place target relative to current using sparse gap
 			if direction < 0 {
-				targetPos = currentIssue.Position // Target goes at current's position (will shift current down)
+				targetPos = currentIssue.Position - db.PositionGap
 			} else {
-				targetPos = currentIssue.Position + 1
+				targetPos = currentIssue.Position + db.PositionGap
 			}
 		} else {
-			// Neither positioned - find nearest positioned neighbor or use 1
-			targetPos = 1
-			for i := targetIdx; i >= 0; i-- {
-				if m.BoardMode.Issues[i].HasPosition {
-					targetPos = m.BoardMode.Issues[i].Position + 1
-					break
-				}
-			}
+			// Neither positioned - assign first sparse key
+			targetPos = db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
@@ -1557,14 +1571,14 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 
 	// Now handle current issue
 	if !currentIssue.HasPosition {
-		// Current is unpositioned - insert relative to target
+		// Current is unpositioned - insert relative to target using sparse gap
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetIssue.Position // Moving up: current takes target's position
+			insertPos = targetIssue.Position - db.PositionGap
 		} else {
-			insertPos = targetIssue.Position + 1 // Moving down: current goes after target
+			insertPos = targetIssue.Position + db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
@@ -1573,11 +1587,16 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	} else {
 		// Both now positioned - swap positions
+		curPos := currentIssue.Position
+		tgtPos := targetIssue.Position
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
+		// Log both sides of the swap (positions are exchanged)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1632,17 +1651,17 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 	if !targetBIV.HasPosition {
 		var targetPos int
 		if currentBIV.HasPosition {
-			// Place target relative to current's position
+			// Place target relative to current using sparse gap
 			if direction < 0 {
-				targetPos = currentBIV.Position // Target goes at current's position (will shift current down)
+				targetPos = currentBIV.Position - db.PositionGap
 			} else {
-				targetPos = currentBIV.Position + 1
+				targetPos = currentBIV.Position + db.PositionGap
 			}
 		} else {
-			// Neither positioned - start fresh
-			targetPos = 1
+			// Neither positioned - assign first sparse key
+			targetPos = db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
@@ -1653,14 +1672,14 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 
 	// Now handle current issue
 	if !currentBIV.HasPosition {
-		// Current is unpositioned - insert relative to target
+		// Current is unpositioned - insert relative to target using sparse gap
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetBIV.Position // Moving up: current takes target's position
+			insertPos = targetBIV.Position - db.PositionGap
 		} else {
-			insertPos = targetBIV.Position + 1 // Moving down: current goes after target
+			insertPos = targetBIV.Position + db.PositionGap
 		}
-		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
+		if err := m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos, m.SessionID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
@@ -1669,11 +1688,16 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	} else {
 		// Both now positioned - swap positions
+		curPos := currentBIV.Position
+		tgtPos := targetBIV.Position
 		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
+		// Log both sides of the swap (positions are exchanged)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
+		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
@@ -1722,8 +1746,24 @@ func (m Model) moveIssueToTop() (Model, tea.Cmd) {
 		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
 	}
 
-	// Move to position 1 (SetIssuePosition handles shifting)
-	if err := m.DB.SetIssuePosition(boardID, issueID, 1); err != nil {
+	// Compute a sort key below the current minimum
+	positions, err := m.DB.GetBoardIssuePositions(boardID)
+	if err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+	var newPos int
+	if len(positions) == 0 {
+		newPos = db.PositionGap
+	} else {
+		// Check if issue is already at min
+		if positions[0].IssueID == issueID {
+			return m, nil
+		}
+		newPos = positions[0].Position - db.PositionGap
+	}
+	if err := m.DB.SetIssuePositionLogged(boardID, issueID, newPos, m.SessionID); err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
@@ -1774,10 +1814,7 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
 	}
 
-	// Remove current position first (if any) to not count it in max
-	_ = m.DB.RemoveIssuePosition(boardID, issueID)
-
-	// Get max position and add to end
+	// Get max position and place after it with a sparse gap
 	maxPos, err := m.DB.GetMaxBoardPosition(boardID)
 	if err != nil {
 		m.StatusMessage = "Error: " + err.Error()
@@ -1785,8 +1822,13 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Move to max+1
-	if err := m.DB.SetIssuePosition(boardID, issueID, maxPos+1); err != nil {
+	var newPos int
+	if maxPos == 0 {
+		newPos = db.PositionGap
+	} else {
+		newPos = maxPos + db.PositionGap
+	}
+	if err := m.DB.SetIssuePositionLogged(boardID, issueID, newPos, m.SessionID); err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
@@ -1917,9 +1959,40 @@ func (m Model) handleGettingStartedAction(action string) (Model, tea.Cmd) {
 		m.GettingStartedOpen = false
 		m.GettingStartedModal = nil
 		m.GettingStartedMouseHandler = nil
+		if m.IsFirstRunInit {
+			m.IsFirstRunInit = false
+			return m, checkSyncPrompt(m.BaseDir)
+		}
 		return m, nil
 	}
 	return m, nil
+}
+
+// checkSyncPrompt returns a tea.Cmd that checks if the user is authenticated
+// and has remote projects, returning SyncPromptDataMsg if so.
+func checkSyncPrompt(baseDir string) tea.Cmd {
+	return func() tea.Msg {
+		if !features.IsEnabled(baseDir, features.SyncMonitorPrompt.Name) {
+			return nil
+		}
+		if !syncconfig.IsAuthenticated() {
+			return nil // no auth, skip silently
+		}
+		serverURL := syncconfig.GetServerURL()
+		apiKey := syncconfig.GetAPIKey()
+		deviceID, err := syncconfig.GetDeviceID()
+		if err != nil {
+			slog.Debug("sync prompt: device id failed", "err", err)
+			return nil
+		}
+		client := syncclient.New(serverURL, apiKey, deviceID)
+		projects, err := client.ListProjects()
+		if err != nil {
+			slog.Debug("sync prompt: list projects failed", "err", err)
+			return nil
+		}
+		return SyncPromptDataMsg{Projects: projects}
+	}
 }
 
 // handleStatsAction handles actions from the stats modal

@@ -1,0 +1,93 @@
+package api
+
+import (
+	"os"
+	"strconv"
+	"time"
+)
+
+// Config holds the server configuration, loaded from environment variables.
+type Config struct {
+	ListenAddr      string
+	ServerDBPath    string
+	ProjectDataDir  string
+	ShutdownTimeout time.Duration
+	AllowSignup     bool
+	BaseURL         string
+	LogFormat       string // "json" (default) or "text"
+	LogLevel        string // "debug", "info" (default), "warn", "error"
+
+	RateLimitAuth  int // /auth/* per IP per minute (default: 10)
+	RateLimitPush  int // /sync/push per API key per minute (default: 60)
+	RateLimitPull  int // /sync/pull per API key per minute (default: 120)
+	RateLimitOther int // all other per API key per minute (default: 300)
+}
+
+// LoadConfig reads configuration from environment variables with sensible defaults.
+func LoadConfig() Config {
+	cfg := Config{
+		ListenAddr:      ":8080",
+		ServerDBPath:    "./data/server.db",
+		ProjectDataDir:  "./data/projects",
+		ShutdownTimeout: 30 * time.Second,
+		AllowSignup:     true,
+		BaseURL:         "http://localhost:8080",
+		LogFormat:       "json",
+		LogLevel:        "info",
+
+		RateLimitAuth:  10,
+		RateLimitPush:  60,
+		RateLimitPull:  120,
+		RateLimitOther: 300,
+	}
+
+	if v := os.Getenv("SYNC_LISTEN_ADDR"); v != "" {
+		cfg.ListenAddr = v
+	}
+	if v := os.Getenv("SYNC_SERVER_DB_PATH"); v != "" {
+		cfg.ServerDBPath = v
+	}
+	if v := os.Getenv("SYNC_PROJECT_DATA_DIR"); v != "" {
+		cfg.ProjectDataDir = v
+	}
+	if v := os.Getenv("SYNC_SHUTDOWN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.ShutdownTimeout = d
+		}
+	}
+	if v := os.Getenv("SYNC_ALLOW_SIGNUP"); v == "false" || v == "0" {
+		cfg.AllowSignup = false
+	}
+	if v := os.Getenv("SYNC_BASE_URL"); v != "" {
+		cfg.BaseURL = v
+	}
+	if v := os.Getenv("SYNC_LOG_FORMAT"); v != "" {
+		cfg.LogFormat = v
+	}
+	if v := os.Getenv("SYNC_LOG_LEVEL"); v != "" {
+		cfg.LogLevel = v
+	}
+
+	if v := os.Getenv("SYNC_RATE_LIMIT_AUTH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitAuth = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_PUSH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitPush = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_PULL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitPull = n
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_OTHER"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RateLimitOther = n
+		}
+	}
+
+	return cfg
+}

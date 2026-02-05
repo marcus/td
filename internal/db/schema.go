@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 15
+const SchemaVersion = 27
 
 const schema = `
 -- Issues table
@@ -77,10 +77,11 @@ CREATE TABLE IF NOT EXISTS issue_files (
 
 -- Issue dependencies table
 CREATE TABLE IF NOT EXISTS issue_dependencies (
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     depends_on_id TEXT NOT NULL,
     relation_type TEXT NOT NULL DEFAULT 'depends_on',
-    PRIMARY KEY (issue_id, depends_on_id),
+    UNIQUE(issue_id, depends_on_id, relation_type),
     FOREIGN KEY (issue_id) REFERENCES issues(id),
     FOREIGN KEY (depends_on_id) REFERENCES issues(id)
 );
@@ -98,10 +99,11 @@ CREATE TABLE IF NOT EXISTS work_sessions (
 
 -- Work session issues junction table
 CREATE TABLE IF NOT EXISTS work_session_issues (
+    id TEXT PRIMARY KEY,
     work_session_id TEXT NOT NULL,
     issue_id TEXT NOT NULL,
     tagged_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (work_session_id, issue_id),
+    UNIQUE(work_session_id, issue_id),
     FOREIGN KEY (work_session_id) REFERENCES work_sessions(id),
     FOREIGN KEY (issue_id) REFERENCES issues(id)
 );
@@ -150,6 +152,12 @@ CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
 `
+
+// BaseSchema returns the initial database schema DDL.
+// Used by the sync test harness to avoid schema duplication.
+func BaseSchema() string {
+	return schema
+}
 
 // Migration defines a database migration
 type Migration struct {
@@ -320,5 +328,127 @@ CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
 		Description: "Migrate integer PK tables to text IDs for sync compatibility",
 		// Handled by custom Go code in migrations.go (migrateToTextIDs)
 		SQL: "",
+	},
+	{
+		Version:     16,
+		Description: "Add sync_state table and sync columns to action_log",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_state (
+    project_id TEXT PRIMARY KEY,
+    last_pushed_action_id INTEGER DEFAULT 0,
+    last_pulled_server_seq INTEGER DEFAULT 0,
+    last_sync_at DATETIME,
+    sync_disabled INTEGER DEFAULT 0
+);
+ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
+ALTER TABLE action_log ADD COLUMN server_seq INTEGER;
+`,
+	},
+	{
+		Version:     17,
+		Description: "Add sync_conflicts table for overwrite tracking",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    server_seq INTEGER NOT NULL,
+    local_data JSON,
+    remote_data JSON,
+    overwritten_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
+`,
+	},
+	{
+		Version:     18,
+		Description: "Add deterministic ID columns to composite-key tables for sync",
+		// Handled by custom Go code in migrations.go (migrateDeterministicIDs)
+		SQL: "",
+	},
+	{
+		Version:     19,
+		Description: "Convert absolute file paths to repo-relative in issue_files",
+		// Handled by custom Go code in migrations.go (migrateFilePathsToRelative)
+		SQL: "",
+	},
+	{
+		Version:     20,
+		Description: "Normalize legacy action_log entries for composite-key entities",
+		// Handled by custom Go code in migrations.go (migrateLegacyActionLogCompositeIDs)
+		SQL: "",
+	},
+	{
+		Version:     21,
+		Description: "Add sync_history table for tracking sync operations",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    direction TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    server_seq INTEGER,
+    device_id TEXT DEFAULT '',
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_history_ts ON sync_history(timestamp);
+`,
+	},
+	{
+		Version:     22,
+		Description: "Sparse positioning: drop unique position index, re-space with gaps",
+		SQL: `
+DROP INDEX IF EXISTS idx_board_positions_position;
+UPDATE board_issue_positions SET position = position * 65536;
+`,
+	},
+	{
+		Version:     23,
+		Description: "Drop UNIQUE(name) on boards to prevent sync data loss",
+		SQL: `
+CREATE TABLE boards_new (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE,
+    last_viewed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    query TEXT NOT NULL DEFAULT '',
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    view_mode TEXT NOT NULL DEFAULT 'swimlanes'
+);
+INSERT INTO boards_new SELECT * FROM boards;
+DROP TABLE boards;
+ALTER TABLE boards_new RENAME TO boards;
+`,
+	},
+	{
+		Version:     24,
+		Description: "Add deterministic id column to work_session_issues for sync",
+		// Handled by custom Go code in migrations.go (migrateWorkSessionIssueIDs)
+		SQL: "",
+	},
+	{
+		Version:     25,
+		Description: "Add deleted_at to board_issue_positions for soft delete sync",
+		// Handled by custom Go code in migrations.go (migrateBoardPositionSoftDelete)
+		SQL: "",
+	},
+	{
+		Version:     26,
+		Description: "Enforce NOT NULL on action_log.id by fixing NULL values and recreating table",
+		// Handled by custom Go code in migrations.go (migrateActionLogNotNullID)
+		SQL: "",
+	},
+	{
+		Version:     27,
+		Description: "Normalize NULL session fields in issues",
+		SQL: `
+UPDATE issues SET implementer_session = '' WHERE implementer_session IS NULL;
+UPDATE issues SET reviewer_session = '' WHERE reviewer_session IS NULL;
+UPDATE issues SET creator_session = '' WHERE creator_session IS NULL;
+`,
 	},
 }

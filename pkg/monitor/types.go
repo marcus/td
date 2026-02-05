@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/syncclient"
 )
 
 // Panel represents which panel is active
@@ -640,4 +641,24 @@ type FirstRunCheckMsg struct {
 type InstallInstructionsResultMsg struct {
 	Success bool
 	Message string // e.g. "Added td instructions to AGENTS.md"
+}
+
+// SyncPromptDataMsg carries fetched sync projects for the sync prompt modal.
+type SyncPromptDataMsg struct {
+	Projects []syncclient.ProjectResponse
+	Error    error
+}
+
+// SyncPromptLinkResultMsg carries the result of linking to an existing sync project.
+type SyncPromptLinkResultMsg struct {
+	Success     bool
+	ProjectName string
+	Error       error
+}
+
+// SyncPromptCreateResultMsg carries the result of creating and linking a new sync project.
+type SyncPromptCreateResultMsg struct {
+	Success     bool
+	ProjectName string
+	Error       error
 }

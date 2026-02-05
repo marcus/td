@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/marcus/td/internal/models"
 )
 
 const configFile = ".todos/config.json"
+const lockFile = ".todos/config.json.lock"
 
 // Title validation defaults
 const (
@@ -36,12 +38,13 @@ func Load(baseDir string) (*models.Config, error) {
 	return &cfg, nil
 }
 
-// Save writes the config to disk
+// Save writes the config to disk using atomic write (temp file + rename)
 func Save(baseDir string, cfg *models.Config) error {
 	configPath := filepath.Join(baseDir, configFile)
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
@@ -50,18 +53,58 @@ func Save(baseDir string, cfg *models.Config) error {
 		return err
 	}
 
-	return os.WriteFile(configPath, data, 0644)
+	// Atomic write: temp file in same dir, then rename
+	tmp, err := os.CreateTemp(dir, "config-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+
+	return os.Rename(tmpName, configPath)
+}
+
+// withConfigLock serializes access to config.json using flock
+func withConfigLock(baseDir string, fn func() error) error {
+	lockPath := filepath.Join(baseDir, lockFile)
+
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+	return fn()
 }
 
 // SetFocus sets the focused issue ID
 func SetFocus(baseDir string, issueID string) error {
-	cfg, err := Load(baseDir)
-	if err != nil {
-		return err
-	}
-
-	cfg.FocusedIssueID = issueID
-	return Save(baseDir, cfg)
+	return withConfigLock(baseDir, func() error {
+		cfg, err := Load(baseDir)
+		if err != nil {
+			return err
+		}
+		cfg.FocusedIssueID = issueID
+		return Save(baseDir, cfg)
+	})
 }
 
 // ClearFocus clears the focused issue
@@ -80,13 +123,14 @@ func GetFocus(baseDir string) (string, error) {
 
 // SetActiveWorkSession sets the active work session ID
 func SetActiveWorkSession(baseDir string, wsID string) error {
-	cfg, err := Load(baseDir)
-	if err != nil {
-		return err
-	}
-
-	cfg.ActiveWorkSession = wsID
-	return Save(baseDir, cfg)
+	return withConfigLock(baseDir, func() error {
+		cfg, err := Load(baseDir)
+		if err != nil {
+			return err
+		}
+		cfg.ActiveWorkSession = wsID
+		return Save(baseDir, cfg)
+	})
 }
 
 // GetActiveWorkSession returns the active work session ID
@@ -136,13 +180,14 @@ func GetPaneHeights(baseDir string) ([3]float64, error) {
 
 // SetPaneHeights saves the pane height ratios to config
 func SetPaneHeights(baseDir string, heights [3]float64) error {
-	cfg, err := Load(baseDir)
-	if err != nil {
-		return err
-	}
-
-	cfg.PaneHeights = heights
-	return Save(baseDir, cfg)
+	return withConfigLock(baseDir, func() error {
+		cfg, err := Load(baseDir)
+		if err != nil {
+			return err
+		}
+		cfg.PaneHeights = heights
+		return Save(baseDir, cfg)
+	})
 }
 
 // FilterState holds the current filter/search state for the monitor
@@ -169,16 +214,17 @@ func GetFilterState(baseDir string) (*FilterState, error) {
 
 // SetFilterState saves the filter state to config
 func SetFilterState(baseDir string, state *FilterState) error {
-	cfg, err := Load(baseDir)
-	if err != nil {
-		return err
-	}
-
-	cfg.SearchQuery = state.SearchQuery
-	cfg.SortMode = state.SortMode
-	cfg.TypeFilter = state.TypeFilter
-	cfg.IncludeClosed = state.IncludeClosed
-	return Save(baseDir, cfg)
+	return withConfigLock(baseDir, func() error {
+		cfg, err := Load(baseDir)
+		if err != nil {
+			return err
+		}
+		cfg.SearchQuery = state.SearchQuery
+		cfg.SortMode = state.SortMode
+		cfg.TypeFilter = state.TypeFilter
+		cfg.IncludeClosed = state.IncludeClosed
+		return Save(baseDir, cfg)
+	})
 }
 
 // GetTitleLengthLimits returns min/max title length limits from config (with defaults)

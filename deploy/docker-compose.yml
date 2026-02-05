@@ -1,0 +1,28 @@
+services:
+  td-sync:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "${SYNC_LISTEN_PORT:-8080}:8080"
+    environment:
+      - SYNC_LISTEN_ADDR=:8080
+      - SYNC_SERVER_DB_PATH=/data/server.db
+      - SYNC_PROJECT_DATA_DIR=/data/projects
+      - SYNC_ALLOW_SIGNUP=${SYNC_ALLOW_SIGNUP:-true}
+      - SYNC_BASE_URL=${SYNC_BASE_URL:-http://localhost:8080}
+      - SYNC_SHUTDOWN_TIMEOUT=${SYNC_SHUTDOWN_TIMEOUT:-30s}
+    volumes:
+      - td-data:/data
+      - td-backups:/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  td-data:
+  td-backups:

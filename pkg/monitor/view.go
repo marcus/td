@@ -48,6 +48,13 @@ func (m Model) renderView() string {
 		return OverlayModal(base, gettingStartedContent, m.Width, m.Height)
 	}
 
+	// Render sync prompt modal if open (using declarative modal)
+	if m.SyncPromptOpen && m.SyncPromptModal != nil {
+		base := m.renderBaseView()
+		syncPromptContent := m.SyncPromptModal.Render(m.Width, m.Height, m.SyncPromptMouse)
+		return OverlayModal(base, syncPromptContent, m.Width, m.Height)
+	}
+
 	// Render base view (panels + footer)
 	base := m.renderBaseView()
 

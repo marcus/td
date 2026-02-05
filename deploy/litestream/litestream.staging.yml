@@ -1,0 +1,7 @@
+# Staging: file backup + optional S3
+# S3 replica only activates if LITESTREAM_S3_BUCKET is set
+dbs:
+  - path: /data/server.db
+    replicas:
+      - type: file
+        path: /backups/server.db

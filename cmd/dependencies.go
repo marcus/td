@@ -9,6 +9,7 @@ import (
 	"github.com/marcus/td/internal/dependency"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -478,7 +479,12 @@ Examples:
 		// Two args: add dependency (backward compat)
 		issueID := args[0]
 		dependsOnID := args[1]
-		return addDependency(database, issueID, dependsOnID)
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		return addDependency(database, issueID, dependsOnID, sess.ID)
 	},
 }
 
@@ -499,6 +505,12 @@ var depAddCmd = &cobra.Command{
 			return err
 		}
 		defer database.Close()
+
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		issueID := args[0]
 
@@ -523,7 +535,7 @@ var depAddCmd = &cobra.Command{
 
 		added := 0
 		for _, depID := range depIDs {
-			if err := addDependency(database, issueID, depID); err == nil {
+			if err := addDependency(database, issueID, depID, sess.ID); err == nil {
 				added++
 			}
 		}
@@ -549,6 +561,12 @@ var depRmCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		issueID := args[0]
 		dependsOnID := args[1]
 
@@ -564,7 +582,7 @@ var depRmCmd = &cobra.Command{
 			return err
 		}
 
-		err = dependency.Remove(database, issueID, dependsOnID)
+		err = database.RemoveDependencyLogged(issueID, dependsOnID, sess.ID)
 		if err != nil {
 			output.Error("failed to remove dependency: %v", err)
 			return err
@@ -576,7 +594,7 @@ var depRmCmd = &cobra.Command{
 }
 
 // addDependency adds a dependency between two issues
-func addDependency(database *db.DB, issueID, dependsOnID string) error {
+func addDependency(database *db.DB, issueID, dependsOnID, sessionID string) error {
 	issue, err := database.GetIssue(issueID)
 	if err != nil {
 		output.Error("issue not found: %s", issueID)
@@ -589,13 +607,18 @@ func addDependency(database *db.DB, issueID, dependsOnID string) error {
 		return err
 	}
 
-	err = dependency.ValidateAndAdd(database, issueID, dependsOnID)
+	err = dependency.Validate(database, issueID, dependsOnID)
 	if err == dependency.ErrDependencyExists {
 		output.Warning("%s already depends on %s", issueID, dependsOnID)
 		return nil
 	}
 	if err != nil {
 		output.Error("%v", err)
+		return err
+	}
+
+	if err := database.AddDependencyLogged(issueID, dependsOnID, "depends_on", sessionID); err != nil {
+		output.Error("failed to add dependency: %v", err)
 		return err
 	}
 

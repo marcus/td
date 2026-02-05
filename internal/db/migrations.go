@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // columnExists checks whether a column exists on a table
@@ -136,6 +138,76 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					migrationsRun++
 					continue
 				}
+			}
+			if migration.Version == 20 {
+				if err := db.migrateLegacyActionLogCompositeIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 20 (action_log normalization): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 19 {
+				if err := db.migrateFilePathsToRelative(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 19 (relative file paths): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 25 {
+				if err := db.migrateBoardPositionSoftDelete(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 25 (board position soft delete): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 26 {
+				if err := db.migrateActionLogNotNullID(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 26 (action_log NOT NULL id): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 24 {
+				if err := db.migrateWorkSessionIssueIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 24 (work_session_issue IDs): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 18 {
+				if err := db.migrateDeterministicIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 18 (deterministic IDs): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
+			if migration.Version == 16 {
+				if err := db.migrateSyncState(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 16 (sync_state): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
 			}
 			if migration.Version == 15 {
 				if err := db.migrateToTextIDs(); err != nil {
@@ -554,6 +626,537 @@ func scanForIntegerPK(rows *sql.Rows) (bool, error) {
 	return false, nil
 }
 
+// migrateSyncState creates sync_state table and adds sync columns to action_log (idempotent).
+func (db *DB) migrateSyncState() error {
+	// Create sync_state table
+	_, err := db.conn.Exec(`CREATE TABLE IF NOT EXISTS sync_state (
+		project_id TEXT PRIMARY KEY,
+		last_pushed_action_id INTEGER DEFAULT 0,
+		last_pulled_server_seq INTEGER DEFAULT 0,
+		last_sync_at DATETIME,
+		sync_disabled INTEGER DEFAULT 0
+	)`)
+	if err != nil {
+		return fmt.Errorf("create sync_state: %w", err)
+	}
+
+	// Add synced_at column if missing
+	hasSyncedAt, err := db.columnExists("action_log", "synced_at")
+	if err != nil {
+		return fmt.Errorf("check synced_at: %w", err)
+	}
+	if !hasSyncedAt {
+		if _, err := db.conn.Exec(`ALTER TABLE action_log ADD COLUMN synced_at DATETIME`); err != nil {
+			return fmt.Errorf("add synced_at: %w", err)
+		}
+	}
+
+	// Add server_seq column if missing
+	hasServerSeq, err := db.columnExists("action_log", "server_seq")
+	if err != nil {
+		return fmt.Errorf("check server_seq: %w", err)
+	}
+	if !hasServerSeq {
+		if _, err := db.conn.Exec(`ALTER TABLE action_log ADD COLUMN server_seq INTEGER`); err != nil {
+			return fmt.Errorf("add server_seq: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// migrateDeterministicIDs adds deterministic ID primary keys to
+// board_issue_positions, issue_dependencies, and issue_files.
+func (db *DB) migrateDeterministicIDs() error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// --- board_issue_positions: add id TEXT PRIMARY KEY ---
+	exists, err := db.tableExistsTx(tx, "board_issue_positions")
+	if err != nil {
+		return fmt.Errorf("check board_issue_positions: %w", err)
+	}
+	if exists {
+		hasID, err := db.columnExistsTx(tx, "board_issue_positions", "id")
+		if err != nil {
+			return fmt.Errorf("check bip id col: %w", err)
+		}
+		if !hasID {
+			if _, err := tx.Exec(`DROP TABLE IF EXISTS board_issue_positions_new`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`CREATE TABLE board_issue_positions_new (
+				id TEXT PRIMARY KEY,
+				board_id TEXT NOT NULL,
+				issue_id TEXT NOT NULL,
+				position INTEGER NOT NULL,
+				added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(board_id, issue_id)
+			)`); err != nil {
+				return fmt.Errorf("create bip_new: %w", err)
+			}
+
+			rows, err := tx.Query(`SELECT board_id, issue_id, position, added_at FROM board_issue_positions`)
+			if err != nil {
+				return fmt.Errorf("read bip: %w", err)
+			}
+			type bipRow struct {
+				boardID, issueID string
+				position         int
+				addedAt          interface{}
+			}
+			var bRows []bipRow
+			for rows.Next() {
+				var r bipRow
+				if err := rows.Scan(&r.boardID, &r.issueID, &r.position, &r.addedAt); err != nil {
+					rows.Close()
+					return err
+				}
+				bRows = append(bRows, r)
+			}
+			rows.Close()
+
+			for _, r := range bRows {
+				id := BoardIssuePosID(r.boardID, r.issueID)
+				if _, err := tx.Exec(`INSERT INTO board_issue_positions_new (id, board_id, issue_id, position, added_at) VALUES (?, ?, ?, ?, ?)`,
+					id, r.boardID, r.issueID, r.position, r.addedAt); err != nil {
+					return fmt.Errorf("insert bip_new: %w", err)
+				}
+			}
+
+			if _, err := tx.Exec(`DROP TABLE board_issue_positions`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`ALTER TABLE board_issue_positions_new RENAME TO board_issue_positions`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_board_positions_position ON board_issue_positions(board_id, position)`); err != nil {
+				return err
+			}
+		}
+	}
+
+	// --- issue_dependencies: add id TEXT PRIMARY KEY ---
+	exists, err = db.tableExistsTx(tx, "issue_dependencies")
+	if err != nil {
+		return fmt.Errorf("check issue_dependencies: %w", err)
+	}
+	if exists {
+		hasID, err := db.columnExistsTx(tx, "issue_dependencies", "id")
+		if err != nil {
+			return fmt.Errorf("check dep id col: %w", err)
+		}
+		if !hasID {
+			if _, err := tx.Exec(`DROP TABLE IF EXISTS issue_dependencies_new`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`CREATE TABLE issue_dependencies_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				depends_on_id TEXT NOT NULL,
+				relation_type TEXT NOT NULL DEFAULT 'depends_on',
+				UNIQUE(issue_id, depends_on_id, relation_type)
+			)`); err != nil {
+				return fmt.Errorf("create dep_new: %w", err)
+			}
+
+			rows, err := tx.Query(`SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies`)
+			if err != nil {
+				return fmt.Errorf("read deps: %w", err)
+			}
+			type depRow struct {
+				issueID, dependsOnID, relationType string
+			}
+			var dRows []depRow
+			for rows.Next() {
+				var r depRow
+				if err := rows.Scan(&r.issueID, &r.dependsOnID, &r.relationType); err != nil {
+					rows.Close()
+					return err
+				}
+				dRows = append(dRows, r)
+			}
+			rows.Close()
+
+			for _, r := range dRows {
+				id := DependencyID(r.issueID, r.dependsOnID, r.relationType)
+				if _, err := tx.Exec(`INSERT INTO issue_dependencies_new (id, issue_id, depends_on_id, relation_type) VALUES (?, ?, ?, ?)`,
+					id, r.issueID, r.dependsOnID, r.relationType); err != nil {
+					return fmt.Errorf("insert dep_new: %w", err)
+				}
+			}
+
+			if _, err := tx.Exec(`DROP TABLE issue_dependencies`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`ALTER TABLE issue_dependencies_new RENAME TO issue_dependencies`); err != nil {
+				return err
+			}
+		}
+	}
+
+	// --- issue_files: backfill deterministic IDs ---
+	exists, err = db.tableExistsTx(tx, "issue_files")
+	if err != nil {
+		return fmt.Errorf("check issue_files: %w", err)
+	}
+	if exists {
+		rows, err := tx.Query(`SELECT id, issue_id, file_path FROM issue_files`)
+		if err != nil {
+			return fmt.Errorf("read issue_files: %w", err)
+		}
+		type ifRow struct {
+			oldID, issueID, filePath string
+		}
+		var fRows []ifRow
+		for rows.Next() {
+			var r ifRow
+			if err := rows.Scan(&r.oldID, &r.issueID, &r.filePath); err != nil {
+				rows.Close()
+				return err
+			}
+			fRows = append(fRows, r)
+		}
+		rows.Close()
+
+		// Deduplicate: if two rows hash to same deterministic ID, keep first
+		seen := make(map[string]bool)
+		for _, r := range fRows {
+			newID := IssueFileID(r.issueID, r.filePath)
+			if seen[newID] {
+				// Duplicate — remove this row
+				if _, err := tx.Exec(`DELETE FROM issue_files WHERE id = ?`, r.oldID); err != nil {
+					return fmt.Errorf("delete dup issue_file: %w", err)
+				}
+				continue
+			}
+			seen[newID] = true
+			if r.oldID != newID {
+				if _, err := tx.Exec(`UPDATE issue_files SET id = ? WHERE id = ?`, newID, r.oldID); err != nil {
+					return fmt.Errorf("update issue_file id: %w", err)
+				}
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// tableExistsTx checks table existence within a transaction
+func (db *DB) tableExistsTx(tx *sql.Tx, table string) (bool, error) {
+	var count int
+	err := tx.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// columnExistsTx checks column existence within a transaction
+func (db *DB) columnExistsTx(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// migrateFilePathsToRelative converts absolute file paths in issue_files
+// to repo-relative paths. Skips paths that are already relative.
+// Best-effort: uses db.baseDir as the repo root.
+func (db *DB) migrateFilePathsToRelative() error {
+	exists, err := db.tableExists("issue_files")
+	if err != nil || !exists {
+		return err
+	}
+
+	rows, err := db.conn.Query(`SELECT id, issue_id, file_path FROM issue_files`)
+	if err != nil {
+		return fmt.Errorf("read issue_files: %w", err)
+	}
+
+	type fileRow struct {
+		id, issueID, filePath string
+	}
+	var fRows []fileRow
+	for rows.Next() {
+		var r fileRow
+		if err := rows.Scan(&r.id, &r.issueID, &r.filePath); err != nil {
+			rows.Close()
+			return err
+		}
+		fRows = append(fRows, r)
+	}
+	rows.Close()
+
+	for _, r := range fRows {
+		// Skip paths that are already relative
+		if !IsAbsolutePath(r.filePath) {
+			continue
+		}
+
+		relPath, err := ToRepoRelative(r.filePath, db.baseDir)
+		if err != nil {
+			// Path is outside repo — leave it as-is
+			continue
+		}
+
+		newID := IssueFileID(r.issueID, relPath)
+
+		// Check if a row with the new relative path already exists (avoid UNIQUE conflict)
+		var existingCount int
+		db.conn.QueryRow(`SELECT COUNT(*) FROM issue_files WHERE issue_id = ? AND file_path = ?`,
+			r.issueID, relPath).Scan(&existingCount)
+		if existingCount > 0 {
+			// Duplicate — delete the old absolute-path row
+			if _, err := db.conn.Exec(`DELETE FROM issue_files WHERE id = ?`, r.id); err != nil {
+				return fmt.Errorf("delete dup file row: %w", err)
+			}
+			continue
+		}
+
+		// Update path and recompute deterministic ID
+		if _, err := db.conn.Exec(
+			`UPDATE issue_files SET file_path = ?, id = ? WHERE id = ?`,
+			relPath, newID, r.id,
+		); err != nil {
+			return fmt.Errorf("update file path: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// migrateLegacyActionLogCompositeIDs normalizes unsynced action_log entries for
+// board positions, dependencies, and file links after deterministic ID and
+// repo-relative path migrations. It rewrites entity_type/entity_id/new_data
+// and marks out-of-repo file links as synced (skipped).
+func (db *DB) migrateLegacyActionLogCompositeIDs() error {
+	exists, err := db.tableExists("action_log")
+	if err != nil || !exists {
+		return err
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT id, action_type, entity_type, entity_id, new_data
+		FROM action_log
+		WHERE synced_at IS NULL AND undone = 0
+		  AND entity_type IN ('board_position', 'board_issue_positions', 'dependency', 'issue_dependencies', 'file_link', 'issue_files')
+	`)
+	if err != nil {
+		return fmt.Errorf("read action_log: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id, actionType, entityType, entityID string
+			newDataStr                           sql.NullString
+		)
+		if err := rows.Scan(&id, &actionType, &entityType, &entityID, &newDataStr); err != nil {
+			return err
+		}
+		fields := map[string]any{}
+		if newDataStr.Valid && newDataStr.String != "" {
+			if err := json.Unmarshal([]byte(newDataStr.String), &fields); err != nil {
+				return fmt.Errorf("parse action_log new_data %s: %w", id, err)
+			}
+		}
+
+		canonicalType := entityType
+		switch entityType {
+		case "board_position":
+			canonicalType = "board_issue_positions"
+		case "dependency":
+			canonicalType = "issue_dependencies"
+		case "file_link":
+			canonicalType = "issue_files"
+		}
+
+		changed := canonicalType != entityType
+
+		switch canonicalType {
+		case "board_issue_positions":
+			boardID := getStringField(fields, "board_id")
+			issueID := getStringField(fields, "issue_id")
+			if boardID == "" || issueID == "" {
+				if a, b, ok := splitLegacyEntityID(entityID); ok {
+					boardID, issueID = a, b
+					if setStringField(fields, "board_id", boardID) {
+						changed = true
+					}
+					if setStringField(fields, "issue_id", issueID) {
+						changed = true
+					}
+				}
+			}
+			if boardID == "" || issueID == "" {
+				if strings.HasPrefix(entityID, boardIssuePosIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				}
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			newID := BoardIssuePosID(boardID, issueID)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		case "issue_dependencies":
+			issueID := getStringField(fields, "issue_id")
+			dependsOnID := getStringField(fields, "depends_on_id")
+			if issueID == "" || dependsOnID == "" {
+				if a, b, ok := splitLegacyEntityID(entityID); ok {
+					issueID, dependsOnID = a, b
+					if setStringField(fields, "issue_id", issueID) {
+						changed = true
+					}
+					if setStringField(fields, "depends_on_id", dependsOnID) {
+						changed = true
+					}
+				}
+			}
+			if issueID == "" || dependsOnID == "" {
+				if strings.HasPrefix(entityID, dependencyIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				}
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			relationType := getStringField(fields, "relation_type")
+			if relationType == "" {
+				relationType = "depends_on"
+				if setStringField(fields, "relation_type", relationType) {
+					changed = true
+				}
+			}
+			newID := DependencyID(issueID, dependsOnID, relationType)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		case "issue_files":
+			issueID := getStringField(fields, "issue_id")
+			filePath := getStringField(fields, "file_path")
+			if issueID == "" {
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			if filePath == "" {
+				if looksLikePath(entityID) {
+					filePath = entityID
+					if setStringField(fields, "file_path", filePath) {
+						changed = true
+					}
+				} else if strings.HasPrefix(entityID, issueFileIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				} else {
+					if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+						return fmt.Errorf("mark synced %s: %w", id, err)
+					}
+					continue
+				}
+			}
+			if IsAbsolutePath(filePath) {
+				relPath, err := ToRepoRelative(filePath, db.baseDir)
+				if err != nil {
+					if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+						return fmt.Errorf("mark synced %s: %w", id, err)
+					}
+					continue
+				}
+				filePath = relPath
+			}
+			filePath = NormalizeFilePathForID(filePath)
+			if setStringField(fields, "file_path", filePath) {
+				changed = true
+			}
+			newID := IssueFileID(issueID, filePath)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		default:
+			continue
+		}
+
+		if !changed {
+			continue
+		}
+
+		if isDeleteAction(actionType) && canonicalType == "issue_files" && getStringField(fields, "file_path") == "" {
+			// Avoid writing invalid payloads for delete-only entries with no file_path.
+			if _, err := tx.Exec(`UPDATE action_log SET entity_type = ?, entity_id = ? WHERE id = ?`, canonicalType, entityID, id); err != nil {
+				return fmt.Errorf("update action_log %s: %w", id, err)
+			}
+			continue
+		}
+
+		payload, err := json.Marshal(fields)
+		if err != nil {
+			return fmt.Errorf("marshal action_log new_data %s: %w", id, err)
+		}
+		if _, err := tx.Exec(
+			`UPDATE action_log SET entity_type = ?, entity_id = ?, new_data = ? WHERE id = ?`,
+			canonicalType, entityID, string(payload), id,
+		); err != nil {
+			return fmt.Errorf("update action_log %s: %w", id, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // colList joins column names with commas
 func colList(cols []string) string {
 	result := cols[0]
@@ -561,4 +1164,218 @@ func colList(cols []string) string {
 		result += ", " + c
 	}
 	return result
+}
+
+func getStringField(fields map[string]any, key string) string {
+	v, ok := fields[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case json.Number:
+		return val.String()
+	default:
+		return fmt.Sprint(val)
+	}
+}
+
+func setStringField(fields map[string]any, key, value string) bool {
+	if cur, ok := fields[key]; ok {
+		if curStr, ok := cur.(string); ok && curStr == value {
+			return false
+		}
+		if curNum, ok := cur.(json.Number); ok && curNum.String() == value {
+			return false
+		}
+	}
+	fields[key] = value
+	return true
+}
+
+func splitLegacyEntityID(entityID string) (string, string, bool) {
+	if parts := strings.SplitN(entityID, ":", 2); len(parts) == 2 {
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], true
+		}
+	}
+	if parts := strings.SplitN(entityID, "|", 2); len(parts) == 2 {
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], true
+		}
+	}
+	return "", "", false
+}
+
+func looksLikePath(value string) bool {
+	if IsAbsolutePath(value) {
+		return true
+	}
+	return strings.Contains(value, "/") || strings.Contains(value, "\\")
+}
+
+func isDeleteAction(actionType string) bool {
+	switch actionType {
+	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue":
+		return true
+	default:
+		return false
+	}
+}
+
+// migrateWorkSessionIssueIDs adds a deterministic id TEXT PRIMARY KEY to
+// work_session_issues, following the same pattern as migrateDeterministicIDs
+// for board_issue_positions.
+func (db *DB) migrateWorkSessionIssueIDs() error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	exists, err := db.tableExistsTx(tx, "work_session_issues")
+	if err != nil {
+		return fmt.Errorf("check work_session_issues: %w", err)
+	}
+	if !exists {
+		return tx.Commit()
+	}
+
+	hasID, err := db.columnExistsTx(tx, "work_session_issues", "id")
+	if err != nil {
+		return fmt.Errorf("check wsi id col: %w", err)
+	}
+	if hasID {
+		return tx.Commit()
+	}
+
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS work_session_issues_new`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE TABLE work_session_issues_new (
+		id TEXT PRIMARY KEY,
+		work_session_id TEXT NOT NULL,
+		issue_id TEXT NOT NULL,
+		tagged_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(work_session_id, issue_id)
+	)`); err != nil {
+		return fmt.Errorf("create wsi_new: %w", err)
+	}
+
+	rows, err := tx.Query(`SELECT work_session_id, issue_id, tagged_at FROM work_session_issues`)
+	if err != nil {
+		return fmt.Errorf("read wsi: %w", err)
+	}
+	type wsiRow struct {
+		wsID, issueID string
+		taggedAt      interface{}
+	}
+	var wRows []wsiRow
+	for rows.Next() {
+		var r wsiRow
+		if err := rows.Scan(&r.wsID, &r.issueID, &r.taggedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		wRows = append(wRows, r)
+	}
+	rows.Close()
+
+	for _, r := range wRows {
+		id := WsiID(r.wsID, r.issueID)
+		if _, err := tx.Exec(`INSERT INTO work_session_issues_new (id, work_session_id, issue_id, tagged_at) VALUES (?, ?, ?, ?)`,
+			id, r.wsID, r.issueID, r.taggedAt); err != nil {
+			return fmt.Errorf("insert wsi_new: %w", err)
+		}
+	}
+
+	if _, err := tx.Exec(`DROP TABLE work_session_issues`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE work_session_issues_new RENAME TO work_session_issues`); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// migrateBoardPositionSoftDelete adds deleted_at column to board_issue_positions
+// if it doesn't already exist. This enables soft deletes for sync convergence.
+func (db *DB) migrateBoardPositionSoftDelete() error {
+	exists, err := db.columnExists("board_issue_positions", "deleted_at")
+	if err != nil {
+		return fmt.Errorf("check deleted_at col: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	_, err = db.conn.Exec(`ALTER TABLE board_issue_positions ADD COLUMN deleted_at DATETIME`)
+	return err
+}
+
+// migrateActionLogNotNullID fixes NULL/empty ids in action_log and recreates
+// the table with a NOT NULL constraint on the id column.
+func (db *DB) migrateActionLogNotNullID() error {
+	exists, err := db.tableExists("action_log")
+	if err != nil || !exists {
+		return err
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// First fix any NULL or empty ids
+	if _, err := tx.Exec(`UPDATE action_log SET id = 'al-' || lower(hex(randomblob(4))) WHERE id IS NULL OR id = ''`); err != nil {
+		return fmt.Errorf("fix NULL ids: %w", err)
+	}
+
+	// Drop any leftover temp table from previous failed migrations
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS action_log_new`); err != nil {
+		return fmt.Errorf("drop leftover action_log_new: %w", err)
+	}
+
+	// Create new table with NOT NULL constraint on id
+	if _, err := tx.Exec(`CREATE TABLE action_log_new (
+		id TEXT NOT NULL PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		action_type TEXT NOT NULL,
+		entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		previous_data TEXT DEFAULT '',
+		new_data TEXT DEFAULT '',
+		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		undone INTEGER DEFAULT 0,
+		synced_at DATETIME,
+		server_seq INTEGER
+	)`); err != nil {
+		return fmt.Errorf("create action_log_new: %w", err)
+	}
+
+	// Copy data
+	if _, err := tx.Exec(`INSERT INTO action_log_new SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone, synced_at, server_seq FROM action_log`); err != nil {
+		return fmt.Errorf("copy action_log data: %w", err)
+	}
+
+	// Drop old table and rename new
+	if _, err := tx.Exec(`DROP TABLE action_log`); err != nil {
+		return fmt.Errorf("drop action_log: %w", err)
+	}
+	if _, err := tx.Exec(`ALTER TABLE action_log_new RENAME TO action_log`); err != nil {
+		return fmt.Errorf("rename action_log_new: %w", err)
+	}
+
+	// Recreate indexes
+	if _, err := tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
+`); err != nil {
+		return fmt.Errorf("recreate action_log indexes: %w", err)
+	}
+
+	return tx.Commit()
 }

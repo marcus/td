@@ -32,6 +32,21 @@ func (db *DB) AddLog(log *models.Log) error {
 			return err
 		}
 
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": log.ID, "issue_id": log.IssueID, "session_id": log.SessionID,
+			"work_session_id": log.WorkSessionID, "message": log.Message,
+			"type": log.Type, "timestamp": log.Timestamp,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, log.SessionID, "create", "logs", log.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
 		return nil
 	})
 }
@@ -164,7 +179,7 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 // Handoff Functions
 // ============================================================================
 
-// AddHandoff adds a handoff entry
+// AddHandoff adds a handoff entry and logs it to action_log for sync/undo.
 func (db *DB) AddHandoff(handoff *models.Handoff) error {
 	return db.withWriteLock(func() error {
 		handoff.Timestamp = time.Now()
@@ -186,6 +201,29 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 		`, handoff.ID, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
 		if err != nil {
 			return err
+		}
+
+		// Log to action_log for sync and undo support
+		newData, _ := json.Marshal(map[string]any{
+			"id":         handoff.ID,
+			"issue_id":   handoff.IssueID,
+			"session_id": handoff.SessionID,
+			"done":       string(doneJSON),
+			"remaining":  string(remainingJSON),
+			"decisions":  string(decisionsJSON),
+			"uncertain":  string(uncertainJSON),
+			"timestamp":  handoff.Timestamp.Format(time.RFC3339),
+		})
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		_, err = db.conn.Exec(`
+			INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		`, actionID, handoff.SessionID, models.ActionHandoff, "handoff", handoff.ID, string(newData), handoff.Timestamp)
+		if err != nil {
+			return fmt.Errorf("log handoff action: %w", err)
 		}
 
 		return nil
@@ -298,6 +336,20 @@ func (db *DB) AddComment(comment *models.Comment) error {
 			return err
 		}
 
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": comment.ID, "issue_id": comment.IssueID, "session_id": comment.SessionID,
+			"text": comment.Text, "created_at": comment.CreatedAt,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, comment.SessionID, "create", "comments", comment.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
 		return nil
 	})
 }
@@ -387,7 +439,7 @@ func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
 	err := db.conn.QueryRow(`
 		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
-		WHERE session_id = ? AND undone = 0
+		WHERE session_id = ? AND undone = 0 AND entity_type NOT IN ('logs', 'comments', 'work_sessions')
 		ORDER BY timestamp DESC LIMIT 1
 	`, sessionID).Scan(
 		&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
@@ -418,7 +470,7 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 	query := `
 		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
-		WHERE session_id = ?
+		WHERE session_id = ? AND entity_type NOT IN ('logs', 'comments', 'work_sessions')
 		ORDER BY timestamp DESC`
 	args := []interface{}{sessionID}
 

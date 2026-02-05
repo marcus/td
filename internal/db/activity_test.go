@@ -273,7 +273,7 @@ func TestGetLogs_IncludesWorkSessionLogs(t *testing.T) {
 	}
 
 	// Tag issue to work session
-	if err := db.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+	if err := db.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("TagIssueToWorkSession failed: %v", err)
 	}
 
@@ -745,6 +745,58 @@ func TestAddHandoff_Basic(t *testing.T) {
 	}
 	if handoff.Timestamp.IsZero() {
 		t.Error("Handoff Timestamp not set after AddHandoff")
+	}
+}
+
+func TestAddHandoff_CreatesActionLog(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	issue := &models.Issue{Title: "Test Issue"}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Task 1"},
+		Remaining: []string{"Task 2"},
+	}
+	if err := db.AddHandoff(handoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Verify action_log entry was created
+	var count int
+	var actionType, entityType, entityID string
+	err = db.Conn().QueryRow(
+		`SELECT COUNT(*) FROM action_log WHERE entity_type = 'handoff' AND entity_id = ?`,
+		handoff.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("query action_log count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 action_log entry for handoff, got %d", count)
+	}
+
+	err = db.Conn().QueryRow(
+		`SELECT action_type, entity_type, entity_id FROM action_log WHERE entity_id = ?`,
+		handoff.ID,
+	).Scan(&actionType, &entityType, &entityID)
+	if err != nil {
+		t.Fatalf("query action_log: %v", err)
+	}
+	if actionType != string(models.ActionHandoff) {
+		t.Errorf("action_type: got %q, want %q", actionType, models.ActionHandoff)
+	}
+	if entityType != "handoff" {
+		t.Errorf("entity_type: got %q, want 'handoff'", entityType)
 	}
 }
 

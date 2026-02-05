@@ -345,13 +345,13 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 
 	return m, func() tea.Msg {
 		if isNew {
-			newBoard, err := m.DB.CreateBoard(name, queryStr)
+			newBoard, err := m.DB.CreateBoardLogged(name, queryStr, m.SessionID)
 			return BoardEditorSaveResultMsg{Board: newBoard, IsNew: true, Error: err}
 		}
 		// Update existing
 		board.Name = name
 		board.Query = queryStr
-		err := m.DB.UpdateBoard(board)
+		err := m.DB.UpdateBoardLogged(board, m.SessionID)
 		return BoardEditorSaveResultMsg{Board: board, IsNew: false, Error: err}
 	}
 }
@@ -364,7 +364,7 @@ func (m Model) executeBoardEditorDelete() (Model, tea.Cmd) {
 	boardID := m.BoardEditorBoard.ID
 
 	return m, func() tea.Msg {
-		err := m.DB.DeleteBoard(boardID)
+		err := m.DB.DeleteBoardLogged(boardID, m.SessionID)
 		return BoardEditorDeleteResultMsg{BoardID: boardID, Error: err}
 	}
 }

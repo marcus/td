@@ -88,7 +88,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	if m.FormState.Mode == FormModeCreate {
 		// Create new issue with all fields
 		issue.Status = models.StatusOpen
-		if err := m.DB.CreateIssue(issue); err != nil {
+		if err := m.DB.CreateIssueLogged(issue, m.SessionID); err != nil {
 			m.Err = err
 			return m, nil
 		}
@@ -96,17 +96,9 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		// Add dependencies
 		for _, depID := range deps {
 			if depID != "" {
-				_ = m.DB.AddDependency(issue.ID, depID, "depends_on")
+				m.DB.AddDependencyLogged(issue.ID, depID, "depends_on", m.SessionID)
 			}
 		}
-
-		// Log action for undo
-		m.DB.LogAction(&models.ActionLog{
-			SessionID:  m.SessionID,
-			ActionType: models.ActionCreate,
-			EntityType: "issue",
-			EntityID:   issue.ID,
-		})
 
 		m.closeForm()
 		return m, m.fetchData()
@@ -130,18 +122,10 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		existingIssue.Acceptance = issue.Acceptance
 		existingIssue.Minor = issue.Minor
 
-		if err := m.DB.UpdateIssue(existingIssue); err != nil {
+		if err := m.DB.UpdateIssueLogged(existingIssue, m.SessionID, models.ActionUpdate); err != nil {
 			m.Err = err
 			return m, nil
 		}
-
-		// Log action for undo
-		m.DB.LogAction(&models.ActionLog{
-			SessionID:  m.SessionID,
-			ActionType: models.ActionUpdate,
-			EntityType: "issue",
-			EntityID:   existingIssue.ID,
-		})
 
 		m.closeForm()
 

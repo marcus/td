@@ -37,7 +37,9 @@ type ListIssuesOptions struct {
 	IDs            []string
 }
 
-// CreateIssue creates a new issue
+// CreateIssue creates a new issue WITHOUT logging to action_log.
+// For local mutations, use CreateIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) CreateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
 		if issue.Status == "" {
@@ -89,6 +91,10 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	var issue models.Issue
 	var labels string
 	var closedAt, deletedAt sql.NullTime
+	var parentID, acceptance, sprint sql.NullString
+	var implSession, creatorSession, reviewerSession sql.NullString
+	var createdBranch sql.NullString
+	var pointsNull sql.NullInt64
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
@@ -96,8 +102,8 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-		&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-		&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+		&pointsNull, &labels, &parentID, &acceptance, &sprint,
+		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 	)
 
 	if err == sql.ErrNoRows {
@@ -106,6 +112,7 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
+	issue.Points = int(pointsNull.Int64)
 
 	if labels != "" {
 		issue.Labels = strings.Split(labels, ",")
@@ -116,6 +123,13 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	if deletedAt.Valid {
 		issue.DeletedAt = &deletedAt.Time
 	}
+	issue.ParentID = parentID.String
+	issue.Acceptance = acceptance.String
+	issue.Sprint = sprint.String
+	issue.ImplementerSession = implSession.String
+	issue.CreatorSession = creatorSession.String
+	issue.ReviewerSession = reviewerSession.String
+	issue.CreatedBranch = createdBranch.String
 
 	return &issue, nil
 }
@@ -161,10 +175,14 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		var issue models.Issue
 		var labels string
 		var closedAt, deletedAt sql.NullTime
+		var parentID, acceptance, sprint sql.NullString
+		var implSession, creatorSession, reviewerSession sql.NullString
+		var createdBranch sql.NullString
+		var pointsNull sql.NullInt64
 		if err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&pointsNull, &labels, &parentID, &acceptance, &sprint,
+			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		); err != nil {
 			return nil, err
 		}
@@ -177,6 +195,14 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.Points = int(pointsNull.Int64)
+		issue.ParentID = parentID.String
+		issue.Acceptance = acceptance.String
+		issue.Sprint = sprint.String
+		issue.ImplementerSession = implSession.String
+		issue.CreatorSession = creatorSession.String
+		issue.ReviewerSession = reviewerSession.String
+		issue.CreatedBranch = createdBranch.String
 		issues = append(issues, issue)
 	}
 
@@ -227,7 +253,9 @@ func (db *DB) GetIssueTitles(ids []string) (map[string]string, error) {
 	return titles, nil
 }
 
-// UpdateIssue updates an issue
+// UpdateIssue updates an issue WITHOUT logging to action_log.
+// For local mutations, use UpdateIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) UpdateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
 		issue.UpdatedAt = time.Now()
@@ -235,12 +263,12 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 
 		_, err := db.conn.Exec(`
 			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
-			                  points = ?, labels = ?, parent_id = ?, acceptance = ?,
+			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
 			                  closed_at = ?, deleted_at = ?
 			WHERE id = ?
 		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
-			issue.Points, labels, issue.ParentID, issue.Acceptance,
+			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
 			issue.ClosedAt, issue.DeletedAt, issue.ID)
 
@@ -248,7 +276,9 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 	})
 }
 
-// DeleteIssue soft-deletes an issue
+// DeleteIssue soft-deletes an issue WITHOUT logging to action_log.
+// For local mutations, use DeleteIssueLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) DeleteIssue(id string) error {
 	return db.withWriteLock(func() error {
 		now := time.Now()
@@ -465,11 +495,15 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		var issue models.Issue
 		var labels string
 		var closedAt, deletedAt sql.NullTime
+		var parentID, acceptance, sprint sql.NullString
+		var implSession, creatorSession, reviewerSession sql.NullString
+		var createdBranch sql.NullString
+		var pointsNull sql.NullInt64
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance, &issue.Sprint,
-			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+			&pointsNull, &labels, &parentID, &acceptance, &sprint,
+			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		)
 		if err != nil {
 			return nil, err
@@ -484,6 +518,14 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.Points = int(pointsNull.Int64)
+		issue.ParentID = parentID.String
+		issue.Acceptance = acceptance.String
+		issue.Sprint = sprint.String
+		issue.ImplementerSession = implSession.String
+		issue.CreatorSession = creatorSession.String
+		issue.ReviewerSession = reviewerSession.String
+		issue.CreatedBranch = createdBranch.String
 
 		issues = append(issues, issue)
 	}

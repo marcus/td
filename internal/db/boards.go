@@ -25,7 +25,9 @@ func parseAndValidateQuery(queryStr string) error {
 	return QueryValidator(queryStr)
 }
 
-// CreateBoard creates a new board with a TDQ query
+// CreateBoard creates a new board with a TDQ query WITHOUT logging to action_log.
+// For local mutations, use CreateBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) CreateBoard(name, queryStr string) (*models.Board, error) {
 	var board *models.Board
 	err := db.withWriteLock(func() error {
@@ -100,6 +102,7 @@ func (db *DB) GetBoardByName(name string) (*models.Board, error) {
 	err := db.conn.QueryRow(`
 		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards WHERE name = ? COLLATE NOCASE
+		ORDER BY created_at ASC LIMIT 1
 	`, name).Scan(
 		&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 		&board.CreatedAt, &board.UpdatedAt,
@@ -166,7 +169,9 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 	return boards, nil
 }
 
-// UpdateBoard updates a board's name and/or query
+// UpdateBoard updates a board's name and/or query WITHOUT logging to action_log.
+// For local mutations, use UpdateBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) UpdateBoard(board *models.Board) error {
 	return db.withWriteLock(func() error {
 		// Check if builtin
@@ -196,7 +201,9 @@ func (db *DB) UpdateBoard(board *models.Board) error {
 	})
 }
 
-// DeleteBoard deletes a board (fails for builtin boards)
+// DeleteBoard deletes a board (fails for builtin boards) WITHOUT logging to action_log.
+// For local mutations, use DeleteBoardLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) DeleteBoard(id string) error {
 	return db.withWriteLock(func() error {
 		// Check if builtin
@@ -212,14 +219,30 @@ func (db *DB) DeleteBoard(id string) error {
 			return fmt.Errorf("cannot delete builtin board")
 		}
 
-		// Delete positions first
-		_, err = db.conn.Exec(`DELETE FROM board_issue_positions WHERE board_id = ?`, id)
+		// Soft-delete positions first
+		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id)
 		if err != nil {
 			return err
 		}
 
 		// Delete board
 		_, err = db.conn.Exec(`DELETE FROM boards WHERE id = ?`, id)
+		return err
+	})
+}
+
+// RestoreBoard re-inserts a previously deleted board from its stored state.
+// This is used by undo to restore a deleted board.
+func (db *DB) RestoreBoard(board *models.Board) error {
+	return db.withWriteLock(func() error {
+		isBuiltin := 0
+		if board.IsBuiltin {
+			isBuiltin = 1
+		}
+		_, err := db.conn.Exec(`
+			INSERT INTO boards (id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, board.ID, board.Name, board.Query, isBuiltin, board.ViewMode, board.LastViewedAt, board.CreatedAt, board.UpdatedAt)
 		return err
 	})
 }
@@ -282,6 +305,16 @@ func (db *DB) UpdateBoardViewMode(boardID, viewMode string) error {
 // Board Issue Positions
 // ============================================================================
 
+// PositionGap is the spacing between sparse sort keys for board positions.
+const PositionGap = 65536
+
+// RespaceResult records a position change made during a respace operation.
+type RespaceResult struct {
+	IssueID     string
+	OldPosition int
+	NewPosition int
+}
+
 // BoardIssuePosition represents an explicit position for an issue on a board
 type BoardIssuePosition struct {
 	BoardID  string
@@ -289,7 +322,11 @@ type BoardIssuePosition struct {
 	Position int
 }
 
-// SetIssuePosition sets an explicit position for an issue on a board
+// SetIssuePosition sets an explicit sort-key position for an issue on a board.
+// This directly sets the position value without shifting other rows.
+// WARNING: This does NOT log to action_log.
+// For local mutations, use SetIssuePositionLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
@@ -299,40 +336,26 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		}
 		defer tx.Rollback()
 
-		// Remove existing position for this issue
-		_, err = tx.Exec(`DELETE FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
-			boardID, issueID)
+		// Check if a (possibly soft-deleted) row exists
+		var existing int
+		err = tx.QueryRow(`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+			boardID, issueID).Scan(&existing)
 		if err != nil {
 			return err
 		}
 
-		// Shift positions >= target by +1 to make room
-		// Use two-step approach to avoid unique constraint violations:
-		// 1. Add large offset to positions being shifted (moves them out of conflict range)
-		// 2. Subtract offset-1 to get final positions (large+offset -> position+1)
-		const shiftOffset = 1000000
-		_, err = tx.Exec(`
-			UPDATE board_issue_positions
-			SET position = position + ?
-			WHERE board_id = ? AND position >= ?
-		`, shiftOffset, boardID, position)
-		if err != nil {
-			return err
+		if existing > 0 {
+			// Update existing row: set new position and clear deleted_at
+			_, err = tx.Exec(`UPDATE board_issue_positions SET position = ?, deleted_at = NULL, added_at = ? WHERE board_id = ? AND issue_id = ?`,
+				position, time.Now(), boardID, issueID)
+		} else {
+			// Insert new row
+			bipID := BoardIssuePosID(boardID, issueID)
+			_, err = tx.Exec(`
+				INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
+				VALUES (?, ?, ?, ?, ?)
+			`, bipID, boardID, issueID, position, time.Now())
 		}
-		_, err = tx.Exec(`
-			UPDATE board_issue_positions
-			SET position = position - ? + 1
-			WHERE board_id = ? AND position >= ?
-		`, shiftOffset, boardID, shiftOffset)
-		if err != nil {
-			return err
-		}
-
-		// Insert the new position
-		_, err = tx.Exec(`
-			INSERT INTO board_issue_positions (board_id, issue_id, position, added_at)
-			VALUES (?, ?, ?, ?)
-		`, boardID, issueID, position, time.Now())
 		if err != nil {
 			return err
 		}
@@ -341,22 +364,175 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 	})
 }
 
-// RemoveIssuePosition removes an explicit position for an issue
+// ComputeInsertPosition computes a sparse sort key for inserting at visual slot (1-based).
+// If the board is empty, returns PositionGap.
+// If slot <= 1 (top): returns min_position - PositionGap.
+// If slot > count (bottom): returns max_position + PositionGap.
+// Otherwise: returns midpoint of positions[slot-2] and positions[slot-1].
+// If the gap between neighbors is < 2, calls RespaceBoardPositions first and recomputes.
+func (db *DB) ComputeInsertPosition(boardID string, slot int) (int, []RespaceResult, error) {
+	positions, err := db.queryBoardPositionsSorted(boardID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(positions) == 0 {
+		return PositionGap, nil, nil
+	}
+
+	if slot <= 1 {
+		return positions[0].Position - PositionGap, nil, nil
+	}
+
+	if slot > len(positions) {
+		return positions[len(positions)-1].Position + PositionGap, nil, nil
+	}
+
+	lo := positions[slot-2].Position
+	hi := positions[slot-1].Position
+	mid := (lo + hi) / 2
+
+	if mid == lo || mid == hi {
+		// Gap exhausted, respace and recompute
+		results, err := db.RespaceBoardPositions(boardID)
+		if err != nil {
+			return 0, nil, fmt.Errorf("respace failed: %w", err)
+		}
+
+		positions, err = db.queryBoardPositionsSorted(boardID)
+		if err != nil {
+			return 0, results, err
+		}
+
+		if slot > len(positions) {
+			return positions[len(positions)-1].Position + PositionGap, results, nil
+		}
+
+		lo = positions[slot-2].Position
+		hi = positions[slot-1].Position
+		mid = (lo + hi) / 2
+		return mid, results, nil
+	}
+
+	return mid, nil, nil
+}
+
+// queryBoardPositionsSorted returns all board positions sorted by position ASC.
+func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, error) {
+	rows, err := db.conn.Query(`
+		SELECT board_id, issue_id, position
+		FROM board_issue_positions
+		WHERE board_id = ? AND deleted_at IS NULL
+		ORDER BY position ASC
+	`, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var positions []BoardIssuePosition
+	for rows.Next() {
+		var p BoardIssuePosition
+		if err := rows.Scan(&p.BoardID, &p.IssueID, &p.Position); err != nil {
+			return nil, err
+		}
+		positions = append(positions, p)
+	}
+	return positions, nil
+}
+
+// RespaceBoardPositions reassigns all positions on a board with fresh PositionGap gaps.
+func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
+	var results []RespaceResult
+	err := db.withWriteLock(func() error {
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		rows, err := tx.Query(`
+			SELECT issue_id, position
+			FROM board_issue_positions
+			WHERE board_id = ? AND deleted_at IS NULL
+			ORDER BY position ASC
+		`, boardID)
+		if err != nil {
+			return err
+		}
+
+		type entry struct {
+			issueID     string
+			oldPosition int
+		}
+		var entries []entry
+		for rows.Next() {
+			var e entry
+			if err := rows.Scan(&e.issueID, &e.oldPosition); err != nil {
+				rows.Close()
+				return err
+			}
+			entries = append(entries, e)
+		}
+		rows.Close()
+
+		for i, e := range entries {
+			newPos := (i + 1) * PositionGap
+			_, err := tx.Exec(`
+				UPDATE board_issue_positions SET position = ?
+				WHERE board_id = ? AND issue_id = ?
+			`, newPos, boardID, e.issueID)
+			if err != nil {
+				return err
+			}
+			results = append(results, RespaceResult{
+				IssueID:     e.issueID,
+				OldPosition: e.oldPosition,
+				NewPosition: newPos,
+			})
+		}
+
+		return tx.Commit()
+	})
+	return results, err
+}
+
+// RemoveIssuePosition soft-deletes an explicit position for an issue by setting deleted_at.
+// WARNING: This does NOT log to action_log.
+// For local mutations, use RemoveIssuePositionLogged instead.
+// This unlogged variant exists for sync receiver applying remote events.
 func (db *DB) RemoveIssuePosition(boardID, issueID string) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
-		_, err := db.conn.Exec(`DELETE FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
-			boardID, issueID)
+		_, err := db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
+			time.Now().UTC(), boardID, issueID)
 		return err
 	})
 }
 
-// GetBoardIssuePositions returns all explicit positions for a board
+// GetIssuePosition returns the current position of an issue on a board, or 0 if not positioned.
+func (db *DB) GetIssuePosition(boardID, issueID string) (int, error) {
+	issueID = NormalizeIssueID(issueID)
+	var pos sql.NullInt64
+	err := db.conn.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`, boardID, issueID).Scan(&pos)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if pos.Valid {
+		return int(pos.Int64), nil
+	}
+	return 0, nil
+}
+
+// GetBoardIssuePositions returns all explicit (non-deleted) positions for a board
 func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, error) {
 	rows, err := db.conn.Query(`
 		SELECT board_id, issue_id, position
 		FROM board_issue_positions
-		WHERE board_id = ?
+		WHERE board_id = ? AND deleted_at IS NULL
 		ORDER BY position ASC
 	`, boardID)
 	if err != nil {
@@ -380,7 +556,7 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 func (db *DB) GetMaxBoardPosition(boardID string) (int, error) {
 	var maxPos sql.NullInt64
 	err := db.conn.QueryRow(`
-		SELECT MAX(position) FROM board_issue_positions WHERE board_id = ?
+		SELECT MAX(position) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL
 	`, boardID).Scan(&maxPos)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get max position: %w", err)
@@ -404,33 +580,27 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 
 		// Get positions
 		var pos1, pos2 int
-		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			boardID, id1).Scan(&pos1)
 		if err != nil {
 			return fmt.Errorf("issue %s not positioned on board", id1)
 		}
 
-		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			boardID, id2).Scan(&pos2)
 		if err != nil {
 			return fmt.Errorf("issue %s not positioned on board", id2)
 		}
 
-		// Swap using a temp position to avoid unique constraint
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = -1 WHERE board_id = ? AND issue_id = ?`,
-			boardID, id1)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
-			pos1, boardID, id2)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ?`,
+		// Swap positions directly (no UNIQUE constraint on position)
+		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			pos2, boardID, id1)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(`UPDATE board_issue_positions SET position = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
+			pos1, boardID, id2)
 		if err != nil {
 			return err
 		}

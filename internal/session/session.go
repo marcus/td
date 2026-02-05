@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -17,6 +18,8 @@ const (
 	sessionPrefix = "ses_"
 	defaultBranch = "default" // used when git not available
 )
+
+var getOrCreateMu sync.Mutex
 
 // Session represents the current terminal session
 type Session struct {
@@ -153,6 +156,9 @@ func sessionFromRow(row *db.SessionRow) *Session {
 // Sessions are scoped by branch + agent fingerprint - same agent on same branch = same session.
 // Creates a new session if none exists for this branch/agent combination.
 func GetOrCreate(database *db.DB) (*Session, error) {
+	getOrCreateMu.Lock()
+	defer getOrCreateMu.Unlock()
+
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
 

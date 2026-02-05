@@ -123,7 +123,7 @@ var wsTagCmd = &cobra.Command{
 			}
 
 			// Tag to work session
-			if err := database.TagIssueToWorkSession(wsID, issueID); err != nil {
+			if err := database.TagIssueToWorkSession(wsID, issueID, sess.ID); err != nil {
 				output.Warning("failed to tag %s: %v", issueID, err)
 				continue
 			}
@@ -141,7 +141,7 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssue(issue)
+				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
 
 				// Record session action for bypass prevention
 				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
@@ -189,6 +189,12 @@ var wsUntagCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session")
@@ -196,7 +202,7 @@ var wsUntagCmd = &cobra.Command{
 		}
 
 		for _, issueID := range args {
-			if err := database.UntagIssueFromWorkSession(wsID, issueID); err != nil {
+			if err := database.UntagIssueFromWorkSession(wsID, issueID, sess.ID); err != nil {
 				output.Warning("failed to untag %s: %v", issueID, err)
 				continue
 			}

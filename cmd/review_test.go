@@ -1321,7 +1321,7 @@ func TestReviewWithWorkSessionTaggedIssue(t *testing.T) {
 	}
 
 	// Tag issue to work session
-	if err := database.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("TagIssueToWorkSession failed: %v", err)
 	}
 

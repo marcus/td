@@ -124,7 +124,7 @@ func TestUndoIssueCreate(t *testing.T) {
 	}
 
 	// Undo the create (should delete)
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 
 	// Undo the delete (should restore)
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestUndoIssueUpdate(t *testing.T) {
 	}
 
 	// Undo the update
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -259,7 +259,7 @@ func TestUndoIssueStart(t *testing.T) {
 	}
 
 	// Undo start
-	if err := undoIssueAction(database, action); err != nil {
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoIssueAction failed: %v", err)
 	}
 
@@ -308,7 +308,7 @@ func TestUndoDependencyAdd(t *testing.T) {
 	}
 
 	// Undo add dependency (should remove it)
-	if err := undoDependencyAction(database, action); err != nil {
+	if err := undoDependencyAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoDependencyAction failed: %v", err)
 	}
 
@@ -353,7 +353,7 @@ func TestUndoDependencyRemove(t *testing.T) {
 	}
 
 	// Undo remove dependency (should add it back)
-	if err := undoDependencyAction(database, action); err != nil {
+	if err := undoDependencyAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoDependencyAction failed: %v", err)
 	}
 
@@ -405,7 +405,7 @@ func TestUndoFileLinkAdd(t *testing.T) {
 	}
 
 	// Undo link file (should unlink it)
-	if err := undoFileLinkAction(database, action); err != nil {
+	if err := undoFileLinkAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoFileLinkAction failed: %v", err)
 	}
 
@@ -452,7 +452,7 @@ func TestUndoFileLinkRemove(t *testing.T) {
 	}
 
 	// Undo unlink file (should link it back)
-	if err := undoFileLinkAction(database, action); err != nil {
+	if err := undoFileLinkAction(database, action, "ses_test"); err != nil {
 		t.Fatalf("undoFileLinkAction failed: %v", err)
 	}
 
@@ -495,7 +495,7 @@ func TestPerformUndoDispatch(t *testing.T) {
 				EntityID:   issue.ID,
 			}
 
-			err := performUndo(database, action)
+			err := performUndo(database, action, "ses_test")
 			if tc.wantError && err == nil {
 				t.Error("Expected error but got nil")
 			}
@@ -526,7 +526,7 @@ func TestUndoUpdateWithoutPreviousData(t *testing.T) {
 		PreviousData: "", // No previous data
 	}
 
-	err = undoIssueAction(database, action)
+	err = undoIssueAction(database, action, "ses_test")
 	if err == nil {
 		t.Error("Expected error when PreviousData is empty")
 	}
@@ -552,8 +552,117 @@ func TestUndoWithInvalidPreviousData(t *testing.T) {
 		PreviousData: "invalid json{",
 	}
 
-	err = undoIssueAction(database, action)
+	err = undoIssueAction(database, action, "ses_test")
 	if err == nil {
 		t.Error("Expected error when PreviousData is invalid JSON")
+	}
+}
+
+// TestUndoBoardUnposition tests undoing board unposition restores the position
+func TestUndoBoardUnposition(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create board and issue
+	board, err := database.CreateBoard("test-board", "status:open")
+	if err != nil {
+		t.Fatalf("CreateBoard failed: %v", err)
+	}
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Set position, then remove it
+	if err := database.SetIssuePosition(board.ID, issue.ID, 3); err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+	if err := database.RemoveIssuePosition(board.ID, issue.ID); err != nil {
+		t.Fatalf("RemoveIssuePosition failed: %v", err)
+	}
+
+	// Create action log with position captured (as the fix does)
+	posData, _ := json.Marshal(map[string]any{
+		"board_id": board.ID,
+		"issue_id": issue.ID,
+		"position": 3,
+	})
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionBoardUnposition,
+		EntityType: "board_issue_positions",
+		EntityID:   board.ID + ":" + issue.ID,
+		NewData:    string(posData),
+	}
+
+	// Undo unposition (should restore position)
+	if err := undoBoardPositionAction(database, action, "ses_test"); err != nil {
+		t.Fatalf("undoBoardPositionAction failed: %v", err)
+	}
+
+	// Verify position is restored
+	pos, err := database.GetIssuePosition(board.ID, issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssuePosition failed: %v", err)
+	}
+	if pos != 3 {
+		t.Errorf("Position not restored: got %d, want 3", pos)
+	}
+}
+
+// TestUndoBoardSetPosition tests undoing board set-position removes the position
+func TestUndoBoardSetPosition(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create board and issue
+	board, err := database.CreateBoard("test-board", "status:open")
+	if err != nil {
+		t.Fatalf("CreateBoard failed: %v", err)
+	}
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Set position
+	if err := database.SetIssuePosition(board.ID, issue.ID, 5); err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	// Create action log for set-position
+	posData, _ := json.Marshal(map[string]any{
+		"board_id": board.ID,
+		"issue_id": issue.ID,
+		"position": 5,
+	})
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionBoardSetPosition,
+		EntityType: "board_issue_positions",
+		EntityID:   board.ID + ":" + issue.ID,
+		NewData:    string(posData),
+	}
+
+	// Undo set-position (should remove position)
+	if err := undoBoardPositionAction(database, action, "ses_test"); err != nil {
+		t.Fatalf("undoBoardPositionAction failed: %v", err)
+	}
+
+	// Verify position is removed
+	pos, err := database.GetIssuePosition(board.ID, issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssuePosition failed: %v", err)
+	}
+	if pos != 0 {
+		t.Errorf("Position should be removed: got %d, want 0", pos)
 	}
 }

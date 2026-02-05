@@ -382,7 +382,7 @@ func TestAddDependencySingle(t *testing.T) {
 	database.CreateIssue(issue2)
 
 	// Add dependency: issue2 depends on issue1
-	err = addDependency(database, issue2.ID, issue1.ID)
+	err = addDependency(database, issue2.ID, issue1.ID, "ses_test")
 	if err != nil {
 		t.Errorf("Failed to add dependency: %v", err)
 	}
@@ -397,9 +397,9 @@ func TestAddDependencySingle(t *testing.T) {
 // TestAddDependencyMultiple tests adding multiple dependencies to same issue
 func TestAddDependencyMultiple(t *testing.T) {
 	tests := []struct {
-		name       string
-		numDeps    int
-		wantError  bool
+		name        string
+		numDeps     int
+		wantError   bool
 		description string
 	}{
 		{
@@ -447,7 +447,7 @@ func TestAddDependencyMultiple(t *testing.T) {
 
 			// Add all dependencies
 			for _, depID := range depIssueIDs {
-				err := addDependency(database, mainIssue.ID, depID)
+				err := addDependency(database, mainIssue.ID, depID, "ses_test")
 				if (err != nil) != tt.wantError {
 					t.Errorf("addDependency() error = %v, wantError %v", err, tt.wantError)
 				}
@@ -492,7 +492,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 				// issue1 -> issue2
 				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
 			},
-			cycleFrom:   0,  // Try to add: issue1 depends on issue2
+			cycleFrom:   0, // Try to add: issue1 depends on issue2
 			cycleTo:     1,
 			shouldError: true,
 			description: "issue1 -> issue2 -> issue1",
@@ -504,7 +504,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
 				database.AddDependency(issues[2].ID, issues[1].ID, "depends_on")
 			},
-			cycleFrom:   0,  // Try to add: issue1 depends on issue3
+			cycleFrom:   0, // Try to add: issue1 depends on issue3
 			cycleTo:     2,
 			shouldError: true,
 			description: "issue1 -> issue3 -> issue2 -> issue1",
@@ -514,7 +514,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			setupChain: func(database *db.DB, issues []*models.Issue) {
 				// No setup needed
 			},
-			cycleFrom:   0,  // Try to add: issue1 depends on issue1
+			cycleFrom:   0, // Try to add: issue1 depends on issue1
 			cycleTo:     0,
 			shouldError: true,
 			description: "issue1 -> issue1",
@@ -525,7 +525,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 				// issue2 -> issue1
 				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
 			},
-			cycleFrom:   2,  // Try to add: issue3 depends on issue1 (valid)
+			cycleFrom:   2, // Try to add: issue3 depends on issue1 (valid)
 			cycleTo:     0,
 			shouldError: false,
 			description: "valid: issue3 -> issue1 (no cycle)",
@@ -555,7 +555,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			tt.setupChain(database, issues)
 
 			// Try to create the cycle
-			err = addDependency(database, issues[tt.cycleFrom].ID, issues[tt.cycleTo].ID)
+			err = addDependency(database, issues[tt.cycleFrom].ID, issues[tt.cycleTo].ID, "ses_test")
 
 			if (err != nil) != tt.shouldError {
 				t.Errorf("addDependency() error = %v, wantError %v. Description: %s", err, tt.shouldError, tt.description)
@@ -600,7 +600,7 @@ func TestAddDependencyValidation(t *testing.T) {
 				database.CreateIssue(issue1)
 				database.CreateIssue(issue2)
 				// Add dependency first time
-				addDependency(database, issue1.ID, issue2.ID)
+				addDependency(database, issue1.ID, issue2.ID, "ses_test")
 				return issue1.ID, issue2.ID
 			},
 			wantError:   false, // addDependency returns nil for duplicates (with warning)
@@ -654,7 +654,7 @@ func TestAddDependencyValidation(t *testing.T) {
 			defer database.Close()
 
 			issueID, depID := tt.setup(database)
-			err = addDependency(database, issueID, depID)
+			err = addDependency(database, issueID, depID, "ses_test")
 
 			if (err != nil) != tt.wantError {
 				t.Errorf("addDependency() error = %v, wantError %v. Description: %s", err, tt.wantError, tt.description)
@@ -679,8 +679,8 @@ func TestAddDependencyPersistence(t *testing.T) {
 	database.CreateIssue(issue3)
 
 	// Add dependencies
-	addDependency(database, issue2.ID, issue1.ID)
-	addDependency(database, issue3.ID, issue2.ID)
+	addDependency(database, issue2.ID, issue1.ID, "ses_test")
+	addDependency(database, issue3.ID, issue2.ID, "ses_test")
 
 	database.Close()
 

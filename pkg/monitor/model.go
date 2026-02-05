@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/internal/version"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -119,6 +121,16 @@ type Model struct {
 	GettingStartedMouseHandler *mouse.Handler // Mouse handler for getting started modal
 	AgentFilePath              string         // Detected agent file path (may be empty)
 	AgentFileHasTD             bool           // Whether agent file already has td instructions
+	IsFirstRunInit             bool           // Whether we're in real first-run flow (not H-key reopen)
+
+	// Sync prompt modal state
+	SyncPromptOpen      bool
+	SyncPromptPhase     int
+	SyncPromptProjects  []syncclient.ProjectResponse
+	SyncPromptModal     *modal.Modal
+	SyncPromptMouse     *mouse.Handler
+	SyncPromptNameInput *textinput.Model
+	SyncPromptCursor    int
 
 	// Board picker state
 	BoardPickerOpen         bool
@@ -143,6 +155,11 @@ type Model struct {
 	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
 	BoardMode            BoardMode          // Active board mode state
 	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
+
+	// Auto-sync callback (set by caller for periodic background sync)
+	AutoSyncFunc     func() // Called periodically to push/pull in background
+	AutoSyncInterval time.Duration
+	LastAutoSync     time.Time
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -482,6 +499,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
 			cmds = append(cmds, modalCmd)
 		}
+		// Periodic auto-sync (backup path — primary sync runs in independent goroutine
+		// in cmd/monitor.go, since BubbleTea Cmd dispatch can stall under some PTYs)
+		if m.AutoSyncFunc != nil && m.AutoSyncInterval > 0 && time.Since(m.LastAutoSync) >= m.AutoSyncInterval {
+			m.LastAutoSync = time.Now()
+			syncFn := m.AutoSyncFunc
+			cmds = append(cmds, func() tea.Msg {
+				syncFn()
+				return nil
+			})
+		}
 		return m, tea.Batch(cmds...)
 
 	case RefreshDataMsg:
@@ -599,6 +626,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.AgentFilePath = msg.AgentFilePath
 		m.AgentFileHasTD = msg.HasInstructions
 		if msg.IsFirstRun {
+			m.IsFirstRunInit = true
 			m.GettingStartedOpen = true
 			m.GettingStartedModal = m.createGettingStartedModal()
 			m.GettingStartedModal.Reset()
@@ -761,6 +789,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SearchInput.SetValue(msg.SearchQuery)
 		// Refresh data with restored filters
 		return m, m.fetchData()
+
+	case SyncPromptDataMsg:
+		if msg.Error != nil || msg.Projects == nil {
+			return m, nil
+		}
+		m.SyncPromptOpen = true
+		m.SyncPromptPhase = syncPromptPhaseList
+		m.SyncPromptProjects = msg.Projects
+		m.SyncPromptCursor = 0
+		m.SyncPromptModal = m.buildSyncPromptListModal(msg.Projects)
+		m.SyncPromptMouse = mouse.NewHandler()
+		return m, nil
+
+	case SyncPromptLinkResultMsg:
+		if msg.Success {
+			m.StatusMessage = fmt.Sprintf("Linked to %s", msg.ProjectName)
+			m.StatusIsError = false
+		} else {
+			m.StatusMessage = fmt.Sprintf("Link failed: %v", msg.Error)
+			m.StatusIsError = true
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+
+	case SyncPromptCreateResultMsg:
+		if msg.Success {
+			m.StatusMessage = fmt.Sprintf("Created and linked %s", msg.ProjectName)
+			m.StatusIsError = false
+		} else {
+			m.StatusMessage = fmt.Sprintf("Create failed: %v", msg.Error)
+			m.StatusIsError = true
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 
 	case OpenIssueByIDMsg:
 		if msg.IssueID != "" {

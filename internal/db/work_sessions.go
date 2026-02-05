@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,8 +23,25 @@ func (db *DB) CreateWorkSession(ws *models.WorkSession) error {
 			INSERT INTO work_sessions (id, name, session_id, started_at, start_sha)
 			VALUES (?, ?, ?, ?, ?)
 		`, ws.ID, ws.Name, ws.SessionID, ws.StartedAt, ws.StartSHA)
+		if err != nil {
+			return err
+		}
 
-		return err
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
+			"started_at": ws.StartedAt, "start_sha": ws.StartSHA,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, ws.SessionID, "create", "work_sessions", ws.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
@@ -58,26 +76,82 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 			UPDATE work_sessions SET name = ?, ended_at = ?, end_sha = ?
 			WHERE id = ?
 		`, ws.Name, ws.EndedAt, ws.EndSHA, ws.ID)
-		return err
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
+			"started_at": ws.StartedAt, "ended_at": ws.EndedAt,
+			"start_sha": ws.StartSHA, "end_sha": ws.EndSHA,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, ws.SessionID, "update", "work_sessions", ws.ID, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
 // TagIssueToWorkSession links an issue to a work session
-func (db *DB) TagIssueToWorkSession(wsID, issueID string) error {
+func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
 	return db.withWriteLock(func() error {
+		id := WsiID(wsID, issueID)
+		now := time.Now()
 		_, err := db.conn.Exec(`
-			INSERT OR IGNORE INTO work_session_issues (work_session_id, issue_id, tagged_at)
-			VALUES (?, ?, ?)
-		`, wsID, issueID, time.Now())
-		return err
+			INSERT OR IGNORE INTO work_session_issues (id, work_session_id, issue_id, tagged_at)
+			VALUES (?, ?, ?, ?)
+		`, id, wsID, issueID, now)
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": id, "work_session_id": wsID, "issue_id": issueID, "tagged_at": now,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionWorkSessionTag), "work_session_issues", id, "", string(newData), now)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
 // UntagIssueFromWorkSession removes an issue from a work session
-func (db *DB) UntagIssueFromWorkSession(wsID, issueID string) error {
+func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
 	return db.withWriteLock(func() error {
-		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE work_session_id = ? AND issue_id = ?`, wsID, issueID)
-		return err
+		id := WsiID(wsID, issueID)
+		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": id, "work_session_id": wsID, "issue_id": issueID,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionWorkSessionUntag), "work_session_issues", id, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 

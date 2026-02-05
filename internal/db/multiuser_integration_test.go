@@ -511,7 +511,7 @@ func TestMultiUserWorkSession(t *testing.T) {
 		issueIDs = append(issueIDs, issue.ID)
 
 		// Tag to work session
-		if err := db.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+		if err := db.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 			t.Fatalf("TagIssueToWorkSession failed: %v", err)
 		}
 	}

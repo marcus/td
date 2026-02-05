@@ -18,3 +18,14 @@ website/.docusaurus/
 
 # Sidecar worktree state files
 .sidecar-start.sh
+td-sync
+
+# Sidecar worktree state files
+.sidecar-base
+
+# Deploy environment files (secrets)
+deploy/envs/.env.*
+!deploy/envs/.env.*.example
+
+# Personal runbooks with server details
+*.local.md

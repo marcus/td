@@ -467,7 +467,7 @@ func TestWorkSession(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	if err := db.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+	if err := db.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("TagIssueToWorkSession failed: %v", err)
 	}
 
@@ -481,7 +481,7 @@ func TestWorkSession(t *testing.T) {
 	}
 
 	// Untag
-	if err := db.UntagIssueFromWorkSession(ws.ID, issue.ID); err != nil {
+	if err := db.UntagIssueFromWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("UntagIssueFromWorkSession failed: %v", err)
 	}
 
@@ -517,8 +517,8 @@ func TestGetLogsByWorkSession(t *testing.T) {
 	if err := db.CreateIssue(issue2); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	db.TagIssueToWorkSession(ws.ID, issue1.ID)
-	db.TagIssueToWorkSession(ws.ID, issue2.ID)
+	db.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
+	db.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
 
 	// Add logs with work session ID
 	log1 := &models.Log{
@@ -1410,8 +1410,8 @@ func TestGetBoardIssues(t *testing.T) {
 	})
 }
 
-// TestSetIssuePosition_Shifting tests that inserting at an occupied position shifts others
-func TestSetIssuePosition_Shifting(t *testing.T) {
+// TestSetIssuePosition_NoShifting tests that setting a position does NOT shift other rows
+func TestSetIssuePosition_NoShifting(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)
 	if err != nil {
@@ -1419,7 +1419,7 @@ func TestSetIssuePosition_Shifting(t *testing.T) {
 	}
 	defer db.Close()
 
-	board, _ := db.CreateBoard("Shift Test", "")
+	board, _ := db.CreateBoard("No Shift Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1427,11 +1427,11 @@ func TestSetIssuePosition_Shifting(t *testing.T) {
 	db.CreateIssue(issue2)
 	db.CreateIssue(issue3)
 
-	// Set initial positions: issue1=1, issue2=2
-	db.SetIssuePosition(board.ID, issue1.ID, 1)
-	db.SetIssuePosition(board.ID, issue2.ID, 2)
+	// Set initial positions: issue1=PositionGap, issue2=2*PositionGap
+	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
 
-	// Insert issue3 at position 1 - should shift issue1 to 2 and issue2 to 3
+	// Set issue3 at position 1 — issue1 and issue2 must NOT shift
 	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
 	if err != nil {
 		t.Fatalf("SetIssuePosition failed: %v", err)
@@ -1446,15 +1446,15 @@ func TestSetIssuePosition_Shifting(t *testing.T) {
 	if posMap[issue3.ID] != 1 {
 		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
 	}
-	if posMap[issue1.ID] != 2 {
-		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	if posMap[issue1.ID] != PositionGap {
+		t.Errorf("issue1 position = %d, want %d (should not shift)", posMap[issue1.ID], PositionGap)
 	}
-	if posMap[issue2.ID] != 3 {
-		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	if posMap[issue2.ID] != 2*PositionGap {
+		t.Errorf("issue2 position = %d, want %d (should not shift)", posMap[issue2.ID], 2*PositionGap)
 	}
 }
 
-// TestSetIssuePosition_Reposition tests moving an already-positioned issue
+// TestSetIssuePosition_Reposition tests moving an already-positioned issue changes only its position
 func TestSetIssuePosition_Reposition(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)
@@ -1471,13 +1471,14 @@ func TestSetIssuePosition_Reposition(t *testing.T) {
 	db.CreateIssue(issue2)
 	db.CreateIssue(issue3)
 
-	// Set initial positions: issue1=1, issue2=2, issue3=3
-	db.SetIssuePosition(board.ID, issue1.ID, 1)
-	db.SetIssuePosition(board.ID, issue2.ID, 2)
-	db.SetIssuePosition(board.ID, issue3.ID, 3)
+	// Set initial sparse positions
+	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
+	db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
 
-	// Move issue3 from position 3 to position 1
-	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
+	// Reposition issue3 to a new sort key — others must stay unchanged
+	newPos := PositionGap / 2
+	err = db.SetIssuePosition(board.ID, issue3.ID, newPos)
 	if err != nil {
 		t.Fatalf("SetIssuePosition failed: %v", err)
 	}
@@ -1488,14 +1489,14 @@ func TestSetIssuePosition_Reposition(t *testing.T) {
 		posMap[p.IssueID] = p.Position
 	}
 
-	if posMap[issue3.ID] != 1 {
-		t.Errorf("issue3 position = %d, want 1", posMap[issue3.ID])
+	if posMap[issue3.ID] != newPos {
+		t.Errorf("issue3 position = %d, want %d", posMap[issue3.ID], newPos)
 	}
-	if posMap[issue1.ID] != 2 {
-		t.Errorf("issue1 position = %d, want 2 (shifted)", posMap[issue1.ID])
+	if posMap[issue1.ID] != PositionGap {
+		t.Errorf("issue1 position = %d, want %d (should not shift)", posMap[issue1.ID], PositionGap)
 	}
-	if posMap[issue2.ID] != 3 {
-		t.Errorf("issue2 position = %d, want 3 (shifted)", posMap[issue2.ID])
+	if posMap[issue2.ID] != 2*PositionGap {
+		t.Errorf("issue2 position = %d, want %d (should not shift)", posMap[issue2.ID], 2*PositionGap)
 	}
 }
 
@@ -1597,6 +1598,202 @@ func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 	err = db.SwapIssuePositions(board.ID, issue2.ID, issue3.ID)
 	if err == nil {
 		t.Error("SwapIssuePositions should fail when both issues are unpositioned")
+	}
+}
+
+// TestComputeInsertPosition tests sparse position computation for board inserts
+func TestComputeInsertPosition(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Insert Position Test", "")
+
+	t.Run("empty board", func(t *testing.T) {
+		pos, results, err := db.ComputeInsertPosition(board.ID, 1)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		if pos != PositionGap {
+			t.Errorf("pos = %d, want %d", pos, PositionGap)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected no respace results, got %d", len(results))
+		}
+	})
+
+	// Set up three issues with sparse positions for remaining subtests
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
+	db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
+
+	t.Run("top slot 1", func(t *testing.T) {
+		pos, results, err := db.ComputeInsertPosition(board.ID, 1)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		want := 0 // min(PositionGap) - PositionGap = 0
+		if pos != want {
+			t.Errorf("pos = %d, want %d", pos, want)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected no respace results, got %d", len(results))
+		}
+	})
+
+	t.Run("slot 0 treated as top", func(t *testing.T) {
+		pos, _, err := db.ComputeInsertPosition(board.ID, 0)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		want := 0 // min(PositionGap) - PositionGap
+		if pos != want {
+			t.Errorf("pos = %d, want %d", pos, want)
+		}
+	})
+
+	t.Run("negative slot treated as top", func(t *testing.T) {
+		pos, _, err := db.ComputeInsertPosition(board.ID, -5)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		want := 0 // min(PositionGap) - PositionGap
+		if pos != want {
+			t.Errorf("pos = %d, want %d", pos, want)
+		}
+	})
+
+	t.Run("bottom slot beyond count", func(t *testing.T) {
+		pos, results, err := db.ComputeInsertPosition(board.ID, 99)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		want := 3*PositionGap + PositionGap
+		if pos != want {
+			t.Errorf("pos = %d, want %d", pos, want)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected no respace results, got %d", len(results))
+		}
+	})
+
+	t.Run("middle slot 2", func(t *testing.T) {
+		pos, results, err := db.ComputeInsertPosition(board.ID, 2)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		// midpoint of positions[0]=PositionGap and positions[1]=2*PositionGap
+		want := (PositionGap + 2*PositionGap) / 2
+		if pos != want {
+			t.Errorf("pos = %d, want %d", pos, want)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected no respace results, got %d", len(results))
+		}
+	})
+
+	t.Run("gap exhausted triggers respace", func(t *testing.T) {
+		// Create a board with adjacent positions that have no gap
+		b2, _ := db.CreateBoard("Tight Board", "")
+		i1 := &models.Issue{Title: "Tight 1", Type: models.TypeTask, Priority: models.PriorityP2}
+		i2 := &models.Issue{Title: "Tight 2", Type: models.TypeTask, Priority: models.PriorityP2}
+		db.CreateIssue(i1)
+		db.CreateIssue(i2)
+		db.SetIssuePosition(b2.ID, i1.ID, 100)
+		db.SetIssuePosition(b2.ID, i2.ID, 101) // gap of 1, midpoint == lo
+
+		pos, results, err := db.ComputeInsertPosition(b2.ID, 2)
+		if err != nil {
+			t.Fatalf("ComputeInsertPosition failed: %v", err)
+		}
+		if len(results) == 0 {
+			t.Error("expected respace results when gap exhausted")
+		}
+		// After respace: i1=PositionGap, i2=2*PositionGap
+		// midpoint = (PositionGap + 2*PositionGap) / 2
+		want := (PositionGap + 2*PositionGap) / 2
+		if pos != want {
+			t.Errorf("pos after respace = %d, want %d", pos, want)
+		}
+	})
+}
+
+// TestRespaceBoardPositions tests that respace reassigns clean PositionGap spacing
+func TestRespaceBoardPositions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Respace Test", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+
+	// Set tight positions with small gaps
+	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	db.SetIssuePosition(board.ID, issue2.ID, 2)
+	db.SetIssuePosition(board.ID, issue3.ID, 3)
+
+	results, err := db.RespaceBoardPositions(board.ID)
+	if err != nil {
+		t.Fatalf("RespaceBoardPositions failed: %v", err)
+	}
+
+	if len(results) != 3 {
+		t.Fatalf("expected 3 respace results, got %d", len(results))
+	}
+
+	// Build map by issue ID for verification
+	resMap := make(map[string]RespaceResult)
+	for _, r := range results {
+		resMap[r.IssueID] = r
+	}
+
+	// Verify old positions
+	if resMap[issue1.ID].OldPosition != 1 {
+		t.Errorf("issue1 old = %d, want 1", resMap[issue1.ID].OldPosition)
+	}
+	if resMap[issue2.ID].OldPosition != 2 {
+		t.Errorf("issue2 old = %d, want 2", resMap[issue2.ID].OldPosition)
+	}
+	if resMap[issue3.ID].OldPosition != 3 {
+		t.Errorf("issue3 old = %d, want 3", resMap[issue3.ID].OldPosition)
+	}
+
+	// Verify new positions are PositionGap, 2*PositionGap, 3*PositionGap
+	if resMap[issue1.ID].NewPosition != PositionGap {
+		t.Errorf("issue1 new = %d, want %d", resMap[issue1.ID].NewPosition, PositionGap)
+	}
+	if resMap[issue2.ID].NewPosition != 2*PositionGap {
+		t.Errorf("issue2 new = %d, want %d", resMap[issue2.ID].NewPosition, 2*PositionGap)
+	}
+	if resMap[issue3.ID].NewPosition != 3*PositionGap {
+		t.Errorf("issue3 new = %d, want %d", resMap[issue3.ID].NewPosition, 3*PositionGap)
+	}
+
+	// Verify the DB was actually updated
+	positions, _ := db.GetBoardIssuePositions(board.ID)
+	posMap := make(map[string]int)
+	for _, p := range positions {
+		posMap[p.IssueID] = p.Position
+	}
+	if posMap[issue1.ID] != PositionGap || posMap[issue2.ID] != 2*PositionGap || posMap[issue3.ID] != 3*PositionGap {
+		t.Errorf("DB positions not updated: %v", posMap)
 	}
 }
 

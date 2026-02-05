@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -42,8 +41,7 @@ var updateCmd = &cobra.Command{
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
+			// (previous state captured atomically by UpdateIssueLogged)
 
 			// Update fields if flags are set
 			if title, _ := cmd.Flags().GetString("title"); title != "" {
@@ -111,6 +109,10 @@ var updateCmd = &cobra.Command{
 				}
 			}
 
+			if sprint, _ := cmd.Flags().GetString("sprint"); cmd.Flags().Changed("sprint") {
+				issue.Sprint = sprint
+			}
+
 			if parent, _ := cmd.Flags().GetString("parent"); cmd.Flags().Changed("parent") {
 				issue.ParentID = parent
 			}
@@ -151,34 +153,15 @@ var updateCmd = &cobra.Command{
 			// Update dependencies
 			if dependsOn, _ := cmd.Flags().GetString("depends-on"); cmd.Flags().Changed("depends-on") {
 				// Clear existing and set new
-				// First get existing deps and remove them
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
-					// Log removal for undo
-					depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
-					database.LogAction(&models.ActionLog{
-						SessionID:  sess.ID,
-						ActionType: models.ActionRemoveDep,
-						EntityType: "dependency",
-						EntityID:   issueID + ":" + dep,
-						NewData:    string(depData),
-					})
-					database.RemoveDependency(issueID, dep)
+					database.RemoveDependencyLogged(issueID, dep, sess.ID)
 				}
 				// Add new deps
 				if dependsOn != "" {
 					for _, dep := range strings.Split(dependsOn, ",") {
 						dep = strings.TrimSpace(dep)
-						// Log addition for undo
-						depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
-						database.LogAction(&models.ActionLog{
-							SessionID:  sess.ID,
-							ActionType: models.ActionAddDep,
-							EntityType: "dependency",
-							EntityID:   issueID + ":" + dep,
-							NewData:    string(depData),
-						})
-						database.AddDependency(issueID, dep, "depends_on")
+						database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
 					}
 				}
 			}
@@ -187,51 +170,20 @@ var updateCmd = &cobra.Command{
 				// For blocks, we need to find issues that depend on this one and update them
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
-					// Log removal for undo
-					depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
-					database.LogAction(&models.ActionLog{
-						SessionID:  sess.ID,
-						ActionType: models.ActionRemoveDep,
-						EntityType: "dependency",
-						EntityID:   b + ":" + issueID,
-						NewData:    string(depData),
-					})
-					database.RemoveDependency(b, issueID)
+					database.RemoveDependencyLogged(b, issueID, sess.ID)
 				}
 				// Add new blocks
 				if blocks != "" {
 					for _, b := range strings.Split(blocks, ",") {
 						b = strings.TrimSpace(b)
-						// Log addition for undo
-						depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
-						database.LogAction(&models.ActionLog{
-							SessionID:  sess.ID,
-							ActionType: models.ActionAddDep,
-							EntityType: "dependency",
-							EntityID:   b + ":" + issueID,
-							NewData:    string(depData),
-						})
-						database.AddDependency(b, issueID, "depends_on")
+						database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
 					}
 				}
 			}
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
 				output.Error("failed to update %s: %v", issueID, err)
 				continue
-			}
-
-			// Log action for undo
-			if sess != nil {
-				newData, _ := json.Marshal(issue)
-				database.LogAction(&models.ActionLog{
-					SessionID:    sess.ID,
-					ActionType:   models.ActionUpdate,
-					EntityType:   "issue",
-					EntityID:     issueID,
-					PreviousData: string(prevData),
-					NewData:      string(newData),
-				})
 			}
 
 			fmt.Printf("UPDATED %s\n", issueID)
@@ -269,6 +221,7 @@ func init() {
 	updateCmd.Flags().String("priority", "", "New priority")
 	updateCmd.Flags().Int("points", 0, "New story points")
 	updateCmd.Flags().String("labels", "", "Replace labels")
+	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
 	updateCmd.Flags().String("depends-on", "", "Replace dependencies")
 	updateCmd.Flags().String("blocks", "", "Replace blocked issues")

@@ -57,8 +57,9 @@ HTTP is simplest — everything is pull-based (POST/GET), no incoming connection
 
 ### Initial Sync / Bootstrap
 
-- For small projects, replaying all events should be fine (even 10k tasks isn't that slow).
-- For large initial syncs, batch from a snapshot, then sync the diff from that point forward.
+- For small projects, replaying all events works fine (even 10k tasks isn't that slow).
+- For larger projects, snapshot bootstrap is now implemented: the client downloads a pre-built SQLite database from the server and then pulls only events after the snapshot point. The snapshot threshold is configurable (default 100 events; set `TD_SYNC_SNAPSHOT_THRESHOLD=0` to disable and force event replay).
+- The server caches snapshots at `{dataDir}/snapshots/{projectID}/{seq}.db`, rebuilding only when the sequence advances.
 - Avoid sending massive HTTP payloads (25MB+) — batch appropriately.
 
 ### Connection Code

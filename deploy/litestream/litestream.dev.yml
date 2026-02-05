@@ -1,0 +1,6 @@
+# Dev: file-based backup only
+dbs:
+  - path: /data/server.db
+    replicas:
+      - type: file
+        path: /backups/server.db

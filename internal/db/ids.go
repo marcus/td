@@ -2,6 +2,7 @@ package db
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 )
@@ -14,8 +15,13 @@ const (
 	handoffIDPrefix  = "ho-"
 	commentIDPrefix  = "cm-"
 	snapshotIDPrefix = "gs-"
-	fileIDPrefix     = "if-"
-	actionIDPrefix   = "al-"
+	actionIDPrefix = "al-"
+
+	// Deterministic ID prefixes for composite-key tables
+	boardIssuePosIDPrefix = "bip_"
+	dependencyIDPrefix    = "dep_"
+	issueFileIDPrefix     = "ifl_"
+	wsiIDPrefix           = "wsi_"
 )
 
 // NormalizeIssueID ensures an issue ID has the td- prefix
@@ -102,15 +108,6 @@ func generateSnapshotID() (string, error) {
 	return snapshotIDPrefix + hex.EncodeToString(bytes), nil
 }
 
-// generateFileID generates a unique issue file ID
-func generateFileID() (string, error) {
-	bytes := make([]byte, 4) // 8 hex characters
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return fileIDPrefix + hex.EncodeToString(bytes), nil
-}
-
 // generateActionID generates a unique action log ID
 func generateActionID() (string, error) {
 	bytes := make([]byte, 4) // 8 hex characters
@@ -118,4 +115,32 @@ func generateActionID() (string, error) {
 		return "", err
 	}
 	return actionIDPrefix + hex.EncodeToString(bytes), nil
+}
+
+// deterministicID computes prefix + sha256(input)[:16] for sync-stable IDs.
+func deterministicID(prefix, input string) string {
+	h := sha256.Sum256([]byte(input))
+	return prefix + hex.EncodeToString(h[:])[:16]
+}
+
+// BoardIssuePosID returns a deterministic ID for a board_issue_positions row.
+func BoardIssuePosID(boardID, issueID string) string {
+	return deterministicID(boardIssuePosIDPrefix, boardID+"|"+issueID)
+}
+
+// DependencyID returns a deterministic ID for an issue_dependencies row.
+func DependencyID(issueID, dependsOnID, relationType string) string {
+	return deterministicID(dependencyIDPrefix, issueID+"|"+dependsOnID+"|"+relationType)
+}
+
+// IssueFileID returns a deterministic ID for an issue_files row.
+// The file path is normalized to forward slashes before hashing
+// so the same ID is generated regardless of OS path separators.
+func IssueFileID(issueID, filePath string) string {
+	return deterministicID(issueFileIDPrefix, issueID+"|"+NormalizeFilePathForID(filePath))
+}
+
+// WsiID returns a deterministic ID for a work_session_issues row.
+func WsiID(workSessionID, issueID string) string {
+	return deterministicID(wsiIDPrefix, workSessionID+"|"+issueID)
 }

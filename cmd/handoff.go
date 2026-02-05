@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -156,7 +155,7 @@ Or use flags with values, stdin (-), or file (@path):
 		}
 
 		// Update issue timestamp
-		if err := database.UpdateIssue(issue); err != nil {
+		if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
 			output.Warning("failed to update issue: %v", err)
 		}
 
@@ -216,22 +215,6 @@ Or use flags with values, stdin (-), or file (@path):
 					if err := database.AddHandoff(childHandoff); err != nil {
 						output.Warning("cascade handoff %s: %v", child.ID, err)
 						continue
-					}
-
-					// Log action for undo
-					handoffData, err := json.Marshal(childHandoff)
-					if err != nil {
-						output.Warning("marshal handoff %s: %v", child.ID, err)
-						continue
-					}
-					if err := database.LogAction(&models.ActionLog{
-						SessionID:  sess.ID,
-						ActionType: models.ActionHandoff,
-						EntityType: "handoff",
-						EntityID:   childHandoff.ID,
-						NewData:    string(handoffData),
-					}); err != nil {
-						output.Warning("log undo %s: %v", child.ID, err)
 					}
 
 					// Add log entry for visibility

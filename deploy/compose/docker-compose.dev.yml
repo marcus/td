@@ -1,0 +1,14 @@
+# Dev environment overrides
+# Relaxed rate limits, verbose logging, file-only backup
+
+services:
+  td-sync:
+    environment:
+      - SYNC_LOG_FORMAT=${SYNC_LOG_FORMAT:-text}
+      - SYNC_LOG_LEVEL=${SYNC_LOG_LEVEL:-debug}
+      - SYNC_RATE_LIMIT_AUTH=${SYNC_RATE_LIMIT_AUTH:-100}
+      - SYNC_RATE_LIMIT_PUSH=${SYNC_RATE_LIMIT_PUSH:-600}
+      - SYNC_RATE_LIMIT_PULL=${SYNC_RATE_LIMIT_PULL:-1200}
+      - SYNC_RATE_LIMIT_OTHER=${SYNC_RATE_LIMIT_OTHER:-3000}
+    volumes:
+      - ./litestream/litestream.dev.yml:/etc/litestream.yml:ro

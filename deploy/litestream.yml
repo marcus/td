@@ -1,0 +1,15 @@
+dbs:
+  - path: /data/server.db
+    replicas:
+      # File-based replica (MVP default)
+      - type: file
+        path: /backups/server.db
+
+      # --- S3-compatible replica (uncomment to enable) ---
+      # - type: s3
+      #   bucket: ${LITESTREAM_S3_BUCKET}
+      #   path: server.db
+      #   endpoint: ${LITESTREAM_S3_ENDPOINT}
+      #   region: ${AWS_DEFAULT_REGION}
+      #   access-key-id: ${AWS_ACCESS_KEY_ID}
+      #   secret-access-key: ${AWS_SECRET_ACCESS_KEY}

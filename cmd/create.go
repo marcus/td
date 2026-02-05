@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -177,8 +176,8 @@ var createCmd = &cobra.Command{
 			issue.CreatedBranch = gitState.Branch
 		}
 
-		// Create the issue
-		if err := database.CreateIssue(issue); err != nil {
+		// Create the issue (atomic create + action log)
+		if err := database.CreateIssueLogged(issue, sess.ID); err != nil {
 			output.Error("failed to create issue: %v", err)
 			return err
 		}
@@ -188,21 +187,11 @@ var createCmd = &cobra.Command{
 			output.Warning("failed to record session history: %v", err)
 		}
 
-		// Log action for undo
-		newData, _ := json.Marshal(issue)
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionCreate,
-			EntityType: "issue",
-			EntityID:   issue.ID,
-			NewData:    string(newData),
-		})
-
 		// Handle dependencies
 		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
 			for _, dep := range strings.Split(dependsOn, ",") {
 				dep = strings.TrimSpace(dep)
-				if err := database.AddDependency(issue.ID, dep, "depends_on"); err != nil {
+				if err := database.AddDependencyLogged(issue.ID, dep, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add dependency %s: %v", dep, err)
 				}
 			}
@@ -211,7 +200,7 @@ var createCmd = &cobra.Command{
 		if blocks, _ := cmd.Flags().GetString("blocks"); blocks != "" {
 			for _, blocked := range strings.Split(blocks, ",") {
 				blocked = strings.TrimSpace(blocked)
-				if err := database.AddDependency(blocked, issue.ID, "depends_on"); err != nil {
+				if err := database.AddDependencyLogged(blocked, issue.ID, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add blocks %s: %v", blocked, err)
 				}
 			}

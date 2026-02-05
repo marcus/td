@@ -80,19 +80,19 @@ type Issue struct {
 	Status             Status     `json:"status"`
 	Type               Type       `json:"type"`
 	Priority           Priority   `json:"priority"`
-	Points             int        `json:"points,omitempty"`
+	Points             int        `json:"points"`
 	Labels             []string   `json:"labels,omitempty"`
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
 	Sprint             string     `json:"sprint,omitempty"`
-	ImplementerSession string     `json:"implementer_session,omitempty"`
-	CreatorSession     string     `json:"creator_session,omitempty"`
-	ReviewerSession    string     `json:"reviewer_session,omitempty"`
+	ImplementerSession string     `json:"implementer_session"`
+	CreatorSession     string     `json:"creator_session"`
+	ReviewerSession    string     `json:"reviewer_session"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	ClosedAt           *time.Time `json:"closed_at,omitempty"`
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
-	Minor              bool       `json:"minor,omitempty"`
+	Minor              bool       `json:"minor"`
 	CreatedBranch      string     `json:"created_branch,omitempty"`
 }
 
@@ -257,6 +257,8 @@ const (
 	ActionBoardMoveIssue   ActionType = "board_move_issue"
 	ActionBoardSetPosition ActionType = "board_set_position"
 	ActionBoardUnposition  ActionType = "board_unposition"
+	ActionWorkSessionTag   ActionType = "work_session_tag"
+	ActionWorkSessionUntag ActionType = "work_session_untag"
 )
 
 // ActionLog represents a logged action that can be undone
