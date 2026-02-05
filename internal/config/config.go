@@ -1,3 +1,5 @@
+// Package config handles loading and saving td configuration from
+// .todos/config.json.
 package config
 
 import (

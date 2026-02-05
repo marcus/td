@@ -1,3 +1,5 @@
+// Package git provides utilities for reading git repository state (branch,
+// commit, dirty status).
 package git
 
 import (

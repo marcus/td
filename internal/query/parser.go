@@ -1,3 +1,5 @@
+// Package query implements the TDQ (td query) language parser, lexer, AST,
+// and evaluator for filtering issues.
 package query
 
 import (

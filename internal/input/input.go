@@ -1,3 +1,5 @@
+// Package input provides helpers for reading flag values from stdin and files
+// (@file syntax).
 package input
 
 import (

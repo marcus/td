@@ -1,3 +1,5 @@
+// Package db provides the SQLite persistence layer for td, handling issue
+// storage, migrations, multi-process locking, and query execution.
 package db
 
 import (

@@ -1,3 +1,5 @@
+// Package session manages terminal and agent work sessions scoped by git
+// branch and agent identity.
 package session
 
 import (

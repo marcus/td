@@ -1,3 +1,5 @@
+// Package workdir resolves the td database root directory, supporting git
+// worktree redirection via .td-root files.
 package workdir
 
 import (
