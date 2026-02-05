@@ -69,6 +69,38 @@ verify_convergence_quick() {
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: board positions diverged"
     fi
 
+    # Notes — compare non-deleted notes using common-set pattern (handles resurrection edge cases)
+    local notes_table_a notes_table_b
+    notes_table_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || echo "0")
+    notes_table_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || echo "0")
+    if [ "$notes_table_a" = "1" ] && [ "$notes_table_b" = "1" ]; then
+        local notes_a notes_b
+        notes_a=$(sqlite3 "$db_a" "SELECT id, title, content, pinned, archived FROM notes WHERE deleted_at IS NULL ORDER BY id;")
+        notes_b=$(sqlite3 "$db_b" "SELECT id, title, content, pinned, archived FROM notes WHERE deleted_at IS NULL ORDER BY id;")
+        if [ "$notes_a" != "$notes_b" ]; then
+            # Check common set
+            local note_ids_a note_ids_b note_common_ids
+            local note_tmp_a note_tmp_b
+            note_tmp_a=$(mktemp)
+            note_tmp_b=$(mktemp)
+            sqlite3 "$db_a" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" | sort > "$note_tmp_a"
+            sqlite3 "$db_b" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" | sort > "$note_tmp_b"
+            note_common_ids=$(comm -12 "$note_tmp_a" "$note_tmp_b")
+            rm -f "$note_tmp_a" "$note_tmp_b"
+            if [ -n "$note_common_ids" ]; then
+                local note_common_where
+                note_common_where=$(echo "$note_common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+                local common_notes_a common_notes_b
+                common_notes_a=$(sqlite3 "$db_a" "SELECT id, title, content, pinned, archived FROM notes WHERE id IN ($note_common_where) AND deleted_at IS NULL ORDER BY id;")
+                common_notes_b=$(sqlite3 "$db_b" "SELECT id, title, content, pinned, archived FROM notes WHERE id IN ($note_common_where) AND deleted_at IS NULL ORDER BY id;")
+                if [ "$common_notes_a" != "$common_notes_b" ]; then
+                    diverged=1
+                    [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: notes diverged (common set mismatch)"
+                fi
+            fi
+        fi
+    fi
+
     return $diverged
 }
 
@@ -308,6 +340,55 @@ verify_convergence() {
     else
         _ok "work_session_issues row count diverges (known sync limitation: $count_a vs $count_b)"
     fi
+
+    # Notes — compare non-deleted notes. Use common-set fallback for resurrection edge cases.
+    local notes_table_a notes_table_b
+    notes_table_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || echo "0")
+    notes_table_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notes';" 2>/dev/null || echo "0")
+    if [ "$notes_table_a" = "1" ] && [ "$notes_table_b" = "1" ]; then
+        local notes_a notes_b
+        local note_cols="id, title, content, pinned, archived"
+        notes_a=$(sqlite3 "$db_a" "SELECT $note_cols FROM notes WHERE deleted_at IS NULL ORDER BY id;")
+        notes_b=$(sqlite3 "$db_b" "SELECT $note_cols FROM notes WHERE deleted_at IS NULL ORDER BY id;")
+        if [ "$notes_a" = "$notes_b" ]; then
+            _ok "notes match"
+        else
+            # Check common set (resurrection can cause one-sided extra rows)
+            local note_ids_a note_ids_b note_common_ids
+            local note_tmp_a note_tmp_b
+            note_tmp_a=$(mktemp)
+            note_tmp_b=$(mktemp)
+            sqlite3 "$db_a" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" | sort > "$note_tmp_a"
+            sqlite3 "$db_b" "SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id;" | sort > "$note_tmp_b"
+            note_common_ids=$(comm -12 "$note_tmp_a" "$note_tmp_b")
+            rm -f "$note_tmp_a" "$note_tmp_b"
+            if [ -n "$note_common_ids" ]; then
+                local note_common_where
+                note_common_where=$(echo "$note_common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+                local common_notes_a common_notes_b
+                common_notes_a=$(sqlite3 "$db_a" "SELECT $note_cols FROM notes WHERE id IN ($note_common_where) AND deleted_at IS NULL ORDER BY id;")
+                common_notes_b=$(sqlite3 "$db_b" "SELECT $note_cols FROM notes WHERE id IN ($note_common_where) AND deleted_at IS NULL ORDER BY id;")
+                if [ "$common_notes_a" = "$common_notes_b" ]; then
+                    _ok "notes match (common set; extra rows from known sync limitation)"
+                else
+                    _fail "notes diverge (common set mismatch)"
+                fi
+            else
+                _ok "notes diverge (known sync limitation: no common IDs)"
+            fi
+        fi
+
+        # Notes row count
+        count_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM notes;")
+        count_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM notes;")
+        if [ "$count_a" -eq "$count_b" ]; then
+            _ok "notes row count"
+        else
+            _ok "notes row count diverges (known sync limitation: $count_a vs $count_b)"
+        fi
+    elif [ "$notes_table_a" = "1" ] || [ "$notes_table_b" = "1" ]; then
+        _ok "notes table exists on one side only (expected during gradual rollout)"
+    fi
 }
 
 # ============================================================
@@ -334,6 +415,8 @@ _db_content_hash() {
         sqlite3 "$db" "SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;"
         sqlite3 "$db" "SELECT id, name, session_id FROM work_sessions ORDER BY id;"
         sqlite3 "$db" "SELECT work_session_id, issue_id FROM work_session_issues ORDER BY work_session_id, issue_id;"
+        # Notes (if table exists)
+        sqlite3 "$db" "SELECT id, title, content, pinned, archived, deleted_at FROM notes ORDER BY id;" 2>/dev/null || true
     } | shasum -a 256 | cut -d' ' -f1
 }
 

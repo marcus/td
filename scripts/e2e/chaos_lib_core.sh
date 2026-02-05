@@ -81,6 +81,8 @@ CHAOS_ACTIVE_WS_C=""     # Active work session name for actor c
 CHAOS_WS_TAGGED_A=""     # KV: issueId:1 for issues tagged in actor a's session
 CHAOS_WS_TAGGED_B=""     # KV: issueId:1 for issues tagged in actor b's session
 CHAOS_WS_TAGGED_C=""     # KV: issueId:1 for issues tagged in actor c's session
+CHAOS_NOTE_IDS=()        # Array of note IDs
+CHAOS_DELETED_NOTE_IDS=() # Array of soft-deleted note IDs
 
 CHAOS_ACTION_COUNT=0
 CHAOS_EXPECTED_FAILURES=0
@@ -453,6 +455,7 @@ _CHAOS_ACTION_NAMES=(
     "link" "unlink"
     "ws_start" "ws_tag" "ws_untag" "ws_end" "ws_handoff"
     "create_child" "cascade_handoff" "cascade_review"
+    "note_create" "note_update" "note_delete"
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 2 1 2
@@ -464,6 +467,7 @@ _CHAOS_ACTION_WEIGHTS=(
     3 1
     2 3 1 1 1
     4 2 2
+    5 3 1
 )
 
 _CHAOS_TOTAL_WEIGHT=0

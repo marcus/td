@@ -1268,3 +1268,183 @@ exec_ws_handoff() {
         return 2
     fi
 }
+
+# ============================================================
+# 7c. Notes Executors
+# ============================================================
+
+# Helper to get db path for an actor
+_chaos_get_db_path() {
+    local actor="$1"
+    case "$actor" in
+        a) echo "$_CHAOS_DB_PATH_A" ;;
+        b) echo "$_CHAOS_DB_PATH_B" ;;
+        c) echo "$_CHAOS_DB_PATH_C" ;;
+    esac
+}
+
+# Helper to get session id for an actor
+_chaos_get_session_id() {
+    local actor="$1"
+    case "$actor" in
+        a) echo "$_CHAOS_SESSION_A" ;;
+        b) echo "$_CHAOS_SESSION_B" ;;
+        c) echo "$_CHAOS_SESSION_C" ;;
+    esac
+}
+
+exec_note_create() {
+    local actor="$1"
+    local db_path
+    db_path=$(_chaos_get_db_path "$actor")
+    [ -z "$db_path" ] && return 1
+
+    # Generate note data
+    local note_id="nt-$(openssl rand -hex 4)"
+    rand_title 60; local title="$_RAND_STR"
+    rand_description 3; local content="$_RAND_STR"
+    local now
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Create notes table if not exists
+    sqlite3 "$db_path" "CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        pinned INTEGER DEFAULT 0,
+        archived INTEGER DEFAULT 0,
+        deleted_at TEXT
+    );" 2>/dev/null || true
+
+    # Insert note
+    local rc=0
+    sqlite3 "$db_path" "INSERT INTO notes (id, title, content, created_at, updated_at) VALUES ('$note_id', '$(echo "$title" | sed "s/'/''/g")', '$(echo "$content" | sed "s/'/''/g")', '$now', '$now');" 2>/dev/null || rc=$?
+
+    if [ $rc -ne 0 ]; then
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] note_create failed"
+        return 2
+    fi
+
+    # Create action_log entry
+    local session_id
+    session_id=$(_chaos_get_session_id "$actor")
+    local al_id="al-$(openssl rand -hex 4)"
+    local new_data="{\"id\":\"$note_id\",\"title\":\"$(echo "$title" | sed 's/"/\\"/g')\",\"content\":\"$(echo "$content" | sed 's/"/\\"/g')\"}"
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp)
+        VALUES ('$al_id', '$session_id', 'create', 'notes', '$note_id', '$new_data', '$now');" 2>/dev/null || true
+
+    CHAOS_NOTE_IDS+=("$note_id")
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_create: $note_id by $actor"
+    return 0
+}
+
+exec_note_update() {
+    local actor="$1"
+
+    # Need existing non-deleted notes
+    [ "${#CHAOS_NOTE_IDS[@]}" -eq 0 ] && return 1
+
+    # Filter out deleted notes
+    local available=()
+    for nid in "${CHAOS_NOTE_IDS[@]}"; do
+        local is_deleted=0
+        for did in "${CHAOS_DELETED_NOTE_IDS[@]}"; do
+            [ "$nid" = "$did" ] && is_deleted=1 && break
+        done
+        [ "$is_deleted" -eq 0 ] && available+=("$nid")
+    done
+    [ "${#available[@]}" -eq 0 ] && return 1
+
+    rand_int 0 $(( ${#available[@]} - 1 ))
+    local note_id="${available[$_RAND_RESULT]}"
+
+    local db_path
+    db_path=$(_chaos_get_db_path "$actor")
+    [ -z "$db_path" ] && return 1
+
+    # Get current note data for previous_data
+    local prev_data
+    prev_data=$(sqlite3 "$db_path" "SELECT json_object('id', id, 'title', title, 'content', content) FROM notes WHERE id='$note_id';" 2>/dev/null || echo "{}")
+
+    # Random update: title, content, or both
+    rand_int 1 3
+    local update_type="$_RAND_RESULT"
+    local now
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local new_title="" new_content=""
+
+    case "$update_type" in
+        1) # Update title only
+            rand_title 60; new_title="$_RAND_STR"
+            sqlite3 "$db_path" "UPDATE notes SET title='$(echo "$new_title" | sed "s/'/''/g")', updated_at='$now' WHERE id='$note_id';" 2>/dev/null || return 2
+            ;;
+        2) # Update content only
+            rand_description 3; new_content="$_RAND_STR"
+            sqlite3 "$db_path" "UPDATE notes SET content='$(echo "$new_content" | sed "s/'/''/g")', updated_at='$now' WHERE id='$note_id';" 2>/dev/null || return 2
+            ;;
+        3) # Update both
+            rand_title 60; new_title="$_RAND_STR"
+            rand_description 3; new_content="$_RAND_STR"
+            sqlite3 "$db_path" "UPDATE notes SET title='$(echo "$new_title" | sed "s/'/''/g")', content='$(echo "$new_content" | sed "s/'/''/g")', updated_at='$now' WHERE id='$note_id';" 2>/dev/null || return 2
+            ;;
+    esac
+
+    # Create action_log entry
+    local session_id
+    session_id=$(_chaos_get_session_id "$actor")
+    local al_id="al-$(openssl rand -hex 4)"
+    local new_data
+    new_data=$(sqlite3 "$db_path" "SELECT json_object('id', id, 'title', title, 'content', content) FROM notes WHERE id='$note_id';" 2>/dev/null || echo "{}")
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp)
+        VALUES ('$al_id', '$session_id', 'update', 'notes', '$note_id', '$prev_data', '$new_data', '$now');" 2>/dev/null || true
+
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_update: $note_id by $actor"
+    return 0
+}
+
+exec_note_delete() {
+    local actor="$1"
+
+    # Need existing non-deleted notes
+    [ "${#CHAOS_NOTE_IDS[@]}" -eq 0 ] && return 1
+
+    # Filter out deleted notes
+    local available=()
+    for nid in "${CHAOS_NOTE_IDS[@]}"; do
+        local is_deleted=0
+        for did in "${CHAOS_DELETED_NOTE_IDS[@]}"; do
+            [ "$nid" = "$did" ] && is_deleted=1 && break
+        done
+        [ "$is_deleted" -eq 0 ] && available+=("$nid")
+    done
+    [ "${#available[@]}" -eq 0 ] && return 1
+
+    rand_int 0 $(( ${#available[@]} - 1 ))
+    local note_id="${available[$_RAND_RESULT]}"
+
+    local db_path
+    db_path=$(_chaos_get_db_path "$actor")
+    [ -z "$db_path" ] && return 1
+
+    local now
+    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Soft delete
+    sqlite3 "$db_path" "UPDATE notes SET deleted_at='$now' WHERE id='$note_id';" 2>/dev/null || return 2
+
+    # Create action_log entry
+    local session_id
+    session_id=$(_chaos_get_session_id "$actor")
+    local al_id="al-$(openssl rand -hex 4)"
+
+    sqlite3 "$db_path" "INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp)
+        VALUES ('$al_id', '$session_id', 'soft_delete', 'notes', '$note_id', '{}', '$now');" 2>/dev/null || true
+
+    CHAOS_DELETED_NOTE_IDS+=("$note_id")
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "note_delete: $note_id by $actor"
+    return 0
+}
