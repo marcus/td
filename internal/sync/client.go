@@ -48,6 +48,8 @@ func normalizeEntityType(entityType string) (string, bool) {
 		return "issue_files", true
 	case "work_session_issue", "work_session_issues":
 		return "work_session_issues", true
+	case "note", "notes":
+		return "notes", true
 	default:
 		return "", false
 	}
@@ -82,10 +84,10 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var (
-			rowid                                  int64
-			id                                     sql.NullString
+			rowid                                   int64
+			id                                      sql.NullString
 			actionType, entityType, entityID, tsStr string
-			newDataStr, prevDataStr                sql.NullString
+			newDataStr, prevDataStr                 sql.NullString
 		)
 		if err := rows.Scan(&rowid, &id, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
 			return nil, fmt.Errorf("scan action_log row: %w", err)

@@ -75,4 +75,14 @@ var SyncGateMap = []GateMapEntry{
 		Surface: "pkg/monitor/sync_prompt.go",
 		Notes:   "Gates monitor sync prompt modal flows",
 	},
+	{
+		Feature: SyncNotes.Name,
+		Surface: "cmd/sync.go#syncEntityValidator",
+		Notes:   "Gates notes entity handling during manual sync push/pull",
+	},
+	{
+		Feature: SyncNotes.Name,
+		Surface: "cmd/autosync.go",
+		Notes:   "Gates notes entity handling during autosync push/pull",
+	},
 }

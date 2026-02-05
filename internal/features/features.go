@@ -37,12 +37,20 @@ var (
 		Default:     false,
 		Description: "Enable monitor sync setup prompt",
 	}
+
+	// SyncNotes gates notes entity sync for sidecar notes plugin rollout.
+	SyncNotes = Feature{
+		Name:        "sync_notes",
+		Default:     false,
+		Description: "Enable sync transport for notes entities",
+	}
 )
 
 var allFeatures = []Feature{
 	SyncAutosync,
 	SyncCLI,
 	SyncMonitorPrompt,
+	SyncNotes,
 }
 
 var defaultValues = buildDefaultMap()

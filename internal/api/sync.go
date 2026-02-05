@@ -32,6 +32,7 @@ var allowedEntityTypes = map[string]bool{
 	"issue_dependencies":    true,
 	"git_snapshots":         true,
 	"issue_session_history": true,
+	"notes":                 true,
 }
 
 func isValidEntityType(et string) bool {
@@ -103,9 +104,9 @@ type PullEvent struct {
 
 // SyncStatusResponse is the JSON response for GET /v1/projects/{id}/sync/status.
 type SyncStatusResponse struct {
-	EventCount     int64  `json:"event_count"`
-	LastServerSeq  int64  `json:"last_server_seq"`
-	LastEventTime  string `json:"last_event_time,omitempty"`
+	EventCount    int64  `json:"event_count"`
+	LastServerSeq int64  `json:"last_server_seq"`
+	LastEventTime string `json:"last_event_time,omitempty"`
 }
 
 // handleSyncPush handles POST /v1/projects/{id}/sync/push.

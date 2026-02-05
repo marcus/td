@@ -269,6 +269,7 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	if err != nil {
 		return fmt.Errorf("get pending: %w", err)
 	}
+	events = filterEventsForSync(events, syncEntityValidator)
 	if len(events) == 0 {
 		return nil
 	}

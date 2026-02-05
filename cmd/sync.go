@@ -20,8 +20,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// syncableEntities is the set of entity types that can be synced to the local database.
-var syncableEntities = map[string]bool{
+// baseSyncableEntities are always eligible for sync.
+var baseSyncableEntities = map[string]bool{
 	"issues":                true,
 	"logs":                  true,
 	"comments":              true,
@@ -33,8 +33,18 @@ var syncableEntities = map[string]bool{
 	"issue_files":           true,
 }
 
-var syncEntityValidator tdsync.EntityValidator = func(t string) bool {
-	return syncableEntities[t]
+const syncNotesEntity = "notes"
+
+// syncEntityValidator validates inbound and outbound sync entities.
+// Notes sync is explicitly feature-gated to keep rollout opt-in.
+var syncEntityValidator tdsync.EntityValidator = func(entityType string) bool {
+	if baseSyncableEntities[entityType] {
+		return true
+	}
+	if entityType == syncNotesEntity {
+		return features.IsEnabled(getBaseDir(), features.SyncNotes.Name)
+	}
+	return false
 }
 
 // errBootstrapNotNeeded signals that the server event count is below the snapshot threshold.
@@ -273,6 +283,23 @@ func copyFile(src, dst string) error {
 
 const pushBatchSize = 500
 
+func filterEventsForSync(events []tdsync.Event, validator tdsync.EntityValidator) []tdsync.Event {
+	if validator == nil {
+		return events
+	}
+
+	filtered := events[:0]
+	for _, event := range events {
+		if validator(event.EntityType) {
+			filtered = append(filtered, event)
+			continue
+		}
+		slog.Debug("sync: skipping feature-gated entity", "entity_type", event.EntityType, "entity_id", event.EntityID)
+	}
+
+	return filtered
+}
+
 func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
 	sess, err := session.Get(database)
 	if err != nil {
@@ -293,6 +320,7 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		output.Error("get pending events: %v", err)
 		return err
 	}
+	events = filterEventsForSync(events, syncEntityValidator)
 
 	if len(events) == 0 {
 		fmt.Println("Nothing to push.")
