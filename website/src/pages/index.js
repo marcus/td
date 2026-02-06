@@ -429,6 +429,12 @@ function SisterProjects() {
             </div>
             <p>Record anything you see in your terminal.</p>
           </a>
+          <a href="https://nightshift.haplab.com/" className="sc-sister-card sc-sister-card--amber">
+            <div className="sc-sister-card__logo-wrapper">
+              <img src={useBaseUrl('/img/nightshift-logo.png')} alt="Nightshift" className="sc-sister-card__logo" />
+            </div>
+            <p>It finds what you forgot to look for.</p>
+          </a>
         </div>
       </div>
     </section>

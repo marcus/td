@@ -1307,7 +1307,7 @@ a.sc-features-grid__item:hover {
 
 .sc-sister-projects__grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
   max-width: 1000px;
   margin: 0 auto;
@@ -1364,6 +1364,16 @@ a.sc-features-grid__item:hover {
 .sc-sister-card--blue:hover {
   border-color: rgba(126, 184, 218, 0.6);
   box-shadow: 0 8px 32px rgba(126, 184, 218, 0.2);
+}
+
+.sc-sister-card--amber {
+  background: linear-gradient(135deg, rgba(232, 168, 73, 0.15) 0%, rgba(232, 168, 73, 0.05) 100%);
+  border-color: rgba(232, 168, 73, 0.3);
+}
+
+.sc-sister-card--amber:hover {
+  border-color: rgba(232, 168, 73, 0.6);
+  box-shadow: 0 8px 32px rgba(232, 168, 73, 0.2);
 }
 
 .sc-sister-card--current {
