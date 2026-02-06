@@ -2,6 +2,42 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.30.0] - 2026-02-06
+
+### Features
+- Sync engine: full multi-client sync with auto-sync, snapshot bootstrap, field-level merge, and conflict recording
+- Sync CLI: `td sync init` guided setup wizard, `td sync tail` live activity view, `td config set/get/list`
+- Notes entity support in sync
+- Sync feature-flag framework with gated entity rollout
+- Chaos sync test oracle with weighted random actions, convergence verification, and CLI runner
+- Sparse board positioning with `ComputeInsertPosition` and automatic re-spacing
+- Logged mutation layer (`*Logged` variants) for full undo/sync coverage
+- Sync history tracking and pruning
+- Multi-environment deployment system
+- Nightshift added to sister projects
+
+### Bug Fixes
+- Field-level LWW merge prevents cross-field divergence
+- Soft-delete board positions to prevent sync resurrection
+- Cascade board position soft-deletes in sync receiver
+- Map issue delete to soft_delete in sync protocol
+- Prevent NULL points from sync partial update
+- Handle NULL session columns after sync
+- Backfill stale issues and handle undone creates in sync
+- Detect dependency cycles during sync event application
+- Drop UNIQUE(name) on boards to prevent sync data loss
+- File locking and atomic writes for config
+- Monitor periodic sync uses independent goroutine instead of BubbleTea Cmd
+
+### Testing
+- Comprehensive e2e sync test suite: chaos, convergence, clock skew, network partition, server restart, late-joiner, soak mode
+- Syncharness test infrastructure for board delete cascades, server migration, and real-data scenarios
+- Unit tests for sparse positioning and all logged mutation variants
+
+### Documentation
+- Sync setup and client guides
+- Package-level godoc comments across 15 packages
+
 ## [v0.29.0] - 2026-02-02
 
 ### Bug Fixes
