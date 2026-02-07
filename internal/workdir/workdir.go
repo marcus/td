@@ -46,6 +46,17 @@ func ResolveBaseDir(baseDir string) string {
 		return gitRoot
 	}
 
+	// Check main worktree (handles external worktrees without .td-root)
+	mainRoot, err := gitMainWorktree(baseDir)
+	if err == nil && mainRoot != "" && mainRoot != gitRoot {
+		if resolved, ok := readTdRoot(mainRoot); ok {
+			return resolved
+		}
+		if hasTodosDir(mainRoot) {
+			return mainRoot
+		}
+	}
+
 	return baseDir
 }
 
@@ -78,4 +89,32 @@ func gitTopLevel(dir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// gitMainWorktree returns the root of the main worktree for external git
+// worktrees. It returns ("", nil) when dir is already the main worktree.
+func gitMainWorktree(dir string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		return "", err
+	}
+	commonDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(dir, commonDir)
+	}
+	commonDir = filepath.Clean(commonDir)
+
+	// The main worktree root is the parent of the common git dir.
+	mainRoot := filepath.Dir(commonDir)
+
+	// If the main root equals the current toplevel, we're already there.
+	topLevel, err := gitTopLevel(dir)
+	if err != nil {
+		return "", err
+	}
+	if filepath.Clean(topLevel) == mainRoot {
+		return "", nil
+	}
+
+	return mainRoot, nil
 }

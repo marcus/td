@@ -74,6 +74,67 @@ func TestResolveBaseDir_ResolvesRelativeTdRootPath(t *testing.T) {
 	assertSamePath(t, sharedRoot, got)
 }
 
+func TestResolveBaseDir_ExternalWorktreeFindsMainTodos(t *testing.T) {
+	repo := initGitRepo(t)
+	runCmd(t, repo, "git", "commit", "--allow-empty", "-m", "init")
+
+	if err := os.MkdirAll(filepath.Join(repo, ".todos"), 0755); err != nil {
+		t.Fatalf("create .todos: %v", err)
+	}
+
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	runCmd(t, repo, "git", "worktree", "add", wtPath, "-b", "test-branch")
+
+	// Worktree should not have its own .td-root
+	if _, err := os.Stat(filepath.Join(wtPath, tdRootFile)); err == nil {
+		t.Fatal("worktree should not have .td-root")
+	}
+
+	got := ResolveBaseDir(wtPath)
+	assertSamePath(t, repo, got)
+}
+
+func TestResolveBaseDir_ExternalWorktreeFollowsMainTdRoot(t *testing.T) {
+	repo := initGitRepo(t)
+	runCmd(t, repo, "git", "commit", "--allow-empty", "-m", "init")
+
+	sharedRoot := filepath.Join(t.TempDir(), "shared-root")
+	if err := os.MkdirAll(sharedRoot, 0755); err != nil {
+		t.Fatalf("create shared root: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, tdRootFile), []byte(sharedRoot+"\n"), 0644); err != nil {
+		t.Fatalf("write %s: %v", tdRootFile, err)
+	}
+
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	runCmd(t, repo, "git", "worktree", "add", wtPath, "-b", "test-branch")
+
+	// Worktree should not have its own .td-root
+	if _, err := os.Stat(filepath.Join(wtPath, tdRootFile)); err == nil {
+		t.Fatal("worktree should not have .td-root")
+	}
+
+	got := ResolveBaseDir(wtPath)
+	assertSamePath(t, sharedRoot, got)
+}
+
+func TestResolveBaseDir_MainRepoUnchangedWithWorktrees(t *testing.T) {
+	repo := initGitRepo(t)
+	runCmd(t, repo, "git", "commit", "--allow-empty", "-m", "init")
+
+	if err := os.MkdirAll(filepath.Join(repo, ".todos"), 0755); err != nil {
+		t.Fatalf("create .todos: %v", err)
+	}
+
+	// Create a worktree so the repo "has worktrees"
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	runCmd(t, repo, "git", "worktree", "add", wtPath, "-b", "test-branch")
+
+	got := ResolveBaseDir(repo)
+	assertSamePath(t, repo, got)
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 
