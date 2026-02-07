@@ -27,4 +27,4 @@ See `monitor-shortcuts-guide.md`
 ### Sidecar Integration
 TD exports shortcuts to sidecar via `ExportBindings()` and `ExportCommands()`.
 - TD side: `monitor-shortcuts-guide.md` (Sidecar Integration section)
-- Sidecar side: `sidecar/docs/guides/keyboard-shortcuts-reference.md`
+- Sidecar side: see the Sidecar repository documentation (keyboard shortcuts reference lives there).

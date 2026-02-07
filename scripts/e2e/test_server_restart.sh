@@ -162,7 +162,8 @@ for _ in $(seq 1 "$PHASE2_ACTIONS_A"); do
 
     # Attempt sync (should fail gracefully)
     if [ $(( RANDOM % 4 )) -eq 0 ]; then
-        if td_a sync 2>&1 | grep -qE "connection refused|error|failed|dial tcp" || ! td_a sync >/dev/null 2>&1; then
+        sync_output=$(td_a sync 2>&1) || true
+        if echo "$sync_output" | grep -qE "connection refused|error|failed|dial tcp"; then
             RESTART_SYNC_FAILURES_DURING_OUTAGE=$((RESTART_SYNC_FAILURES_DURING_OUTAGE + 1))
             [ "$VERBOSE" = "true" ] && _ok "expected sync failure during outage (A)"
         fi
@@ -186,7 +187,8 @@ for _ in $(seq 1 "$PHASE2_ACTIONS_B"); do
 
     # Attempt sync (should fail gracefully)
     if [ $(( RANDOM % 4 )) -eq 0 ]; then
-        if td_b sync 2>&1 | grep -qE "connection refused|error|failed|dial tcp" || ! td_b sync >/dev/null 2>&1; then
+        sync_output=$(td_b sync 2>&1) || true
+        if echo "$sync_output" | grep -qE "connection refused|error|failed|dial tcp"; then
             RESTART_SYNC_FAILURES_DURING_OUTAGE=$((RESTART_SYNC_FAILURES_DURING_OUTAGE + 1))
             [ "$VERBOSE" = "true" ] && _ok "expected sync failure during outage (B)"
         fi

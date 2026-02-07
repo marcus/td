@@ -143,6 +143,8 @@ For AI agents in Claude Code, Codex, Cursor, or other compatible environments:
 
 Or use the skill directly from the repo: See `./td-task-management/SKILL.md` for full documentation.
 
+Migration status for legacy in-repo guides is tracked in `docs/guides/README.md`.
+
 ## Architecture
 
 ```
@@ -544,4 +546,3 @@ Inspired by [beads](https://github.com/steveyegge/beads) by Steve Yegge.
 ## License
 
 MIT
-

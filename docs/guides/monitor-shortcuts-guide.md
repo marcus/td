@@ -201,7 +201,7 @@ commands := registry.ExportCommands()   // []ExportedCommand
 | `ContextConfirm` | `td-confirm` |
 | `ContextForm` | `td-form` |
 
-For sidecar's side of the integration, see `sidecar/docs/guides/keyboard-shortcuts-reference.md`.
+For sidecar's side of the integration, see the Sidecar repository documentation (the keyboard shortcuts reference is maintained there, not in this repo).
 
 ### Checklist for sidecar visibility
 1. Binding in `bindings.go` with context
