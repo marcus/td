@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.31.0] - 2026-02-07
+
+### Features
+- Complete regression seed suite with verified seeds and runner integration
+- Enable notes entity sync by default with feature flag
+
+### Bug Fixes
+- Resolve .todos in main repo for external git worktrees (gh pr checkout, Claude Code)
+- Fix .todos lookup when td/sidecar launched from non-project-root directory
+- Add sync feature flags to bash e2e harness (matching Go harness)
+- Remove redundant notes schema from e2e test (latent schema mismatch)
+
 ## [v0.30.0] - 2026-02-06
 
 ### Features
