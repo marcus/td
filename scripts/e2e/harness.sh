@@ -103,9 +103,9 @@ SESSION_ID_A="e2e-alice-$$"
 SESSION_ID_B="e2e-bob-$$"
 SESSION_ID_C="e2e-carol-$$"
 
-td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" "$TD_BIN" "$@"); }
-td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" "$TD_BIN" "$@"); }
-td_c() { (cd "$CLIENT_C_DIR" && HOME="$HOME_C" TD_SESSION_ID="$SESSION_ID_C" "$TD_BIN" "$@"); }
+td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" TD_FEATURE_SYNC_CLI=1 TD_FEATURE_SYNC_AUTOSYNC=1 "$TD_BIN" "$@"); }
+td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" TD_FEATURE_SYNC_CLI=1 TD_FEATURE_SYNC_AUTOSYNC=1 "$TD_BIN" "$@"); }
+td_c() { (cd "$CLIENT_C_DIR" && HOME="$HOME_C" TD_SESSION_ID="$SESSION_ID_C" TD_FEATURE_SYNC_CLI=1 TD_FEATURE_SYNC_AUTOSYNC=1 "$TD_BIN" "$@"); }
 
 # ---- Teardown ----
 
