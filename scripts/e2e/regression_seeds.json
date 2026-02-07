@@ -2,19 +2,19 @@
   "description": "Regression seeds for deterministic e2e test replay. Add seeds when bugs are found.",
   "seeds": [
     {
-      "seed": 12345,
+      "seed": 314159,
       "test": "chaos_sync",
-      "description": "Example: field collision divergence (placeholder for real bugs)",
-      "added": "2024-02-02",
-      "args": {"actions": 50, "conflict-rate": 30},
+      "description": "Verified: field collisions + delete-mutate + bursts converge correctly",
+      "added": "2026-02-07",
+      "args": {"actions": 30, "conflict-rate": 50},
       "fixed": true
     },
     {
-      "seed": 67890,
+      "seed": 271828,
       "test": "network_partition",
-      "description": "Example: tombstone resurrection during offline batch (placeholder)",
-      "added": "2024-02-01",
-      "args": {"offline-actions": 40, "online-actions": 30},
+      "description": "Verified: offline batch with deps/files syncs after reconnect",
+      "added": "2026-02-07",
+      "args": {"offline-actions": 30, "online-actions": 20},
       "fixed": true
     }
   ]

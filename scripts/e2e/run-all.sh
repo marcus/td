@@ -2,8 +2,10 @@
 #
 # Run all e2e test scripts in this directory.
 # Usage:
-#   bash scripts/e2e/run-all.sh          # core tests only
-#   bash scripts/e2e/run-all.sh --full   # core + real-data tests
+#   bash scripts/e2e/run-all.sh                # core tests only
+#   bash scripts/e2e/run-all.sh --full         # core + real-data tests
+#   bash scripts/e2e/run-all.sh --regression   # core + regression seed suite
+#   bash scripts/e2e/run-all.sh --full --regression  # all of the above
 #
 set -euo pipefail
 
@@ -15,9 +17,11 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 FULL=false
+REGRESSION=false
 for arg in "$@"; do
     case "$arg" in
         --full) FULL=true ;;
+        --regression) REGRESSION=true ;;
     esac
 done
 
@@ -63,4 +67,16 @@ else
         echo -e "  ${RED}FAIL:${NC} $f"
     done
     exit 1
+fi
+
+# Run regression seed suite if requested
+if [ "$REGRESSION" = "true" ]; then
+    echo ""
+    echo -e "${CYAN}${BOLD}>>> regression seed suite${NC}"
+    if TD_FEATURE_SYNC_CLI=1 bash "$DIR/run_regression_seeds.sh" --fixed-only; then
+        echo -e "  ${GREEN}Regression suite passed${NC}"
+    else
+        echo -e "  ${RED}FAIL:${NC} regression seed suite"
+        exit 1
+    fi
 fi

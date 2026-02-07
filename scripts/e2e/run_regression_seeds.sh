@@ -12,6 +12,7 @@
 #   bash scripts/e2e/run_regression_seeds.sh --unfixed-only   # Run only fixed=false seeds (check if bugs persist)
 #   bash scripts/e2e/run_regression_seeds.sh --verbose        # Show detailed output
 #   bash scripts/e2e/run_regression_seeds.sh --json-output    # Output JSON summary
+#   bash scripts/e2e/run_regression_seeds.sh --seeds-file F   # Use custom seeds file
 #
 # EXIT CODES:
 #   0 - All seeds passed as expected (fixed=true pass, fixed=false allowed to fail)
@@ -33,6 +34,8 @@
 #   4. Fix the bug, run again, set fixed=true when passing
 #
 set -euo pipefail
+
+export TD_FEATURE_SYNC_CLI=1
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SEEDS_FILE="$DIR/regression_seeds.json"
@@ -62,6 +65,7 @@ Options:
   --unfixed-only     Run only fixed=false seeds (verify bugs still fail)
   --verbose          Show full test output
   --json-output      Output JSON summary instead of text
+  --seeds-file PATH  Use custom seeds file (default: regression_seeds.json)
   -h, --help         Show this help
 
 Exit codes:
@@ -78,6 +82,7 @@ while [[ $# -gt 0 ]]; do
         --unfixed-only) FILTER="unfixed"; shift ;;
         --verbose)      VERBOSE=true; shift ;;
         --json-output)  JSON_OUTPUT=true; shift ;;
+        --seeds-file)   SEEDS_FILE="$2"; shift; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "Unknown arg: $1" >&2; usage; exit 1 ;;
     esac
