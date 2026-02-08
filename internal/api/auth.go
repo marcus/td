@@ -86,6 +86,11 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.logAuthEvent(ar.ID, req.Email, serverdb.AuthEventStarted, map[string]string{
+		"ip":         clientIP(r),
+		"user_agent": r.Header.Get("User-Agent"),
+	})
+
 	writeJSON(w, http.StatusOK, loginStartResponse{
 		DeviceCode:      ar.DeviceCode,
 		UserCode:        ar.UserCode,
@@ -162,6 +167,11 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("set auth request api key", "err", err)
 	}
 
+	s.logAuthEvent(completed.ID, completed.Email, serverdb.AuthEventKeyIssued, map[string]string{
+		"ip":         clientIP(r),
+		"user_agent": r.Header.Get("User-Agent"),
+	})
+
 	expiresAtStr := expiry.Format(time.RFC3339)
 	writeJSON(w, http.StatusOK, loginPollResponse{
 		Status:    "complete",
@@ -208,6 +218,11 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if ar == nil {
 		slog.Warn("verify failed", "reason", "invalid_or_expired")
+		s.logAuthEvent("", "", serverdb.AuthEventFailed, map[string]string{
+			"failure_reason": "invalid_code",
+			"ip":             clientIP(r),
+			"user_agent":     r.Header.Get("User-Agent"),
+		})
 		verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
 		return
 	}
@@ -240,8 +255,26 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.logAuthEvent(ar.ID, ar.Email, serverdb.AuthEventCodeVerified, map[string]string{
+		"ip":         clientIP(r),
+		"user_agent": r.Header.Get("User-Agent"),
+	})
+
 	logFor(r.Context()).Info("device verified", "email", ar.Email)
 	verifyTmpl.Execute(w, verifyPageData{Success: true})
+}
+
+// logAuthEvent logs an auth event, silently ignoring errors.
+func (s *Server) logAuthEvent(authRequestID, email, eventType string, meta map[string]string) {
+	metadata := "{}"
+	if len(meta) > 0 {
+		if b, err := json.Marshal(meta); err == nil {
+			metadata = string(b)
+		}
+	}
+	if err := s.store.InsertAuthEvent(authRequestID, email, eventType, metadata); err != nil {
+		slog.Warn("log auth event", "type", eventType, "err", err)
+	}
 }
 
 // isValidUserCode checks that every character is in the valid charset.

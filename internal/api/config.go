@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,6 +22,11 @@ type Config struct {
 	RateLimitPush  int // /sync/push per API key per minute (default: 60)
 	RateLimitPull  int // /sync/pull per API key per minute (default: 120)
 	RateLimitOther int // all other per API key per minute (default: 300)
+
+	CORSAllowedOrigins []string // allowed origins for admin CORS; empty = disabled
+
+	AuthEventRetention      time.Duration // retention period for auth events (default: 90 days)
+	RateLimitEventRetention time.Duration // retention period for rate limit events (default: 30 days)
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -39,6 +45,9 @@ func LoadConfig() Config {
 		RateLimitPush:  60,
 		RateLimitPull:  120,
 		RateLimitOther: 300,
+
+		AuthEventRetention:      90 * 24 * time.Hour,
+		RateLimitEventRetention: 30 * 24 * time.Hour,
 	}
 
 	if v := os.Getenv("SYNC_LISTEN_ADDR"); v != "" {
@@ -89,5 +98,42 @@ func LoadConfig() Config {
 		}
 	}
 
+	if v := os.Getenv("SYNC_AUTH_EVENT_RETENTION"); v != "" {
+		if d := parseDaysDuration(v); d > 0 {
+			cfg.AuthEventRetention = d
+		}
+	}
+	if v := os.Getenv("SYNC_RATE_LIMIT_EVENT_RETENTION"); v != "" {
+		if d := parseDaysDuration(v); d > 0 {
+			cfg.RateLimitEventRetention = d
+		}
+	}
+
+	if v := os.Getenv("SYNC_CORS_ALLOWED_ORIGINS"); v != "" {
+		origins := strings.Split(v, ",")
+		for _, o := range origins {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, o)
+			}
+		}
+	}
+
 	return cfg
+}
+
+// parseDaysDuration parses a string like "90d", "30d" into a time.Duration.
+// Falls back to time.ParseDuration for standard Go durations.
+func parseDaysDuration(s string) time.Duration {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, "d") {
+		numStr := strings.TrimSuffix(s, "d")
+		if n, err := strconv.Atoi(numStr); err == nil && n > 0 {
+			return time.Duration(n) * 24 * time.Hour
+		}
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	return 0
 }

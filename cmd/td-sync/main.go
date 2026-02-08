@@ -13,6 +13,12 @@ import (
 )
 
 func main() {
+	// Route to admin subcommands if present
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		runAdmin(os.Args[2:])
+		return
+	}
+
 	cfg := api.LoadConfig()
 
 	var level slog.Level

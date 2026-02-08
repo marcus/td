@@ -72,11 +72,71 @@ func (s *Server) Start() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				// Log "expired" auth events before cleanup marks them
+				expired, err := s.store.GetPendingExpiredAuthRequests()
+				if err != nil {
+					slog.Error("get pending expired auth requests", "err", err)
+				} else {
+					for _, ar := range expired {
+						s.logAuthEvent(ar.ID, ar.Email, serverdb.AuthEventExpired, nil)
+					}
+				}
+
 				n, err := s.store.CleanupExpiredAuthRequests()
 				if err != nil {
 					slog.Error("cleanup expired auth requests", "err", err)
 				} else if n > 0 {
 					slog.Info("cleaned up expired auth requests", "count", n)
+				}
+			}
+		}
+	}()
+
+	// Periodically clean up old auth events based on retention policy
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("auth event cleanup panic", "panic", r)
+			}
+		}()
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if s.config.AuthEventRetention > 0 {
+					n, err := s.store.CleanupAuthEvents(s.config.AuthEventRetention)
+					if err != nil {
+						slog.Error("cleanup auth events", "err", err)
+					} else if n > 0 {
+						slog.Info("cleaned up old auth events", "count", n)
+					}
+				}
+			}
+		}
+	}()
+
+	// Periodically clean up old rate limit events
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("rate limit cleanup panic", "panic", r)
+			}
+		}()
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := s.store.CleanupRateLimitEvents(s.config.RateLimitEventRetention)
+				if err != nil {
+					slog.Error("cleanup rate limit events", "err", err)
+				} else if n > 0 {
+					slog.Info("cleaned up rate limit events", "count", n)
 				}
 			}
 		}
@@ -128,7 +188,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncStatus, s.config.RateLimitOther)))
 	mux.HandleFunc("GET /v1/projects/{id}/sync/snapshot", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncSnapshot, s.config.RateLimitOther)))
 
-	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth))
+	// Admin (CORS-enabled) — admin route handlers added by later tasks
+	adminMux := http.NewServeMux()
+	mux.Handle("/v1/admin/", s.CORSMiddleware(adminMux))
+
+	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.store))
 }
 
 // handleHealth returns a health check response, pinging the server DB.

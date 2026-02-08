@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/marcus/td/internal/serverdb"
+	_ "modernc.org/sqlite"
 )
 
 func TestRateLimiterAllowDeny(t *testing.T) {
@@ -90,14 +94,26 @@ func TestRateLimiterCleanup(t *testing.T) {
 	}
 }
 
+func testStore(t *testing.T) *serverdb.ServerDB {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := serverdb.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	return store
+}
+
 func TestAuthRateLimitMiddleware(t *testing.T) {
 	rl := &RateLimiter{buckets: make(map[string]*bucket)}
+	store := testStore(t)
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl, rateLimitAuth)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth, store)(inner)
 
 	// Auth endpoint should be rate limited
 	for i := 0; i < rateLimitAuth; i++ {
@@ -131,12 +147,13 @@ func TestAuthRateLimitMiddleware(t *testing.T) {
 
 func TestAuthRateLimitDifferentIPs(t *testing.T) {
 	rl := &RateLimiter{buckets: make(map[string]*bucket)}
+	store := testStore(t)
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl, rateLimitAuth)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth, store)(inner)
 
 	// Exhaust IP 1
 	for i := 0; i < rateLimitAuth; i++ {

@@ -2,11 +2,14 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marcus/td/internal/serverdb"
 )
 
 // RateLimiter implements per-key fixed-window rate limiting.
@@ -71,7 +74,8 @@ const (
 
 // authRateLimitMiddleware rate-limits auth endpoints by IP address.
 // Applied globally; only acts on /auth/ and /v1/auth/ paths.
-func authRateLimitMiddleware(rl *RateLimiter, limit int) func(http.Handler) http.Handler {
+// When a rate limit is exceeded, the event is logged to the store.
+func authRateLimitMiddleware(rl *RateLimiter, limit int, store *serverdb.ServerDB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -82,6 +86,9 @@ func authRateLimitMiddleware(rl *RateLimiter, limit int) func(http.Handler) http
 				}
 				key := "ip:" + host
 				if !rl.Allow(key, limit) {
+					if err := store.InsertRateLimitEvent("", host, "auth"); err != nil {
+						slog.Error("log rate limit event", "err", err)
+					}
 					writeError(w, http.StatusTooManyRequests, "rate_limited", "rate limit exceeded")
 					return
 				}
@@ -93,6 +100,7 @@ func authRateLimitMiddleware(rl *RateLimiter, limit int) func(http.Handler) http
 
 // withRateLimit wraps an authenticated handler with per-key rate limiting.
 // The key is derived from the AuthUser's KeyID in the request context.
+// When a rate limit is exceeded, the event is logged to the store.
 func (s *Server) withRateLimit(handler http.HandlerFunc, limit int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := getUserFromContext(r.Context())
@@ -102,9 +110,44 @@ func (s *Server) withRateLimit(handler http.HandlerFunc, limit int) http.Handler
 		}
 		key := fmt.Sprintf("key:%s:%d", user.KeyID, limit)
 		if !s.rateLimiter.Allow(key, limit) {
+			ip := clientIP(r)
+			endpointClass := classifyEndpoint(r.URL.Path)
+			if err := s.store.InsertRateLimitEvent(user.KeyID, ip, endpointClass); err != nil {
+				slog.Error("log rate limit event", "err", err)
+			}
 			writeError(w, http.StatusTooManyRequests, "rate_limited", "rate limit exceeded")
 			return
 		}
 		handler(w, r)
 	}
+}
+
+// classifyEndpoint returns the endpoint class based on the request path.
+func classifyEndpoint(path string) string {
+	if strings.HasPrefix(path, "/v1/auth/") || strings.HasPrefix(path, "/auth/") {
+		return "auth"
+	}
+	if strings.Contains(path, "/sync/push") {
+		return "push"
+	}
+	if strings.Contains(path, "/sync/pull") {
+		return "pull"
+	}
+	return "other"
+}
+
+// clientIP extracts the client IP from the request, checking X-Forwarded-For first.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// First IP in the chain is the original client
+		if idx := strings.IndexByte(xff, ','); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
