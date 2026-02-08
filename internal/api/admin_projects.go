@@ -26,7 +26,7 @@ func (s *Server) handleAdminListProjects(w http.ResponseWriter, r *http.Request)
 	result, err := s.store.AdminListProjects(query, includeDeleted, limit, cursor)
 	if err != nil {
 		slog.Error("admin list projects", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to list projects")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list projects")
 		return
 	}
 
@@ -37,18 +37,18 @@ func (s *Server) handleAdminListProjects(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleAdminGetProject(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
 	project, err := s.store.AdminGetProject(projectID)
 	if err != nil {
 		slog.Error("admin get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (s *Server) handleAdminGetProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminProjectMembers(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
@@ -67,18 +67,18 @@ func (s *Server) handleAdminProjectMembers(w http.ResponseWriter, r *http.Reques
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin project members: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
 	members, err := s.store.AdminListProjectMembers(projectID)
 	if err != nil {
 		slog.Error("admin project members", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to list members")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list members")
 		return
 	}
 
@@ -96,7 +96,7 @@ type adminSyncStatusResponse struct {
 func (s *Server) handleAdminSyncStatus(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
@@ -104,18 +104,18 @@ func (s *Server) handleAdminSyncStatus(w http.ResponseWriter, r *http.Request) {
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin sync status: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
 		slog.Error("admin sync status: get db", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to open project database")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to open project database")
 		return
 	}
 
@@ -124,7 +124,7 @@ func (s *Server) handleAdminSyncStatus(w http.ResponseWriter, r *http.Request) {
 	err = db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(server_seq), 0) FROM events`).Scan(&count, &lastSeq)
 	if err != nil {
 		slog.Error("admin sync status: query", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "database error")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "database error")
 		return
 	}
 
@@ -155,7 +155,7 @@ type adminCursorEntry struct {
 func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
@@ -163,11 +163,11 @@ func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) 
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin sync cursors: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
@@ -185,7 +185,7 @@ func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) 
 	cursors, err := s.store.ListSyncCursorsForProject(projectID)
 	if err != nil {
 		slog.Error("admin sync cursors", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to list cursors")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list cursors")
 		return
 	}
 

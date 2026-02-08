@@ -25,7 +25,7 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	result, err := s.store.AdminListUsers(query, limit, cursor)
 	if err != nil {
 		slog.Error("admin list users", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to list users")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list users")
 		return
 	}
 
@@ -36,18 +36,18 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminGetUser(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing user id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing user id")
 		return
 	}
 
 	detail, err := s.store.AdminGetUser(userID)
 	if err != nil {
 		slog.Error("admin get user", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get user")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get user")
 		return
 	}
 	if detail == nil {
-		writeError(w, http.StatusNotFound, "not_found", "user not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "user not found")
 		return
 	}
 
@@ -69,7 +69,7 @@ type apiKeyInfoResponse struct {
 func (s *Server) handleAdminUserKeys(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if userID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing user id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing user id")
 		return
 	}
 
@@ -77,18 +77,18 @@ func (s *Server) handleAdminUserKeys(w http.ResponseWriter, r *http.Request) {
 	user, err := s.store.GetUserByID(userID)
 	if err != nil {
 		slog.Error("admin user keys: get user", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get user")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get user")
 		return
 	}
 	if user == nil {
-		writeError(w, http.StatusNotFound, "not_found", "user not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "user not found")
 		return
 	}
 
 	keys, err := s.store.ListAPIKeysForUser(userID)
 	if err != nil {
 		slog.Error("admin user keys", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to list api keys")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list api keys")
 		return
 	}
 
@@ -135,7 +135,7 @@ func (s *Server) handleAdminAuthEvents(w http.ResponseWriter, r *http.Request) {
 	result, err := s.store.QueryAuthEvents(eventType, email, from, to, limit, cursor)
 	if err != nil {
 		slog.Error("admin auth events", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to query auth events")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to query auth events")
 		return
 	}
 

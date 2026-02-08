@@ -22,7 +22,7 @@ type snapshotMetaResponse struct {
 func (s *Server) handleAdminSnapshotMeta(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
@@ -30,11 +30,11 @@ func (s *Server) handleAdminSnapshotMeta(w http.ResponseWriter, r *http.Request)
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin snapshot meta: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
@@ -116,6 +116,6 @@ func countSnapshotEntities(path string) (map[string]int, error) {
 
 // handleAdminSnapshotQuery is a placeholder for the TDQ-powered snapshot query endpoint.
 func (s *Server) handleAdminSnapshotQuery(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not_implemented",
+	writeError(w, http.StatusNotImplemented, ErrCodeNotImplemented,
 		"TDQ server-side query requires refactoring internal/query to accept arbitrary *sql.DB; not yet available")
 }

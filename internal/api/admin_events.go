@@ -38,7 +38,7 @@ const (
 func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	if projectID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id")
 		return
 	}
 
@@ -46,18 +46,18 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin events: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
 		slog.Error("admin events: get db", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to open project database")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to open project database")
 		return
 	}
 
@@ -88,7 +88,7 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 
 	if v := q.Get("entity_type"); v != "" {
 		if !isValidEntityType(v) {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid entity_type: "+v)
+			writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid entity_type: "+v)
 			return
 		}
 		query += " AND entity_type = ?"
@@ -125,7 +125,7 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		slog.Error("admin events: query", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to query events")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to query events")
 		return
 	}
 	defer rows.Close()
@@ -135,14 +135,14 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 		var ev adminEvent
 		if err := rows.Scan(&ev.ServerSeq, &ev.DeviceID, &ev.SessionID, &ev.ClientActionID, &ev.ActionType, &ev.EntityType, &ev.EntityID, &ev.Payload, &ev.ClientTimestamp, &ev.ServerTimestamp); err != nil {
 			slog.Error("admin events: scan", "err", err)
-			writeError(w, http.StatusInternalServerError, "internal", "failed to read events")
+			writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to read events")
 			return
 		}
 		events = append(events, ev)
 	}
 	if err := rows.Err(); err != nil {
 		slog.Error("admin events: iterate", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to read events")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to read events")
 		return
 	}
 
@@ -165,13 +165,13 @@ func (s *Server) handleAdminProjectEvent(w http.ResponseWriter, r *http.Request)
 	projectID := r.PathValue("id")
 	seqStr := r.PathValue("server_seq")
 	if projectID == "" || seqStr == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "missing project id or server_seq")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing project id or server_seq")
 		return
 	}
 
 	seq, err := strconv.ParseInt(seqStr, 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid server_seq")
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid server_seq")
 		return
 	}
 
@@ -179,18 +179,18 @@ func (s *Server) handleAdminProjectEvent(w http.ResponseWriter, r *http.Request)
 	project, err := s.store.GetProject(projectID, true)
 	if err != nil {
 		slog.Error("admin event: get project", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get project")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get project")
 		return
 	}
 	if project == nil {
-		writeError(w, http.StatusNotFound, "not_found", "project not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "project not found")
 		return
 	}
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
 		slog.Error("admin event: get db", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to open project database")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to open project database")
 		return
 	}
 
@@ -200,12 +200,12 @@ func (s *Server) handleAdminProjectEvent(w http.ResponseWriter, r *http.Request)
 		seq,
 	).Scan(&ev.ServerSeq, &ev.DeviceID, &ev.SessionID, &ev.ClientActionID, &ev.ActionType, &ev.EntityType, &ev.EntityID, &ev.Payload, &ev.ClientTimestamp, &ev.ServerTimestamp)
 	if err == sql.ErrNoRows {
-		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "event not found")
 		return
 	}
 	if err != nil {
 		slog.Error("admin event: query", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get event")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get event")
 		return
 	}
 

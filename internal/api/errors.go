@@ -6,6 +6,27 @@ import (
 	"net/http"
 )
 
+// Error code constants for structured API error responses.
+const (
+	ErrCodeBadRequest             = "bad_request"
+	ErrCodeNotFound               = "not_found"
+	ErrCodeInternal               = "internal"
+	ErrCodeUnauthorized           = "unauthorized"
+	ErrCodeForbidden              = "forbidden"
+	ErrCodeInsufficientAdminScope = "insufficient_admin_scope"
+	ErrCodeRateLimited            = "rate_limited"
+	ErrCodeSignupDisabled         = "signup_disabled"
+	ErrCodeExpired                = "expired"
+	ErrCodeAlreadyUsed            = "already_used"
+	ErrCodeNoEvents               = "no_events"
+	ErrCodeNotImplemented         = "not_implemented"
+	// New codes for sections 9.5, 10
+	ErrCodeProjectDeleted      = "project_deleted"
+	ErrCodeSnapshotUnavailable = "snapshot_unavailable"
+	ErrCodeExportTooLarge      = "export_too_large"
+	ErrCodeInvalidQuery        = "invalid_query"
+)
+
 // APIError represents a structured error returned by the API.
 type APIError struct {
 	Code    string `json:"code"`

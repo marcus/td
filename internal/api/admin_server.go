@@ -30,21 +30,21 @@ func (s *Server) handleAdminServerOverview(w http.ResponseWriter, r *http.Reques
 	users, err := s.store.CountUsers()
 	if err != nil {
 		slog.Error("count users", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to count users")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to count users")
 		return
 	}
 
 	projects, err := s.store.CountProjects()
 	if err != nil {
 		slog.Error("count projects", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to count projects")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to count projects")
 		return
 	}
 
 	members, err := s.store.CountMembers()
 	if err != nil {
 		slog.Error("count members", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to count members")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to count members")
 		return
 	}
 
@@ -134,7 +134,7 @@ func (s *Server) handleAdminRateLimitViolations(w http.ResponseWriter, r *http.R
 	result, err := s.store.QueryRateLimitEvents(keyID, ip, from, to, limit, cursor)
 	if err != nil {
 		slog.Error("query rate limit events", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "failed to query rate limit events")
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to query rate limit events")
 		return
 	}
 
