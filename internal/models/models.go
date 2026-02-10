@@ -214,6 +214,18 @@ type Comment struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Note represents a freeform note (synced via sidecar)
+type Note struct {
+	ID        string     `json:"id"`
+	Title     string     `json:"title"`
+	Content   string     `json:"content"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	Pinned    bool       `json:"pinned"`
+	Archived  bool       `json:"archived"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+}
+
 // Config represents the local config state
 type Config struct {
 	FocusedIssueID    string          `json:"focused_issue_id,omitempty"`
