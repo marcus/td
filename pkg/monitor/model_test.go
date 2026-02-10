@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -4289,5 +4290,477 @@ func TestBoardPickerNavigateAndSelect(t *testing.T) {
 		t.Error("After Enter: BoardMode.Board should be set")
 	} else if m2.BoardMode.Board.ID != "bd-003" {
 		t.Errorf("After Enter: BoardMode.Board.ID should be 'bd-003', got %q", m2.BoardMode.Board.ID)
+	}
+}
+
+// TestSwimlaneLinesFromOffset tests the line counting for swimlane rendering.
+func TestSwimlaneLinesFromOffset(t *testing.T) {
+	m := Model{}
+	m.BoardMode.SwimlaneRows = []TaskListRow{
+		{Category: CategoryReady, Issue: models.Issue{ID: "1"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "2"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "3"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "4"}},
+		{Category: CategoryClosed, Issue: models.Issue{ID: "5"}},
+	}
+
+	tests := []struct {
+		name     string
+		start    int
+		end      int
+		expected int
+	}{
+		// Note: at offset 0, currentCategory starts as zero-value, so the first
+		// category always triggers a header (matching rendering behavior).
+		{"all from start", 0, 5, 10},      // header(ready)+2items + sep+header(blocked)+2items + sep+header(closed)+1item = 1+2+2+2+2+1=10
+		{"single category", 0, 2, 3},      // header(ready) + 2 items = 3
+		{"across boundary", 1, 4, 5},      // item2 + sep+header(blocked) + item3 + item4 = 5
+		{"from second cat", 2, 5, 6},      // header(blocked)+item3+item4 + sep+header(closed)+item5 = 1+2+2+1=6
+		{"empty range", 3, 3, 0},
+		{"single item last cat", 4, 5, 2}, // header(closed) + item5 = 2
+		{"single item same cat", 1, 2, 1}, // just item2, same category as item1 before it
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.swimlaneLinesFromOffset(tt.start, tt.end)
+			if got != tt.expected {
+				t.Errorf("swimlaneLinesFromOffset(%d, %d) = %d, want %d", tt.start, tt.end, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSwimlaneLinesFromOffsetMatchesRendering verifies the line count matches
+// what renderBoardSwimlanesView would produce (regression guard).
+func TestSwimlaneLinesFromOffsetMatchesRendering(t *testing.T) {
+	m := Model{}
+	// 3 categories: ready(3), blocked(2), closed(1)
+	m.BoardMode.SwimlaneRows = []TaskListRow{
+		{Category: CategoryReady, Issue: models.Issue{ID: "1"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "2"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "3"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "4"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "5"}},
+		{Category: CategoryClosed, Issue: models.Issue{ID: "6"}},
+	}
+
+	// From offset 0: header(ready) + 3 items + sep+header(blocked) + 2 items + sep+header(closed) + 1 item
+	// = 1 + 3 + 2 + 2 + 2 + 1 = 11
+	got := m.swimlaneLinesFromOffset(0, 6)
+	if got != 11 {
+		t.Errorf("full range: got %d lines, want 11", got)
+	}
+
+	// From offset 3: header(blocked) + 2 items + sep+header(closed) + 1 item = 1+2+2+1 = 6
+	got = m.swimlaneLinesFromOffset(3, 6)
+	if got != 6 {
+		t.Errorf("from offset 3: got %d lines, want 6", got)
+	}
+}
+
+// TestSwimlaneHeaderLinesBetween tests header line counting between indices.
+func TestSwimlaneHeaderLinesBetween(t *testing.T) {
+	m := Model{}
+	m.BoardMode.SwimlaneRows = []TaskListRow{
+		{Category: CategoryReady, Issue: models.Issue{ID: "1"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "2"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "3"}},
+		{Category: CategoryBlocked, Issue: models.Issue{ID: "4"}},
+		{Category: CategoryClosed, Issue: models.Issue{ID: "5"}},
+	}
+
+	tests := []struct {
+		name     string
+		start    int
+		end      int
+		expected int
+	}{
+		// Note: at startIdx=0, currentCategory is zero-value, so first category
+		// is always a "transition" that produces a header (no separator at start).
+		{"same cat from start", 0, 2, 1},   // ready header (first category from zero-value)
+		{"across one boundary", 1, 3, 2},   // ready->blocked: separator + header
+		{"across two from start", 0, 5, 5}, // header(ready) + sep+header(blocked) + sep+header(closed) = 1+2+2=5
+		{"within second cat", 2, 4, 1},     // ready->blocked at start of visible range: header only (no separator)
+		{"one item in second", 2, 3, 1},    // ready->blocked at start of visible range: header only (no separator)
+		{"second to third cat", 2, 5, 3},   // header(blocked) + sep+header(closed) = 3
+		{"empty", 3, 3, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.swimlaneHeaderLinesBetween(tt.start, tt.end)
+			if got != tt.expected {
+				t.Errorf("swimlaneHeaderLinesBetween(%d, %d) = %d, want %d", tt.start, tt.end, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestEnsureBoardCursorVisible_BacklogBottomItems tests that the last items in
+// backlog view are reachable when scrolling down.
+func TestEnsureBoardCursorVisible_BacklogBottomItems(t *testing.T) {
+	issues := make([]models.BoardIssueView, 30)
+	for i := range issues {
+		issues[i] = models.BoardIssueView{Issue: models.Issue{ID: fmt.Sprintf("td-%02d", i)}}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60, // Tall enough for meaningful panel heights
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			Issues:   issues,
+			ViewMode: BoardViewBacklog,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	ph := m.panelHeight(PanelTaskList)
+	contentHeight := ph - 3
+	t.Logf("Height=%d, panelHeight=%d, contentHeight=%d, totalItems=%d",
+		m.Height, ph, contentHeight, len(issues))
+
+	// Move cursor to the very last item
+	m.BoardMode.Cursor = 29
+	m.ensureBoardCursorVisible()
+
+	t.Logf("After ensureBoardCursorVisible: offset=%d, cursor=%d",
+		m.BoardMode.ScrollOffset, m.BoardMode.Cursor)
+
+	// The rendering uses contentHeight = panelHeight - 3. At max scroll with only
+	// an up indicator, effectiveMaxLines = contentHeight - 1. The last item should
+	// be within the range [offset, offset + effectiveMaxLines).
+	effectiveMaxLines := contentHeight - 1 // only up indicator at max scroll
+
+	if m.BoardMode.Cursor < m.BoardMode.ScrollOffset || m.BoardMode.Cursor >= m.BoardMode.ScrollOffset+effectiveMaxLines {
+		t.Errorf("Cursor %d not visible: offset=%d, effectiveMaxLines=%d (range %d-%d)",
+			m.BoardMode.Cursor, m.BoardMode.ScrollOffset, effectiveMaxLines,
+			m.BoardMode.ScrollOffset, m.BoardMode.ScrollOffset+effectiveMaxLines-1)
+	}
+}
+
+// TestEnsureSwimlaneCursorVisible_BottomCategory tests that items in the last
+// category of swimlane view are reachable.
+func TestEnsureSwimlaneCursorVisible_BottomCategory(t *testing.T) {
+	// Create swimlane rows across 4 categories (5 items each = 20 total)
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 5; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%s-%d", cat, j)},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	// Move cursor to the very last item (last item in CategoryClosed)
+	m.BoardMode.SwimlaneCursor = 19
+	m.ensureSwimlaneCursorVisible()
+
+	// Verify cursor is within the visible range by checking that the rendering
+	// from the scroll offset to cursor+1 fits in the available content
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	lines := m.swimlaneLinesFromOffset(m.BoardMode.SwimlaneScroll, 20)
+	available := contentHeight
+	if m.BoardMode.SwimlaneScroll > 0 {
+		available-- // up indicator
+	}
+
+	if lines > available {
+		t.Errorf("Content from offset %d to end needs %d lines but only %d available (contentHeight=%d)",
+			m.BoardMode.SwimlaneScroll, lines, available, contentHeight)
+	}
+}
+
+// TestSwimlaneMaxScroll tests that max scroll accounts for category headers.
+func TestSwimlaneMaxScroll(t *testing.T) {
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 5; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%02d", len(rows))},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	maxScroll := m.swimlaneMaxScroll(contentHeight)
+
+	// At max scroll, content from offset to end should fit with up indicator
+	available := contentHeight - 1 // up indicator
+	lines := m.swimlaneLinesFromOffset(maxScroll, len(rows))
+	if lines > available {
+		t.Errorf("At maxScroll=%d: content needs %d lines but only %d available",
+			maxScroll, lines, available)
+	}
+
+	// One step before max scroll should NOT fit (would need more space)
+	if maxScroll > 0 {
+		linesBefore := m.swimlaneLinesFromOffset(maxScroll-1, len(rows))
+		if linesBefore <= available {
+			t.Errorf("At maxScroll-1=%d: content only needs %d lines (available=%d), maxScroll is too high",
+				maxScroll-1, linesBefore, available)
+		}
+	}
+}
+
+// TestEnsureBoardCursorVisible_ScrollUp tests that scrolling up from a scrolled
+// position correctly reveals the cursor.
+func TestEnsureBoardCursorVisible_ScrollUp(t *testing.T) {
+	issues := make([]models.BoardIssueView, 30)
+	for i := range issues {
+		issues[i] = models.BoardIssueView{Issue: models.Issue{ID: fmt.Sprintf("td-%02d", i)}}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			Issues:       issues,
+			ViewMode:     BoardViewBacklog,
+			ScrollOffset: 20,
+			Cursor:       5,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	m.ensureBoardCursorVisible()
+
+	if m.BoardMode.ScrollOffset > m.BoardMode.Cursor {
+		t.Errorf("Cursor %d above viewport: offset=%d", m.BoardMode.Cursor, m.BoardMode.ScrollOffset)
+	}
+}
+
+// TestEnsureBoardCursorVisible_NoScrollNeeded tests that when all items fit,
+// the scroll offset stays at 0.
+func TestEnsureBoardCursorVisible_NoScrollNeeded(t *testing.T) {
+	issues := make([]models.BoardIssueView, 3)
+	for i := range issues {
+		issues[i] = models.BoardIssueView{Issue: models.Issue{ID: fmt.Sprintf("td-%02d", i)}}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			Issues:   issues,
+			ViewMode: BoardViewBacklog,
+			Cursor:   2,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	m.ensureBoardCursorVisible()
+
+	if m.BoardMode.ScrollOffset != 0 {
+		t.Errorf("Expected offset=0 when all items fit, got offset=%d", m.BoardMode.ScrollOffset)
+	}
+}
+
+// TestSwimlaneLinesFromOffset_NegativeStart tests that negative startIdx is
+// clamped to 0.
+func TestSwimlaneLinesFromOffset_NegativeStart(t *testing.T) {
+	m := Model{}
+	m.BoardMode.SwimlaneRows = []TaskListRow{
+		{Category: CategoryReady, Issue: models.Issue{ID: "1"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "2"}},
+	}
+
+	got := m.swimlaneLinesFromOffset(-1, 2)
+	expected := m.swimlaneLinesFromOffset(0, 2)
+	if got != expected {
+		t.Errorf("swimlaneLinesFromOffset(-1, 2) = %d, want %d (same as offset 0)", got, expected)
+	}
+}
+
+// TestEnsureSwimlaneCursorVisible_SingleCategory tests scrolling with only one
+// category (no separators or extra headers between items).
+func TestEnsureSwimlaneCursorVisible_SingleCategory(t *testing.T) {
+	rows := make([]TaskListRow, 30)
+	for i := range rows {
+		rows[i] = TaskListRow{
+			Category: CategoryReady,
+			Issue:    models.Issue{ID: fmt.Sprintf("td-%02d", i)},
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	// Move cursor to last item
+	m.BoardMode.SwimlaneCursor = 29
+	m.ensureSwimlaneCursorVisible()
+
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	lines := m.swimlaneLinesFromOffset(m.BoardMode.SwimlaneScroll, 30)
+	available := contentHeight
+	if m.BoardMode.SwimlaneScroll > 0 {
+		available-- // up indicator
+	}
+
+	if lines > available {
+		t.Errorf("Single-category: content from offset %d needs %d lines but only %d available",
+			m.BoardMode.SwimlaneScroll, lines, available)
+	}
+}
+
+// TestEnsureSwimlaneCursorVisible_MidListCursor tests that when cursor is in the
+// middle of the list (items both above and below), both up and down indicators
+// are accounted for and the cursor remains visible.
+func TestEnsureSwimlaneCursorVisible_MidListCursor(t *testing.T) {
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 5; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%s-%d", cat, j)},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	// Move cursor to the middle (first item of 3rd category = index 10)
+	m.BoardMode.SwimlaneCursor = 10
+	m.ensureSwimlaneCursorVisible()
+
+	totalItems := len(rows)
+	offset := m.BoardMode.SwimlaneScroll
+	cursor := m.BoardMode.SwimlaneCursor
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+
+	// Count lines from offset to cursor+1 (to include cursor row)
+	lines := m.swimlaneLinesFromOffset(offset, cursor+1)
+	available := contentHeight
+	if offset > 0 {
+		available-- // up indicator
+	}
+	if cursor+1 < totalItems {
+		available-- // down indicator
+	}
+
+	if lines > available {
+		t.Errorf("Mid-list cursor %d not visible: offset=%d, lines=%d, available=%d (contentHeight=%d)",
+			cursor, offset, lines, available, contentHeight)
+	}
+}
+
+// TestEnsureSwimlaneCursorVisible_ManyCategoriesFewItems tests the edge case where
+// totalItems <= contentHeight (so old code's needsScroll would be false) but
+// totalDisplayLines > contentHeight (due to many category headers + separators).
+// This is the root cause of the cursor-disappears-in-swimlanes bug.
+func TestEnsureSwimlaneCursorVisible_ManyCategoriesFewItems(t *testing.T) {
+	// 4 categories x 4 items = 16 items
+	// Display lines: 16 items + 4 headers + 3 separators = 23 lines
+	// With contentHeight = 17 (typical for 60-line terminal), 16 <= 17 (old needsScroll = false)
+	// but 23 > 17 (correct needsScroll = true)
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 4; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%v-%d", cat, j)},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	totalItems := len(rows)
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalItems)
+
+	t.Logf("totalItems=%d, contentHeight=%d, totalDisplayLines=%d", totalItems, contentHeight, totalDisplayLines)
+
+	// Verify this IS the edge case where old needsScroll would be wrong
+	if totalItems > contentHeight {
+		t.Skipf("Not the target edge case: totalItems %d > contentHeight %d", totalItems, contentHeight)
+	}
+	if totalDisplayLines <= contentHeight {
+		t.Skipf("Not the target edge case: totalDisplayLines %d <= contentHeight %d", totalDisplayLines, contentHeight)
+	}
+
+	// Move cursor to the very last item
+	m.BoardMode.SwimlaneCursor = totalItems - 1
+	m.ensureSwimlaneCursorVisible()
+
+	offset := m.BoardMode.SwimlaneScroll
+	cursor := m.BoardMode.SwimlaneCursor
+
+	// Verify cursor is visible: lines from offset to cursor+1 must fit
+	lines := m.swimlaneLinesFromOffset(offset, cursor+1)
+	available := contentHeight
+	if offset > 0 {
+		available-- // up indicator
+	}
+	if cursor+1 < totalItems {
+		available-- // down indicator (shouldn't apply for last item)
+	}
+
+	t.Logf("offset=%d, cursor=%d, lines=%d, available=%d", offset, cursor, lines, available)
+
+	if lines > available {
+		t.Errorf("Cursor %d not visible: offset=%d, lines=%d, available=%d (contentHeight=%d)",
+			cursor, offset, lines, available, contentHeight)
+	}
+	if offset == 0 {
+		t.Errorf("Expected scrolling (offset > 0) since display lines %d > contentHeight %d, but offset=0",
+			totalDisplayLines, contentHeight)
 	}
 }

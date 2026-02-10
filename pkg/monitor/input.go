@@ -675,10 +675,11 @@ func (m Model) categoryHeaderLinesBetween(startIdx, endIdx int) int {
 	return lines
 }
 
-// visibleHeightForPanel calculates visible rows for a panel
-func (m Model) visibleHeightForPanel(panel Panel) int {
+// panelHeight returns the total height (in lines) allocated to the given panel.
+// This matches the calculation in renderBaseView() exactly, including rounding.
+func (m Model) panelHeight(panel Panel) int {
 	if m.Height == 0 {
-		return 10 // Default fallback
+		return 13 // Default fallback
 	}
 
 	// Match calculation from renderView()
@@ -694,29 +695,33 @@ func (m Model) visibleHeightForPanel(panel Panel) int {
 
 	// Get panel height based on dynamic pane ratios
 	// IMPORTANT: Must match renderView() calculation exactly, including rounding behavior
-	var panelHeight int
 	panel0 := int(float64(availableHeight) * m.PaneHeights[0])
 	panel1 := int(float64(availableHeight) * m.PaneHeights[1])
 	switch panel {
 	case PanelCurrentWork:
-		panelHeight = panel0
+		return panel0
 	case PanelTaskList:
-		panelHeight = panel1
+		return panel1
 	case PanelActivity:
 		// Activity panel absorbs rounding errors (matches renderView)
-		panelHeight = availableHeight - panel0 - panel1
+		return availableHeight - panel0 - panel1
 	default:
-		panelHeight = availableHeight / 3
+		return availableHeight / 3
 	}
+}
+
+// visibleHeightForPanel calculates visible rows for a panel
+func (m Model) visibleHeightForPanel(panel Panel) int {
+	ph := m.panelHeight(panel)
 
 	if panel == PanelActivity {
-		return activityTableMetrics(panelHeight).dataRowsVisible
+		return activityTableMetrics(ph).dataRowsVisible
 	}
 
 	// Account for panel chrome on non-activity panels:
 	// - title (1) + border (2) = 3 lines base overhead
 	// - scroll indicators (2) = 5 total
-	return panelHeight - 5
+	return ph - 5
 }
 
 // saveSelectedID saves the currently selected issue ID for a panel
@@ -1224,12 +1229,7 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 			if newOffset < 0 {
 				newOffset = 0
 			}
-			// Calculate max offset for swimlanes
-			visibleHeight := m.visibleHeightForPanel(panel)
-			maxOffset := len(m.BoardMode.SwimlaneRows) - visibleHeight
-			if maxOffset < 0 {
-				maxOffset = 0
-			}
+			maxOffset := m.maxScrollOffset(panel)
 			if newOffset > maxOffset {
 				newOffset = maxOffset
 			}
@@ -1292,9 +1292,18 @@ func (m Model) maxScrollOffset(panel Panel) int {
 	visibleHeight := m.visibleHeightForPanel(panel)
 
 	if panel == PanelTaskList {
-		// In board mode, use simple calculation (no category headers)
+		// In board mode, calculate max scroll to match rendering logic
 		if m.TaskListMode == TaskListModeBoard {
-			maxOffset := count - visibleHeight
+			contentHeight := m.panelHeight(PanelTaskList) - 3 // matches rendering's maxLines
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				return m.swimlaneMaxScroll(contentHeight)
+			}
+			// Backlog: at max scroll, only "up" indicator is shown (no "down")
+			// so effective visible items = contentHeight - 1
+			if count <= contentHeight {
+				return 0
+			}
+			maxOffset := count - (contentHeight - 1)
 			if maxOffset < 0 {
 				maxOffset = 0
 			}

@@ -808,8 +808,11 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	offset := m.BoardMode.SwimlaneScroll
 	maxLines := height - 3 // Account for title + border
 
-	// Determine scroll indicators needed BEFORE clamping
-	needsScroll := totalRows > maxLines
+	// Determine scroll indicators needed BEFORE clamping.
+	// Use total display lines (items + category headers + separators) not raw item count,
+	// because swimlane headers/separators consume display space.
+	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalRows)
+	needsScroll := totalDisplayLines > maxLines
 	showUpIndicator := needsScroll && offset > 0
 
 	// Calculate effective maxLines with indicators
@@ -817,14 +820,17 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	if showUpIndicator {
 		effectiveMaxLines--
 	}
-	// Reserve space for down indicator if content exceeds visible area
-	if needsScroll && offset+effectiveMaxLines < totalRows {
+	// Reserve space for down indicator if display lines from offset exceed visible area
+	if needsScroll && m.swimlaneLinesFromOffset(offset, totalRows) > effectiveMaxLines {
 		effectiveMaxLines--
 	}
 
-	// Clamp offset using effective maxLines (accounts for indicators)
-	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
-		offset = totalRows - effectiveMaxLines
+	// Clamp offset using swimlaneMaxScroll (accounts for headers/separators)
+	if needsScroll {
+		maxOffset := m.swimlaneMaxScroll(maxLines)
+		if offset > maxOffset {
+			offset = maxOffset
+		}
 	}
 	if offset < 0 {
 		offset = 0
@@ -836,7 +842,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	if showUpIndicator {
 		effectiveMaxLines--
 	}
-	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
+	hasMoreBelow := needsScroll && m.swimlaneLinesFromOffset(offset, totalRows) > effectiveMaxLines
 	if hasMoreBelow {
 		effectiveMaxLines--
 	}
