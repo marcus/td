@@ -37,7 +37,8 @@ var initCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		fmt.Println("INITIALIZED .todos/")
+		todosPath := filepath.Join(baseDir, ".todos")
+		fmt.Printf("INITIALIZED %s\n", todosPath)
 
 		// Add to .gitignore if in a git repo
 		if git.IsRepo() {
