@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ var (
 	versionStr      string
 	baseDir         string
 	baseDirOverride *string // For testing
+	workDirFlag     string  // --work-dir flag value
 	cmdStartTime    time.Time
 	executedCmd     *cobra.Command // Captured for analytics logging
 )
@@ -259,6 +261,7 @@ func nameWithAliases(cmd *cobra.Command) string {
 
 func init() {
 	cobra.OnInitialize(initBaseDir)
+	rootCmd.PersistentFlags().StringVarP(&workDirFlag, "work-dir", "w", "", "project directory (resolves .td-root and git worktrees from this path)")
 
 	// Add custom template function for showing aliases
 	cobra.AddTemplateFunc("nameWithAliases", nameWithAliases)
@@ -321,12 +324,39 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 func initBaseDir() {
 	var err error
-	baseDir, err = os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
-		os.Exit(1)
+	var startDir string
+
+	// Priority: --work-dir flag > TD_WORK_DIR env > cwd
+	if workDirFlag != "" {
+		startDir = normalizeWorkDir(workDirFlag)
+	} else if envDir := os.Getenv("TD_WORK_DIR"); envDir != "" {
+		startDir = normalizeWorkDir(envDir)
+	} else {
+		startDir, err = os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
+			os.Exit(1)
+		}
 	}
-	baseDir = workdir.ResolveBaseDir(baseDir)
+
+	baseDir = workdir.ResolveBaseDir(startDir)
+}
+
+// normalizeWorkDir converts a work-dir value to an absolute, clean path.
+// If the path ends in ".todos", it strips that suffix to get the project root.
+func normalizeWorkDir(dir string) string {
+	if filepath.Base(dir) == ".todos" {
+		dir = filepath.Dir(dir)
+	}
+	if !filepath.IsAbs(dir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
+			os.Exit(1)
+		}
+		dir = filepath.Join(cwd, dir)
+	}
+	return filepath.Clean(dir)
 }
 
 // getBaseDir returns the base directory for the project
