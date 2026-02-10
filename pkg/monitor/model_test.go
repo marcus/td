@@ -4377,9 +4377,9 @@ func TestSwimlaneHeaderLinesBetween(t *testing.T) {
 		{"same cat from start", 0, 2, 1},   // ready header (first category from zero-value)
 		{"across one boundary", 1, 3, 2},   // ready->blocked: separator + header
 		{"across two from start", 0, 5, 5}, // header(ready) + sep+header(blocked) + sep+header(closed) = 1+2+2=5
-		{"within second cat", 2, 4, 2},     // ready->blocked transition at row 2: sep+header
-		{"one item in second", 2, 3, 2},    // ready->blocked transition: sep+header
-		{"second to third cat", 2, 5, 4},   // ready->blocked(sep+header) + blocked->closed(sep+header) = 4
+		{"within second cat", 2, 4, 1},     // ready->blocked at start of visible range: header only (no separator)
+		{"one item in second", 2, 3, 1},    // ready->blocked at start of visible range: header only (no separator)
+		{"second to third cat", 2, 5, 3},   // header(blocked) + sep+header(closed) = 3
 		{"empty", 3, 3, 0},
 	}
 
@@ -4523,5 +4523,115 @@ func TestSwimlaneMaxScroll(t *testing.T) {
 			t.Errorf("At maxScroll-1=%d: content only needs %d lines (available=%d), maxScroll is too high",
 				maxScroll-1, linesBefore, available)
 		}
+	}
+}
+
+// TestEnsureBoardCursorVisible_ScrollUp tests that scrolling up from a scrolled
+// position correctly reveals the cursor.
+func TestEnsureBoardCursorVisible_ScrollUp(t *testing.T) {
+	issues := make([]models.BoardIssueView, 30)
+	for i := range issues {
+		issues[i] = models.BoardIssueView{Issue: models.Issue{ID: fmt.Sprintf("td-%02d", i)}}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			Issues:       issues,
+			ViewMode:     BoardViewBacklog,
+			ScrollOffset: 20,
+			Cursor:       5,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	m.ensureBoardCursorVisible()
+
+	if m.BoardMode.ScrollOffset > m.BoardMode.Cursor {
+		t.Errorf("Cursor %d above viewport: offset=%d", m.BoardMode.Cursor, m.BoardMode.ScrollOffset)
+	}
+}
+
+// TestEnsureBoardCursorVisible_NoScrollNeeded tests that when all items fit,
+// the scroll offset stays at 0.
+func TestEnsureBoardCursorVisible_NoScrollNeeded(t *testing.T) {
+	issues := make([]models.BoardIssueView, 3)
+	for i := range issues {
+		issues[i] = models.BoardIssueView{Issue: models.Issue{ID: fmt.Sprintf("td-%02d", i)}}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			Issues:   issues,
+			ViewMode: BoardViewBacklog,
+			Cursor:   2,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	m.ensureBoardCursorVisible()
+
+	if m.BoardMode.ScrollOffset != 0 {
+		t.Errorf("Expected offset=0 when all items fit, got offset=%d", m.BoardMode.ScrollOffset)
+	}
+}
+
+// TestSwimlaneLinesFromOffset_NegativeStart tests that negative startIdx is
+// clamped to 0.
+func TestSwimlaneLinesFromOffset_NegativeStart(t *testing.T) {
+	m := Model{}
+	m.BoardMode.SwimlaneRows = []TaskListRow{
+		{Category: CategoryReady, Issue: models.Issue{ID: "1"}},
+		{Category: CategoryReady, Issue: models.Issue{ID: "2"}},
+	}
+
+	got := m.swimlaneLinesFromOffset(-1, 2)
+	expected := m.swimlaneLinesFromOffset(0, 2)
+	if got != expected {
+		t.Errorf("swimlaneLinesFromOffset(-1, 2) = %d, want %d (same as offset 0)", got, expected)
+	}
+}
+
+// TestEnsureSwimlaneCursorVisible_SingleCategory tests scrolling with only one
+// category (no separators or extra headers between items).
+func TestEnsureSwimlaneCursorVisible_SingleCategory(t *testing.T) {
+	rows := make([]TaskListRow, 30)
+	for i := range rows {
+		rows[i] = TaskListRow{
+			Category: CategoryReady,
+			Issue:    models.Issue{ID: fmt.Sprintf("td-%02d", i)},
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	// Move cursor to last item
+	m.BoardMode.SwimlaneCursor = 29
+	m.ensureSwimlaneCursorVisible()
+
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	lines := m.swimlaneLinesFromOffset(m.BoardMode.SwimlaneScroll, 30)
+	available := contentHeight
+	if m.BoardMode.SwimlaneScroll > 0 {
+		available-- // up indicator
+	}
+
+	if lines > available {
+		t.Errorf("Single-category: content from offset %d needs %d lines but only %d available",
+			m.BoardMode.SwimlaneScroll, lines, available)
 	}
 }

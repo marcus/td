@@ -1099,8 +1099,8 @@ func (m Model) swimlaneHeaderLinesBetween(startIdx, endIdx int) int {
 	lines := 0
 	for i := startIdx; i < endIdx; i++ {
 		if rows[i].Category != currentCategory {
-			if i > startIdx || startIdx > 0 {
-				lines++ // blank separator
+			if i > startIdx {
+				lines++ // blank separator (only if not first visible item)
 			}
 			lines++ // category header
 			currentCategory = rows[i].Category
@@ -1115,6 +1115,9 @@ func (m Model) swimlaneLinesFromOffset(startIdx, endIdx int) int {
 	rows := m.BoardMode.SwimlaneRows
 	if len(rows) == 0 || startIdx >= len(rows) {
 		return 0
+	}
+	if startIdx < 0 {
+		startIdx = 0
 	}
 	if endIdx > len(rows) {
 		endIdx = len(rows)
