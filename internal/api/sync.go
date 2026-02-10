@@ -14,29 +14,13 @@ import (
 	"time"
 
 	tddb "github.com/marcus/td/internal/db"
+	tdevents "github.com/marcus/td/internal/events"
 	tdsync "github.com/marcus/td/internal/sync"
 )
 
-// Allowed entity types for validation.
-var allowedEntityTypes = map[string]bool{
-	"issues":                true,
-	"logs":                  true,
-	"handoffs":              true,
-	"comments":              true,
-	"sessions":              true,
-	"boards":                true,
-	"board_issue_positions": true,
-	"work_sessions":         true,
-	"work_session_issues":   true,
-	"issue_files":           true,
-	"issue_dependencies":    true,
-	"git_snapshots":         true,
-	"issue_session_history": true,
-	"notes":                 true,
-}
-
+// isValidEntityType validates entity types using the centralized taxonomy.
 func isValidEntityType(et string) bool {
-	return allowedEntityTypes[et]
+	return tdevents.IsValidEntityType(et)
 }
 
 // PushRequest is the JSON body for POST /v1/projects/{id}/sync/push.
@@ -508,7 +492,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	}
 	defer snapDB.Close()
 
-	validator := func(t string) bool { return allowedEntityTypes[t] }
+	validator := func(t string) bool { return tdevents.IsValidEntityType(t) }
 	afterSeq := int64(0)
 	batchSize := 1000
 

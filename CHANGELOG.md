@@ -2,6 +2,17 @@
 
 All notable changes to td are documented in this file.
 
+## [Unreleased]
+
+### Features
+- Knowledge silo detector: `td silos` command analyzes file ownership patterns and identifies knowledge concentrations
+  - Tracks which developers own which files via issue_files and implementer_session
+  - Computes file-to-author ratios and identifies critical files touched by single person
+  - Detects unexplored code regions and generates risk scores
+  - Multiple output formats: table (default), JSON, CSV
+  - Configurable threshold (--threshold flag) and critical-only reporting (--critical-only flag)
+- Comprehensive silo analysis in internal/analysis package with unit and integration tests
+
 ## [v0.33.0] - 2026-02-09
 
 ### Features
