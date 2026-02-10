@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+
+	tdevents "github.com/marcus/td/internal/events"
 )
 
 // adminEvent represents a single event for the admin API.
@@ -214,9 +216,10 @@ func (s *Server) handleAdminProjectEvent(w http.ResponseWriter, r *http.Request)
 
 // handleAdminEntityTypes handles GET /v1/admin/entity-types.
 func (s *Server) handleAdminEntityTypes(w http.ResponseWriter, r *http.Request) {
-	types := make([]string, 0, len(allowedEntityTypes))
-	for t := range allowedEntityTypes {
-		types = append(types, t)
+	allTypes := tdevents.AllEntityTypes()
+	types := make([]string, 0, len(allTypes))
+	for t := range allTypes {
+		types = append(types, string(t))
 	}
 	sort.Strings(types)
 	writeJSON(w, http.StatusOK, map[string]any{"entity_types": types})

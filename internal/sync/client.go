@@ -6,53 +6,22 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	tdevents "github.com/marcus/td/internal/events"
 )
 
-// mapActionType converts td's action_log action types to sync event action types.
+// mapActionType converts td's action_log action types to sync event action types
+// using the centralized taxonomy.
 func mapActionType(tdAction string) string {
-	switch tdAction {
-	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_update", "board_add_issue", "board_set_position", "work_session_tag":
-		return "create"
-	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
-		return "delete"
-	case "delete", "board_unposition", "board_remove_issue", "soft_delete":
-		return "soft_delete"
-	case "restore":
-		return "restore"
-	default:
-		return "update"
-	}
+	return string(tdevents.NormalizeActionType(tdAction))
 }
 
 // normalizeEntityType maps action_log entity types to canonical table names.
 // Returns false when the entity type is not supported by the sync engine.
+// Uses the centralized taxonomy for normalization.
 func normalizeEntityType(entityType string) (string, bool) {
-	switch entityType {
-	case "issue", "issues":
-		return "issues", true
-	case "handoff", "handoffs":
-		return "handoffs", true
-	case "board", "boards":
-		return "boards", true
-	case "log", "logs":
-		return "logs", true
-	case "comment", "comments":
-		return "comments", true
-	case "work_session", "work_sessions":
-		return "work_sessions", true
-	case "board_position", "board_issue_positions":
-		return "board_issue_positions", true
-	case "dependency", "issue_dependencies":
-		return "issue_dependencies", true
-	case "file_link", "issue_files":
-		return "issue_files", true
-	case "work_session_issue", "work_session_issues":
-		return "work_session_issues", true
-	case "note", "notes":
-		return "notes", true
-	default:
-		return "", false
-	}
+	et, ok := tdevents.NormalizeEntityType(entityType)
+	return string(et), ok
 }
 
 // GetPendingEvents reads unsynced, non-undone action_log rows and returns them as Events.
