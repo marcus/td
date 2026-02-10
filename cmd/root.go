@@ -327,25 +327,14 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 func initBaseDir() {
 	var err error
 
-	// --work-dir flag takes precedence
+	// Priority: --work-dir flag > TD_WORK_DIR env > cwd
 	if workDirFlag != "" {
-		baseDir = workDirFlag
+		baseDir = resolveWorkDir(workDirFlag)
+		return
+	}
 
-		// Handle if user pointed directly to .todos dir
-		if filepath.Base(baseDir) == ".todos" {
-			baseDir = filepath.Dir(baseDir)
-		}
-
-		// Make absolute if relative
-		if !filepath.IsAbs(baseDir) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
-				os.Exit(1)
-			}
-			baseDir = filepath.Join(cwd, baseDir)
-		}
-		baseDir = filepath.Clean(baseDir)
+	if envDir := os.Getenv("TD_WORK_DIR"); envDir != "" {
+		baseDir = resolveWorkDir(envDir)
 		return
 	}
 
@@ -355,6 +344,25 @@ func initBaseDir() {
 		os.Exit(1)
 	}
 	baseDir = workdir.ResolveBaseDir(baseDir)
+}
+
+// resolveWorkDir normalizes a work-dir path (from flag or env)
+func resolveWorkDir(dir string) string {
+	// Handle if user pointed directly to .todos dir
+	if filepath.Base(dir) == ".todos" {
+		dir = filepath.Dir(dir)
+	}
+
+	// Make absolute if relative
+	if !filepath.IsAbs(dir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
+			os.Exit(1)
+		}
+		dir = filepath.Join(cwd, dir)
+	}
+	return filepath.Clean(dir)
 }
 
 // getBaseDir returns the base directory for the project
