@@ -263,7 +263,7 @@ func init() {
 	cobra.OnInitialize(initBaseDir)
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&workDirFlag, "work-dir", "", "path to project directory containing .todos (or the .todos dir itself)")
+	rootCmd.PersistentFlags().StringVarP(&workDirFlag, "work-dir", "w", "", "path to project directory containing .todos (or the .todos dir itself)")
 
 	// Add custom template function for showing aliases
 	cobra.AddTemplateFunc("nameWithAliases", nameWithAliases)
