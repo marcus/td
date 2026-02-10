@@ -151,6 +151,11 @@ type Model struct {
 	BoardEditorPreview      *boardEditorPreviewData // Shared pointer: survives stale closure captures
 	BoardEditorDeleteConfirm bool                   // Whether delete confirmation is active
 
+	// Kanban view state
+	KanbanOpen         bool // Whether kanban modal overlay is open
+	KanbanCol          int  // Currently selected column (0-based)
+	KanbanRow          int  // Currently selected row within the column (0-based)
+
 	// Board mode state
 	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
 	BoardMode            BoardMode          // Active board mode state
@@ -745,6 +750,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Build swimlane data using filtered issues
 			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode, msg.RejectedIDs)
 			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
+
+			// Clamp kanban cursor if the kanban view is open (data may have changed)
+			if m.KanbanOpen {
+				m.clampKanbanRow()
+			}
 
 			// Restore selection if we have a pending selection ID (from move operations)
 			if m.BoardMode.PendingSelectionID != "" {

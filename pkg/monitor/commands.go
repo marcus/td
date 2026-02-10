@@ -81,6 +81,10 @@ func (m Model) currentContext() keymap.Context {
 		}
 		return keymap.ContextModal
 	}
+	// Kanban view (after modal check so issue modals opened from kanban take priority)
+	if m.KanbanOpen {
+		return keymap.ContextKanban
+	}
 	// Board mode context when Task List is active and in board mode
 	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
 		return keymap.ContextBoard
@@ -485,6 +489,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Cursor movement
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
+		if m.KanbanOpen {
+			m.kanbanMoveDown()
+			return m, nil
+		}
 		if m.HelpOpen {
 			m.HelpScroll++
 			m.clampHelpScroll()
@@ -566,6 +574,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorUp, keymap.CmdScrollUp:
+		if m.KanbanOpen {
+			m.kanbanMoveUp()
+			return m, nil
+		}
 		if m.HelpOpen {
 			m.HelpScroll--
 			m.clampHelpScroll()
@@ -909,6 +921,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Modal navigation
 	case keymap.CmdNavigatePrev:
+		if m.KanbanOpen {
+			m.kanbanMoveLeft()
+			return m, nil
+		}
 		// Check if epic tasks are focused - navigate within epic
 		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
 			return m.navigateEpicTask(-1)
@@ -916,6 +932,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.navigateModal(-1)
 
 	case keymap.CmdNavigateNext:
+		if m.KanbanOpen {
+			m.kanbanMoveRight()
+			return m, nil
+		}
 		// Check if epic tasks are focused - navigate within epic
 		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
 			return m.navigateEpicTask(1)
@@ -936,6 +956,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Actions
 	case keymap.CmdOpenDetails:
+		if m.KanbanOpen {
+			return m.openIssueFromKanban()
+		}
 		if m.HandoffsOpen {
 			return m.openIssueFromHandoffs()
 		}
@@ -1290,6 +1313,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdToggleBoardView:
 		return m.toggleBoardView()
 
+	// Kanban view commands
+	case keymap.CmdOpenKanban:
+		return m.openKanbanView()
+
+	case keymap.CmdCloseKanban:
+		m.closeKanbanView()
+		return m, nil
+
 	// Getting started commands
 	case keymap.CmdOpenGettingStarted:
 		return m.openGettingStarted()
@@ -1396,6 +1427,7 @@ func (m Model) exitBoardMode() (Model, tea.Cmd) {
 	}
 
 	// No filters active, exit board mode
+	m.closeKanbanView()
 	m.TaskListMode = TaskListModeCategorized
 	m.BoardMode.Board = nil
 	m.BoardMode.Issues = nil

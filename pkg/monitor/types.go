@@ -606,6 +606,7 @@ const (
 	ModalTypeForm
 	ModalTypeConfirmation
 	ModalTypeStats
+	ModalTypeKanban
 )
 
 // PanelRenderer renders content in a bordered panel

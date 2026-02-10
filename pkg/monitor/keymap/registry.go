@@ -34,6 +34,7 @@ const (
 	ContextBoardEditor       Context = "board-editor"       // When board edit/create modal is open
 	ContextCloseConfirm      Context = "close-confirm"      // When close confirmation modal is open (has text input)
 	ContextSyncPrompt        Context = "td-sync-prompt"    // When sync prompt modal is open
+	ContextKanban            Context = "kanban"            // When kanban view modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -147,6 +148,10 @@ const (
 	// Getting started commands
 	CmdOpenGettingStarted  Command = "open-getting-started"
 	CmdInstallInstructions Command = "install-instructions"
+
+	// Kanban view commands
+	CmdOpenKanban  Command = "open-kanban"
+	CmdCloseKanban Command = "close-kanban"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

@@ -25,6 +25,7 @@ var (
 	successColor   = lipgloss.Color("42")
 	warningColor   = lipgloss.Color("214")
 	errorColor     = lipgloss.Color("196")
+	cyanColor      = lipgloss.Color("45")
 
 	// Panel styles
 	panelStyle = lipgloss.NewStyle().
@@ -240,6 +241,11 @@ var (
 
 	activityTableSelectedStyle = lipgloss.NewStyle().
 					Background(lipgloss.Color("237"))
+
+	// Kanban view styles
+	kanbanTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	kanbanHintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	kanbanSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 // formatStatus renders a status with color

@@ -35,6 +35,7 @@ var contextToSidecar = map[Context]string{
 	ContextTDQHelp:           "td-tdq-help",
 	ContextBoardEditor:       "td-board-editor",
 	ContextCloseConfirm:      "td-close-confirm",
+	ContextKanban:            "td-kanban",
 }
 
 // commandMetadata defines display info and priority for each command.
@@ -121,6 +122,10 @@ var commandMetadata = map[Command]struct {
 	CmdBoardEditorSave:   {"Save", "Save board", 3},
 	CmdBoardEditorCancel: {"Cancel", "Cancel editing", 3},
 	CmdBoardEditorDelete: {"Delete", "Delete board", 3},
+
+	// Kanban view (P2)
+	CmdOpenKanban:  {"Kanban", "Open kanban view", 2},
+	CmdCloseKanban: {"Close", "Close kanban view", 3},
 }
 
 // ExportBindings returns all bindings in a format sidecar can consume.

@@ -100,10 +100,16 @@ func (m Model) renderView() string {
 		return OverlayModal(base, picker, m.Width, m.Height)
 	}
 
-	// Overlay modal if open
+	// Overlay modal if open (issue detail modals - can be opened on top of kanban)
 	if m.ModalOpen() {
 		modal := m.renderModal()
 		return OverlayModal(base, modal, m.Width, m.Height)
+	}
+
+	// Overlay kanban view if open (after modal check so modals render on top)
+	if m.KanbanOpen {
+		kanban := m.renderKanbanView()
+		return OverlayModal(base, kanban, m.Width, m.Height)
 	}
 
 	return base

@@ -852,6 +852,16 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Route scroll to kanban view (navigate rows)
+			if m.KanbanOpen {
+				if delta < 0 {
+					m.kanbanMoveUp()
+				} else {
+					m.kanbanMoveDown()
+				}
+				return m, nil
+			}
+
 			if m.StatsOpen {
 				m.StatsScroll += delta
 				if m.StatsScroll < 0 {

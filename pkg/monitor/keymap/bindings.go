@@ -390,6 +390,25 @@ func DefaultBindings() []Binding {
 		{Key: "I", Command: CmdInstallInstructions, Context: ContextGettingStarted, Description: "Install agent instructions"},
 		{Key: "esc", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
 		{Key: "q", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
+
+		// ============================================================
+		// KANBAN VIEW BINDINGS
+		// V opens the kanban view from board context
+		// ============================================================
+		{Key: "V", Command: CmdOpenKanban, Context: ContextBoard, Description: "Open kanban view"},
+
+		// Active when kanban view is open
+		{Key: "esc", Command: CmdCloseKanban, Context: ContextKanban, Description: "Close kanban view"},
+		{Key: "q", Command: CmdCloseKanban, Context: ContextKanban, Description: "Close kanban view"},
+		{Key: "h", Command: CmdNavigatePrev, Context: ContextKanban, Description: "Previous column"},
+		{Key: "left", Command: CmdNavigatePrev, Context: ContextKanban, Description: "Previous column"},
+		{Key: "l", Command: CmdNavigateNext, Context: ContextKanban, Description: "Next column"},
+		{Key: "right", Command: CmdNavigateNext, Context: ContextKanban, Description: "Next column"},
+		{Key: "j", Command: CmdCursorDown, Context: ContextKanban, Description: "Move down in column"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextKanban, Description: "Move down in column"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextKanban, Description: "Move up in column"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextKanban, Description: "Move up in column"},
+		{Key: "enter", Command: CmdOpenDetails, Context: ContextKanban, Description: "Open issue details"},
 	}
 }
 
