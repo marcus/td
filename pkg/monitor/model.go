@@ -956,32 +956,56 @@ func (m Model) fetchHandoffs() tea.Cmd {
 	}
 }
 
-// ensureBoardCursorVisible adjusts the board scroll offset to keep the cursor visible
+// ensureBoardCursorVisible adjusts the board scroll offset to keep the cursor visible.
+// Uses content height matching the rendering (panelHeight - 3) and dynamically
+// accounts for scroll indicator lines based on current scroll position.
 func (m *Model) ensureBoardCursorVisible() {
 	if m.BoardMode.ViewMode == BoardViewSwimlanes {
 		m.ensureSwimlaneCursorVisible()
 		return
 	}
 
-	// Use proper panel height calculation
-	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
-	if visibleHeight < 1 {
-		visibleHeight = 10
+	totalItems := len(m.BoardMode.Issues)
+	contentHeight := m.panelHeight(PanelTaskList) - 3 // matches rendering's maxLines
+	if contentHeight < 1 {
+		contentHeight = 10
 	}
 
-	// Ensure cursor is within visible range
-	if m.BoardMode.Cursor < m.BoardMode.ScrollOffset {
-		m.BoardMode.ScrollOffset = m.BoardMode.Cursor
+	cursor := m.BoardMode.Cursor
+	offset := m.BoardMode.ScrollOffset
+	needsScroll := totalItems > contentHeight
+
+	// Calculate effective visible items matching rendering indicator logic
+	effectiveHeight := contentHeight
+	if needsScroll && offset > 0 {
+		effectiveHeight-- // up indicator
 	}
-	if m.BoardMode.Cursor >= m.BoardMode.ScrollOffset+visibleHeight {
-		m.BoardMode.ScrollOffset = m.BoardMode.Cursor - visibleHeight + 1
+	if needsScroll && offset+effectiveHeight < totalItems {
+		effectiveHeight-- // down indicator
+	}
+	if effectiveHeight < 1 {
+		effectiveHeight = 1
+	}
+
+	// Scroll down if cursor below viewport
+	if cursor >= offset+effectiveHeight {
+		// After scrolling down, offset > 0 so up indicator will appear.
+		// Use worst-case (both indicators) for the new offset calculation
+		// to ensure cursor is always visible regardless of indicator state.
+		worstCase := contentHeight - 2
+		if worstCase < 1 {
+			worstCase = 1
+		}
+		m.BoardMode.ScrollOffset = cursor - worstCase + 1
+	}
+
+	// Scroll up if cursor above viewport
+	if cursor < m.BoardMode.ScrollOffset {
+		m.BoardMode.ScrollOffset = cursor
 	}
 
 	// Clamp scroll offset to valid range
-	maxScroll := len(m.BoardMode.Issues) - visibleHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := m.maxScrollOffset(PanelTaskList)
 	if m.BoardMode.ScrollOffset > maxScroll {
 		m.BoardMode.ScrollOffset = maxScroll
 	}
@@ -990,31 +1014,156 @@ func (m *Model) ensureBoardCursorVisible() {
 	}
 }
 
-// ensureSwimlaneCursorVisible adjusts the swimlane scroll offset to keep the cursor visible
+// ensureSwimlaneCursorVisible adjusts the swimlane scroll offset to keep the cursor visible.
+// Accounts for category headers and separator lines that consume display space.
 func (m *Model) ensureSwimlaneCursorVisible() {
-	// Use proper panel height calculation
-	visibleHeight := m.visibleHeightForPanel(PanelTaskList)
-	if visibleHeight < 1 {
-		visibleHeight = 10
+	totalItems := len(m.BoardMode.SwimlaneRows)
+	contentHeight := m.panelHeight(PanelTaskList) - 3 // matches rendering's maxLines
+	if contentHeight < 1 {
+		contentHeight = 10
 	}
 
-	// Ensure cursor is within visible range
-	if m.BoardMode.SwimlaneCursor < m.BoardMode.SwimlaneScroll {
-		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor
+	cursor := m.BoardMode.SwimlaneCursor
+	offset := m.BoardMode.SwimlaneScroll
+	needsScroll := totalItems > contentHeight
+
+	// Calculate effective visible items accounting for indicators and headers
+	effectiveHeight := contentHeight
+	if needsScroll && offset > 0 {
+		effectiveHeight-- // up indicator
 	}
-	if m.BoardMode.SwimlaneCursor >= m.BoardMode.SwimlaneScroll+visibleHeight {
-		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor - visibleHeight + 1
+	if needsScroll && offset+effectiveHeight < totalItems {
+		effectiveHeight-- // down indicator
+	}
+	// Subtract category header lines between offset and cursor
+	headerLines := m.swimlaneHeaderLinesBetween(offset, cursor)
+	effectiveHeight -= headerLines
+	if effectiveHeight < 1 {
+		effectiveHeight = 1
+	}
+
+	// Scroll down if cursor below viewport
+	if cursor >= offset+effectiveHeight {
+		// Find the smallest offset where cursor is visible by starting from
+		// cursor (trivially fits as 1 item) and walking back to show more context.
+		newOffset := cursor
+		for newOffset > 0 {
+			lines := m.swimlaneLinesFromOffset(newOffset-1, cursor+1)
+			available := contentHeight
+			if newOffset-1 > 0 {
+				available-- // up indicator when scrolled
+			}
+			if lines > available {
+				break
+			}
+			newOffset--
+		}
+		m.BoardMode.SwimlaneScroll = newOffset
+	}
+
+	// Scroll up if cursor above viewport
+	if cursor < m.BoardMode.SwimlaneScroll {
+		m.BoardMode.SwimlaneScroll = cursor
 	}
 
 	// Clamp scroll offset to valid range
-	maxScroll := len(m.BoardMode.SwimlaneRows) - visibleHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := m.maxScrollOffset(PanelTaskList)
 	if m.BoardMode.SwimlaneScroll > maxScroll {
 		m.BoardMode.SwimlaneScroll = maxScroll
 	}
 	if m.BoardMode.SwimlaneScroll < 0 {
 		m.BoardMode.SwimlaneScroll = 0
 	}
+}
+
+// swimlaneHeaderLinesBetween counts category header and separator lines between
+// two swimlane row indices. Matches renderBoardSwimlanesView's header logic.
+func (m Model) swimlaneHeaderLinesBetween(startIdx, endIdx int) int {
+	rows := m.BoardMode.SwimlaneRows
+	if len(rows) == 0 || startIdx >= endIdx {
+		return 0
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if endIdx > len(rows) {
+		endIdx = len(rows)
+	}
+
+	// Track category from before the start (matches rendering's skip loop)
+	var currentCategory TaskListCategory
+	for i := 0; i < startIdx && i < len(rows); i++ {
+		currentCategory = rows[i].Category
+	}
+
+	lines := 0
+	for i := startIdx; i < endIdx; i++ {
+		if rows[i].Category != currentCategory {
+			if i > startIdx || startIdx > 0 {
+				lines++ // blank separator
+			}
+			lines++ // category header
+			currentCategory = rows[i].Category
+		}
+	}
+	return lines
+}
+
+// swimlaneLinesFromOffset counts total display lines (items + headers + separators)
+// for swimlane rows from startIdx to endIdx (exclusive). Matches renderBoardSwimlanesView.
+func (m Model) swimlaneLinesFromOffset(startIdx, endIdx int) int {
+	rows := m.BoardMode.SwimlaneRows
+	if len(rows) == 0 || startIdx >= len(rows) {
+		return 0
+	}
+	if endIdx > len(rows) {
+		endIdx = len(rows)
+	}
+
+	// Track category from before the start (matches rendering's skip loop)
+	var currentCategory TaskListCategory
+	for i := 0; i < startIdx && i < len(rows); i++ {
+		currentCategory = rows[i].Category
+	}
+
+	lines := 0
+	for i := startIdx; i < endIdx; i++ {
+		if rows[i].Category != currentCategory {
+			if lines > 0 {
+				lines++ // blank separator
+			}
+			lines++ // category header
+			currentCategory = rows[i].Category
+		}
+		lines++ // the row itself
+	}
+	return lines
+}
+
+// swimlaneMaxScroll returns the maximum valid scroll offset for swimlane view.
+// Walks backwards from the end to find the smallest offset where all remaining
+// content (items + headers) fits in the available space with an up indicator.
+func (m Model) swimlaneMaxScroll(contentHeight int) int {
+	totalItems := len(m.BoardMode.SwimlaneRows)
+	if totalItems == 0 {
+		return 0
+	}
+
+	// At max scroll: up indicator present (1 line), no down indicator
+	availableForContent := contentHeight - 1
+	if availableForContent < 1 {
+		return 0
+	}
+
+	// Walk backwards to find the smallest offset where content fits
+	for offset := totalItems - 1; offset >= 0; offset-- {
+		lines := m.swimlaneLinesFromOffset(offset, totalItems)
+		if lines > availableForContent {
+			if offset+1 < totalItems {
+				return offset + 1
+			}
+			return offset
+		}
+	}
+	return 0
 }
