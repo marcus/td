@@ -349,3 +349,139 @@ func TestCountRepositoryFiles(t *testing.T) {
 		t.Errorf("expected 5 code files, got %d", count)
 	}
 }
+
+func TestEdgeCaseShortSessionID(t *testing.T) {
+	// Test that session IDs shorter than 8 characters don't panic
+	report := &SiloReport{
+		FileOwnership: []FileOwnership{
+			{FilePath: "file1.go", Critical: true},
+			{FilePath: "file2.go", Critical: false},
+		},
+		AuthorContribution: []AuthorContribution{
+			{AuthorID: "a", FileCount: 2, CriticalRisk: 1, RatioOfAll: 1.0}, // Very short ID
+		},
+		CriticalFiles:     []string{"file1.go"},
+		TotalCodeFiles:    10,
+		ExploredCodeRatio: 0.2,
+	}
+
+	// detectPatterns should not panic on short session IDs
+	patterns := detectPatterns(report)
+
+	// Should find some patterns
+	if len(patterns) == 0 {
+		t.Error("expected to detect patterns even with short session ID")
+	}
+
+	// All patterns should have valid AuthorID strings (not truncated incorrectly)
+	for _, p := range patterns {
+		if strings.Contains(p.Pattern, "owns") && strings.HasPrefix(p.Pattern, "owns") {
+			t.Error("unexpected pattern format - author ID missing")
+		}
+	}
+}
+
+func TestEdgeCaseEmptyDatabase(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Don't insert any data
+	report, err := AnalyzeSilos(db, t.TempDir())
+	if err != nil {
+		t.Fatalf("AnalyzeSilos should not fail on empty database: %v", err)
+	}
+
+	if report == nil {
+		t.Error("expected non-nil report")
+	}
+
+	if len(report.FileOwnership) != 0 {
+		t.Errorf("expected 0 files, got %d", len(report.FileOwnership))
+	}
+
+	if len(report.SuspiciousPatterns) != 0 {
+		t.Errorf("expected 0 patterns for empty database, got %d", len(report.SuspiciousPatterns))
+	}
+}
+
+func TestEdgeCaseNullFilePaths(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Insert issue with empty file path (should be filtered by query)
+	_, err := db.Exec(`INSERT INTO issues (id, implementer_session) VALUES ('issue1', 'session1')`)
+	if err != nil {
+		t.Fatalf("failed to insert issue: %v", err)
+	}
+
+	_, err = db.Exec(`INSERT INTO issue_files (id, issue_id, file_path) VALUES ('file1', 'issue1', '')`)
+	if err != nil {
+		t.Fatalf("failed to insert file: %v", err)
+	}
+
+	// Also insert a valid file
+	_, err = db.Exec(`INSERT INTO issue_files (id, issue_id, file_path) VALUES ('file2', 'issue1', 'main.go')`)
+	if err != nil {
+		t.Fatalf("failed to insert file: %v", err)
+	}
+
+	report, err := AnalyzeSilos(db, t.TempDir())
+	if err != nil {
+		t.Fatalf("AnalyzeSilos failed: %v", err)
+	}
+
+	// Should only have 1 file (empty paths filtered out)
+	if len(report.FileOwnership) != 1 {
+		t.Errorf("expected 1 file (empty paths filtered), got %d", len(report.FileOwnership))
+	}
+
+	if report.FileOwnership[0].FilePath != "main.go" {
+		t.Errorf("expected main.go, got %s", report.FileOwnership[0].FilePath)
+	}
+}
+
+func TestEdgeCaseEmptySessions(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Insert issue with empty implementer_session (should be filtered by query)
+	_, err := db.Exec(`INSERT INTO issues (id, implementer_session) VALUES ('issue1', '')`)
+	if err != nil {
+		t.Fatalf("failed to insert issue: %v", err)
+	}
+
+	_, err = db.Exec(`INSERT INTO issue_files (id, issue_id, file_path) VALUES ('file1', 'issue1', 'main.go')`)
+	if err != nil {
+		t.Fatalf("failed to insert file: %v", err)
+	}
+
+	// Also insert a valid issue with session
+	_, err = db.Exec(`INSERT INTO issues (id, implementer_session) VALUES ('issue2', 'session1')`)
+	if err != nil {
+		t.Fatalf("failed to insert issue: %v", err)
+	}
+
+	_, err = db.Exec(`INSERT INTO issue_files (id, issue_id, file_path) VALUES ('file2', 'issue2', 'main.go')`)
+	if err != nil {
+		t.Fatalf("failed to insert file: %v", err)
+	}
+
+	report, err := AnalyzeSilos(db, t.TempDir())
+	if err != nil {
+		t.Fatalf("AnalyzeSilos failed: %v", err)
+	}
+
+	// Should only have 1 author (empty sessions filtered out)
+	if len(report.AuthorContribution) != 1 {
+		t.Errorf("expected 1 author, got %d", len(report.AuthorContribution))
+	}
+
+	if report.AuthorContribution[0].AuthorID != "session1" {
+		t.Errorf("expected session1, got %s", report.AuthorContribution[0].AuthorID)
+	}
+
+	// File should have only 1 author (the empty session was filtered)
+	if report.FileOwnership[0].Count != 1 {
+		t.Errorf("expected 1 author for file (empty session filtered), got %d", report.FileOwnership[0].Count)
+	}
+}

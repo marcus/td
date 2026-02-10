@@ -245,8 +245,12 @@ func detectPatterns(report *SiloReport) []SuspiciousPattern {
 		avgCoverage := 1.0 / float64(len(report.AuthorContribution))
 
 		if topAuthor.RatioOfAll > avgCoverage*3 {
+			authorID := topAuthor.AuthorID
+			if len(authorID) > 8 {
+				authorID = authorID[:8]
+			}
 			patterns = append(patterns, SuspiciousPattern{
-				Pattern:  fmt.Sprintf("%s owns %.0f%% of tracked files", topAuthor.AuthorID[:8], topAuthor.RatioOfAll*100),
+				Pattern:  fmt.Sprintf("%s owns %.0f%% of tracked files", authorID, topAuthor.RatioOfAll*100),
 				Reason:   "Single developer has disproportionate file ownership",
 				Severity: "high",
 			})
@@ -266,8 +270,12 @@ func detectPatterns(report *SiloReport) []SuspiciousPattern {
 	if len(report.AuthorContribution) > 0 {
 		for _, ac := range report.AuthorContribution {
 			if ac.CriticalRisk > 5 {
+				authorID := ac.AuthorID
+				if len(authorID) > 8 {
+					authorID = authorID[:8]
+				}
 				patterns = append(patterns, SuspiciousPattern{
-					Pattern:  fmt.Sprintf("%s is sole contributor on %d files", ac.AuthorID[:8], ac.CriticalRisk),
+					Pattern:  fmt.Sprintf("%s is sole contributor on %d files", authorID, ac.CriticalRisk),
 					Reason:   "High risk of knowledge concentration",
 					Severity: "high",
 				})

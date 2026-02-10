@@ -108,7 +108,9 @@ func renderSilosTable(report *analysis.SiloReport) error {
 		printTableHeader([]string{"Author ID", "Files Owned", "Critical Risk", "Coverage %"})
 
 		for _, ac := range report.AuthorContribution {
-			if ac.RatioOfAll >= silosThreshold || !silosCriticalOnly {
+			// Show if: (not critical-only AND above threshold) OR (critical-only AND has critical risk)
+			shouldShow := (!silosCriticalOnly && ac.RatioOfAll >= silosThreshold) || (silosCriticalOnly && ac.CriticalRisk > 0)
+			if shouldShow {
 				authorID := ac.AuthorID
 				if len(authorID) > 8 {
 					authorID = authorID[:8]
@@ -155,15 +157,18 @@ func renderSilosTable(report *analysis.SiloReport) error {
 }
 
 func printTableHeader(headers []string) {
-	// Simple table header
-	for i, h := range headers {
-		if i == len(headers)-1 {
-			fmt.Printf("%s\n", h)
-		} else {
-			fmt.Printf("%-30s ", h)
+	// Table header with proper alignment matching data row format
+	// Widths: 12, 15, 15, 10 (matching printf format in rendering)
+	if len(headers) < 4 {
+		// Fallback for single-column headers (e.g., critical files list)
+		for _, h := range headers {
+			fmt.Printf("%-80s\n", h)
 		}
+		fmt.Println(strings.Repeat("-", 80))
+		return
 	}
-	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("%-12s%-15s%-15s%-10s\n", headers[0], headers[1], headers[2], headers[3])
+	fmt.Println(strings.Repeat("-", 52)) // 12+15+15+10 = 52
 }
 
 func renderSilosJSON(report *analysis.SiloReport) error {
