@@ -35,6 +35,7 @@ const (
 	formKeyAcceptance   = "acceptance"
 	formKeyMinor        = "minor"
 	formKeyDependencies = "dependencies"
+	formKeyStatus       = "status"
 )
 
 // FormState holds the state for the issue form modal
@@ -50,6 +51,7 @@ type FormState struct {
 	Priority    string
 	Description string
 	Labels      string // Comma-separated
+	Status      string // Only used in edit mode
 
 	// Extended fields (toggled with Tab)
 	ShowExtended bool
@@ -65,6 +67,11 @@ type FormState struct {
 
 	// Width for form fields (set from modal dimensions, reapplied on rebuild)
 	Width int
+
+	// Autofill state for Parent Epic and Dependencies fields
+	Autofill      *AutofillState // Active dropdown state (nil when not showing)
+	AutofillEpics []AutofillItem // Cached epics (for parent field, type=epic only)
+	AutofillAll   []AutofillItem // Cached all open issues (for dependencies field)
 }
 
 // NewFormState creates a new form state for creating an issue
@@ -93,6 +100,7 @@ func NewFormStateForEdit(issue *models.Issue) *FormState {
 		Priority:    string(issue.Priority),
 		Description: issue.Description,
 		Labels:      strings.Join(issue.Labels, ", "),
+		Status:      string(issue.Status),
 		Parent:      issue.ParentID,
 		Points:      pointsToString(issue.Points),
 		Acceptance:  issue.Acceptance,
@@ -136,6 +144,15 @@ func (fs *FormState) buildForm() {
 		huh.NewOption("21", "21"),
 	}
 
+	// Status options (edit mode only)
+	statusOptions := []huh.Option[string]{
+		huh.NewOption("Open", string(models.StatusOpen)),
+		huh.NewOption("In Progress", string(models.StatusInProgress)),
+		huh.NewOption("Blocked", string(models.StatusBlocked)),
+		huh.NewOption("In Review", string(models.StatusInReview)),
+		huh.NewOption("Closed", string(models.StatusClosed)),
+	}
+
 	titleStr := "New Issue"
 	if fs.Mode == FormModeEdit {
 		titleStr = "Edit Issue: " + fs.IssueID
@@ -177,8 +194,9 @@ func (fs *FormState) buildForm() {
 			Placeholder("label1, label2, ..."),
 	).Title(titleStr)
 
-	// Extended fields group
-	extendedGroup := huh.NewGroup(
+	// Extended fields — split across two pages so each fits in the modal.
+	// Page 2: detail fields
+	detailsGroup := huh.NewGroup(
 		huh.NewInput().
 			Key(formKeyParent).
 			Title("Parent Epic").
@@ -195,6 +213,10 @@ func (fs *FormState) buildForm() {
 			Value(&fs.Acceptance).
 			Placeholder("- [ ] Criterion 1\n- [ ] Criterion 2").
 			Lines(3),
+	).Title("Details")
+
+	// Page 3: workflow fields
+	workflowFields := []huh.Field{
 		huh.NewConfirm().
 			Key(formKeyMinor).
 			Title("Minor Issue").
@@ -205,11 +227,24 @@ func (fs *FormState) buildForm() {
 			Title("Dependencies").
 			Value(&fs.Dependencies).
 			Placeholder("td-xxx, td-yyy"),
-	).Title("Extended Fields")
+	}
+
+	// Add status select at the very bottom for edit mode
+	if fs.Mode == FormModeEdit {
+		workflowFields = append(workflowFields,
+			huh.NewSelect[string]().
+				Key(formKeyStatus).
+				Title("Status").
+				Options(statusOptions...).
+				Value(&fs.Status),
+		)
+	}
+
+	workflowGroup := huh.NewGroup(workflowFields...).Title("Workflow")
 
 	// Build the form
 	if fs.ShowExtended {
-		fs.Form = huh.NewForm(standardGroup, extendedGroup)
+		fs.Form = huh.NewForm(standardGroup, detailsGroup, workflowGroup)
 	} else {
 		fs.Form = huh.NewForm(standardGroup)
 	}
@@ -246,6 +281,9 @@ func (fs *FormState) firstFieldKey() string {
 
 func (fs *FormState) lastFieldKey() string {
 	if fs.ShowExtended {
+		if fs.Mode == FormModeEdit {
+			return formKeyStatus
+		}
 		return formKeyDependencies
 	}
 	return formKeyLabels
@@ -261,6 +299,7 @@ func (fs *FormState) ToIssue() *models.Issue {
 		Title:       strings.TrimSpace(fs.Title),
 		Type:        models.Type(fs.Type),
 		Priority:    models.Priority(fs.Priority),
+		Status:      models.Status(fs.Status),
 		Description: fs.Description,
 		Labels:      labels,
 		ParentID:    strings.TrimSpace(fs.Parent),

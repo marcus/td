@@ -95,7 +95,9 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case keyMsg.Type == tea.KeyCtrlS:
 			return m.executeCommand(keymap.CmdFormSubmit)
-		case keyMsg.Type == tea.KeyEsc:
+		case keyMsg.Type == tea.KeyEsc && (m.FormState == nil || m.FormState.Autofill == nil || !m.FormState.Autofill.Active):
+			// Only cancel form if autofill dropdown is not active; Esc with dropdown
+			// active is handled below to dismiss just the dropdown.
 			return m.executeCommand(keymap.CmdFormCancel)
 		case keyMsg.Type == tea.KeyCtrlX:
 			return m.executeCommand(keymap.CmdFormToggleExtend)
@@ -103,8 +105,40 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.executeCommand(keymap.CmdFormOpenEditor)
 		}
 
+		// Autofill dropdown key interception: consume Up/Down/Enter/Esc
+		// before they reach huh or the button navigation logic.
+		// Only intercept when form fields are focused (not buttons).
+		if m.FormState != nil && m.FormState.Autofill != nil && m.FormState.Autofill.Active &&
+			len(m.FormState.Autofill.Filtered) > 0 && m.FormState.ButtonFocus == formButtonFocusForm {
+			switch keyMsg.Type {
+			case tea.KeyUp:
+				if m.FormState.Autofill.Idx > 0 {
+					m.FormState.Autofill.Idx--
+				}
+				return m, nil
+			case tea.KeyDown:
+				if m.FormState.Autofill.Idx < len(m.FormState.Autofill.Filtered)-1 {
+					m.FormState.Autofill.Idx++
+				}
+				return m, nil
+			case tea.KeyEnter:
+				return m.selectAutofillItem()
+			}
+		}
+		// Esc closes the autofill dropdown without closing the form
+		if m.FormState != nil && m.FormState.Autofill != nil && m.FormState.Autofill.Active {
+			if keyMsg.Type == tea.KeyEsc {
+				m.FormState.Autofill = nil
+				return m, nil
+			}
+		}
+
 		if m.FormState != nil {
 			moveToButtons := func(focus int) (tea.Model, tea.Cmd) {
+				// Clear autofill dropdown when leaving form fields for buttons
+				if focus != formButtonFocusForm {
+					m.FormState.Autofill = nil
+				}
 				// When moving away from form fields, blur the focused field
 				if focus != formButtonFocusForm && m.FormState.ButtonFocus == formButtonFocusForm {
 					if field := m.FormState.Form.GetFocusedField(); field != nil {
@@ -171,6 +205,22 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleEditorFinished(editorMsg)
 	}
 
+	// Handle autofill data loaded
+	if afMsg, ok := msg.(AutofillResultMsg); ok {
+		if m.FormState != nil {
+			m.FormState.AutofillAll = afMsg.Items
+			var epics []AutofillItem
+			for _, item := range afMsg.Items {
+				if item.Type == models.TypeEpic {
+					epics = append(epics, item)
+				}
+			}
+			m.FormState.AutofillEpics = epics
+			m.syncAutofillState()
+		}
+		return m, nil
+	}
+
 	// Handle window resize
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.Width = sizeMsg.Width
@@ -187,6 +237,9 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if f, ok := form.(*huh.Form); ok {
 		m.FormState.Form = f
 	}
+
+	// Sync autofill state after huh processes the message (detects field focus changes)
+	m.syncAutofillState()
 
 	// Check if form completed (user pressed enter on last field)
 	if m.FormState.Form.State == huh.StateCompleted {
@@ -1242,6 +1295,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdFormToggleExtend:
 		if m.FormState != nil {
 			m.FormState.ToggleExtended()
+			// Load autofill data when extended fields become visible (if not already loaded)
+			if m.FormState.ShowExtended && len(m.FormState.AutofillAll) == 0 {
+				return m, loadAutofillData(m.DB)
+			}
 		}
 		return m, nil
 

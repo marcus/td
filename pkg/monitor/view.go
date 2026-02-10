@@ -1598,7 +1598,7 @@ func (m Model) renderFormModal() string {
 		return ""
 	}
 
-	modalWidth, modalHeight := m.formModalDimensions()
+	modalWidth, _ := m.formModalDimensions()
 
 	// Set form width to match modal content area (modalWidth minus Padding(1,2) = 4 horizontal chars)
 	formWidth := modalWidth - 4
@@ -1631,8 +1631,30 @@ func (m Model) renderFormModal() string {
 		footer = lipgloss.NewStyle().MaxWidth(formWidth).Render(footer)
 	}
 
-	// Combine form and footer
+	// Render autofill dropdown if active and inject inline below the focused field.
+	dropdownView := m.renderFormAutofillDropdown()
+
+	if dropdownView != "" && m.FormState.Autofill != nil {
+		switch m.FormState.Autofill.FieldKey {
+		case formKeyParent:
+			// Inject dropdown between Parent Epic and Story Points fields
+			formView = insertDropdownAfterField(formView, dropdownView, "Story Points")
+		case formKeyDependencies:
+			if m.FormState.Mode == FormModeEdit {
+				// In edit mode, Status follows Dependencies — inject before it
+				formView = insertDropdownAfterField(formView, dropdownView, "Status")
+			} else {
+				// In create mode, Dependencies is last field — append after form
+				formView = formView + "\n" + dropdownView
+			}
+		}
+	}
+
+	// Combine form (with inline dropdown if any) and footer
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons, "", footer)
+
+	// Dynamic modal height: content-sized, capped at terminal height.
+	maxHeight := m.Height - 2
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
@@ -1640,20 +1662,31 @@ func (m Model) renderFormModal() string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedInner := "\n" + inner + "\n"
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedInner, modalWidth+2, modalHeight+2, ModalTypeForm, 1)
+		renderedHeight := lipgloss.Height(paddedInner) + 2 // +2 for borders
+		if renderedHeight > maxHeight {
+			renderedHeight = maxHeight
+		}
+		// Add 2 to width: renderer expects outer dimensions with borders
+		return m.ModalRenderer(paddedInner, modalWidth+2, renderedHeight, ModalTypeForm, 1)
 	}
 
 	// Default lipgloss rendering
 	// Select border color - cyan for forms (different from issue modals)
 	borderColor := lipgloss.Color("45") // Cyan
 
+	// Measure actual content height and cap at terminal bounds
+	contentHeight := lipgloss.Height(inner)
+	actualHeight := contentHeight + 2 // +2 for Padding(1, 2) vertical
+	if actualHeight > maxHeight {
+		actualHeight = maxHeight
+	}
+
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(1, 2).
 		Width(modalWidth).
-		Height(modalHeight)
+		Height(actualHeight)
 
 	return modalStyle.Render(inner)
 }

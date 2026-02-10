@@ -1,12 +1,15 @@
 package monitor
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/workflow"
 )
 
 // openNewIssueForm opens the new issue form
@@ -31,8 +34,8 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 	m.FormState.Width = formWidth
 	m.FormState.Form.WithWidth(formWidth)
 
-	// Initialize the form
-	return m, m.FormState.Form.Init()
+	// Initialize the form and load autofill data
+	return m, tea.Batch(m.FormState.Form.Init(), loadAutofillData(m.DB))
 }
 
 // openEditIssueForm opens the edit form for the selected/modal issue
@@ -59,14 +62,21 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 	m.FormState = NewFormStateForEdit(issue)
 	m.FormOpen = true
 
+	// Pre-populate dependencies from the database
+	depIDs, _ := m.DB.GetDependencies(issue.ID)
+	if len(depIDs) > 0 {
+		m.FormState.Dependencies = strings.Join(depIDs, ", ")
+		m.FormState.buildForm()
+	}
+
 	// Set form width for text wrapping (subtract modal horizontal padding)
 	modalWidth, _ := m.formModalDimensions()
 	formWidth := modalWidth - 4
 	m.FormState.Width = formWidth
 	m.FormState.Form.WithWidth(formWidth)
 
-	// Initialize the form
-	return m, m.FormState.Form.Init()
+	// Initialize the form and load autofill data
+	return m, tea.Batch(m.FormState.Form.Init(), loadAutofillData(m.DB))
 }
 
 // closeForm closes the form modal and clears state
@@ -114,6 +124,29 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Detect status change
+		oldStatus := existingIssue.Status
+		newStatus := models.Status(m.FormState.Status)
+		statusChanged := oldStatus != newStatus
+
+		// Validate status transition if changed
+		if statusChanged {
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(oldStatus, newStatus) {
+				m.StatusMessage = fmt.Sprintf("Invalid transition: %s → %s", oldStatus, newStatus)
+				m.StatusIsError = true
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return ClearStatusMsg{}
+				})
+			}
+		}
+
+		// Determine action type based on status transition
+		actionType := models.ActionUpdate
+		if statusChanged {
+			actionType = statusTransitionAction(oldStatus, newStatus)
+		}
+
 		// Update fields
 		existingIssue.Title = issue.Title
 		existingIssue.Type = issue.Type
@@ -125,9 +158,70 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		existingIssue.Acceptance = issue.Acceptance
 		existingIssue.Minor = issue.Minor
 
-		if err := m.DB.UpdateIssueLogged(existingIssue, m.SessionID, models.ActionUpdate); err != nil {
+		// Apply status change with associated field updates
+		if statusChanged {
+			existingIssue.Status = newStatus
+
+			switch {
+			case newStatus == models.StatusClosed:
+				now := time.Now()
+				existingIssue.ClosedAt = &now
+			case oldStatus == models.StatusClosed:
+				// Reopening: clear close metadata
+				existingIssue.ClosedAt = nil
+				existingIssue.ReviewerSession = ""
+			}
+
+			if newStatus == models.StatusInReview && existingIssue.ImplementerSession == "" {
+				existingIssue.ImplementerSession = m.SessionID
+			}
+		}
+
+		if err := m.DB.UpdateIssueLogged(existingIssue, m.SessionID, actionType); err != nil {
 			m.Err = err
 			return m, nil
+		}
+
+		// Sync dependencies: diff old vs new, add/remove as needed
+		newDeps := m.FormState.GetDependencies()
+		oldDeps, _ := m.DB.GetDependencies(m.FormState.IssueID)
+		oldSet := make(map[string]bool, len(oldDeps))
+		for _, id := range oldDeps {
+			oldSet[id] = true
+		}
+		newSet := make(map[string]bool, len(newDeps))
+		for _, id := range newDeps {
+			if id != "" {
+				newSet[id] = true
+			}
+		}
+		// Remove deps that were deleted
+		for _, id := range oldDeps {
+			if !newSet[id] {
+				_ = m.DB.RemoveDependencyLogged(m.FormState.IssueID, id, m.SessionID)
+			}
+		}
+		// Add deps that are new
+		for _, id := range newDeps {
+			if id != "" && !oldSet[id] {
+				_ = m.DB.AddDependencyLogged(m.FormState.IssueID, id, "depends_on", m.SessionID)
+			}
+		}
+
+		// Record session action for bypass prevention
+		if statusChanged {
+			var sessionAction models.IssueSessionAction
+			switch {
+			case oldStatus == models.StatusOpen && newStatus == models.StatusInProgress:
+				sessionAction = models.ActionSessionStarted
+			case oldStatus == models.StatusInProgress && newStatus == models.StatusOpen:
+				sessionAction = models.ActionSessionUnstarted
+			case oldStatus == models.StatusInReview && newStatus == models.StatusClosed:
+				sessionAction = models.ActionSessionReviewed
+			}
+			if sessionAction != "" {
+				m.DB.RecordSessionAction(existingIssue.ID, m.SessionID, sessionAction)
+			}
 		}
 
 		m.closeForm()
@@ -254,4 +348,25 @@ func (m Model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) 
 			return ClearStatusMsg{}
 		}),
 	)
+}
+
+// statusTransitionAction returns the appropriate ActionType for a status transition.
+// Uses specific action types for well-known transitions to produce meaningful activity log entries.
+func statusTransitionAction(from, to models.Status) models.ActionType {
+	switch {
+	case from == models.StatusOpen && to == models.StatusInProgress:
+		return models.ActionStart
+	case to == models.StatusInReview:
+		return models.ActionReview
+	case to == models.StatusClosed:
+		return models.ActionClose
+	case from == models.StatusClosed && to == models.StatusOpen:
+		return models.ActionReopen
+	case to == models.StatusBlocked:
+		return models.ActionBlock
+	case from == models.StatusBlocked && (to == models.StatusOpen || to == models.StatusInProgress):
+		return models.ActionUnblock
+	default:
+		return models.ActionUpdate
+	}
 }
