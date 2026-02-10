@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ var (
 	versionStr      string
 	baseDir         string
 	baseDirOverride *string // For testing
+	workDirFlag     string  // --work-dir flag value
 	cmdStartTime    time.Time
 	executedCmd     *cobra.Command // Captured for analytics logging
 )
@@ -260,6 +262,9 @@ func nameWithAliases(cmd *cobra.Command) string {
 func init() {
 	cobra.OnInitialize(initBaseDir)
 
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&workDirFlag, "work-dir", "", "path to project directory containing .todos (or the .todos dir itself)")
+
 	// Add custom template function for showing aliases
 	cobra.AddTemplateFunc("nameWithAliases", nameWithAliases)
 
@@ -321,6 +326,29 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 func initBaseDir() {
 	var err error
+
+	// --work-dir flag takes precedence
+	if workDirFlag != "" {
+		baseDir = workDirFlag
+
+		// Handle if user pointed directly to .todos dir
+		if filepath.Base(baseDir) == ".todos" {
+			baseDir = filepath.Dir(baseDir)
+		}
+
+		// Make absolute if relative
+		if !filepath.IsAbs(baseDir) {
+			cwd, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
+				os.Exit(1)
+			}
+			baseDir = filepath.Join(cwd, baseDir)
+		}
+		baseDir = filepath.Clean(baseDir)
+		return
+	}
+
 	baseDir, err = os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
