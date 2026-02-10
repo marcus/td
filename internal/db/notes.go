@@ -28,13 +28,14 @@ func marshalNote(note *models.Note) string {
 // scanNoteRow reads a note row from the DB. Caller must hold write lock if used inside withWriteLock.
 func (db *DB) scanNoteRow(id string) (*models.Note, error) {
 	var note models.Note
+	var createdAtStr, updatedAtStr string
 	var deletedAt sql.NullString
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, content, created_at, updated_at, pinned, archived, deleted_at
 		FROM notes WHERE id = ?
 	`, id).Scan(
-		&note.ID, &note.Title, &note.Content, &note.CreatedAt, &note.UpdatedAt,
+		&note.ID, &note.Title, &note.Content, &createdAtStr, &updatedAtStr,
 		&note.Pinned, &note.Archived, &deletedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -43,6 +44,9 @@ func (db *DB) scanNoteRow(id string) (*models.Note, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	note.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+	note.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAtStr)
 
 	if deletedAt.Valid && deletedAt.String != "" {
 		t, err := time.Parse(time.RFC3339, deletedAt.String)
@@ -175,15 +179,19 @@ func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 	var notes []models.Note
 	for rows.Next() {
 		var note models.Note
+		var createdAtStr, updatedAtStr string
 		var deletedAt sql.NullString
 
 		err := rows.Scan(
-			&note.ID, &note.Title, &note.Content, &note.CreatedAt, &note.UpdatedAt,
+			&note.ID, &note.Title, &note.Content, &createdAtStr, &updatedAtStr,
 			&note.Pinned, &note.Archived, &deletedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
+
+		note.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		note.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAtStr)
 
 		if deletedAt.Valid && deletedAt.String != "" {
 			t, err := time.Parse(time.RFC3339, deletedAt.String)
