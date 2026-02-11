@@ -4,14 +4,16 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.34.0] - 2026-02-10
+
 ### Features
+- `--work-dir` / `-w` global flag and `TD_WORK_DIR` env var for pointing td at a different project directory
+  - Integrates with `.td-root` and git worktree resolution (unlike bypassing it)
+  - Priority: `--work-dir` flag > `TD_WORK_DIR` env > cwd
+  - Accepts path to project dir or directly to `.todos` dir
 - Event taxonomy normalizer: centralized validation and normalization of entity and action types
-  - Accepts both singular and plural entity type names for backward compatibility (e.g., 'issue' and 'issues', 'board' and 'boards')
-  - Normalizes all legacy td action types to canonical sync types (handoff → create, add_dependency → create, etc.)
-  - Comprehensive validation ensures all entity+action combinations used throughout the sync/API layer are supported
-  - Existing event data with old action/entity type formats remains queryable
-  - Clients can send events using either old or new naming conventions without breaking
-  - Documentation in internal/events/taxonomy.go explains the design and backward-compatibility guarantees
+  - Backward-compatible: accepts both singular/plural entity names and legacy action types
+  - Comprehensive validation for all entity+action combinations in the sync/API layer
 
 ## [v0.33.0] - 2026-02-09
 
