@@ -236,6 +236,48 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap for esc, etc.
 	}
 
+	// Help modal filter mode: handle typing when filtering
+	if m.HelpOpen && m.HelpFilterMode {
+		switch msg.Type {
+		case tea.KeyEsc:
+			// Clear filter and exit filter mode
+			m.HelpFilter = ""
+			m.HelpFilterMode = false
+			m.HelpScroll = 0
+			return m, nil
+		case tea.KeyEnter:
+			// Confirm filter and exit filter mode (keep filter active)
+			m.HelpFilterMode = false
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.HelpFilter) > 0 {
+				m.HelpFilter = m.HelpFilter[:len(m.HelpFilter)-1]
+				m.HelpScroll = 0
+			}
+			return m, nil
+		case tea.KeyRunes:
+			m.HelpFilter += string(msg.Runes)
+			m.HelpScroll = 0
+			return m, nil
+		}
+		// Fall through to keymap for other keys
+	}
+
+	// Help modal: "/" enters filter mode, Esc clears filter first
+	if m.HelpOpen && !m.HelpFilterMode {
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '/' {
+			m.HelpFilterMode = true
+			m.HelpFilter = ""
+			return m, nil
+		}
+		// Esc clears filter if active, otherwise falls through to close help
+		if msg.Type == tea.KeyEsc && m.HelpFilter != "" {
+			m.HelpFilter = ""
+			m.HelpScroll = 0
+			return m, nil
+		}
+	}
+
 	// Stats modal: let declarative modal handle keys first (when data is ready)
 	if m.StatsOpen && m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
 		action, cmd := m.StatsModal.HandleKey(msg)
@@ -452,8 +494,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.HelpOpen {
 				// Initialize scroll position and calculate total lines
 				m.HelpScroll = 0
+				m.HelpFilter = ""
+				m.HelpFilterMode = false
 				helpText := m.Keymap.GenerateHelp()
 				m.HelpTotalLines = strings.Count(helpText, "\n") + 1
+			} else {
+				// Clear filter when closing
+				m.HelpFilter = ""
+				m.HelpFilterMode = false
 			}
 		}
 		return m, nil

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -37,21 +37,23 @@ type Model struct {
 	ActiveSessions []string        // Sessions with recent activity
 
 	// UI state
-	ActivePanel  Panel
-	ScrollOffset map[Panel]int
-	Cursor            map[Panel]int    // Per-panel cursor position (selected row)
-	SelectedID        map[Panel]string // Per-panel selected issue ID (preserved across refresh)
-	ScrollIndependent map[Panel]bool   // True when user scrolled viewport away from cursor
-	HelpOpen       bool // Whether help modal is open
-	HelpScroll     int  // Current scroll position in help
-	HelpTotalLines int  // Cached total line count in help
-	ShowTDQHelp          bool           // Show TDQ query syntax help (when in search mode)
-	TDQHelpModal         *modal.Modal   // Declarative modal instance for TDQ help
-	TDQHelpMouseHandler  *mouse.Handler // Mouse handler for TDQ help modal
-	LastRefresh  time.Time
-	StartedAt    time.Time // When monitor started, to track new handoffs
-	Err          error     // Last error, if any
-	Embedded     bool      // When true, skip footer (embedded in sidecar)
+	ActivePanel         Panel
+	ScrollOffset        map[Panel]int
+	Cursor              map[Panel]int    // Per-panel cursor position (selected row)
+	SelectedID          map[Panel]string // Per-panel selected issue ID (preserved across refresh)
+	ScrollIndependent   map[Panel]bool   // True when user scrolled viewport away from cursor
+	HelpOpen            bool             // Whether help modal is open
+	HelpScroll          int              // Current scroll position in help
+	HelpTotalLines      int              // Cached total line count in help
+	HelpFilter          string           // Filter text for help search
+	HelpFilterMode      bool             // Whether typing in help filter
+	ShowTDQHelp         bool             // Show TDQ query syntax help (when in search mode)
+	TDQHelpModal        *modal.Modal     // Declarative modal instance for TDQ help
+	TDQHelpMouseHandler *mouse.Handler   // Mouse handler for TDQ help modal
+	LastRefresh         time.Time
+	StartedAt           time.Time // When monitor started, to track new handoffs
+	Err                 error     // Last error, if any
+	Embedded            bool      // When true, skip footer (embedded in sidecar)
 
 	// Flattened rows for selection
 	TaskListRows    []TaskListRow // Flattened task list for selection
@@ -61,12 +63,12 @@ type Model struct {
 	ModalStack []ModalEntry
 
 	// Search state
-	SearchMode     bool              // Whether search mode is active
-	SearchQuery    string            // Current search query
-	SearchInput    textinput.Model   // Text input for search (cursor support)
-	IncludeClosed  bool           // Whether to include closed tasks
-	SortMode       SortMode       // Task list sort order
-	TypeFilterMode TypeFilterMode // Type filter (epic, task, bug, etc.)
+	SearchMode     bool            // Whether search mode is active
+	SearchQuery    string          // Current search query
+	SearchInput    textinput.Model // Text input for search (cursor support)
+	IncludeClosed  bool            // Whether to include closed tasks
+	SortMode       SortMode        // Task list sort order
+	TypeFilterMode TypeFilterMode  // Type filter (epic, task, bug, etc.)
 
 	// Confirmation dialog state (delete confirmation)
 	ConfirmOpen        bool
@@ -141,20 +143,20 @@ type Model struct {
 	BoardPickerMouseHandler *mouse.Handler // Mouse handler for board picker modal
 
 	// Board editor modal state (edit/create/info overlay on board picker)
-	BoardEditorOpen         bool
-	BoardEditorMode         string         // "edit", "create", "info" (builtin read-only)
-	BoardEditorBoard        *models.Board  // Board being edited (nil for create)
-	BoardEditorNameInput    *textinput.Model
-	BoardEditorQueryInput   *textarea.Model
-	BoardEditorModal        *modal.Modal   // Declarative modal instance
-	BoardEditorMouseHandler *mouse.Handler          // Mouse handler
-	BoardEditorPreview      *boardEditorPreviewData // Shared pointer: survives stale closure captures
-	BoardEditorDeleteConfirm bool                   // Whether delete confirmation is active
+	BoardEditorOpen          bool
+	BoardEditorMode          string        // "edit", "create", "info" (builtin read-only)
+	BoardEditorBoard         *models.Board // Board being edited (nil for create)
+	BoardEditorNameInput     *textinput.Model
+	BoardEditorQueryInput    *textarea.Model
+	BoardEditorModal         *modal.Modal            // Declarative modal instance
+	BoardEditorMouseHandler  *mouse.Handler          // Mouse handler
+	BoardEditorPreview       *boardEditorPreviewData // Shared pointer: survives stale closure captures
+	BoardEditorDeleteConfirm bool                    // Whether delete confirmation is active
 
 	// Board mode state
-	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
-	BoardMode            BoardMode          // Active board mode state
-	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
+	TaskListMode      TaskListMode       // Whether Task List shows categorized or board view
+	BoardMode         BoardMode          // Active board mode state
+	BoardStatusPreset StatusFilterPreset // Current status filter preset for cycling
 
 	// Auto-sync callback (set by caller for periodic background sync)
 	AutoSyncFunc     func() // Called periodically to push/pull in background
@@ -214,34 +216,34 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	// Initialize search input
 	searchInput := textinput.New()
 	searchInput.Placeholder = "search"
-	searchInput.Prompt = ""  // No prompt, we show triangle icon separately
-	searchInput.Width = 50   // Reasonable width for search queries
+	searchInput.Prompt = "" // No prompt, we show triangle icon separately
+	searchInput.Width = 50  // Reasonable width for search queries
 	searchInput.CharLimit = 200
 
 	return Model{
-		DB:              database,
-		SessionID:       sessionID,
-		RefreshInterval: interval,
+		DB:                database,
+		SessionID:         sessionID,
+		RefreshInterval:   interval,
 		ScrollOffset:      make(map[Panel]int),
 		Cursor:            make(map[Panel]int),
 		SelectedID:        make(map[Panel]string),
 		ScrollIndependent: make(map[Panel]bool),
-		ActivePanel:     PanelCurrentWork,
-		StartedAt:       time.Now(),
-		SearchMode:      false,
-		SearchQuery:     "",
-		SearchInput:     searchInput,
-		IncludeClosed:   false,
-		Keymap:          km,
-		Version:         ver,
-		PanelBounds:     make(map[Panel]Rect),
-		HoverPanel:      -1,
-		LastClickPanel:  -1,
-		LastClickRow:    -1,
-		PaneHeights:     paneHeights,
-		DraggingDivider: -1,
-		DividerHover:    -1,
-		BaseDir:         baseDir,
+		ActivePanel:       PanelCurrentWork,
+		StartedAt:         time.Now(),
+		SearchMode:        false,
+		SearchQuery:       "",
+		SearchInput:       searchInput,
+		IncludeClosed:     false,
+		Keymap:            km,
+		Version:           ver,
+		PanelBounds:       make(map[Panel]Rect),
+		HoverPanel:        -1,
+		LastClickPanel:    -1,
+		LastClickRow:      -1,
+		PaneHeights:       paneHeights,
+		DraggingDivider:   -1,
+		DividerHover:      -1,
+		BaseDir:           baseDir,
 	}
 }
 
