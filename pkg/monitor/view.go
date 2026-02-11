@@ -2244,9 +2244,25 @@ func (m Model) renderHelp() string {
 	helpText := m.Keymap.GenerateHelp()
 	allLines := strings.Split(helpText, "\n")
 
+	// Filter lines if filter is active
+	var displayLines []string
+	if m.HelpFilter != "" {
+		filterLower := strings.ToLower(m.HelpFilter)
+		for _, line := range allLines {
+			if strings.Contains(strings.ToLower(line), filterLower) {
+				displayLines = append(displayLines, line)
+			}
+		}
+	} else {
+		displayLines = allLines
+	}
+
 	// Calculate visible area
 	visibleHeight := modalHeight - 4 // Account for border and footer
-	totalLines := len(allLines)
+	if m.HelpFilterMode || m.HelpFilter != "" {
+		visibleHeight-- // Account for filter input line
+	}
+	totalLines := len(displayLines)
 	scroll := m.HelpScroll
 
 	// Clamp scroll
@@ -2264,6 +2280,18 @@ func (m Model) renderHelp() string {
 	// Build visible content
 	var content strings.Builder
 
+	// Show filter input if filtering
+	if m.HelpFilterMode {
+		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+		content.WriteString(filterStyle.Render("/ " + m.HelpFilter + "█"))
+		content.WriteString("\n")
+	} else if m.HelpFilter != "" {
+		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+		matchInfo := subtleStyle.Render(fmt.Sprintf(" (%d matches)", totalLines))
+		content.WriteString(filterStyle.Render("/ "+m.HelpFilter) + matchInfo)
+		content.WriteString("\n")
+	}
+
 	// Show up indicator if scrolled down
 	if scroll > 0 {
 		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ▲ %d more above\n", scroll)))
@@ -2277,7 +2305,7 @@ func (m Model) renderHelp() string {
 	}
 	if scroll < totalLines {
 		for i := scroll; i < endIdx; i++ {
-			content.WriteString(allLines[i])
+			content.WriteString(displayLines[i])
 			if i < endIdx-1 {
 				content.WriteString("\n")
 			}
@@ -2297,7 +2325,11 @@ func (m Model) renderHelp() string {
 		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
 		footerParts = append(footerParts, scrollInfo)
 	}
-	footerParts = append(footerParts, subtleStyle.Render("j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close"))
+	if m.HelpFilter != "" {
+		footerParts = append(footerParts, subtleStyle.Render("Esc:clear  j/k:scroll  ?:close"))
+	} else {
+		footerParts = append(footerParts, subtleStyle.Render("/:filter  j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close"))
+	}
 	footer := strings.Join(footerParts, "  ")
 
 	// Combine content and footer
