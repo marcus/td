@@ -31,10 +31,15 @@ type ListIssuesOptions struct {
 	UpdatedBefore  time.Time
 	ClosedAfter    time.Time
 	ClosedBefore   time.Time
-	SortBy         string
-	SortDesc       bool
-	Limit          int
-	IDs            []string
+	SortBy          string
+	SortDesc        bool
+	Limit           int
+	IDs             []string
+	ExcludeDeferred bool // Hide issues where defer_until > today
+	DeferredOnly    bool // Show ONLY deferred issues (defer_until > today)
+	OverdueOnly     bool // Show ONLY overdue issues (due_date < today, not closed)
+	SurfacingOnly   bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
+	DueSoonDays     int  // Show issues due within N days (0 = disabled)
 }
 
 // CreateIssue creates a new issue WITHOUT logging to action_log.
@@ -501,11 +506,25 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		args = append(args, opts.ClosedBefore)
 	}
 
+	// Temporal filters (GTD deferral)
+	if opts.DeferredOnly {
+		query += " AND defer_until IS NOT NULL AND defer_until > date('now')"
+	} else if opts.OverdueOnly {
+		query += " AND due_date IS NOT NULL AND due_date < date('now') AND status != 'closed'"
+	} else if opts.SurfacingOnly {
+		query += " AND defer_until IS NOT NULL AND defer_until <= date('now') AND defer_count > 0"
+	} else if opts.DueSoonDays > 0 {
+		query += fmt.Sprintf(" AND due_date IS NOT NULL AND due_date >= date('now') AND due_date <= date('now', '+%d days')", opts.DueSoonDays)
+	} else if opts.ExcludeDeferred {
+		query += " AND (defer_until IS NULL OR defer_until <= date('now'))"
+	}
+
 	// Sorting - validate column name to prevent SQL injection
 	allowedSortCols := map[string]bool{
 		"id": true, "title": true, "status": true, "type": true,
 		"priority": true, "points": true, "created_at": true,
 		"updated_at": true, "closed_at": true, "deleted_at": true,
+		"defer_until": true, "due_date": true, "defer_count": true,
 	}
 	sortCol := "priority"
 	if opts.SortBy != "" && allowedSortCols[opts.SortBy] {

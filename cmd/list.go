@@ -232,6 +232,24 @@ var listCmd = &cobra.Command{
 			opts.Limit = 50
 		}
 
+		// Temporal filters (GTD deferral)
+		deferred, _ := cmd.Flags().GetBool("deferred")
+		overdue, _ := cmd.Flags().GetBool("overdue")
+		surfacing, _ := cmd.Flags().GetBool("surfacing")
+		dueSoon, _ := cmd.Flags().GetBool("due-soon")
+
+		if deferred {
+			opts.DeferredOnly = true
+		} else if overdue {
+			opts.OverdueOnly = true
+		} else if surfacing {
+			opts.SurfacingOnly = true
+		} else if dueSoon {
+			opts.DueSoonDays = 3
+		} else if !showAll {
+			opts.ExcludeDeferred = true
+		}
+
 		issues, err := database.ListIssues(opts)
 		if err != nil {
 			output.Error("failed to list issues: %v", err)
@@ -588,9 +606,14 @@ func init() {
 	listCmd.Flags().Bool("long", false, "Detailed output")
 	listCmd.Flags().Bool("short", false, "Compact output (default)")
 	listCmd.Flags().Bool("json", false, "JSON output")
-	listCmd.Flags().BoolP("all", "a", false, "Include closed issues (by default, closed issues are hidden)")
+	listCmd.Flags().BoolP("all", "a", false, "Include closed and deferred issues")
 
 	deletedCmd.Flags().Bool("json", false, "JSON output")
+
+	listCmd.Flags().Bool("deferred", false, "Show only currently deferred tasks")
+	listCmd.Flags().Bool("overdue", false, "Show tasks past their due date")
+	listCmd.Flags().Bool("surfacing", false, "Show tasks that just resurfaced (previously deferred)")
+	listCmd.Flags().Bool("due-soon", false, "Show tasks due within 3 days")
 
 	listCmd.Flags().String("format", "", "Output format (short, long, json)")
 	listCmd.Flags().Bool("no-pager", false, "Disable paging (no-op, td list does not page)")

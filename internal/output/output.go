@@ -187,6 +187,16 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	if len(issue.Labels) > 0 {
 		sb.WriteString(fmt.Sprintf("Labels: %s\n", strings.Join(issue.Labels, ", ")))
 	}
+	if issue.DeferUntil != nil {
+		sb.WriteString(fmt.Sprintf("Deferred until: %s", *issue.DeferUntil))
+		if issue.DeferCount > 0 {
+			sb.WriteString(fmt.Sprintf(" (deferred %dx)", issue.DeferCount))
+		}
+		sb.WriteString("\n")
+	}
+	if issue.DueDate != nil {
+		sb.WriteString(fmt.Sprintf("Due: %s\n", *issue.DueDate))
+	}
 
 	// Description
 	if issue.Description != "" {

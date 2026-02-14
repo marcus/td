@@ -635,6 +635,287 @@ func TestUpsertEntity_AllFieldsUnknown(t *testing.T) {
 	}
 }
 
+// testSchemaWithDefer includes GTD deferral columns (defer_until, due_date, defer_count)
+const testSchemaWithDefer = `CREATE TABLE issues (
+	id          TEXT PRIMARY KEY,
+	title       TEXT,
+	status      TEXT,
+	priority    TEXT,
+	labels      TEXT DEFAULT '',
+	defer_until TEXT,
+	due_date    TEXT,
+	defer_count INTEGER DEFAULT 0,
+	created_at  DATETIME,
+	updated_at  DATETIME,
+	deleted_at  DATETIME
+);`
+
+func setupDBWithDefer(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(testSchemaWithDefer); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func TestApplyEvent_DeferFields(t *testing.T) {
+	// 1. Create issue with defer fields via sync event
+	db := setupDBWithDefer(t)
+	tx := beginTx(t, db)
+
+	payload, _ := json.Marshal(map[string]any{
+		"title":       "deferred task",
+		"status":      "open",
+		"priority":    "P2",
+		"defer_until": "2026-03-01",
+		"due_date":    "2026-03-15",
+		"defer_count": 2,
+	})
+
+	event := Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "td-test01",
+		Payload:    payload,
+	}
+
+	_, err := ApplyEvent(tx, event, testValidator)
+	if err != nil {
+		t.Fatalf("apply create: %v", err)
+	}
+	tx.Commit()
+
+	// Verify all fields persisted
+	var title, deferUntil, dueDate sql.NullString
+	var deferCount int
+	err = db.QueryRow("SELECT title, defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test01").
+		Scan(&title, &deferUntil, &dueDate, &deferCount)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if !title.Valid || title.String != "deferred task" {
+		t.Fatalf("title: got %q, want 'deferred task'", title.String)
+	}
+	if !deferUntil.Valid || deferUntil.String != "2026-03-01" {
+		t.Fatalf("defer_until: got %q, want '2026-03-01'", deferUntil.String)
+	}
+	if !dueDate.Valid || dueDate.String != "2026-03-15" {
+		t.Fatalf("due_date: got %q, want '2026-03-15'", dueDate.String)
+	}
+	if deferCount != 2 {
+		t.Fatalf("defer_count: got %d, want 2", deferCount)
+	}
+
+	// 2. Update the defer fields
+	tx2 := beginTx(t, db)
+
+	updatePayload, _ := json.Marshal(map[string]any{
+		"title":       "deferred task",
+		"status":      "open",
+		"priority":    "P2",
+		"defer_until": "2026-04-01",
+		"due_date":    "2026-04-15",
+		"defer_count": 3,
+	})
+
+	updateEvent := Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "td-test01",
+		Payload:    updatePayload,
+	}
+
+	_, err = ApplyEvent(tx2, updateEvent, testValidator)
+	if err != nil {
+		t.Fatalf("apply update: %v", err)
+	}
+	tx2.Commit()
+
+	// Verify updated fields
+	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test01").
+		Scan(&deferUntil, &dueDate, &deferCount)
+	if err != nil {
+		t.Fatalf("query after update: %v", err)
+	}
+	if !deferUntil.Valid || deferUntil.String != "2026-04-01" {
+		t.Fatalf("defer_until after update: got %q, want '2026-04-01'", deferUntil.String)
+	}
+	if !dueDate.Valid || dueDate.String != "2026-04-15" {
+		t.Fatalf("due_date after update: got %q, want '2026-04-15'", dueDate.String)
+	}
+	if deferCount != 3 {
+		t.Fatalf("defer_count after update: got %d, want 3", deferCount)
+	}
+
+	// 3. Clear defer_until (set to null)
+	tx3 := beginTx(t, db)
+
+	clearPayload, _ := json.Marshal(map[string]any{
+		"title":       "deferred task",
+		"status":      "open",
+		"priority":    "P2",
+		"defer_until": nil,
+		"due_date":    "2026-04-15",
+		"defer_count": 3,
+	})
+
+	clearEvent := Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "td-test01",
+		Payload:    clearPayload,
+	}
+
+	_, err = ApplyEvent(tx3, clearEvent, testValidator)
+	if err != nil {
+		t.Fatalf("apply clear: %v", err)
+	}
+	tx3.Commit()
+
+	// Verify defer_until is NULL after clear
+	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test01").
+		Scan(&deferUntil, &dueDate, &deferCount)
+	if err != nil {
+		t.Fatalf("query after clear: %v", err)
+	}
+	if deferUntil.Valid {
+		t.Fatalf("defer_until should be NULL after clear, got %q", deferUntil.String)
+	}
+	if !dueDate.Valid || dueDate.String != "2026-04-15" {
+		t.Fatalf("due_date should still be '2026-04-15', got %q", dueDate.String)
+	}
+	if deferCount != 3 {
+		t.Fatalf("defer_count should still be 3, got %d", deferCount)
+	}
+}
+
+func TestApplyEvent_DeferFieldsPartialUpdate(t *testing.T) {
+	db := setupDBWithDefer(t)
+
+	// Insert a row first via create event
+	tx := beginTx(t, db)
+	createPayload, _ := json.Marshal(map[string]any{
+		"title":       "partial defer test",
+		"status":      "open",
+		"priority":    "P3",
+		"defer_until": "2026-03-01",
+		"due_date":    "2026-03-15",
+		"defer_count": 1,
+	})
+	_, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "td-test02",
+		Payload:    createPayload,
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	tx.Commit()
+
+	// Partial update: change only defer_until via applyEventWithPrevious
+	previousData, _ := json.Marshal(map[string]any{
+		"title":       "partial defer test",
+		"status":      "open",
+		"priority":    "P3",
+		"defer_until": "2026-03-01",
+		"due_date":    "2026-03-15",
+		"defer_count": 1,
+	})
+	newData, _ := json.Marshal(map[string]any{
+		"title":       "partial defer test",
+		"status":      "open",
+		"priority":    "P3",
+		"defer_until": "2026-05-01", // changed
+		"due_date":    "2026-03-15", // unchanged
+		"defer_count": 2,            // changed
+	})
+
+	tx2 := beginTx(t, db)
+	_, err = applyEventWithPrevious(tx2, Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "td-test02",
+		Payload:    newData,
+	}, testValidator, previousData)
+	if err != nil {
+		t.Fatalf("partial update: %v", err)
+	}
+	tx2.Commit()
+
+	// Verify only the changed fields were updated
+	var title sql.NullString
+	var deferUntil, dueDate sql.NullString
+	var deferCount int
+	err = db.QueryRow("SELECT title, defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test02").
+		Scan(&title, &deferUntil, &dueDate, &deferCount)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if !title.Valid || title.String != "partial defer test" {
+		t.Fatalf("title: got %q, want 'partial defer test'", title.String)
+	}
+	if !deferUntil.Valid || deferUntil.String != "2026-05-01" {
+		t.Fatalf("defer_until: got %q, want '2026-05-01'", deferUntil.String)
+	}
+	if !dueDate.Valid || dueDate.String != "2026-03-15" {
+		t.Fatalf("due_date: got %q, want '2026-03-15' (unchanged)", dueDate.String)
+	}
+	if deferCount != 2 {
+		t.Fatalf("defer_count: got %d, want 2", deferCount)
+	}
+
+	// Partial update: clear defer_until via null
+	previousData2, _ := json.Marshal(map[string]any{
+		"title":       "partial defer test",
+		"status":      "open",
+		"priority":    "P3",
+		"defer_until": "2026-05-01",
+		"due_date":    "2026-03-15",
+		"defer_count": 2,
+	})
+	newData2, _ := json.Marshal(map[string]any{
+		"title":       "partial defer test",
+		"status":      "open",
+		"priority":    "P3",
+		"defer_until": nil, // cleared
+		"due_date":    "2026-03-15",
+		"defer_count": 2,
+	})
+
+	tx3 := beginTx(t, db)
+	_, err = applyEventWithPrevious(tx3, Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "td-test02",
+		Payload:    newData2,
+	}, testValidator, previousData2)
+	if err != nil {
+		t.Fatalf("partial update clear: %v", err)
+	}
+	tx3.Commit()
+
+	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test02").
+		Scan(&deferUntil, &dueDate, &deferCount)
+	if err != nil {
+		t.Fatalf("query after clear: %v", err)
+	}
+	if deferUntil.Valid {
+		t.Fatalf("defer_until should be NULL after partial clear, got %q", deferUntil.String)
+	}
+	if !dueDate.Valid || dueDate.String != "2026-03-15" {
+		t.Fatalf("due_date should be unchanged at '2026-03-15', got %q", dueDate.String)
+	}
+	if deferCount != 2 {
+		t.Fatalf("defer_count should be unchanged at 2, got %d", deferCount)
+	}
+}
+
 // depSchema adds the issue_dependencies table for cycle detection tests
 const depSchema = `CREATE TABLE issue_dependencies (
 	id           TEXT PRIMARY KEY,

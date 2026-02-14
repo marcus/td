@@ -159,6 +159,15 @@ Examples:
 			if issue.ClosedAt != nil {
 				result["closed_at"] = issue.ClosedAt
 			}
+			if issue.DeferUntil != nil {
+				result["defer_until"] = *issue.DeferUntil
+			}
+			if issue.DueDate != nil {
+				result["due_date"] = *issue.DueDate
+			}
+			if issue.DeferCount > 0 {
+				result["defer_count"] = issue.DeferCount
+			}
 			if handoff != nil {
 				result["handoff"] = map[string]interface{}{
 					"timestamp": handoff.Timestamp,
@@ -361,14 +370,24 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 			if err != nil {
 				continue
 			}
-			issues = append(issues, map[string]interface{}{
+			entry := map[string]interface{}{
 				"id":          issue.ID,
 				"title":       issue.Title,
 				"status":      issue.Status,
 				"priority":    issue.Priority,
 				"type":        issue.Type,
 				"description": issue.Description,
-			})
+			}
+			if issue.DeferUntil != nil {
+				entry["defer_until"] = *issue.DeferUntil
+			}
+			if issue.DueDate != nil {
+				entry["due_date"] = *issue.DueDate
+			}
+			if issue.DeferCount > 0 {
+				entry["defer_count"] = issue.DeferCount
+			}
+			issues = append(issues, entry)
 		}
 		return output.JSON(issues)
 	}
