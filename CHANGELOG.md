@@ -4,6 +4,20 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.35.0] - 2026-02-14
+
+### Features
+- GTD-style deferral system: `td defer` and `td due` commands for managing temporal visibility
+- `--defer` and `--due` flags on `td create` and `td update` for inline date assignment
+- List temporal filters: `--deferred`, `--overdue`, `--surfacing`, `--due-soon` for focused views
+- Monitor TUI modal displays defer/due dates with smart relative formatting
+- Natural date parsing: `+7d`, `+2w`, `monday`, `tomorrow`, `next-week`, and more
+
+### Documentation
+- New deferral docs page covering GTD deferral concepts and usage
+- Updated command reference with defer/due flags and temporal filters
+- Updated monitor docs with defer/due date display
+
 ## [v0.34.0] - 2026-02-10
 
 ### Features
