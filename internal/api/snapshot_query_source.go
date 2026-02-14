@@ -27,7 +27,8 @@ var _ query.QuerySource = (*SnapshotQuerySource)(nil)
 
 // issueColumns is the SELECT column list matching the scan order used throughout.
 const issueColumns = `id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch`
+       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+       defer_until, due_date, defer_count`
 
 // scanIssue scans a single issue row using the standard column order.
 func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, error) {
@@ -38,11 +39,13 @@ func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, erro
 	var implSession, creatorSession, reviewerSession sql.NullString
 	var createdBranch sql.NullString
 	var pointsNull sql.NullInt64
+	var deferUntil, dueDate sql.NullString
 
 	err := scanner.Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 		&pointsNull, &labels, &parentID, &acceptance, &sprint,
 		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+		&deferUntil, &dueDate, &issue.DeferCount,
 	)
 	if err != nil {
 		return issue, err
@@ -65,6 +68,12 @@ func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, erro
 	issue.CreatorSession = creatorSession.String
 	issue.ReviewerSession = reviewerSession.String
 	issue.CreatedBranch = createdBranch.String
+	if deferUntil.Valid {
+		issue.DeferUntil = &deferUntil.String
+	}
+	if dueDate.Valid {
+		issue.DueDate = &dueDate.String
+	}
 
 	return issue, nil
 }

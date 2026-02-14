@@ -67,7 +67,8 @@ func (db *DB) HasChildren(issueID string) (bool, error) {
 func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 	rows, err := db.conn.Query(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 		FROM issues WHERE parent_id = ? AND deleted_at IS NULL
 	`, issueID)
 	if err != nil {
@@ -84,11 +85,13 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
 		var pointsNull sql.NullInt64
+		var deferUntil, dueDate sql.NullString
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+			&deferUntil, &dueDate, &issue.DeferCount,
 		)
 		if err != nil {
 			return nil, err
@@ -111,6 +114,12 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		issue.CreatorSession = creatorSession.String
 		issue.ReviewerSession = reviewerSession.String
 		issue.CreatedBranch = createdBranch.String
+		if deferUntil.Valid {
+			issue.DeferUntil = &deferUntil.String
+		}
+		if dueDate.Valid {
+			issue.DueDate = &dueDate.String
+		}
 
 		children = append(children, &issue)
 	}

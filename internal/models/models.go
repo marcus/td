@@ -96,6 +96,9 @@ type Issue struct {
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
 	Minor              bool       `json:"minor"`
 	CreatedBranch      string     `json:"created_branch,omitempty"`
+	DeferUntil         *string    `json:"defer_until,omitempty"`
+	DueDate            *string    `json:"due_date,omitempty"`
+	DeferCount         int        `json:"defer_count"`
 }
 
 // Log represents a session log entry

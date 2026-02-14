@@ -118,15 +118,18 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	var parentID1, acceptance1, sprint1 sql.NullString
 	var implSession1, creatorSession1, reviewerSession1 sql.NullString
 	var createdBranch1 sql.NullString
+	var deferUntil1, dueDate1 sql.NullString
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 		FROM issues WHERE status = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1
 	`, models.StatusOpen).Scan(
 		&oldestIssue.ID, &oldestIssue.Title, &oldestIssue.Description, &oldestIssue.Status, &oldestIssue.Type,
 		&oldestIssue.Priority, &oldestIssue.Points, &labels, &parentID1, &acceptance1, &sprint1,
 		&implSession1, &creatorSession1, &reviewerSession1, &oldestIssue.CreatedAt, &oldestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &oldestIssue.Minor, &createdBranch1,
+		&deferUntil1, &dueDate1, &oldestIssue.DeferCount,
 	)
 	if err == nil {
 		if labels != "" {
@@ -145,6 +148,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		oldestIssue.CreatorSession = creatorSession1.String
 		oldestIssue.ReviewerSession = reviewerSession1.String
 		oldestIssue.CreatedBranch = createdBranch1.String
+		if deferUntil1.Valid {
+			oldestIssue.DeferUntil = &deferUntil1.String
+		}
+		if dueDate1.Valid {
+			oldestIssue.DueDate = &dueDate1.String
+		}
 		stats.OldestOpen = &oldestIssue
 	}
 
@@ -156,15 +165,18 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	var parentID2, acceptance2, sprint2 sql.NullString
 	var implSession2, creatorSession2, reviewerSession2 sql.NullString
 	var createdBranch2 sql.NullString
+	var deferUntil2, dueDate2 sql.NullString
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 		FROM issues WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1
 	`).Scan(
 		&newestIssue.ID, &newestIssue.Title, &newestIssue.Description, &newestIssue.Status, &newestIssue.Type,
 		&newestIssue.Priority, &newestIssue.Points, &labels, &parentID2, &acceptance2, &sprint2,
 		&implSession2, &creatorSession2, &reviewerSession2, &newestIssue.CreatedAt, &newestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &newestIssue.Minor, &createdBranch2,
+		&deferUntil2, &dueDate2, &newestIssue.DeferCount,
 	)
 	if err == nil {
 		if labels != "" {
@@ -183,6 +195,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		newestIssue.CreatorSession = creatorSession2.String
 		newestIssue.ReviewerSession = reviewerSession2.String
 		newestIssue.CreatedBranch = createdBranch2.String
+		if deferUntil2.Valid {
+			newestIssue.DeferUntil = &deferUntil2.String
+		}
+		if dueDate2.Valid {
+			newestIssue.DueDate = &dueDate2.String
+		}
 		stats.NewestTask = &newestIssue
 	}
 
@@ -194,9 +212,11 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	var parentID3, acceptance3, sprint3 sql.NullString
 	var implSession3, creatorSession3, reviewerSession3 sql.NullString
 	var createdBranch3 sql.NullString
+	var deferUntil3, dueDate3 sql.NullString
 	err = db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 		FROM issues WHERE status = ? AND closed_at IS NOT NULL AND deleted_at IS NULL
 		ORDER BY closed_at DESC LIMIT 1
 	`, models.StatusClosed).Scan(
@@ -204,6 +224,7 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		&closedIssue.Priority, &closedIssue.Points, &labels, &parentID3, &acceptance3, &sprint3,
 		&implSession3, &creatorSession3, &reviewerSession3, &closedIssue.CreatedAt, &closedIssue.UpdatedAt,
 		&closedAt, &deletedAt, &closedIssue.Minor, &createdBranch3,
+		&deferUntil3, &dueDate3, &closedIssue.DeferCount,
 	)
 	if err == nil {
 		if labels != "" {
@@ -222,6 +243,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		closedIssue.CreatorSession = creatorSession3.String
 		closedIssue.ReviewerSession = reviewerSession3.String
 		closedIssue.CreatedBranch = createdBranch3.String
+		if deferUntil3.Valid {
+			closedIssue.DeferUntil = &deferUntil3.String
+		}
+		if dueDate3.Valid {
+			closedIssue.DueDate = &dueDate3.String
+		}
 		stats.LastClosed = &closedIssue
 	}
 

@@ -67,10 +67,19 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 			}
 			issue.ID = id
 
+			deferUntil := sql.NullString{String: "", Valid: false}
+			if issue.DeferUntil != nil {
+				deferUntil = sql.NullString{String: *issue.DeferUntil, Valid: true}
+			}
+			dueDate := sql.NullString{String: "", Valid: false}
+			if issue.DueDate != nil {
+				dueDate = sql.NullString{String: *issue.DueDate, Valid: true}
+			}
+
 			_, err = db.conn.Exec(`
-				INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch, creator_session)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch, issue.CreatorSession)
+				INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch, creator_session, defer_until, due_date, defer_count)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch, issue.CreatorSession, deferUntil, dueDate, issue.DeferCount)
 
 			if err == nil {
 				return nil
@@ -95,15 +104,18 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	var implSession, creatorSession, reviewerSession sql.NullString
 	var createdBranch sql.NullString
 	var pointsNull sql.NullInt64
+	var deferUntil, dueDate sql.NullString
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 		&pointsNull, &labels, &parentID, &acceptance, &sprint,
 		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+		&deferUntil, &dueDate, &issue.DeferCount,
 	)
 
 	if err == sql.ErrNoRows {
@@ -130,6 +142,12 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	issue.CreatorSession = creatorSession.String
 	issue.ReviewerSession = reviewerSession.String
 	issue.CreatedBranch = createdBranch.String
+	if deferUntil.Valid {
+		issue.DeferUntil = &deferUntil.String
+	}
+	if dueDate.Valid {
+		issue.DueDate = &dueDate.String
+	}
 
 	return &issue, nil
 }
@@ -160,7 +178,8 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 
 	query := fmt.Sprintf(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       defer_until, due_date, defer_count
 		FROM issues WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
 
@@ -179,10 +198,12 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
 		var pointsNull sql.NullInt64
+		var deferUntil, dueDate sql.NullString
 		if err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+			&deferUntil, &dueDate, &issue.DeferCount,
 		); err != nil {
 			return nil, err
 		}
@@ -203,6 +224,12 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		issue.CreatorSession = creatorSession.String
 		issue.ReviewerSession = reviewerSession.String
 		issue.CreatedBranch = createdBranch.String
+		if deferUntil.Valid {
+			issue.DeferUntil = &deferUntil.String
+		}
+		if dueDate.Valid {
+			issue.DueDate = &dueDate.String
+		}
 		issues = append(issues, issue)
 	}
 
@@ -261,16 +288,27 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 		issue.UpdatedAt = time.Now()
 		labels := strings.Join(issue.Labels, ",")
 
+		deferUntil := sql.NullString{String: "", Valid: false}
+		if issue.DeferUntil != nil {
+			deferUntil = sql.NullString{String: *issue.DeferUntil, Valid: true}
+		}
+		dueDate := sql.NullString{String: "", Valid: false}
+		if issue.DueDate != nil {
+			dueDate = sql.NullString{String: *issue.DueDate, Valid: true}
+		}
+
 		_, err := db.conn.Exec(`
 			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
 			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
-			                  closed_at = ?, deleted_at = ?
+			                  closed_at = ?, deleted_at = ?,
+			                  defer_until = ?, due_date = ?, defer_count = ?
 			WHERE id = ?
 		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
 			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
-			issue.ClosedAt, issue.DeletedAt, issue.ID)
+			issue.ClosedAt, issue.DeletedAt,
+			deferUntil, dueDate, issue.DeferCount, issue.ID)
 
 		return err
 	})
@@ -298,7 +336,8 @@ func (db *DB) RestoreIssue(id string) error {
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-                 implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+                 implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+                 defer_until, due_date, defer_count
           FROM issues WHERE 1=1`
 	var args []interface{}
 
@@ -499,11 +538,13 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
 		var pointsNull sql.NullInt64
+		var deferUntil, dueDate sql.NullString
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+			&deferUntil, &dueDate, &issue.DeferCount,
 		)
 		if err != nil {
 			return nil, err
@@ -526,6 +567,12 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		issue.CreatorSession = creatorSession.String
 		issue.ReviewerSession = reviewerSession.String
 		issue.CreatedBranch = createdBranch.String
+		if deferUntil.Valid {
+			issue.DeferUntil = &deferUntil.String
+		}
+		if dueDate.Valid {
+			issue.DueDate = &dueDate.String
+		}
 
 		issues = append(issues, issue)
 	}

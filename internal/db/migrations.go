@@ -229,6 +229,19 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 29 {
+				exists, err := db.columnExists("issues", "defer_until")
+				if err != nil {
+					return migrationsRun, fmt.Errorf("check column defer_until: %w", err)
+				}
+				if exists {
+					if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+						return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+					}
+					migrationsRun++
+					continue
+				}
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
