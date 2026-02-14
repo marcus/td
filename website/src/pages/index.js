@@ -16,6 +16,7 @@ import {
   Settings,
   GitCommit,
   RotateCcw,
+  Clock,
   ListChecks,
   FileText,
   BarChart3,
@@ -138,6 +139,11 @@ const features = [
     icon: <Layers size={28} />,
     title: 'Epics',
     description: 'Track large initiatives spanning multiple issues with tree visualization.',
+  },
+  {
+    icon: <Clock size={28} />,
+    title: 'GTD-Style Deferral',
+    description: 'Snooze tasks until they\'re actionable, set deadlines, and let td resurface them at the right time.',
   },
   {
     icon: <Monitor size={28} />,
@@ -351,6 +357,7 @@ const pills = [
   { icon: <ListChecks size={14} />, label: 'Multi-issue sessions' },
   { icon: <GitCommit size={14} />, label: 'Git snapshots' },
   { icon: <RotateCcw size={14} />, label: 'Undo support' },
+  { icon: <Clock size={14} />, label: 'Deferral & due dates' },
   { icon: <BarChart3 size={14} />, label: 'Analytics' },
   { icon: <FileText size={14} />, label: 'File tracking' },
   { icon: <ExternalLink size={14} />, label: 'Sidecar integration', link: 'https://sidecar.haplab.com/' },

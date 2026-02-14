@@ -35,6 +35,21 @@ Complete reference for all `td` commands.
 | `td reopen <id>` | Reopen closed issue |
 | `td comment <id> "text"` | Add comment |
 
+## Deferral & Due Dates
+
+| Command | Description |
+|---------|-------------|
+| `td defer <id> <date>` | Defer issue until a future date |
+| `td defer <id> --clear` | Remove deferral, make immediately actionable |
+| `td due <id> <date>` | Set due date on an issue |
+| `td due <id> --clear` | Remove due date |
+
+Date formats: `+7d`, `+2w`, `+1m`, `monday`, `tomorrow`, `next-week`, `next-month`, `2026-03-15`
+
+The `--defer` and `--due` flags are also available on `td create` and `td update`.
+
+**List filters:** `--all` (include deferred), `--deferred`, `--surfacing`, `--overdue`, `--due-soon`
+
 ## Query & Search
 
 | Command | Description |

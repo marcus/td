@@ -61,6 +61,17 @@ Press `s` to open the stats modal. It displays:
 - **Timeline data** - oldest open issue, last closed issue
 - **Activity stats** - log count, handoffs, most active session
 
+## Task Detail Modal
+
+Press `Enter` on any issue to open its detail modal. This shows full issue information including:
+
+- Title, status, type, priority
+- Implementer and reviewer sessions
+- **Deferred until** — with relative context (e.g., "in 7 days"), if set
+- **Due date** — with warning styling for due-soon items and error styling for overdue
+- **Defer count** — how many times the task has been re-deferred (shown when > 0)
+- Description, logs, and handoff history
+
 ## Search and Filter
 
 Press `/` to activate search. Type to filter issues by name or description in real-time. Useful for navigating large projects quickly. Press `Esc` to clear the search and return to the full list.

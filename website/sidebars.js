@@ -11,6 +11,7 @@ const sidebars = {
         'query-language',
         'epics',
         'work-sessions',
+        'deferral',
         'file-tracking',
       ],
     },
