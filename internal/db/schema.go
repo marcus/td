@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 28
+const SchemaVersion = 29
 
 const schema = `
 -- Issues table
@@ -467,6 +467,17 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_deleted ON notes(deleted_at);
+`,
+	},
+	{
+		Version:     29,
+		Description: "Add defer_until, due_date, defer_count columns to issues",
+		SQL: `
+ALTER TABLE issues ADD COLUMN defer_until TEXT;
+ALTER TABLE issues ADD COLUMN due_date TEXT;
+ALTER TABLE issues ADD COLUMN defer_count INTEGER DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_issues_defer_until ON issues(defer_until);
+CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 `,
 	},
 }
