@@ -33,6 +33,12 @@ Swimlanes organized by status:
 - In Review
 - Closed
 
+### Kanban Board (press `V`)
+
+A visual kanban overlay with tasks organized in columns by status. See the [Kanban Board](kanban) docs for full details.
+
+![Kanban board overlay](/img/kanban-overlay.png)
+
 ### Stats View (press `s`)
 
 A statistics dashboard with project-wide metrics (see below).
@@ -46,6 +52,7 @@ A statistics dashboard with project-wide metrics (see below).
 | `/` | Search/filter issues |
 | `c` | Toggle closed tasks |
 | `r` | Refresh |
+| `V` | Open kanban board (in board view) |
 | `j`/`k` | Navigate up/down |
 | `Enter` | View issue details |
 | `Esc` | Close modal/exit search |

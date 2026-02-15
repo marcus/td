@@ -150,6 +150,11 @@ const features = [
     title: 'Live Monitor',
     description: 'Real-time TUI dashboard watching agent activity across sessions.',
   },
+  {
+    icon: <LayoutDashboard size={28} />,
+    title: 'Kanban Board',
+    description: 'Visual kanban overlay with 7 status columns, per-column scrolling, and fullscreen mode.',
+  },
 ];
 
 function FeatureCards() {

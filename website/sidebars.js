@@ -20,6 +20,7 @@ const sidebars = {
       label: 'Tools',
       items: [
         'monitor',
+        'kanban',
         'ai-integration',
       ],
     },
