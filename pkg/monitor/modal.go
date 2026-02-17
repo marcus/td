@@ -1043,7 +1043,8 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	))
 
 	// Buttons
-	if item.IssueID != "" {
+	showOpenIssue := item.IssueID != "" && (item.Type != "action" || item.EntityType == "issue")
+	if showOpenIssue {
 		md.AddSection(modal.Buttons(
 			modal.Btn(" Open Issue ", "open-issue"),
 			modal.Btn(" Close ", "close"),
@@ -1416,7 +1417,7 @@ func (m Model) handleActivityDetailAction(action string) (tea.Model, tea.Cmd) {
 			m.closeActivityDetailModal()
 			return m.pushModal(issueID, PanelActivity)
 		}
-	case "close":
+	case "close", "cancel":
 		m.closeActivityDetailModal()
 	}
 	return m, nil

@@ -70,7 +70,7 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 	var parts []string
 	totalContentHeight := 0
 	for _, r := range visible {
-		parts = append(parts, r.content)
+		parts = append(parts, strings.TrimRight(r.content, "\n"))
 		totalContentHeight += r.height
 	}
 	fullContent := strings.Join(parts, "\n")
