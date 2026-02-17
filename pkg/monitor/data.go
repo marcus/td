@@ -83,6 +83,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 			IssueID:   log.IssueID,
 			Message:   log.Message,
 			LogType:   log.Type,
+			EntityID:  log.ID,
 		})
 	}
 
@@ -90,12 +91,16 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 	actions, _ := database.GetRecentActionsAll(limit)
 	for _, action := range actions {
 		items = append(items, ActivityItem{
-			Timestamp: action.Timestamp,
-			SessionID: action.SessionID,
-			Type:      "action",
-			IssueID:   action.EntityID,
-			Message:   formatActionMessage(action),
-			Action:    action.ActionType,
+			Timestamp:    action.Timestamp,
+			SessionID:    action.SessionID,
+			Type:         "action",
+			IssueID:      action.EntityID,
+			Message:      formatActionMessage(action),
+			Action:       action.ActionType,
+			EntityID:     action.ID,
+			EntityType:   action.EntityType,
+			PreviousData: action.PreviousData,
+			NewData:      action.NewData,
 		})
 	}
 
@@ -108,6 +113,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 			Type:      "comment",
 			IssueID:   comment.IssueID,
 			Message:   comment.Text,
+			EntityID:  comment.ID,
 		})
 	}
 

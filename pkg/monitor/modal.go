@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"strings"
 
+	"encoding/json"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/modal"
 	"github.com/marcus/td/pkg/monitor/mouse"
@@ -974,5 +977,448 @@ func (m Model) handleModalClick(x, y int) (tea.Model, tea.Cmd) {
 	modal.TaskSectionFocused = false
 	modal.BlockedBySectionFocused = false
 	modal.BlocksSectionFocused = false
+	return m, nil
+}
+
+// openActivityDetailModal opens the adaptive detail modal for an activity item
+func (m Model) openActivityDetailModal(item ActivityItem) (tea.Model, tea.Cmd) {
+	m.ActivityDetailOpen = true
+	m.ActivityDetailItem = &item
+	m.ActivityDetailScroll = 0
+	m.ActivityDetailMouseHandler = mouse.NewHandler()
+	m.ActivityDetailModal = m.createActivityDetailModal()
+	m.ActivityDetailModal.Reset()
+	return m, nil
+}
+
+// closeActivityDetailModal closes the activity detail modal
+func (m *Model) closeActivityDetailModal() {
+	m.ActivityDetailOpen = false
+	m.ActivityDetailItem = nil
+	m.ActivityDetailScroll = 0
+	m.ActivityDetailModal = nil
+	m.ActivityDetailMouseHandler = nil
+}
+
+// createActivityDetailModal builds the declarative modal for activity detail
+func (m *Model) createActivityDetailModal() *modal.Modal {
+	item := m.ActivityDetailItem
+	if item == nil {
+		return nil
+	}
+
+	modalWidth := m.Width * 70 / 100
+	if modalWidth > 90 {
+		modalWidth = 90
+	}
+	if modalWidth < 45 {
+		modalWidth = 45
+	}
+
+	title := activityDetailTitle(item)
+	variant := activityDetailVariant(item)
+
+	md := modal.New(title,
+		modal.WithWidth(modalWidth),
+		modal.WithVariant(variant),
+		modal.WithHints(false),
+	)
+
+	// Timestamp + session header
+	header := item.Timestamp.Format("2006-01-02 15:04:05")
+	if item.SessionID != "" {
+		header += "  session:" + truncateSession(item.SessionID)
+	}
+	md.AddSection(modal.Text(subtleStyle.Render(header)))
+	md.AddSection(modal.Spacer())
+
+	// Content section adapts based on type
+	md.AddSection(modal.Custom(
+		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+			return modal.RenderedSection{
+				Content: m.renderActivityDetailContent(contentWidth),
+			}
+		},
+		nil,
+	))
+
+	// Buttons
+	md.AddSection(modal.Spacer())
+	if item.IssueID != "" {
+		md.AddSection(modal.Buttons(
+			modal.Btn(" Open Issue ", "open-issue"),
+			modal.Btn(" Close ", "close"),
+		))
+	} else {
+		md.AddSection(modal.Buttons(
+			modal.Btn(" Close ", "close"),
+		))
+	}
+
+	return md
+}
+
+// activityDetailTitle returns the modal title based on activity type
+func activityDetailTitle(item *ActivityItem) string {
+	switch item.Type {
+	case "log":
+		return "Log Entry"
+	case "comment":
+		return "Comment"
+	case "action":
+		return activityActionTitle(item)
+	}
+	return "Activity Detail"
+}
+
+// activityActionTitle returns the title for action-type activities
+func activityActionTitle(item *ActivityItem) string {
+	switch item.EntityType {
+	case "issue":
+		return "Issue Action: " + string(item.Action)
+	case "issue_dependencies":
+		return "Dependency Change"
+	case "issue_files":
+		return "File Link Change"
+	case "board":
+		return "Board Change"
+	case "board_issue_positions":
+		return "Board Position Change"
+	case "work_session_issues":
+		return "Work Session Tag"
+	case "handoff":
+		return "Handoff"
+	case "note", "notes":
+		return "Note Action: " + string(item.Action)
+	case "logs":
+		return "Log Created"
+	case "comments":
+		return "Comment Created"
+	}
+	return "Action: " + string(item.Action)
+}
+
+// activityDetailVariant returns the modal color variant for the activity type
+func activityDetailVariant(item *ActivityItem) modal.Variant {
+	switch item.Type {
+	case "log":
+		return modal.VariantInfo
+	case "comment":
+		return modal.VariantDefault
+	case "action":
+		return modal.VariantDefault
+	}
+	return modal.VariantDefault
+}
+
+// renderActivityDetailContent renders the adaptive content based on activity type
+func (m Model) renderActivityDetailContent(contentWidth int) string {
+	item := m.ActivityDetailItem
+	if item == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	switch item.Type {
+	case "log":
+		m.renderLogDetail(&b, item, contentWidth)
+	case "comment":
+		m.renderCommentDetail(&b, item, contentWidth)
+	case "action":
+		m.renderActionDetail(&b, item, contentWidth)
+	}
+
+	return b.String()
+}
+
+// renderLogDetail renders log entry detail
+func (m Model) renderLogDetail(b *strings.Builder, item *ActivityItem, width int) {
+	// Type badge
+	if item.LogType != "" {
+		badge := logTypeBadge(item.LogType)
+		b.WriteString(badge + "\n\n")
+	}
+
+	// Full message
+	b.WriteString(item.Message)
+
+	// Issue link
+	if item.IssueID != "" {
+		b.WriteString("\n\n")
+		b.WriteString(subtleStyle.Render("Issue: "))
+		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		if item.IssueTitle != "" {
+			b.WriteString(" " + item.IssueTitle)
+		}
+	}
+}
+
+// renderCommentDetail renders comment detail
+func (m Model) renderCommentDetail(b *strings.Builder, item *ActivityItem, width int) {
+	// Full comment text
+	b.WriteString(item.Message)
+
+	// Issue link
+	if item.IssueID != "" {
+		b.WriteString("\n\n")
+		b.WriteString(subtleStyle.Render("Issue: "))
+		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		if item.IssueTitle != "" {
+			b.WriteString(" " + item.IssueTitle)
+		}
+	}
+}
+
+// renderActionDetail renders action detail based on entity type
+func (m Model) renderActionDetail(b *strings.Builder, item *ActivityItem, width int) {
+	// Action description
+	b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.Message))
+	b.WriteString("\n")
+
+	switch item.EntityType {
+	case "issue":
+		renderIssueActionDiff(b, item)
+	case "issue_dependencies":
+		renderDependencyDetail(b, item)
+	case "issue_files":
+		renderFileDetail(b, item)
+	case "board":
+		renderBoardDetail(b, item)
+	case "handoff":
+		renderHandoffDetail(b, item)
+	case "note", "notes":
+		renderNoteDetail(b, item)
+	default:
+		renderGenericActionDetail(b, item)
+	}
+
+	// Issue link
+	if item.IssueID != "" {
+		b.WriteString("\n")
+		b.WriteString(subtleStyle.Render("Entity: "))
+		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		if item.IssueTitle != "" {
+			b.WriteString(" " + item.IssueTitle)
+		}
+	}
+}
+
+// renderIssueActionDiff shows before/after for issue state changes
+func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
+	if item.PreviousData == "" && item.NewData == "" {
+		return
+	}
+
+	var prev, next map[string]interface{}
+	if item.PreviousData != "" {
+		json.Unmarshal([]byte(item.PreviousData), &prev)
+	}
+	if item.NewData != "" {
+		json.Unmarshal([]byte(item.NewData), &next)
+	}
+
+	// Show changed fields
+	diffFields := []string{"title", "description", "status", "priority", "type", "labels", "parent_id", "acceptance", "points", "defer_until", "due_date"}
+	changes := 0
+	for _, field := range diffFields {
+		prevVal := fmt.Sprintf("%v", prev[field])
+		nextVal := fmt.Sprintf("%v", next[field])
+		if prev[field] == nil {
+			prevVal = ""
+		}
+		if next[field] == nil {
+			nextVal = ""
+		}
+		if prevVal != nextVal && (prevVal != "" || nextVal != "") {
+			if changes == 0 {
+				b.WriteString("\n" + subtleStyle.Render("Changes:") + "\n")
+			}
+			b.WriteString(fmt.Sprintf("  %s: %s → %s\n", field, prevVal, nextVal))
+			changes++
+		}
+	}
+}
+
+// renderDependencyDetail shows dependency relationship info
+func renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
+	var data map[string]interface{}
+	src := item.NewData
+	if src == "" {
+		src = item.PreviousData
+	}
+	if src != "" {
+		json.Unmarshal([]byte(src), &data)
+	}
+	if data != nil {
+		if issueID, ok := data["issue_id"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("Issue: ") + issueID)
+		}
+		if depID, ok := data["depends_on_id"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("Depends on: ") + depID)
+		}
+	}
+}
+
+// renderFileDetail shows file link info
+func renderFileDetail(b *strings.Builder, item *ActivityItem) {
+	var data map[string]interface{}
+	src := item.NewData
+	if src == "" {
+		src = item.PreviousData
+	}
+	if src != "" {
+		json.Unmarshal([]byte(src), &data)
+	}
+	if data != nil {
+		if path, ok := data["file_path"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("File: ") + path)
+		}
+		if role, ok := data["role"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("Role: ") + role)
+		}
+	}
+}
+
+// renderBoardDetail shows board change info
+func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
+	var data map[string]interface{}
+	if item.NewData != "" {
+		json.Unmarshal([]byte(item.NewData), &data)
+	}
+	if data != nil {
+		if name, ok := data["name"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("Board: ") + name)
+		}
+		if query, ok := data["query"].(string); ok && query != "" {
+			b.WriteString("\n" + subtleStyle.Render("Query: ") + query)
+		}
+	}
+}
+
+// renderHandoffDetail shows handoff done/remaining/decisions/uncertain
+func renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
+	var data map[string]interface{}
+	if item.NewData != "" {
+		json.Unmarshal([]byte(item.NewData), &data)
+	}
+	if data == nil {
+		return
+	}
+
+	renderHandoffSection(b, data, "done", "Done")
+	renderHandoffSection(b, data, "remaining", "Remaining")
+	renderHandoffSection(b, data, "decisions", "Decisions")
+	renderHandoffSection(b, data, "uncertain", "Uncertain")
+
+	if issueID, ok := data["issue_id"].(string); ok && issueID != "" {
+		b.WriteString("\n" + subtleStyle.Render("Issue: ") + issueID)
+	}
+}
+
+// renderHandoffSection renders a single handoff list section
+func renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, label string) {
+	raw, ok := data[key]
+	if !ok {
+		return
+	}
+
+	// Handoff data may be a JSON string or an array
+	var items []string
+	switch v := raw.(type) {
+	case string:
+		json.Unmarshal([]byte(v), &items)
+	case []interface{}:
+		for _, i := range v {
+			if s, ok := i.(string); ok {
+				items = append(items, s)
+			}
+		}
+	}
+
+	if len(items) == 0 {
+		return
+	}
+
+	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render(label+":") + "\n")
+	for _, item := range items {
+		b.WriteString("  • " + item + "\n")
+	}
+}
+
+// renderNoteDetail shows note content
+func renderNoteDetail(b *strings.Builder, item *ActivityItem) {
+	var data map[string]interface{}
+	src := item.NewData
+	if src == "" {
+		src = item.PreviousData
+	}
+	if src != "" {
+		json.Unmarshal([]byte(src), &data)
+	}
+	if data != nil {
+		if title, ok := data["title"].(string); ok {
+			b.WriteString("\n" + subtleStyle.Render("Title: ") + title)
+		}
+		if content, ok := data["content"].(string); ok && content != "" {
+			preview := content
+			if len(preview) > 200 {
+				preview = preview[:197] + "..."
+			}
+			b.WriteString("\n" + subtleStyle.Render("Content: ") + preview)
+		}
+		if pinned, ok := data["pinned"].(bool); ok && pinned {
+			b.WriteString("\n" + subtleStyle.Render("Pinned: ") + "yes")
+		}
+	}
+}
+
+// renderGenericActionDetail shows raw data for unknown action types
+func renderGenericActionDetail(b *strings.Builder, item *ActivityItem) {
+	if item.EntityType != "" {
+		b.WriteString("\n" + subtleStyle.Render("Entity type: ") + item.EntityType)
+	}
+	if item.NewData != "" && len(item.NewData) < 200 {
+		b.WriteString("\n" + subtleStyle.Render("Data: ") + item.NewData)
+	}
+}
+
+// logTypeBadge returns a styled badge for log types
+func logTypeBadge(logType models.LogType) string {
+	style := lipgloss.NewStyle().Padding(0, 1)
+	switch logType {
+	case models.LogTypeProgress:
+		return style.Background(lipgloss.Color("27")).Foreground(lipgloss.Color("255")).Render("PROGRESS")
+	case models.LogTypeDecision:
+		return style.Background(lipgloss.Color("135")).Foreground(lipgloss.Color("255")).Render("DECISION")
+	case models.LogTypeBlocker:
+		return style.Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Render("BLOCKER")
+	case models.LogTypeHypothesis:
+		return style.Background(lipgloss.Color("208")).Foreground(lipgloss.Color("255")).Render("HYPOTHESIS")
+	case models.LogTypeTried:
+		return style.Background(lipgloss.Color("214")).Foreground(lipgloss.Color("255")).Render("TRIED")
+	case models.LogTypeResult:
+		return style.Background(lipgloss.Color("40")).Foreground(lipgloss.Color("255")).Render("RESULT")
+	case models.LogTypeOrchestration:
+		return style.Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Render("ORCHESTRATION")
+	case models.LogTypeSecurity:
+		return style.Background(lipgloss.Color("160")).Foreground(lipgloss.Color("255")).Render("SECURITY")
+	default:
+		return style.Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255")).Render(strings.ToUpper(string(logType)))
+	}
+}
+
+// handleActivityDetailAction handles actions from the activity detail modal
+func (m Model) handleActivityDetailAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "open-issue":
+		if m.ActivityDetailItem != nil && m.ActivityDetailItem.IssueID != "" {
+			issueID := m.ActivityDetailItem.IssueID
+			m.closeActivityDetailModal()
+			return m.pushModal(issueID, PanelActivity)
+		}
+	case "close":
+		m.closeActivityDetailModal()
+	}
 	return m, nil
 }

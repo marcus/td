@@ -249,14 +249,18 @@ const (
 
 // ActivityItem represents a unified activity item (log, action, or comment)
 type ActivityItem struct {
-	Timestamp  time.Time
-	SessionID  string
-	Type       string // "log", "action", "comment"
-	IssueID    string
-	IssueTitle string // title of the associated issue
-	Message    string
-	LogType    models.LogType    // for logs
-	Action     models.ActionType // for actions
+	Timestamp    time.Time
+	SessionID    string
+	Type         string // "log", "action", "comment"
+	IssueID      string
+	IssueTitle   string // title of the associated issue
+	Message      string
+	LogType      models.LogType    // for logs
+	Action       models.ActionType // for actions
+	EntityID     string            // ID of the underlying log/comment/action_log record
+	EntityType   string            // for actions: entity_type from ActionLog (e.g. "issue", "handoff", "board")
+	PreviousData string            // for actions: JSON snapshot before
+	NewData      string            // for actions: JSON snapshot after
 }
 
 // TaskListData holds categorized issues for the task list panel

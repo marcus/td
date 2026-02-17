@@ -148,6 +148,22 @@ func (db *DB) GetRecentLogsAll(limit int) ([]models.Log, error) {
 	return logs, nil
 }
 
+// GetLogByID retrieves a single log entry by ID
+func (db *DB) GetLogByID(id string) (*models.Log, error) {
+	var log models.Log
+	err := db.conn.QueryRow(`
+		SELECT CAST(id AS TEXT), issue_id, session_id, work_session_id, message, type, timestamp
+		FROM logs WHERE id = ?
+	`, id).Scan(&log.ID, &log.IssueID, &log.SessionID, &log.WorkSessionID, &log.Message, &log.Type, &log.Timestamp)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
 // GetActiveSessions returns distinct session IDs with activity since the given time
 func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 	query := `SELECT session_id FROM logs
@@ -404,6 +420,22 @@ func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
 	return comments, nil
 }
 
+// GetCommentByID retrieves a single comment by ID
+func (db *DB) GetCommentByID(id string) (*models.Comment, error) {
+	var c models.Comment
+	err := db.conn.QueryRow(`
+		SELECT CAST(id AS TEXT), issue_id, session_id, text, created_at
+		FROM comments WHERE id = ?
+	`, id).Scan(&c.ID, &c.IssueID, &c.SessionID, &c.Text, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 // ============================================================================
 // Action Log Functions (Undo Support)
 // ============================================================================
@@ -538,6 +570,27 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	}
 
 	return actions, nil
+}
+
+// GetActionLogByID retrieves a single action log entry by ID
+func (db *DB) GetActionLogByID(id string) (*models.ActionLog, error) {
+	var action models.ActionLog
+	var undone int
+	err := db.conn.QueryRow(`
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log WHERE id = ?
+	`, id).Scan(
+		&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+		&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	action.Undone = undone == 1
+	return &action, nil
 }
 
 // GetRejectedInProgressIssueIDs returns IDs of in_progress issues that have a

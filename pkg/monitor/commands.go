@@ -1004,6 +1004,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdClose:
 		if m.ModalOpen() {
 			m.closeModal()
+		} else if m.ActivityDetailOpen {
+			m.closeActivityDetailModal()
 		} else if m.HandoffsOpen {
 			m.closeHandoffsModal()
 		} else if m.StatsOpen {
@@ -1023,6 +1025,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			return m.openIssueFromBoard()
+		}
+		// Activity panel: open adaptive detail modal instead of issue modal
+		if m.ActivePanel == PanelActivity && m.Cursor[PanelActivity] < len(m.Activity) {
+			return m.openActivityDetailModal(m.Activity[m.Cursor[PanelActivity]])
 		}
 		return m.openModal()
 

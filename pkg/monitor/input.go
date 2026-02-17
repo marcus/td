@@ -849,6 +849,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Route scroll to activity detail modal - just ignore scroll
+			if m.ActivityDetailOpen {
+				return m, nil
+			}
+
 			// Route scroll to appropriate modal
 			if modal := m.CurrentModal(); modal != nil {
 				// Mouse wheel always scrolls modal content (use j/k for task list navigation)
@@ -928,6 +933,22 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// Handle motion for hover states
 		if msg.Action == tea.MouseActionMotion {
 			_ = m.GettingStartedModal.HandleMouse(msg, m.GettingStartedMouseHandler)
+			return m, nil
+		}
+	}
+
+	// Handle Activity Detail modal mouse events (declarative modal)
+	if m.ActivityDetailOpen && m.ActivityDetailModal != nil && m.ActivityDetailMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.ActivityDetailModal.HandleMouse(msg, m.ActivityDetailMouseHandler)
+			if action != "" {
+				return m.handleActivityDetailAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.ActivityDetailModal.HandleMouse(msg, m.ActivityDetailMouseHandler)
 			return m, nil
 		}
 	}
@@ -1059,7 +1080,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
+	if m.ModalOpen() || m.ActivityDetailOpen || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
 		return m, nil
 	}
 

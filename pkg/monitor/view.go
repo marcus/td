@@ -76,6 +76,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
+	// Overlay activity detail modal if open
+	if m.ActivityDetailOpen && m.ActivityDetailModal != nil && m.ActivityDetailMouseHandler != nil {
+		detail := m.ActivityDetailModal.Render(m.Width, m.Height, m.ActivityDetailMouseHandler)
+		return OverlayModal(base, detail, m.Width, m.Height)
+	}
+
 	// Overlay stats modal if open
 	if m.StatsOpen {
 		stats := m.renderStatsModal()

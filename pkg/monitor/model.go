@@ -111,6 +111,13 @@ type Model struct {
 	HandoffsModal        *modal.Modal   // Declarative modal instance
 	HandoffsMouseHandler *mouse.Handler // Mouse handler for handoffs modal
 
+	// Activity detail modal state
+	ActivityDetailOpen         bool
+	ActivityDetailItem         *ActivityItem  // The selected activity item
+	ActivityDetailScroll       int
+	ActivityDetailModal        *modal.Modal   // Declarative modal instance
+	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
+
 	// Form modal state
 	FormOpen  bool
 	FormState *FormState
