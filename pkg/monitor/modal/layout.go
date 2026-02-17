@@ -104,7 +104,7 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 	var inner strings.Builder
 	if m.title != "" {
 		inner.WriteString(renderTitleLine(m.title, m.variant))
-		inner.WriteString("\n")
+		inner.WriteString("\n\n") // title + blank line separator
 	}
 	inner.WriteString(viewport)
 	if m.showHints {
