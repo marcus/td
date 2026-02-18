@@ -41,12 +41,14 @@ var rootCmd = &cobra.Command{
 Optimized for session continuity—capturing working state so new context windows can resume where previous ones stopped.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		cmdStartTime = time.Now()
+		captureWebhookState()
 		runGatedSyncStartupHook(cmd)
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		// Capture executed command for analytics (logged in Execute() to avoid double logging)
 		executedCmd = cmd
 		runGatedSyncMutationHook(cmd)
+		dispatchWebhookAsync()
 	},
 }
 

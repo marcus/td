@@ -572,6 +572,86 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	return actions, nil
 }
 
+// GetActionsSince returns action_log entries created at or after the given
+// timestamp that have not been undone. Results are ordered oldest-first.
+func (db *DB) GetActionsSince(since time.Time) ([]models.ActionLog, error) {
+	rows, err := db.conn.Query(`
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log
+		WHERE timestamp >= ? AND undone = 0
+		ORDER BY timestamp ASC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []models.ActionLog
+	for rows.Next() {
+		var action models.ActionLog
+		var undone int
+		err := rows.Scan(
+			&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+			&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+		)
+		if err != nil {
+			return nil, err
+		}
+		action.Undone = undone == 1
+		actions = append(actions, action)
+	}
+	return actions, nil
+}
+
+// MaxActionRowid returns the current maximum rowid in action_log, or 0 if empty.
+// Used by webhook dispatch to avoid timestamp-format-dependent comparisons.
+func (db *DB) MaxActionRowid() (int64, error) {
+	var rowid sql.NullInt64
+	err := db.conn.QueryRow(`SELECT MAX(rowid) FROM action_log`).Scan(&rowid)
+	if err != nil {
+		return 0, err
+	}
+	if !rowid.Valid {
+		return 0, nil
+	}
+	return rowid.Int64, nil
+}
+
+// GetActionsAfterRowid returns action_log entries with rowid > afterRowid
+// that have not been undone. Results are ordered oldest-first.
+//
+// This is used by webhook dispatch instead of GetActionsSince to avoid a
+// timestamp format mismatch: the sidecar writes RFC3339 ("…T…Z") while
+// the modernc.org/sqlite driver serializes time.Time via Go's .String()
+// ("… …-0500 EST m=+…"). SQLite text comparison on these mixed formats
+// is unreliable. Rowid comparison is format-independent and correct.
+func (db *DB) GetActionsAfterRowid(afterRowid int64) ([]models.ActionLog, error) {
+	rows, err := db.conn.Query(`
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log
+		WHERE rowid > ? AND undone = 0
+		ORDER BY rowid ASC`, afterRowid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []models.ActionLog
+	for rows.Next() {
+		var action models.ActionLog
+		var undone int
+		err := rows.Scan(
+			&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+			&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+		)
+		if err != nil {
+			return nil, err
+		}
+		action.Undone = undone == 1
+		actions = append(actions, action)
+	}
+	return actions, nil
+}
+
 // GetActionLogByID retrieves a single action log entry by ID
 func (db *DB) GetActionLogByID(id string) (*models.ActionLog, error) {
 	var action models.ActionLog

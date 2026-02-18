@@ -229,6 +229,12 @@ type Note struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
+// WebhookConfig holds webhook delivery settings.
+type WebhookConfig struct {
+	URL    string `json:"url,omitempty"`
+	Secret string `json:"secret,omitempty"`
+}
+
 // Config represents the local config state
 type Config struct {
 	FocusedIssueID    string          `json:"focused_issue_id,omitempty"`
@@ -243,6 +249,8 @@ type Config struct {
 	// Title validation limits
 	TitleMinLength int `json:"title_min_length,omitempty"` // Default: 15
 	TitleMaxLength int `json:"title_max_length,omitempty"` // Default: 100
+	// Webhook settings
+	Webhook *WebhookConfig `json:"webhook,omitempty"`
 }
 
 // ActionType represents the type of action that was performed
