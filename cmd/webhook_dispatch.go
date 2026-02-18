@@ -5,24 +5,40 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/webhook"
 )
 
-// webhookPreRunTimestamp is captured in PersistentPreRun so we can query
-// action_log entries created during the command.
-var webhookPreRunTimestamp time.Time
+// webhookPreRunRowid is captured in PersistentPreRun so we can query
+// action_log entries created during the command. We use rowid instead of
+// timestamps because the sidecar writes RFC3339 ("…T…Z") while the
+// modernc.org/sqlite driver serializes time.Time via Go's .String()
+// ("… …-0500 EST m=+…"). SQLite text comparison on these mixed formats
+// is unreliable — 'T' > ' ' makes sidecar actions appear newer than any
+// CLI-written timestamp.
+var webhookPreRunRowid int64
 
-// captureWebhookTimestamp saves the current time for later use by dispatchWebhookAsync.
-func captureWebhookTimestamp() {
-	webhookPreRunTimestamp = time.Now().UTC()
+// captureWebhookState saves the current max action_log rowid for later
+// use by dispatchWebhookAsync.
+func captureWebhookState() {
+	dir := getBaseDir()
+	if dir == "" || !webhook.IsEnabled(dir) {
+		return
+	}
+
+	database, err := db.Open(dir)
+	if err != nil {
+		return
+	}
+	defer database.Close()
+
+	webhookPreRunRowid, _ = database.MaxActionRowid()
 }
 
 // dispatchWebhookAsync checks for new action_log entries since the pre-run
-// timestamp, writes a temp file, and spawns a detached child process to POST
-// the webhook. The parent does not wait for the child.
+// rowid snapshot, writes a temp file, and spawns a detached child process to
+// POST the webhook. The parent does not wait for the child.
 func dispatchWebhookAsync() {
 	dir := getBaseDir()
 	if dir == "" {
@@ -33,10 +49,6 @@ func dispatchWebhookAsync() {
 		return
 	}
 
-	if webhookPreRunTimestamp.IsZero() {
-		return
-	}
-
 	database, err := db.Open(dir)
 	if err != nil {
 		slog.Debug("webhook: open db", "err", err)
@@ -44,7 +56,7 @@ func dispatchWebhookAsync() {
 	}
 	defer database.Close()
 
-	actions, err := database.GetActionsSince(webhookPreRunTimestamp)
+	actions, err := database.GetActionsAfterRowid(webhookPreRunRowid)
 	if err != nil {
 		slog.Debug("webhook: query actions", "err", err)
 		return
