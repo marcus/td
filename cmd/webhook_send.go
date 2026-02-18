@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/marcus/td/internal/webhook"
@@ -25,7 +26,7 @@ var webhookSendCmd = &cobra.Command{
 		defer os.Remove(path)
 
 		if err := webhook.Dispatch(tf.URL, tf.Secret, tf.Payload); err != nil {
-			// Silent failure — don't affect the parent process.
+			slog.Debug("webhook: dispatch failed", "err", err)
 			return nil
 		}
 

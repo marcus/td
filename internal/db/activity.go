@@ -572,36 +572,6 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	return actions, nil
 }
 
-// GetActionsSince returns action_log entries created at or after the given
-// timestamp that have not been undone. Results are ordered oldest-first.
-func (db *DB) GetActionsSince(since time.Time) ([]models.ActionLog, error) {
-	rows, err := db.conn.Query(`
-		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
-		FROM action_log
-		WHERE timestamp >= ? AND undone = 0
-		ORDER BY timestamp ASC`, since)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var actions []models.ActionLog
-	for rows.Next() {
-		var action models.ActionLog
-		var undone int
-		err := rows.Scan(
-			&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
-			&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
-		)
-		if err != nil {
-			return nil, err
-		}
-		action.Undone = undone == 1
-		actions = append(actions, action)
-	}
-	return actions, nil
-}
-
 // MaxActionRowid returns the current maximum rowid in action_log, or 0 if empty.
 // Used by webhook dispatch to avoid timestamp-format-dependent comparisons.
 func (db *DB) MaxActionRowid() (int64, error) {
