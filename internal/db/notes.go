@@ -98,8 +98,9 @@ func (db *DB) CreateNote(title, content string) (*models.Note, error) {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalNote(&note)
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, "", string(models.ActionCreate), "note", note.ID, "", newData, now)
+			actionID, "", string(models.ActionCreate), "note", note.ID, "", newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -239,8 +240,9 @@ func (db *DB) UpdateNote(id, title, content string) (*models.Note, error) {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalNote(&updated)
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, "", string(models.ActionUpdate), "note", id, previousData, newData, now)
+			actionID, "", string(models.ActionUpdate), "note", id, previousData, newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -278,8 +280,9 @@ func (db *DB) DeleteNote(id string) error {
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, "", string(models.ActionDelete), "note", id, previousData, "", now)
+			actionID, "", string(models.ActionDelete), "note", id, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}

@@ -131,8 +131,9 @@ func (db *DB) CreateIssueLogged(issue *models.Issue, sessionID string) error {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalIssue(issue)
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionCreate), "issue", issue.ID, "", newData, now)
+			actionID, sessionID, string(models.ActionCreate), "issue", issue.ID, "", newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -187,8 +188,9 @@ func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionTyp
 		return fmt.Errorf("generate action ID: %w", err)
 	}
 	newData := marshalIssue(issue)
+	actionTS := formatActionLogTimestamp(issue.UpdatedAt)
 	_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-		actionID, sessionID, string(actionType), "issue", issue.ID, previousData, newData, issue.UpdatedAt)
+		actionID, sessionID, string(actionType), "issue", issue.ID, previousData, newData, actionTS)
 	if err != nil {
 		return fmt.Errorf("log action: %w", err)
 	}
@@ -241,8 +243,9 @@ func (db *DB) DeleteIssueLogged(issueID, sessionID string) error {
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionDelete), "issue", issueID, previousData, "", now)
+			actionID, sessionID, string(models.ActionDelete), "issue", issueID, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -280,8 +283,9 @@ func (db *DB) RestoreIssueLogged(issueID, sessionID string) error {
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionRestore), "issue", issueID, previousData, newData, now)
+			actionID, sessionID, string(models.ActionRestore), "issue", issueID, previousData, newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
