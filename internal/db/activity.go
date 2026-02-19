@@ -41,8 +41,9 @@ func (db *DB) AddLog(log *models.Log) error {
 			"work_session_id": log.WorkSessionID, "message": log.Message,
 			"type": log.Type, "timestamp": log.Timestamp,
 		})
+		actionTS := actionLogTimestampNow()
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, log.SessionID, "create", "logs", log.ID, "", string(newData), time.Now())
+			actionID, log.SessionID, "create", "logs", log.ID, "", string(newData), actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -234,10 +235,11 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(handoff.Timestamp)
 		_, err = db.conn.Exec(`
 			INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
 			VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-		`, actionID, handoff.SessionID, models.ActionHandoff, "handoff", handoff.ID, string(newData), handoff.Timestamp)
+		`, actionID, handoff.SessionID, models.ActionHandoff, "handoff", handoff.ID, string(newData), actionTS)
 		if err != nil {
 			return fmt.Errorf("log handoff action: %w", err)
 		}
@@ -360,8 +362,9 @@ func (db *DB) AddComment(comment *models.Comment) error {
 			"id": comment.ID, "issue_id": comment.IssueID, "session_id": comment.SessionID,
 			"text": comment.Text, "created_at": comment.CreatedAt,
 		})
+		actionTS := actionLogTimestampNow()
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, comment.SessionID, "create", "comments", comment.ID, "", string(newData), time.Now())
+			actionID, comment.SessionID, "create", "comments", comment.ID, "", string(newData), actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -443,7 +446,7 @@ func (db *DB) GetCommentByID(id string) (*models.Comment, error) {
 // LogAction records an action for undo support
 func (db *DB) LogAction(action *models.ActionLog) error {
 	return db.withWriteLock(func() error {
-		action.Timestamp = time.Now()
+		action.Timestamp = time.Now().UTC()
 
 		id, err := generateActionID()
 		if err != nil {
@@ -451,10 +454,11 @@ func (db *DB) LogAction(action *models.ActionLog) error {
 		}
 		action.ID = id
 
+		actionTS := formatActionLogTimestamp(action.Timestamp)
 		_, err = db.conn.Exec(`
 			INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-		`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
+		`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, actionTS)
 		if err != nil {
 			return err
 		}

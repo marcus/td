@@ -64,8 +64,9 @@ func (db *DB) CreateBoardLogged(name, queryStr, sessionID string) (*models.Board
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalBoard(board)
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionBoardCreate), "board", board.ID, "", newData, now)
+			actionID, sessionID, string(models.ActionBoardCreate), "board", board.ID, "", newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -112,8 +113,9 @@ func (db *DB) UpdateBoardLogged(board *models.Board, sessionID string) error {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalBoard(board)
+		actionTS := formatActionLogTimestamp(board.UpdatedAt)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionBoardUpdate), "board", board.ID, previousData, newData, board.UpdatedAt)
+			actionID, sessionID, string(models.ActionBoardUpdate), "board", board.ID, previousData, newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -163,8 +165,9 @@ func (db *DB) SetIssuePositionLogged(boardID, issueID string, position int, sess
 			"id": bipID, "board_id": boardID, "issue_id": issueID,
 			"position": position, "added_at": now.UTC().Format("2006-01-02T15:04:05Z07:00"),
 		})
+		actionTS := formatActionLogTimestamp(now)
 		_, err = tx.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionBoardSetPosition), "board_issue_positions", bipID, "", string(newData), now)
+			actionID, sessionID, string(models.ActionBoardSetPosition), "board_issue_positions", bipID, "", string(newData), actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -205,8 +208,9 @@ func (db *DB) RemoveIssuePositionLogged(boardID, issueID, sessionID string) erro
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", now)
+			actionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -266,8 +270,9 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 			if err != nil {
 				return fmt.Errorf("generate action ID: %w", err)
 			}
+			actionTS := formatActionLogTimestamp(now)
 			_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-				posActionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", now)
+				posActionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", actionTS)
 			if err != nil {
 				return fmt.Errorf("log position action: %w", err)
 			}
@@ -284,8 +289,9 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		if err != nil {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionBoardDelete), "board", boardID, previousData, "", now)
+			actionID, sessionID, string(models.ActionBoardDelete), "board", boardID, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
