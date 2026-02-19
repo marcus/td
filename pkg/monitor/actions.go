@@ -307,18 +307,12 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	cursor := m.Cursor[PanelTaskList]
-	if cursor >= len(m.TaskListRows) {
+	issueID := m.SelectedIssueID(m.ActivePanel)
+	if issueID == "" {
 		return m, nil
 	}
 
-	row := m.TaskListRows[cursor]
-	// Only allow approving reviewable issues
-	if row.Category != CategoryReviewable {
-		return m, nil
-	}
-
-	issue, err := m.DB.GetIssue(row.Issue.ID)
+	issue, err := m.DB.GetIssue(issueID)
 	if err != nil || issue == nil {
 		return m, nil
 	}
