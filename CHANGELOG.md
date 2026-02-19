@@ -4,6 +4,11 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.38.0] - 2026-02-19
+
+### Fixes
+- Fix approveIssue action in board/swimlanes view (#35)
+
 ## [v0.35.0] - 2026-02-14
 
 ### Features
