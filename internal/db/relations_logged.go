@@ -35,8 +35,9 @@ func (db *DB) AddDependencyLogged(issueID, dependsOnID, relationType, sessionID 
 		}
 		now := time.Now()
 		newData := marshalDependency(depID, issueID, dependsOnID, relationType)
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionAddDep), "issue_dependencies", depID, "", newData, now)
+			actionID, sessionID, string(models.ActionAddDep), "issue_dependencies", depID, "", newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -71,8 +72,9 @@ func (db *DB) LinkFileLogged(issueID, filePath string, role models.FileRole, sha
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		newData := marshalFileLink(id, issueID, filePath, string(role), sha, now.Format(time.RFC3339))
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionLinkFile), "issue_files", id, "", newData, now)
+			actionID, sessionID, string(models.ActionLinkFile), "issue_files", id, "", newData, actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -105,8 +107,9 @@ func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		now := time.Now()
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionUnlinkFile), "issue_files", id, previousData, "", now)
+			actionID, sessionID, string(models.ActionUnlinkFile), "issue_files", id, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
@@ -132,8 +135,9 @@ func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) err
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		now := time.Now()
+		actionTS := formatActionLogTimestamp(now)
 		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, sessionID, string(models.ActionRemoveDep), "issue_dependencies", depID, previousData, "", now)
+			actionID, sessionID, string(models.ActionRemoveDep), "issue_dependencies", depID, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
