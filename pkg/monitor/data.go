@@ -450,6 +450,66 @@ func formatActionMessage(action models.ActionLog) string {
 	}
 }
 
+// ProjectSummary contains lightweight stats for dashboard display.
+// Designed for multi-project dashboards that need quick overviews
+// without creating full embedded monitors.
+type ProjectSummary struct {
+	OpenCount       int
+	InProgressCount int
+	BlockedCount    int
+	ReviewableCount int
+	ClosedCount     int
+	TotalCount      int
+	FocusedIssue    *models.Issue
+	LastActivity    time.Time
+	HasData         bool
+}
+
+// FetchProjectSummary returns lightweight stats without creating sessions or
+// full data structures. Designed for multi-project dashboards where creating
+// a full embedded monitor per project would be wasteful.
+func FetchProjectSummary(database *db.DB) ProjectSummary {
+	summary := ProjectSummary{HasData: true}
+
+	// Get issue counts by status
+	issues, err := database.ListIssues(db.ListIssuesOptions{})
+	if err != nil {
+		summary.HasData = false
+		return summary
+	}
+	for _, issue := range issues {
+		summary.TotalCount++
+		switch issue.Status {
+		case models.StatusOpen:
+			summary.OpenCount++
+		case models.StatusInProgress:
+			summary.InProgressCount++
+		case models.StatusBlocked:
+			summary.BlockedCount++
+		case models.StatusInReview:
+			summary.ReviewableCount++
+		case models.StatusClosed:
+			summary.ClosedCount++
+		}
+	}
+
+	// Get focused issue
+	focusedID, _ := config.GetFocus(database.BaseDir())
+	if focusedID != "" {
+		if issue, err := database.GetIssue(focusedID); err == nil {
+			summary.FocusedIssue = issue
+		}
+	}
+
+	// Get last activity time from recent logs
+	logs, _ := database.GetRecentLogsAll(1)
+	if len(logs) > 0 {
+		summary.LastActivity = logs[0].Timestamp
+	}
+
+	return summary
+}
+
 // FetchStats retrieves extended statistics for the stats modal
 func FetchStats(database *db.DB) StatsDataMsg {
 	stats, err := database.GetExtendedStats()

@@ -88,6 +88,20 @@ func releaseSharedDB(baseDir string) error {
 	return nil
 }
 
+// OpenDB opens a shared database connection for the given project directory.
+// The connection is reference-counted and cached — multiple callers sharing
+// the same baseDir get the same underlying connection.
+// Callers must call CloseDB with the same baseDir when done.
+func OpenDB(baseDir string) (*db.DB, error) {
+	return getSharedDB(baseDir)
+}
+
+// CloseDB releases a shared database connection opened with OpenDB.
+// The underlying connection is closed when all references are released.
+func CloseDB(baseDir string) error {
+	return releaseSharedDB(baseDir)
+}
+
 // clearDBPool closes all shared connections and clears the pool.
 // This is primarily for testing purposes.
 func clearDBPool() {
