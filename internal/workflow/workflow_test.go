@@ -306,7 +306,7 @@ func TestTransitionName(t *testing.T) {
 		{models.StatusOpen, models.StatusBlocked, "block"},
 		{models.StatusBlocked, models.StatusOpen, "unblock"},
 		{models.StatusInProgress, models.StatusInReview, "review"},
-		{models.StatusInReview, models.StatusInProgress, "reject"},
+		{models.StatusInReview, models.StatusOpen, "reject"},
 		{models.StatusInReview, models.StatusClosed, "approve"},
 		{models.StatusInProgress, models.StatusClosed, "close"},
 		{models.StatusClosed, models.StatusOpen, "reopen"},

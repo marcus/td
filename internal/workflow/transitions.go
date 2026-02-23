@@ -48,7 +48,7 @@ func TransitionName(from, to models.Status) string {
 		return "unblock"
 	case to == models.StatusInReview:
 		return "review"
-	case from == models.StatusInReview && to == models.StatusInProgress:
+	case from == models.StatusInReview && to == models.StatusOpen:
 		return "reject"
 	case from == models.StatusInReview && to == models.StatusClosed:
 		return "approve"

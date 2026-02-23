@@ -1037,17 +1037,19 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	defer db.Close()
 
 	// Create test issues
-	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusInProgress}
-	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
-	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusInProgress}
-	issue4 := &models.Issue{Title: "Issue 4", Status: models.StatusOpen} // Not in_progress
+	issue1 := &models.Issue{Title: "Issue 1 (rejected, open)", Status: models.StatusOpen}
+	issue2 := &models.Issue{Title: "Issue 2 (rejected, re-submitted)", Status: models.StatusInProgress}
+	issue3 := &models.Issue{Title: "Issue 3 (never rejected)", Status: models.StatusInProgress}
+	issue4 := &models.Issue{Title: "Issue 4 (rejected, closed)", Status: models.StatusClosed}
+	issue5 := &models.Issue{Title: "Issue 5 (rejected, picked up)", Status: models.StatusInProgress}
 
 	db.CreateIssue(issue1)
 	db.CreateIssue(issue2)
 	db.CreateIssue(issue3)
 	db.CreateIssue(issue4)
+	db.CreateIssue(issue5)
 
-	// issue1: rejected, no subsequent review (should be detected)
+	// issue1: rejected, now open, no subsequent review (should be detected)
 	db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
@@ -1070,12 +1072,20 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	})
 
 	// issue3: never rejected (should NOT be detected)
-	// issue4: rejected but not in_progress status (should NOT be detected)
+	// issue4: rejected but closed status (should NOT be detected)
 	db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
 		EntityID:   issue4.ID,
+	})
+
+	// issue5: rejected, then picked up again (in_progress), should be detected
+	db.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue5.ID,
 	})
 
 	// Get rejected IDs
@@ -1084,9 +1094,9 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 		t.Fatalf("GetRejectedInProgressIssueIDs failed: %v", err)
 	}
 
-	// Only issue1 should be detected
+	// issue1 (open, rejected) should be detected
 	if !rejectedIDs[issue1.ID] {
-		t.Errorf("issue1 should be detected as rejected in_progress")
+		t.Errorf("issue1 should be detected as rejected open issue")
 	}
 	if rejectedIDs[issue2.ID] {
 		t.Errorf("issue2 should NOT be detected (was re-submitted)")
@@ -1095,7 +1105,11 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 		t.Errorf("issue3 should NOT be detected (never rejected)")
 	}
 	if rejectedIDs[issue4.ID] {
-		t.Errorf("issue4 should NOT be detected (not in_progress status)")
+		t.Errorf("issue4 should NOT be detected (closed status)")
+	}
+	// issue5 (in_progress, rejected) should also be detected
+	if !rejectedIDs[issue5.ID] {
+		t.Errorf("issue5 should be detected as rejected in_progress issue")
 	}
 }
 

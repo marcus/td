@@ -411,8 +411,9 @@ Supports bulk operations:
 
 var rejectCmd = &cobra.Command{
 	Use:   "reject [issue-id...]",
-	Short: "Reject and return to in_progress",
-	Long: `Rejects the issue(s) and returns them to in_progress status.
+	Short: "Reject and return to open",
+	Long: `Rejects the issue(s) and returns them to open status so they can be
+picked up again by td next.
 
 Supports bulk operations:
   td reject td-abc1 td-abc2    # Reject multiple issues`,
@@ -459,7 +460,7 @@ Supports bulk operations:
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
-			if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
+			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: invalid transition from %s", issueID, issue.Status))
 				} else {
@@ -469,8 +470,9 @@ Supports bulk operations:
 				continue
 			}
 
-			// Update issue (atomic update + action log)
-			issue.Status = models.StatusInProgress
+			// Update issue: reset to open so td next can pick it up again
+			issue.Status = models.StatusOpen
+			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
@@ -501,7 +503,7 @@ Supports bulk operations:
 			if jsonOutput {
 				result := map[string]interface{}{
 					"id":      issueID,
-					"status":  "in_progress",
+					"status":  "open",
 					"action":  "rejected",
 					"session": sess.ID,
 				}
@@ -510,7 +512,7 @@ Supports bulk operations:
 				}
 				output.JSON(result)
 			} else {
-				fmt.Printf("REJECTED %s → in_progress\n", issueID)
+				fmt.Printf("REJECTED %s → open\n", issueID)
 			}
 			rejected++
 		}

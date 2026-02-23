@@ -693,8 +693,8 @@ func TestReworkFunction(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
 
-	// Create test issues: all in_progress
-	issue1 := createTestIssue(t, database, "td-rework1", "Rejected no resubmit", models.StatusInProgress, models.TypeTask, models.PriorityP2)
+	// Create test issues
+	issue1 := createTestIssue(t, database, "td-rework1", "Rejected no resubmit (open)", models.StatusOpen, models.TypeTask, models.PriorityP2)
 	issue2 := createTestIssue(t, database, "td-rework2", "Rejected then resubmitted", models.StatusInProgress, models.TypeTask, models.PriorityP2)
 	createTestIssue(t, database, "td-rework3", "Never rejected", models.StatusInProgress, models.TypeTask, models.PriorityP2)
 	createTestIssue(t, database, "td-rework4", "Rejected but closed", models.StatusClosed, models.TypeTask, models.PriorityP2)
@@ -730,7 +730,7 @@ func TestReworkFunction(t *testing.T) {
 		EntityID:   "td-rework4",
 	})
 
-	t.Run("rework() returns rejected in_progress issues", func(t *testing.T) {
+	t.Run("rework() returns rejected open/in_progress issues", func(t *testing.T) {
 		results, err := Execute(database, "rework()", "ses_test", ExecuteOptions{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
@@ -744,7 +744,7 @@ func TestReworkFunction(t *testing.T) {
 	})
 
 	t.Run("rework() combined with other conditions", func(t *testing.T) {
-		results, err := Execute(database, "rework() AND status = in_progress", "ses_test", ExecuteOptions{})
+		results, err := Execute(database, "rework() AND status = open", "ses_test", ExecuteOptions{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}

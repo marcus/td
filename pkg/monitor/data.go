@@ -202,7 +202,7 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	}
 	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
 
-	// Get rejected in_progress issue IDs for "needs rework" detection
+	// Get rejected open/in_progress issue IDs for "needs rework" detection
 	rejectedIDs, err := database.GetRejectedInProgressIssueIDs()
 	if err != nil {
 		rejectedIDs = make(map[string]bool) // Safe fallback on error

@@ -593,12 +593,13 @@ func (db *DB) GetActionLogByID(id string) (*models.ActionLog, error) {
 	return &action, nil
 }
 
-// GetRejectedInProgressIssueIDs returns IDs of in_progress issues that have a
-// recent ActionReject without a subsequent ActionReview (needs rework)
+// GetRejectedInProgressIssueIDs returns IDs of open or in_progress issues that have a
+// recent ActionReject without a subsequent ActionReview (needs rework).
+// Rejected issues are reset to open; they may then be picked up (in_progress).
 func (db *DB) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
 	query := `
 		SELECT DISTINCT i.id FROM issues i
-		WHERE i.status = 'in_progress' AND i.deleted_at IS NULL
+		WHERE i.status IN ('open', 'in_progress') AND i.deleted_at IS NULL
 		  AND EXISTS (
 			SELECT 1 FROM action_log al
 			WHERE al.entity_id = i.id AND al.action_type = 'reject' AND al.undone = 0

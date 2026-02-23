@@ -153,7 +153,7 @@ func TestApproveRequiresDifferentSession(t *testing.T) {
 	// This test verifies the data model supports tracking implementer sessions
 }
 
-func TestRejectResetsToInProgress(t *testing.T) {
+func TestRejectResetsToOpen(t *testing.T) {
 	dir := t.TempDir()
 
 	database, err := db.Initialize(dir)
@@ -162,25 +162,34 @@ func TestRejectResetsToInProgress(t *testing.T) {
 	}
 	defer database.Close()
 
-	// Create an issue in review
+	// Create an issue in review with an implementer
 	issue := &models.Issue{
-		Title:  "Test Issue",
-		Status: models.StatusInReview,
+		Title:              "Test Issue",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses_impl123",
 	}
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-
-	// Update to in_progress (simulating reject)
-	issue.Status = models.StatusInProgress
+	// Persist implementer session
 	if err := database.UpdateIssue(issue); err != nil {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
 
-	// Verify status changed
+	// Simulate reject: reset to open and clear implementer
+	issue.Status = models.StatusOpen
+	issue.ImplementerSession = ""
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	// Verify status is open and implementer is cleared
 	retrieved, _ := database.GetIssue(issue.ID)
-	if retrieved.Status != models.StatusInProgress {
-		t.Errorf("Status not updated: got %q, want %q", retrieved.Status, models.StatusInProgress)
+	if retrieved.Status != models.StatusOpen {
+		t.Errorf("Status not updated: got %q, want %q", retrieved.Status, models.StatusOpen)
+	}
+	if retrieved.ImplementerSession != "" {
+		t.Errorf("ImplementerSession should be cleared after reject, got %q", retrieved.ImplementerSession)
 	}
 }
 

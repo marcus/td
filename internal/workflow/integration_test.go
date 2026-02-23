@@ -49,14 +49,14 @@ func TestIntegrationWorkflowScenarios(t *testing.T) {
 	t.Run("rejection workflow", func(t *testing.T) {
 		sm := DefaultMachine()
 
-		// in_review → in_progress (reject)
-		if !sm.IsValidTransition(models.StatusInReview, models.StatusInProgress) {
-			t.Error("Should allow in_review → in_progress")
-		}
-
-		// in_review → open (reject to open)
+		// in_review → open (reject resets to open so td next picks it up)
 		if !sm.IsValidTransition(models.StatusInReview, models.StatusOpen) {
 			t.Error("Should allow in_review → open")
+		}
+
+		// in_review → in_progress (still valid transition)
+		if !sm.IsValidTransition(models.StatusInReview, models.StatusInProgress) {
+			t.Error("Should allow in_review → in_progress")
 		}
 	})
 

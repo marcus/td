@@ -433,12 +433,13 @@ func (s *SnapshotQuerySource) GetDependencies(issueID string) ([]string, error) 
 	return deps, nil
 }
 
-// GetRejectedInProgressIssueIDs returns IDs of in_progress issues that have a
+// GetRejectedInProgressIssueIDs returns IDs of open or in_progress issues that have a
 // recent reject action without a subsequent review action (needs rework).
+// Rejected issues are reset to open; they may then be picked up (in_progress).
 func (s *SnapshotQuerySource) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
 	rows, err := s.db.Query(`
 		SELECT DISTINCT i.id FROM issues i
-		WHERE i.status = 'in_progress' AND i.deleted_at IS NULL
+		WHERE i.status IN ('open', 'in_progress') AND i.deleted_at IS NULL
 		  AND EXISTS (
 			SELECT 1 FROM action_log al
 			WHERE al.entity_id = i.id AND al.action_type = 'reject' AND al.undone = 0
