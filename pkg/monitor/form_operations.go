@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/workflow"
 )
@@ -27,6 +28,7 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 	// Create form state
 	m.FormState = NewFormState(FormModeCreate, parentID)
 	m.FormOpen = true
+	m.FormScrollOffset = 0
 
 	// Set form width for text wrapping (subtract modal horizontal padding)
 	modalWidth, _ := m.formModalDimensions()
@@ -61,6 +63,7 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 	// Create form state with issue data
 	m.FormState = NewFormStateForEdit(issue)
 	m.FormOpen = true
+	m.FormScrollOffset = 0
 
 	// Pre-populate dependencies from the database
 	depIDs, _ := m.DB.GetDependencies(issue.ID)
@@ -83,6 +86,7 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 func (m *Model) closeForm() {
 	m.FormOpen = false
 	m.FormState = nil
+	m.FormScrollOffset = 0
 }
 
 // submitForm validates and submits the form
@@ -369,4 +373,171 @@ func statusTransitionAction(from, to models.Status) models.ActionType {
 	default:
 		return models.ActionUpdate
 	}
+}
+
+// formScrollForFocusedField computes the scroll offset needed to show the
+// currently focused field within the visible area of the form modal.
+// Returns the new FormScrollOffset value.
+func (m Model) formScrollForFocusedField() int {
+	if m.FormState == nil || m.FormState.Form == nil {
+		return 0
+	}
+
+	// Get the focused field key and find its label in the rendered form
+	focusedKey := m.FormState.focusedFieldKey()
+	if focusedKey == "" {
+		return m.FormScrollOffset
+	}
+
+	// Render form to string to find where the focused field appears
+	formView := m.FormState.Form.View()
+
+	// Build full inner content (mirrors renderFormModal)
+	modalWidth, _ := m.formModalDimensions()
+	formWidth := modalWidth - 4
+	if formWidth > 0 {
+		m.FormState.Form.WithWidth(formWidth)
+	}
+
+	submitFocused := m.FormState.ButtonFocus == formButtonFocusSubmit
+	cancelFocused := m.FormState.ButtonFocus == formButtonFocusCancel
+	buttons := renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, false, false, false, false)
+	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons)
+
+	allLines := strings.Split(inner, "\n")
+	totalLines := len(allLines)
+
+	// Available visible lines (matching renderFormModal calculation)
+	maxHeight := m.Height - 2
+	availableLines := maxHeight - 4
+	if availableLines < 5 {
+		availableLines = 5
+	}
+	if totalLines <= availableLines {
+		return 0 // No scroll needed
+	}
+
+	// Map focusedKey to a title substring we can search for in rendered output
+	fieldTitles := map[string]string{
+		formKeyTitle:        "Title",
+		formKeyType:         "Type",
+		formKeyPriority:     "Priority",
+		formKeyDescription:  "Description",
+		formKeyLabels:       "Labels",
+		formKeyParent:       "Parent Epic",
+		formKeyPoints:       "Story Points",
+		formKeyAcceptance:   "Acceptance Criteria",
+		formKeyMinor:        "Minor Issue",
+		formKeyDependencies: "Dependencies",
+		formKeyStatus:       "Status",
+	}
+	title, ok := fieldTitles[focusedKey]
+	if !ok {
+		return m.FormScrollOffset
+	}
+
+	// Find which line contains the focused field title
+	fieldLine := -1
+	for i, line := range allLines {
+		// Strip ANSI for matching
+		plain := stripANSISequences(line)
+		if strings.Contains(plain, title) {
+			fieldLine = i
+			break
+		}
+	}
+	if fieldLine < 0 {
+		return m.FormScrollOffset
+	}
+
+	// Reserve 1 line for scroll indicator
+	viewLines := availableLines - 1
+	if viewLines < 1 {
+		viewLines = 1
+	}
+
+	// Ensure the field is visible
+	current := m.FormScrollOffset
+	// If field is above the current window, scroll up
+	if fieldLine < current {
+		return fieldLine
+	}
+	// If field is below the current window, scroll down
+	if fieldLine >= current+viewLines {
+		newOffset := fieldLine - viewLines + 1
+		// Also ensure buttons are accessible: if we're near the end, don't over-scroll
+		maxScroll := totalLines - viewLines
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		if newOffset > maxScroll {
+			newOffset = maxScroll
+		}
+		return newOffset
+	}
+	return current
+}
+
+// stripANSISequences removes ANSI escape sequences from a string for plain-text matching
+func stripANSISequences(s string) string {
+	var result strings.Builder
+	inEscape := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteByte(c)
+	}
+	return result.String()
+}
+
+// formScrollToBottom computes the scroll offset needed to show the bottom
+// of the form (buttons row). Used when Submit/Cancel buttons are focused.
+func (m Model) formScrollToBottom() int {
+	if m.FormState == nil || m.FormState.Form == nil {
+		return 0
+	}
+
+	modalWidth, _ := m.formModalDimensions()
+	formWidth := modalWidth - 4
+	if formWidth > 0 {
+		m.FormState.Form.WithWidth(formWidth)
+	}
+
+	formView := m.FormState.Form.View()
+	buttons := renderButtonPair("Submit", "Cancel", true, false, false, false, false, false)
+	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons)
+
+	allLines := strings.Split(inner, "\n")
+	totalLines := len(allLines)
+
+	maxHeight := m.Height - 2
+	availableLines := maxHeight - 4
+	if availableLines < 5 {
+		availableLines = 5
+	}
+
+	if totalLines <= availableLines {
+		return 0
+	}
+
+	viewLines := availableLines - 1 // 1 for scroll indicator
+	if viewLines < 1 {
+		viewLines = 1
+	}
+
+	// Scroll to end so buttons are visible
+	maxScroll := totalLines - viewLines
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
 }

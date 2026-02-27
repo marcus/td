@@ -157,6 +157,12 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.FormState.ButtonFocus = focus
 				m.FormState.ButtonHover = 0
+				// Auto-scroll: buttons at bottom need scroll down; returning to fields scrolls to focused field
+				if focus == formButtonFocusSubmit || focus == formButtonFocusCancel {
+					m.FormScrollOffset = m.formScrollToBottom()
+				} else if focus == formButtonFocusForm {
+					m.FormScrollOffset = m.formScrollForFocusedField()
+				}
 				return m, nil
 			}
 
@@ -236,6 +242,39 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.FormState.Form.WithWidth(formWidth)
 	}
 
+	// Handle PgUp/PgDn scroll for form overflow (before huh processes)
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.Type {
+		case tea.KeyPgUp:
+			maxHeight := m.Height - 2
+			availableLines := maxHeight - 4
+			if availableLines < 5 {
+				availableLines = 5
+			}
+			step := availableLines / 2
+			if step < 1 {
+				step = 1
+			}
+			m.FormScrollOffset -= step
+			if m.FormScrollOffset < 0 {
+				m.FormScrollOffset = 0
+			}
+			return m, nil
+		case tea.KeyPgDown:
+			maxHeight := m.Height - 2
+			availableLines := maxHeight - 4
+			if availableLines < 5 {
+				availableLines = 5
+			}
+			step := availableLines / 2
+			if step < 1 {
+				step = 1
+			}
+			m.FormScrollOffset += step
+			return m, nil
+		}
+	}
+
 	// Forward message to huh form
 	form, cmd := m.FormState.Form.Update(msg)
 	if f, ok := form.(*huh.Form); ok {
@@ -244,6 +283,13 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Sync autofill state after huh processes the message (detects field focus changes)
 	m.syncAutofillState()
+
+	// Auto-scroll to keep the focused field visible after Tab/Shift+Tab
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.Type == tea.KeyTab || keyMsg.Type == tea.KeyShiftTab {
+			m.FormScrollOffset = m.formScrollForFocusedField()
+		}
+	}
 
 	// Check if form completed (user pressed enter on last field)
 	if m.FormState.Form.State == huh.StateCompleted {

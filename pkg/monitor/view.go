@@ -1708,17 +1708,80 @@ func (m Model) renderFormModal() string {
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons, "", footer)
 
 	// Dynamic modal height: content-sized, capped at terminal height.
+	// Account for border (2) and vertical padding (2 top + 2 bottom from Padding(1,2)).
 	maxHeight := m.Height - 2
+	// Available lines inside the modal box (inside border + padding)
+	availableLines := maxHeight - 4 // 2 border + 2 padding rows
+	if availableLines < 5 {
+		availableLines = 5
+	}
+
+	// Apply scroll windowing when content overflows.
+	allLines := strings.Split(inner, "\n")
+	totalLines := len(allLines)
+	scrollOffset := m.FormScrollOffset
+	scrolled := totalLines > availableLines
+
+	var visibleInner string
+	if scrolled {
+		// Clamp scroll offset
+		maxScroll := totalLines - availableLines
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		if scrollOffset > maxScroll {
+			scrollOffset = maxScroll
+		}
+		if scrollOffset < 0 {
+			scrollOffset = 0
+		}
+
+		// Slice visible window (reserve 1 line for scroll indicators)
+		indicatorLines := 1
+		viewLines := availableLines - indicatorLines
+		if viewLines < 1 {
+			viewLines = 1
+		}
+		end := scrollOffset + viewLines
+		if end > totalLines {
+			end = totalLines
+		}
+		visible := allLines[scrollOffset:end]
+
+		// Build scroll indicator line
+		var indicator string
+		canScrollUp := scrollOffset > 0
+		canScrollDown := end < totalLines
+		upArrow := subtleStyle.Render("▲")
+		downArrow := subtleStyle.Render("▼")
+		switch {
+		case canScrollUp && canScrollDown:
+			indicator = upArrow + subtleStyle.Render(" scroll ") + downArrow
+		case canScrollUp:
+			indicator = upArrow + subtleStyle.Render(" top visible — PgUp/Shift+Tab to scroll")
+		default:
+			indicator = downArrow + subtleStyle.Render(" more below — PgDn/Tab to scroll")
+		}
+
+		visibleInner = strings.Join(visible, "\n") + "\n" + indicator
+	} else {
+		visibleInner = inner
+	}
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedInner := "\n" + inner + "\n"
-		renderedHeight := lipgloss.Height(paddedInner) + 2 // +2 for borders
-		if renderedHeight > maxHeight {
+		paddedInner := "\n" + visibleInner + "\n"
+		var renderedHeight int
+		if scrolled {
 			renderedHeight = maxHeight
+		} else {
+			renderedHeight = lipgloss.Height(paddedInner) + 2 // +2 for borders
+			if renderedHeight > maxHeight {
+				renderedHeight = maxHeight
+			}
 		}
 		// Add 2 to width: renderer expects outer dimensions with borders
 		return m.ModalRenderer(paddedInner, modalWidth+2, renderedHeight, ModalTypeForm, 1)
@@ -1728,11 +1791,16 @@ func (m Model) renderFormModal() string {
 	// Select border color - cyan for forms (different from issue modals)
 	borderColor := lipgloss.Color("45") // Cyan
 
-	// Measure actual content height and cap at terminal bounds
-	contentHeight := lipgloss.Height(inner)
-	actualHeight := contentHeight + 2 // +2 for Padding(1, 2) vertical
-	if actualHeight > maxHeight {
+	var actualHeight int
+	if scrolled {
 		actualHeight = maxHeight
+	} else {
+		// Measure actual content height and cap at terminal bounds
+		contentHeight := lipgloss.Height(visibleInner)
+		actualHeight = contentHeight + 2 // +2 for Padding(1, 2) vertical
+		if actualHeight > maxHeight {
+			actualHeight = maxHeight
+		}
 	}
 
 	modalStyle := lipgloss.NewStyle().
@@ -1742,7 +1810,7 @@ func (m Model) renderFormModal() string {
 		Width(modalWidth).
 		Height(actualHeight)
 
-	return modalStyle.Render(inner)
+	return modalStyle.Render(visibleInner)
 }
 
 // renderStatusBarChart renders a horizontal bar chart for status breakdown

@@ -122,8 +122,9 @@ type Model struct {
 	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
 
 	// Form modal state
-	FormOpen  bool
-	FormState *FormState
+	FormOpen        bool
+	FormState       *FormState
+	FormScrollOffset int // Scroll offset for form modal when content overflows
 
 	// Getting Started modal state
 	GettingStartedOpen         bool           // Whether getting started modal is open
