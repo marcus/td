@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -353,9 +354,28 @@ func (m Model) helpVisibleHeight() int {
 	return modalHeight - 4 // Subtract border and footer
 }
 
+// helpEffectiveLineCount returns the number of lines currently displayed in the
+// help modal. When a filter is active it returns the filtered count; otherwise
+// it returns the cached total.
+func (m Model) helpEffectiveLineCount() int {
+	if m.HelpFilter == "" {
+		return m.HelpTotalLines
+	}
+	helpText := m.Keymap.GenerateHelp()
+	allLines := strings.Split(helpText, "\n")
+	filterLower := strings.ToLower(m.HelpFilter)
+	count := 0
+	for _, line := range allLines {
+		if strings.Contains(strings.ToLower(line), filterLower) {
+			count++
+		}
+	}
+	return count
+}
+
 // helpMaxScroll returns the maximum scroll offset for the help modal.
 func (m Model) helpMaxScroll() int {
-	maxScroll := m.HelpTotalLines - m.helpVisibleHeight()
+	maxScroll := m.helpEffectiveLineCount() - m.helpVisibleHeight()
 	if maxScroll < 0 {
 		return 0
 	}
