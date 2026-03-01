@@ -2555,9 +2555,18 @@ func (m Model) formatIssueShort(issue *models.Issue) string {
 	idStr := subtleStyle.Render(issue.ID)
 	priorityStr := formatPriority(issue.Priority)
 
-	// Calculate available width for title:
-	// m.Width - 4 (panel border) - 8 (row prefix "  [TAG] ") - typeIcon - ID - priority - 3 spaces
-	overhead := 4 + 8 + 2 + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
+	// Calculate available width for title.
+	// Line format (in callers): fmt.Sprintf("%s %s", tag, issueStr)
+	//   where issueStr = fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, title)
+	// Overhead:
+	//   4             = panel border + padding (wrapPanel uses m.Width - 4 for content)
+	//   5             = category tag visual width (all tags are 5 chars: [RDY], [BLK], etc.)
+	//   1             = space between tag and issueStr (outer format "%s %s")
+	//   typeIconWidth = actual width of the type icon character (varies by terminal)
+	//   idWidth       = visual width of styled issue ID
+	//   priorityWidth = visual width of styled priority
+	//   3             = three spaces in issueStr format (after typeIcon, after id, after priority)
+	overhead := 4 + 5 + 1 + lipgloss.Width(typeIcon) + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
 	titleWidth := m.Width - overhead
 	if titleWidth < 20 {
 		titleWidth = 20 // minimum reasonable width
