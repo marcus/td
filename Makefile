@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version
+.PHONY: help fmt test install tag release check-clean check-version install-hooks
 
 SHELL := /bin/sh
 
@@ -13,6 +13,7 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
+		"  make install-hooks             # install git pre-commit hook" \
 		"  make test                      # go test ./..." \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
@@ -49,3 +50,8 @@ tag: check-clean check-version
 release: tag
 	@git remote get-url origin >/dev/null 2>&1 || (echo "Error: no 'origin' remote configured" && exit 1)
 	git push origin "$(VERSION)"
+
+install-hooks:
+	@echo "Installing git pre-commit hook..."
+	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
+	@echo "Done. Hook installed at .git/hooks/pre-commit"
