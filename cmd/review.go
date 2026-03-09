@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -369,7 +370,7 @@ Supports bulk operations:
 			// Update issue (atomic update + action log)
 			issue.Status = models.StatusClosed
 			issue.ReviewerSession = sess.ID
-			now := issue.UpdatedAt
+			now := time.Now()
 			issue.ClosedAt = &now
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionApprove); err != nil {
@@ -674,7 +675,7 @@ Examples:
 
 			// Update issue (atomic update + action log)
 			issue.Status = models.StatusClosed
-			now := issue.UpdatedAt
+			now := time.Now()
 			issue.ClosedAt = &now
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionClose); err != nil {
