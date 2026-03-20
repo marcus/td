@@ -149,19 +149,53 @@ td context td-a1b2  # Refresh context when blocker resolves
 
 ### Creating/Managing Issues
 - `td create "title" --type feature --priority P1` - Create
+- `td update <id> --title "..." --priority P2` - Update fields
 - `td list` - List all
 - `td list --status in_progress` - Filter by status
 - `td block <id>` - Mark as blocked
-- `td delete <id>` - Delete
+- `td unblock <id>` - Unblock back to open
+- `td reopen <id>` - Reopen closed issue
+- `td delete <id>` - Soft-delete
+- `td restore <id>` - Restore soft-deleted issue
+
+### Notes
+- `td note add "title"` - Create a freeform note
+- `td note list` - List notes
+- `td note show <id>` - Display a note
+- `td note edit <id>` - Edit a note
+- `td note pin <id>` / `unpin` - Pin/unpin
+- `td note archive <id>` / `unarchive` - Archive/unarchive
+- `td note delete <id>` - Soft-delete
+
+### Boards
+- `td board create "name"` - Create a board
+- `td board list` - List all boards
+- `td board show <board>` - Show issues in a board
+- `td board edit <board>` - Edit name or query
+- `td board move <board> <id> <pos>` - Set issue position
+- `td board delete <board>` - Delete a board
+
+### Dependencies
+- `td dep add <id> <depends-on>...` - Add dependencies
+- `td dep rm <id> <depends-on>` - Remove a dependency
+- `td depends-on <id>` - Show what an issue depends on
+- `td blocked-by <id>` - Show what's waiting on this issue
+- `td critical-path` - Unblock sequence
 
 ### File Tracking
 - `td link <id> <files...>` - Track files with issue
+- `td unlink <id> <file>` - Remove file association
 - `td files <id>` - Show file changes
 
 ### Other
 - `td monitor` - Live dashboard
 - `td session --new "name"` - Force new session
 - `td undo` - Undo last action
+- `td focus <id>` / `unfocus` - Set/clear working issue
+- `td due <id> <date>` - Set due date
+- `td defer <id> <date>` - Defer until date
+- `td doctor` - Diagnostic checks
+- `td errors` - View failed command attempts
 
 See [quick_reference.md](references/quick_reference.md) for full command listing.
 
@@ -186,6 +220,40 @@ open → in_progress → in_review → closed
          |              |
          v              | (reject)
      blocked -----------+
+```
+
+## Notes Workflow
+
+Notes are freeform documents not tied to specific issues—use them for architecture decisions, meeting summaries, or project context that spans multiple issues.
+
+```bash
+td note add "Auth architecture decisions"   # Create note
+td note pin <id>                             # Pin important notes (shown in td usage)
+td note archive <id>                         # Archive when no longer active
+td note list                                 # List active notes
+```
+
+## Board Management
+
+Boards provide custom filtered views of issues. Each board has an optional TDQ query and supports manual positioning.
+
+```bash
+td board create "Sprint 3"                  # Create a board
+td board show "Sprint 3"                    # View issues on board
+td board move "Sprint 3" <id> 1             # Position issue at top
+td board edit "Sprint 3"                    # Change name or query filter
+```
+
+## Dependency Tracking
+
+Track which issues depend on others. Dependencies affect `td next` priority ordering and enable `td critical-path` analysis.
+
+```bash
+td dep add <id> <blocker-id>               # Issue depends on blocker
+td dep rm <id> <blocker-id>                # Remove dependency
+td depends-on <id>                          # What does this issue need?
+td blocked-by <id>                          # What's waiting on this issue?
+td critical-path                            # Longest chain that unblocks most work
 ```
 
 ## Key Principles
