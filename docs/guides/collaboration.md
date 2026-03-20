@@ -205,4 +205,4 @@ Team members authenticate against your server:
 td auth login --server https://your-server:8080
 ```
 
-All functionality is identical to the hosted service. See [sync-plan-03-merged.md](../sync-plan-03-merged.md) for deployment details.
+All functionality is identical to the hosted service. See [sync-plan-03-merged.md](../implemented/sync-plan-03-merged.md) for deployment details.
