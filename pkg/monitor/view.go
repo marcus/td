@@ -291,14 +291,20 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	}
 
 	// In-progress issues (skip focused if it's duplicated)
-	if len(m.InProgress) > 0 && linesWritten < effectiveMaxLines {
+	inProgressVisible := 0
+	for _, issue := range m.InProgress {
+		if m.FocusedIssue == nil || issue.ID != m.FocusedIssue.ID {
+			inProgressVisible++
+		}
+	}
+	if inProgressVisible > 0 && linesWritten < effectiveMaxLines {
 		// Only show header if in visible range
 		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
 			if linesWritten < effectiveMaxLines {
 				content.WriteString("\n")
 				content.WriteString(sectionHeader.Render("IN PROGRESS:"))
 				content.WriteString("\n")
-				linesWritten += 2
+				linesWritten += 3 // explicit \n + MarginTop(1) from sectionHeader + header text
 			}
 		}
 
@@ -1196,7 +1202,6 @@ func (m Model) renderModal() string {
 
 		// Show active blockers prominently
 		if len(activeBlockers) > 0 {
-			modal.BlockedByStartLine = len(lines) // Track section start for mouse clicks
 			header := fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))
 			if modal.BlockedBySectionFocused {
 				header = blockedBySectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
@@ -1218,7 +1223,6 @@ func (m Model) renderModal() string {
 				}
 				lines = append(lines, depLine)
 			}
-			modal.BlockedByEndLine = len(lines) // Track section end for mouse clicks
 			lines = append(lines, "")
 		}
 
@@ -1237,7 +1241,6 @@ func (m Model) renderModal() string {
 
 	// Blocks (dependents)
 	if len(modal.Blocks) > 0 {
-		modal.BlocksStartLine = len(lines) // Track section start for mouse clicks
 		header := fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))
 		if modal.BlocksSectionFocused {
 			header = blocksSectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
@@ -1259,7 +1262,6 @@ func (m Model) renderModal() string {
 			}
 			lines = append(lines, depLine)
 		}
-		modal.BlocksEndLine = len(lines) // Track section end for mouse clicks
 		lines = append(lines, "")
 	}
 

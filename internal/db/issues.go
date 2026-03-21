@@ -315,13 +315,15 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
 			                  closed_at = ?, deleted_at = ?,
-			                  defer_until = ?, due_date = ?, defer_count = ?
+			                  defer_until = ?, due_date = ?, defer_count = ?,
+			                  creator_session = ?, minor = ?, created_branch = ?
 			WHERE id = ?
 		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
 			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
 			issue.ClosedAt, issue.DeletedAt,
-			deferUntil, dueDate, issue.DeferCount, issue.ID)
+			deferUntil, dueDate, issue.DeferCount,
+			issue.CreatorSession, issue.Minor, issue.CreatedBranch, issue.ID)
 
 		return err
 	})
@@ -557,16 +559,18 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	}
 
 	// Temporal filters (GTD deferral)
+	// NOTE: dates are stored as YYYY-MM-DD in local time, so we must use
+	// date('now','localtime') to compare correctly across timezones.
 	if opts.DeferredOnly {
-		query += " AND defer_until IS NOT NULL AND defer_until > date('now')"
+		query += " AND defer_until IS NOT NULL AND defer_until > date('now','localtime')"
 	} else if opts.OverdueOnly {
-		query += " AND due_date IS NOT NULL AND due_date < date('now') AND status != 'closed'"
+		query += " AND due_date IS NOT NULL AND due_date < date('now','localtime') AND status != 'closed'"
 	} else if opts.SurfacingOnly {
-		query += " AND defer_until IS NOT NULL AND defer_until <= date('now') AND defer_count > 0"
+		query += " AND defer_until IS NOT NULL AND defer_until <= date('now','localtime') AND defer_count > 0"
 	} else if opts.DueSoonDays > 0 {
-		query += fmt.Sprintf(" AND due_date IS NOT NULL AND due_date >= date('now') AND due_date <= date('now', '+%d days')", opts.DueSoonDays)
+		query += fmt.Sprintf(" AND due_date IS NOT NULL AND due_date >= date('now','localtime') AND due_date <= date('now','localtime','+%d days')", opts.DueSoonDays)
 	} else if opts.ExcludeDeferred {
-		query += " AND (defer_until IS NULL OR defer_until <= date('now'))"
+		query += " AND (defer_until IS NULL OR defer_until <= date('now','localtime'))"
 	}
 
 	// Exclude issues with open (non-closed) dependencies

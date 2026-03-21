@@ -446,6 +446,9 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	var allConflicts []tdsync.ConflictRecord
 
 	for {
+		// NOTE: intentionally pass empty exclude_client for batch pull.
+		// Unlike autoSyncPull (incremental), batch pull needs all events
+		// including own to maintain convergence via server_seq ordering.
 		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, "")
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {

@@ -171,13 +171,15 @@ func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionTyp
 		                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 		                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
 		                  closed_at = ?, deleted_at = ?,
-		                  defer_until = ?, due_date = ?, defer_count = ?
+		                  defer_until = ?, due_date = ?, defer_count = ?,
+		                  creator_session = ?, minor = ?, created_branch = ?
 		WHERE id = ?
 	`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
 		issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 		issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
 		issue.ClosedAt, issue.DeletedAt,
-		deferUntil, dueDate, issue.DeferCount, issue.ID)
+		deferUntil, dueDate, issue.DeferCount,
+		issue.CreatorSession, issue.Minor, issue.CreatedBranch, issue.ID)
 	if err != nil {
 		return err
 	}

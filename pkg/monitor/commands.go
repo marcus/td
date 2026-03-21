@@ -271,6 +271,9 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step = 1
 			}
 			m.FormScrollOffset += step
+			if maxScroll := m.formScrollToBottom(); m.FormScrollOffset > maxScroll {
+				m.FormScrollOffset = maxScroll
+			}
 			return m, nil
 		}
 	}

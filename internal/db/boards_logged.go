@@ -232,9 +232,15 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		}
 		previousData := marshalBoard(prev)
 
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
 		// Query active positions before soft-deleting them
 		now := time.Now()
-		rows, err := db.conn.Query(`SELECT issue_id, position FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, boardID)
+		rows, err := tx.Query(`SELECT issue_id, position FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, boardID)
 		if err != nil {
 			return err
 		}
@@ -254,7 +260,7 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		rows.Close()
 
 		// Soft-delete positions
-		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, now.UTC(), boardID)
+		_, err = tx.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, now.UTC(), boardID)
 		if err != nil {
 			return err
 		}
@@ -271,7 +277,7 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 				return fmt.Errorf("generate action ID: %w", err)
 			}
 			actionTS := formatActionLogTimestamp(now)
-			_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			_, err = tx.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 				posActionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", actionTS)
 			if err != nil {
 				return fmt.Errorf("log position action: %w", err)
@@ -279,7 +285,7 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		}
 
 		// Delete board
-		_, err = db.conn.Exec(`DELETE FROM boards WHERE id = ?`, boardID)
+		_, err = tx.Exec(`DELETE FROM boards WHERE id = ?`, boardID)
 		if err != nil {
 			return err
 		}
@@ -290,12 +296,12 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 			return fmt.Errorf("generate action ID: %w", err)
 		}
 		actionTS := formatActionLogTimestamp(now)
-		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		_, err = tx.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 			actionID, sessionID, string(models.ActionBoardDelete), "board", boardID, previousData, "", actionTS)
 		if err != nil {
 			return fmt.Errorf("log action: %w", err)
 		}
 
-		return nil
+		return tx.Commit()
 	})
 }

@@ -422,7 +422,12 @@ func serveSnapshotFile(w http.ResponseWriter, r *http.Request, path string, seq 
 	}
 	defer f.Close()
 
-	stat, _ := f.Stat()
+	stat, err := f.Stat()
+	if err != nil {
+		logFor(r.Context()).Error("stat snapshot", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to stat snapshot")
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-sqlite3")
 	w.Header().Set("X-Snapshot-Seq", strconv.FormatInt(seq, 10))
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))

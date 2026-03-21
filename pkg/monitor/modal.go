@@ -895,12 +895,123 @@ func (m Model) pushModalWithScope(issueID string, sourcePanel Panel, scope []mod
 	return m, m.fetchIssueDetails(issueID)
 }
 
+// computeModalSectionLines counts lines through the modal content to determine
+// where the blocked-by and blocks sections start/end. This mirrors the line
+// layout in renderModal so that mouse click detection works correctly.
+func computeModalSectionLines(modal *ModalEntry) {
+	if modal == nil || modal.Issue == nil {
+		return
+	}
+	issue := modal.Issue
+	lineCount := 0
+
+	// Header: ID + Title, blank line
+	lineCount += 2
+
+	// Parent epic (if exists): text + blank
+	if modal.ParentEpic != nil {
+		lineCount += 2
+	}
+
+	// Status line
+	lineCount++
+
+	// Labels
+	if len(issue.Labels) > 0 {
+		lineCount++
+	}
+
+	// Implementer/Reviewer
+	if issue.ImplementerSession != "" {
+		lineCount++
+	}
+	if issue.ReviewerSession != "" {
+		lineCount++
+	}
+
+	// Defer/Due fields
+	if issue.DeferUntil != nil {
+		lineCount++
+	}
+	if issue.DueDate != nil {
+		lineCount++
+	}
+	if issue.DeferCount > 0 {
+		lineCount++
+	}
+
+	// Blank line after metadata
+	lineCount++
+
+	// Epic tasks section
+	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+		lineCount += 1 + len(modal.EpicTasks) + 1 // header + items + blank
+	}
+
+	// Description
+	if issue.Description != "" {
+		rendered := modal.DescRender
+		if rendered == "" {
+			rendered = issue.Description
+		}
+		descLines := strings.Count(rendered, "\n") + 1
+		lineCount += 1 + descLines + 1 // header + lines + blank
+	}
+
+	// Acceptance criteria
+	if issue.Acceptance != "" {
+		rendered := modal.AcceptRender
+		if rendered == "" {
+			rendered = issue.Acceptance
+		}
+		acceptLines := strings.Count(rendered, "\n") + 1
+		lineCount += 1 + acceptLines + 1 // header + lines + blank
+	}
+
+	// Blocked-by section
+	activeBlockers := filterActiveBlockers(modal.BlockedBy)
+	var resolvedDeps []models.Issue
+	for _, dep := range modal.BlockedBy {
+		if dep.Status == models.StatusClosed {
+			resolvedDeps = append(resolvedDeps, dep)
+		}
+	}
+
+	if len(activeBlockers) > 0 {
+		modal.BlockedByStartLine = lineCount
+		lineCount += 1 + len(activeBlockers) // header + items
+		modal.BlockedByEndLine = lineCount
+		lineCount++ // blank line
+	} else {
+		modal.BlockedByStartLine = 0
+		modal.BlockedByEndLine = 0
+	}
+
+	// Resolved deps
+	if len(resolvedDeps) > 0 {
+		lineCount += 1 + len(resolvedDeps) + 1 // header + items + blank
+	}
+
+	// Blocks section
+	if len(modal.Blocks) > 0 {
+		modal.BlocksStartLine = lineCount
+		lineCount += 1 + len(modal.Blocks) // header + items
+		modal.BlocksEndLine = lineCount
+	} else {
+		modal.BlocksStartLine = 0
+		modal.BlocksEndLine = 0
+	}
+}
+
 // handleModalClick handles left-click events within a modal
 func (m Model) handleModalClick(x, y int) (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()
 	if modal == nil {
 		return m, nil
 	}
+
+	// Compute section line bounds before click detection
+	computeModalSectionLines(modal)
 
 	// Calculate modal bounds (centered, 80% width, capped)
 	modalWidth := m.Width * 80 / 100

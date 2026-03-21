@@ -14,8 +14,10 @@ import (
 
 // RateLimiter implements per-key fixed-window rate limiting.
 type RateLimiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
+	mu       sync.Mutex
+	buckets  map[string]*bucket
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 type bucket struct {
@@ -25,14 +27,28 @@ type bucket struct {
 
 // NewRateLimiter creates a RateLimiter and starts background cleanup.
 func NewRateLimiter() *RateLimiter {
-	rl := &RateLimiter{buckets: make(map[string]*bucket)}
+	rl := &RateLimiter{
+		buckets: make(map[string]*bucket),
+		done:    make(chan struct{}),
+	}
 	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
 		for {
-			time.Sleep(5 * time.Minute)
-			rl.cleanup()
+			select {
+			case <-ticker.C:
+				rl.cleanup()
+			case <-rl.done:
+				return
+			}
 		}
 	}()
 	return rl
+}
+
+// Stop terminates the background cleanup goroutine.
+func (rl *RateLimiter) Stop() {
+	rl.stopOnce.Do(func() { close(rl.done) })
 }
 
 // Allow checks if the key is within the rate limit (limit per 1-minute window).

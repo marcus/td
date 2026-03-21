@@ -152,6 +152,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	s.rateLimiter.Stop()
 	err := s.http.Shutdown(ctx)
 	s.dbPool.CloseAll()
 	return err
