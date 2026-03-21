@@ -434,14 +434,14 @@ var exportCmd = &cobra.Command{
 			exportData := make([]map[string]interface{}, 0)
 			for _, issue := range issues {
 				logs, _ := database.GetLogs(issue.ID, 0)
-				handoff, _ := database.GetLatestHandoff(issue.ID)
-				deps, _ := database.GetDependencies(issue.ID)
+				handoffs, _ := database.GetHandoffs(issue.ID)
+				deps, _ := database.GetIssueDependencyRelations(issue.ID)
 				files, _ := database.GetLinkedFiles(issue.ID)
 
 				item := map[string]interface{}{
 					"issue":        issue,
 					"logs":         logs,
-					"handoff":      handoff,
+					"handoffs":     handoffs,
 					"dependencies": deps,
 					"files":        files,
 				}
@@ -530,18 +530,17 @@ var importCmd = &cobra.Command{
 			return err
 		}
 
-		sess, err := session.GetOrCreate(database)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
 		var imported int
 
 		if format == "md" {
+			sess, err := session.GetOrCreate(database)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
 			imported, err = importMarkdown(database, string(data), dryRun, force, sess.ID)
 		} else {
-			imported, err = importJSON(database, data, dryRun, force, sess.ID)
+			imported, err = importJSON(database, data, dryRun, force)
 		}
 
 		if err != nil {
@@ -555,35 +554,87 @@ var importCmd = &cobra.Command{
 	},
 }
 
+// exportedItem matches the JSON structure produced by the export command.
+type exportedItem struct {
+	Issue        models.Issue              `json:"issue"`
+	Logs         []models.Log              `json:"logs"`
+	Handoffs     []models.Handoff          `json:"handoffs"`
+	Dependencies []models.IssueDependency  `json:"dependencies"`
+	Files        []models.IssueFile        `json:"files"`
+}
+
+// UnmarshalJSON supports backward-compatible deserialization:
+//   - old "handoff" (singular object) → new "handoffs" (array)
+//   - old "dependencies" ([]string) → new "dependencies" ([]IssueDependency)
+func (e *exportedItem) UnmarshalJSON(data []byte) error {
+	// Use raw messages for fields that changed format.
+	var aux struct {
+		Issue    models.Issue       `json:"issue"`
+		Logs     []models.Log       `json:"logs"`
+		Handoffs []models.Handoff   `json:"handoffs"`
+		Handoff  *models.Handoff    `json:"handoff"`
+		Files    []models.IssueFile `json:"files"`
+		RawDeps  json.RawMessage    `json:"dependencies"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	e.Issue = aux.Issue
+	e.Logs = aux.Logs
+	e.Handoffs = aux.Handoffs
+	e.Files = aux.Files
+
+	// Backward compat: singular handoff → array
+	if len(e.Handoffs) == 0 && aux.Handoff != nil {
+		e.Handoffs = []models.Handoff{*aux.Handoff}
+	}
+
+	// Backward compat: []string → []IssueDependency
+	if len(aux.RawDeps) > 0 && string(aux.RawDeps) != "null" {
+		// Try structured format first
+		var deps []models.IssueDependency
+		if err := json.Unmarshal(aux.RawDeps, &deps); err != nil {
+			// Fall back to old []string format
+			var oldDeps []string
+			if err2 := json.Unmarshal(aux.RawDeps, &oldDeps); err2 != nil {
+				return err2
+			}
+			for _, depID := range oldDeps {
+				deps = append(deps, models.IssueDependency{
+					DependsOnID:  depID,
+					RelationType: "depends_on",
+				})
+			}
+		}
+		e.Dependencies = deps
+	}
+
+	return nil
+}
+
 // importJSON imports issues from JSON format
-func importJSON(database *db.DB, data []byte, dryRun, force bool, sessionID string) (int, error) {
-	var importData []map[string]json.RawMessage
-	if err := json.Unmarshal(data, &importData); err != nil {
+func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
+	var items []exportedItem
+	if err := json.Unmarshal(data, &items); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
 	imported := 0
-	for _, item := range importData {
-		issueRaw, ok := item["issue"]
-		if !ok {
-			continue
-		}
-
-		var issue models.Issue
-		if err := json.Unmarshal(issueRaw, &issue); err != nil {
-			output.Warning("failed to parse issue: %v", err)
-			continue
-		}
-
+	importedIDs := make(map[string]string) // id -> parent_id
+	for _, item := range items {
+		issue := &item.Issue
 		if issue.Title == "" {
 			continue
 		}
 
-		// Check if issue with same ID exists
-		var existing *models.Issue
-		if issue.ID != "" {
-			existing, _ = database.GetIssue(issue.ID)
+		if issue.ID == "" {
+			output.Warning("skipping '%s' - no issue ID in export data", issue.Title)
+			continue
 		}
+
+		// Check if issue with same ID exists
+		existing, _ := database.GetIssue(issue.ID)
 
 		if existing != nil && !force {
 			output.Warning("skipping '%s' - already exists (use --force to overwrite)", issue.ID)
@@ -600,64 +651,35 @@ func importJSON(database *db.DB, data []byte, dryRun, force bool, sessionID stri
 			continue
 		}
 
-		if err := database.UpsertIssueRaw(&issue); err != nil {
-			output.Warning("failed to import '%s': %v", issue.Title, err)
+		replace := existing != nil
+		if err := database.ImportItemRaw(issue, item.Logs, item.Handoffs, item.Dependencies, item.Files, replace); err != nil {
+			if replace {
+				output.Warning("failed to overwrite '%s': %v", issue.Title, err)
+			} else {
+				output.Warning("failed to import '%s': %v", issue.Title, err)
+			}
 			continue
 		}
-
-		if existing != nil {
+		if replace {
 			fmt.Printf("OVERWRITTEN %s: %s\n", issue.ID, issue.Title)
 		} else {
 			fmt.Printf("IMPORTED %s: %s\n", issue.ID, issue.Title)
 		}
 
-		// Import logs
-		if logsRaw, ok := item["logs"]; ok {
-			var logs []models.Log
-			if err := json.Unmarshal(logsRaw, &logs); err == nil {
-				for i := range logs {
-					if err := database.AddLog(&logs[i]); err != nil {
-						output.Warning("failed to import log for '%s': %v", issue.ID, err)
-					}
-				}
-			}
-		}
-
-		// Import handoff
-		if handoffRaw, ok := item["handoff"]; ok && string(handoffRaw) != "null" {
-			var handoff models.Handoff
-			if err := json.Unmarshal(handoffRaw, &handoff); err == nil && handoff.IssueID != "" {
-				if err := database.AddHandoff(&handoff); err != nil {
-					output.Warning("failed to import handoff for '%s': %v", issue.ID, err)
-				}
-			}
-		}
-
-		// Import dependencies (exported as []string of depends_on IDs)
-		if depsRaw, ok := item["dependencies"]; ok {
-			var deps []string
-			if err := json.Unmarshal(depsRaw, &deps); err == nil {
-				for _, depID := range deps {
-					if err := database.AddDependency(issue.ID, depID, "depends_on"); err != nil {
-						output.Warning("failed to import dependency for '%s': %v", issue.ID, err)
-					}
-				}
-			}
-		}
-
-		// Import files
-		if filesRaw, ok := item["files"]; ok {
-			var files []models.IssueFile
-			if err := json.Unmarshal(filesRaw, &files); err == nil {
-				for _, f := range files {
-					if err := database.LinkFile(f.IssueID, f.FilePath, f.Role, f.LinkedSHA); err != nil {
-						output.Warning("failed to import file link for '%s': %v", issue.ID, err)
-					}
-				}
-			}
-		}
-
+		importedIDs[issue.ID] = issue.ParentID
 		imported++
+	}
+
+	// Warn about dangling parent_id references
+	if !dryRun {
+		for id, parentID := range importedIDs {
+			if parentID == "" {
+				continue
+			}
+			if _, err := database.GetIssue(parentID); err != nil {
+				output.Warning("issue '%s' references parent '%s' which does not exist", id, parentID)
+			}
+		}
 	}
 
 	return imported, nil

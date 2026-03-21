@@ -362,6 +362,29 @@ func (db *DB) RemoveDependency(issueID, dependsOnID string) error {
 	})
 }
 
+// GetIssueDependencyRelations returns all dependency relations for an issue,
+// including relation_type. Used by export for lossless round-trips.
+func (db *DB) GetIssueDependencyRelations(issueID string) ([]models.IssueDependency, error) {
+	rows, err := db.conn.Query(`
+		SELECT issue_id, depends_on_id, relation_type
+		FROM issue_dependencies WHERE issue_id = ?
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []models.IssueDependency
+	for rows.Next() {
+		var dep models.IssueDependency
+		if err := rows.Scan(&dep.IssueID, &dep.DependsOnID, &dep.RelationType); err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return deps, nil
+}
+
 // GetDependencies returns what an issue depends on
 func (db *DB) GetDependencies(issueID string) ([]string, error) {
 	rows, err := db.conn.Query(`

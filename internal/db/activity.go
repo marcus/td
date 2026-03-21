@@ -284,6 +284,45 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 	return &handoff, nil
 }
 
+// GetHandoffs retrieves all handoffs for an issue, ordered by timestamp descending.
+func (db *DB) GetHandoffs(issueID string) ([]models.Handoff, error) {
+	var handoffs []models.Handoff
+
+	rows, err := db.conn.Query(`
+		SELECT CAST(id AS TEXT), issue_id, session_id, done, remaining, decisions, uncertain, timestamp
+		FROM handoffs WHERE issue_id = ? ORDER BY timestamp DESC
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var h models.Handoff
+		var doneJSON, remainingJSON, decisionsJSON, uncertainJSON string
+		err := rows.Scan(&h.ID, &h.IssueID, &h.SessionID,
+			&doneJSON, &remainingJSON, &decisionsJSON, &uncertainJSON, &h.Timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan handoff row: %w", err)
+		}
+		if err := json.Unmarshal([]byte(doneJSON), &h.Done); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal done: %w", err)
+		}
+		if err := json.Unmarshal([]byte(remainingJSON), &h.Remaining); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
+		}
+		if err := json.Unmarshal([]byte(decisionsJSON), &h.Decisions); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
+		}
+		if err := json.Unmarshal([]byte(uncertainJSON), &h.Uncertain); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
+		}
+		handoffs = append(handoffs, h)
+	}
+
+	return handoffs, nil
+}
+
 // DeleteHandoff removes a handoff by ID (for undo support)
 func (db *DB) DeleteHandoff(handoffID string) error {
 	return db.withWriteLock(func() error {

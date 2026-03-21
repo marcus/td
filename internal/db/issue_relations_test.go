@@ -1730,3 +1730,54 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 		t.Errorf("NewData should contain 'open', got: %s", action.NewData)
 	}
 }
+
+
+func TestGetIssueDependencyRelations(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{ID: "td-reltest", Title: "Rel test", Status: models.StatusOpen}
+	if err := database.UpsertIssueRaw(issue); err != nil {
+		t.Fatalf("UpsertIssueRaw: %v", err)
+	}
+
+	// Add both relation types
+	if err := database.AddDependency("td-reltest", "td-dep1", "depends_on"); err != nil {
+		t.Fatalf("AddDependency depends_on: %v", err)
+	}
+	if err := database.AddDependency("td-reltest", "td-dep2", "blocks"); err != nil {
+		t.Fatalf("AddDependency blocks: %v", err)
+	}
+
+	rels, err := database.GetIssueDependencyRelations("td-reltest")
+	if err != nil {
+		t.Fatalf("GetIssueDependencyRelations: %v", err)
+	}
+	if len(rels) != 2 {
+		t.Fatalf("Expected 2 relations, got %d", len(rels))
+	}
+
+	typeMap := make(map[string]string)
+	for _, r := range rels {
+		typeMap[r.DependsOnID] = r.RelationType
+	}
+	if typeMap["td-dep1"] != "depends_on" {
+		t.Errorf("td-dep1: got %s, want depends_on", typeMap["td-dep1"])
+	}
+	if typeMap["td-dep2"] != "blocks" {
+		t.Errorf("td-dep2: got %s, want blocks", typeMap["td-dep2"])
+	}
+
+	// Non-existent issue returns empty
+	empty, err := database.GetIssueDependencyRelations("td-nonexistent")
+	if err != nil {
+		t.Fatalf("GetIssueDependencyRelations non-existent: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("Expected 0 relations, got %d", len(empty))
+	}
+}
