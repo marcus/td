@@ -14,6 +14,34 @@ import (
 
 var validColumnName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+// validEntityTables is an allowlist of table names that may appear as entityType
+// in sync events. This prevents SQL injection via entityType even if the caller's
+// EntityValidator is misconfigured or bypassed.
+var validEntityTables = map[string]bool{
+	"issues":                true,
+	"logs":                  true,
+	"comments":              true,
+	"handoffs":              true,
+	"boards":                true,
+	"work_sessions":         true,
+	"board_issue_positions": true,
+	"issue_dependencies":    true,
+	"issue_files":           true,
+	"work_session_issues":   true,
+	"notes":                 true,
+	"sessions":              true,
+	"git_snapshots":         true,
+	"action_log":            true,
+}
+
+// validateEntityTable checks that entityType is a known table name.
+func validateEntityTable(entityType string) error {
+	if !validEntityTables[entityType] {
+		return fmt.Errorf("invalid entity table: %q", entityType)
+	}
+	return nil
+}
+
 // wouldCreateCycleTx checks if adding a dependency from issueID to dependsOnID would create a cycle.
 // Uses a transaction for consistency with sync event application.
 func wouldCreateCycleTx(tx *sql.Tx, issueID, dependsOnID string) bool {
@@ -114,8 +142,8 @@ func checkAndResolveCyclicDependency(tx *sql.Tx, event Event) bool {
 }
 
 func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
-	if !validColumnName.MatchString(table) {
-		return nil, fmt.Errorf("invalid table name: %q", table)
+	if err := validateEntityTable(table); err != nil {
+		return nil, err
 	}
 	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
@@ -334,6 +362,10 @@ func upsertEntityIfExists(tx *sql.Tx, entityType, entityID string, newData json.
 // upsertEntityWithMode inserts or replaces a row using the JSON payload fields.
 // If requireExisting is true, the operation is a no-op when the row does not exist.
 func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.RawMessage, requireExisting bool) (applyResult, error) {
+	if err := validateEntityTable(entityType); err != nil {
+		return applyResult{}, fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
+	}
+
 	if newData == nil {
 		return applyResult{}, fmt.Errorf("upsert %s/%s: nil payload", entityType, entityID)
 	}
@@ -422,6 +454,9 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 // For boards, also cascade soft-delete all board_issue_positions since
 // PRAGMA foreign_keys is not enabled and ON DELETE CASCADE is inert.
 func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
+	if err := validateEntityTable(entityType); err != nil {
+		return err
+	}
 	if entityType == "boards" {
 		if _, err := tx.Exec(
 			`UPDATE board_issue_positions SET deleted_at = CURRENT_TIMESTAMP WHERE board_id = ? AND deleted_at IS NULL`,
@@ -439,6 +474,9 @@ func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
 
 // softDeleteEntity sets deleted_at on a row. No-op if the row does not exist.
 func softDeleteEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Time) error {
+	if err := validateEntityTable(entityType); err != nil {
+		return err
+	}
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = ? WHERE id = ?", entityType)
 	if _, err := tx.Exec(query, timestamp, entityID); err != nil {
 		return fmt.Errorf("soft_delete %s/%s: %w", entityType, entityID, err)
@@ -448,6 +486,9 @@ func softDeleteEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Ti
 
 // restoreEntity clears deleted_at on a row. No-op if the row does not exist.
 func restoreEntity(tx *sql.Tx, entityType, entityID string, timestamp time.Time) error {
+	if err := validateEntityTable(entityType); err != nil {
+		return err
+	}
 	query := fmt.Sprintf("UPDATE %s SET deleted_at = NULL, updated_at = ? WHERE id = ?", entityType)
 	if _, err := tx.Exec(query, timestamp, entityID); err != nil {
 		return fmt.Errorf("restore %s/%s: %w", entityType, entityID, err)

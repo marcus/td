@@ -290,6 +290,17 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 
 	tmpPath := tmpFile.Name()
 
+	// Trust boundary: $VISUAL/$EDITOR is user-controlled (not attacker-controlled in normal CLI usage).
+	// Validate the binary exists to provide a clear error before exec.
+	if _, err := exec.LookPath(editor); err != nil {
+		os.Remove(tmpPath)
+		m.StatusMessage = fmt.Sprintf("Editor %q not found in PATH", editor)
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
+	}
+
 	// Create editor command
 	cmd := exec.Command(editor, tmpPath)
 

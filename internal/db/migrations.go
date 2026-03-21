@@ -6,11 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
+// validTableName matches safe SQL identifiers (letters, digits, underscores).
+var validTableName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 // columnExists checks whether a column exists on a table
 func (db *DB) columnExists(table, column string) (bool, error) {
+	if !validTableName.MatchString(table) {
+		return false, fmt.Errorf("invalid table name: %q", table)
+	}
 	query := fmt.Sprintf("PRAGMA table_info(%s);", table)
 	rows, err := db.conn.Query(query)
 	if err != nil {
@@ -590,6 +597,9 @@ CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, a
 
 // tableHasIntegerPK checks if the given table's primary key is INTEGER type
 func (db *DB) tableHasIntegerPK(table string) (bool, error) {
+	if !validTableName.MatchString(table) {
+		return false, fmt.Errorf("invalid table name: %q", table)
+	}
 	exists, err := db.tableExists(table)
 	if err != nil || !exists {
 		return false, err
@@ -606,6 +616,9 @@ func (db *DB) tableHasIntegerPK(table string) (bool, error) {
 
 // tableHasIntegerPKTx is like tableHasIntegerPK but runs within a transaction
 func (db *DB) tableHasIntegerPKTx(tx *sql.Tx, table string) (bool, error) {
+	if !validTableName.MatchString(table) {
+		return false, fmt.Errorf("invalid table name: %q", table)
+	}
 	// Check table exists via tx
 	var count int
 	err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count)
@@ -870,6 +883,9 @@ func (db *DB) tableExistsTx(tx *sql.Tx, table string) (bool, error) {
 
 // columnExistsTx checks column existence within a transaction
 func (db *DB) columnExistsTx(tx *sql.Tx, table, column string) (bool, error) {
+	if !validTableName.MatchString(table) {
+		return false, fmt.Errorf("invalid table name: %q", table)
+	}
 	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
 	if err != nil {
 		return false, err
