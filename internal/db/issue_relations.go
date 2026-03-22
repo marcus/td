@@ -140,22 +140,25 @@ func (db *DB) GetDescendantIssues(issueID string, statuses []models.Status) ([]*
 	if err != nil {
 		return nil, err
 	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Batch-fetch all descendant issues in a single query
+	fetched, err := db.GetIssuesByIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+
+	statusSet := make(map[models.Status]bool, len(statuses))
+	for _, s := range statuses {
+		statusSet[s] = true
+	}
 
 	var issues []*models.Issue
-	for _, id := range ids {
-		issue, err := db.GetIssue(id)
-		if err != nil {
-			continue // skip missing issues
-		}
-		if len(statuses) == 0 {
-			issues = append(issues, issue)
-		} else {
-			for _, s := range statuses {
-				if issue.Status == s {
-					issues = append(issues, issue)
-					break
-				}
-			}
+	for i := range fetched {
+		if len(statuses) == 0 || statusSet[fetched[i].Status] {
+			issues = append(issues, &fetched[i])
 		}
 	}
 	return issues, nil
@@ -292,17 +295,35 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 		return 0, nil
 	}
 
+	// Batch-fetch all dependent issues
+	depIssues, err := db.GetIssuesByIDs(dependents)
+	if err != nil {
+		return 0, nil
+	}
+
+	// Build map for quick lookup
+	issueMap := make(map[string]*models.Issue, len(depIssues))
+	for i := range depIssues {
+		issueMap[depIssues[i].ID] = &depIssues[i]
+	}
+
+	// Collect blocked dependents that need dependency checking
+	var blockedIDs []string
+	for _, depID := range dependents {
+		issue := issueMap[depID]
+		if issue != nil && issue.Status == models.StatusBlocked {
+			blockedIDs = append(blockedIDs, depID)
+		}
+	}
+
+	if len(blockedIDs) == 0 {
+		return 0, nil
+	}
+
 	var unblockedIDs []string
 
-	for _, depID := range dependents {
-		issue, err := db.GetIssue(depID)
-		if err != nil || issue == nil {
-			continue
-		}
-
-		if issue.Status != models.StatusBlocked {
-			continue
-		}
+	for _, depID := range blockedIDs {
+		issue := issueMap[depID]
 
 		// Check if ALL dependencies of this issue are now closed
 		deps, err := db.GetDependencies(depID)
@@ -310,14 +331,16 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 			continue
 		}
 
+		// Batch-fetch statuses of all dependencies
+		depStatuses, err := db.GetIssueStatuses(deps)
+		if err != nil {
+			continue
+		}
+
 		allClosed := true
 		for _, d := range deps {
-			depIssue, err := db.GetIssue(d)
-			if err != nil || depIssue == nil {
-				allClosed = false
-				break
-			}
-			if depIssue.Status != models.StatusClosed {
+			status, found := depStatuses[d]
+			if !found || status != models.StatusClosed {
 				allClosed = false
 				break
 			}
