@@ -3,6 +3,7 @@ package serve
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net"
@@ -343,7 +344,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token != s.config.Token {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(s.config.Token)) != 1 {
 			WriteError(w, ErrUnauthorized, "invalid token", http.StatusUnauthorized)
 			return
 		}

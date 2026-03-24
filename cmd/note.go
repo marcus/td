@@ -370,7 +370,12 @@ func openEditorForContent(initial string) (string, error) {
 	tmpFile.Close()
 
 	// Split editor command in case it includes args (e.g. "code --wait")
+	// Trust boundary: $EDITOR is user-controlled (not attacker-controlled in normal CLI usage).
+	// We validate the binary exists to provide a clear error before exec.
 	parts := strings.Fields(editor)
+	if _, err := exec.LookPath(parts[0]); err != nil {
+		return "", fmt.Errorf("editor %q not found in PATH: %w", parts[0], err)
+	}
 	cmdArgs := append(parts[1:], tmpFile.Name())
 	editorCmd := exec.Command(parts[0], cmdArgs...)
 	editorCmd.Stdin = os.Stdin
