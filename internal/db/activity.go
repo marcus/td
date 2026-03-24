@@ -191,7 +191,7 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 	for rows.Next() {
 		var sessionID string
 		if err := rows.Scan(&sessionID); err != nil {
-			continue
+			return nil, fmt.Errorf("scan active session: %w", err)
 		}
 		if sessionID != "" {
 			sessions = append(sessions, sessionID)

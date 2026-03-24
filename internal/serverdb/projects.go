@@ -153,7 +153,10 @@ func (db *ServerDB) UpdateProject(id, name, description string) (*Project, error
 	if err != nil {
 		return nil, fmt.Errorf("update project: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("update project: rows affected: %w", err)
+	}
 	if n == 0 {
 		return nil, fmt.Errorf("project not found: %s", id)
 	}
@@ -170,7 +173,10 @@ func (db *ServerDB) SoftDeleteProject(id string) error {
 	if err != nil {
 		return fmt.Errorf("soft delete project: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("soft delete project: rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("project not found: %s", id)
 	}
