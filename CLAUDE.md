@@ -62,7 +62,7 @@ td version
 - `internal/db/` - SQLite (schema.go). DB stored at `<project>/.todos/issues.db`
 - `internal/models/` - Issue, Log, Handoff, WorkSession
 - `internal/session/` - Session management (DB-backed, scoped by branch + agent)
-- `pkg/monitor/` - TUI monitor (see [docs/modal-system.md](docs/modal-system.md) for modal architecture)
+- `pkg/monitor/` - TUI monitor (see [modal system guide](docs/guides/deprecated/modal-system-guide.md) for modal architecture)
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
 
@@ -74,7 +74,7 @@ Monitor settings stored in two places:
 
 Save pattern: async `tea.Cmd` via `saveFilterState()` / `savePaneHeightsAsync()` (fire-and-forget).
 
-**Known issue**: `saveFilterState()` doesn't persist when td runs embedded in sidecar. The quit interceptor in `sidecar/internal/plugins/tdmonitor/plugin.go:241-250` wraps `tea.Batch` commands in a single `func() tea.Msg`, which may prevent Bubble Tea from dispatching batched sub-commands (like the config save alongside `fetchData`).
+**Known issue**: `saveFilterState()` doesn't persist when td runs embedded in sidecar. The sidecar quit interceptor wraps `tea.Batch` commands in a single `func() tea.Msg`, which may prevent Bubble Tea from dispatching batched sub-commands (like the config save alongside `fetchData`).
 
 ## Undo Support
 
