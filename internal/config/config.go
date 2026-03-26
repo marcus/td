@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/marcus/td/internal/models"
 )
@@ -75,27 +74,8 @@ func Save(baseDir string, cfg *models.Config) error {
 	return os.Rename(tmpName, configPath)
 }
 
-// withConfigLock serializes access to config.json using flock
-func withConfigLock(baseDir string, fn func() error) error {
-	lockPath := filepath.Join(baseDir, lockFile)
-
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-
-	return fn()
-}
+// withConfigLock serializes access to config.json using platform-specific
+// file locking. See config_lock_unix.go and config_lock_windows.go.
 
 // SetFocus sets the focused issue ID
 func SetFocus(baseDir string, issueID string) error {
