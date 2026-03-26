@@ -113,6 +113,10 @@ func (db *DB) runMigrationsInternal() (int, error) {
 	migrationsRun := 0
 	for _, migration := range Migrations {
 		if migration.Version > currentVersion {
+			// Migrations 4 and 5 check column existence before running because
+			// early versions of td added these columns outside the migration system.
+			// Databases modified manually or via partial migrations may already have
+			// the columns, so we skip the ALTER TABLE to avoid "duplicate column" errors.
 			if migration.Version == 4 {
 				exists, err := db.columnExists("issues", "minor")
 				if err != nil {
@@ -139,6 +143,11 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
+			// Migrations 19 and 20 have custom Go handlers (not plain SQL) because
+			// they need to read, transform, and rewrite data row-by-row:
+			// 19 converts absolute file paths to repo-relative paths,
+			// 20 normalizes legacy action_log entity_type/entity_id formats
+			// for sync compatibility after the deterministic ID migration.
 			if migration.Version == 20 {
 				if err := db.migrateLegacyActionLogCompositeIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 20 (action_log normalization): %w", err)

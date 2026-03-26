@@ -4,7 +4,13 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-// TransitionMode controls how guards are applied
+// TransitionMode controls how guards are applied.
+// Three modes exist to support gradual rollout of workflow enforcement:
+// - Liberal: the original td behavior — no guards run, any transition is allowed.
+//   This is the default so existing users aren't surprised by new restrictions.
+// - Advisory: guards run and return warnings in CLI output, but transitions still
+//   succeed. This lets teams see what *would* break before enabling strict mode.
+// - Strict: guards block invalid transitions. For teams that want enforced workflows.
 type TransitionMode int
 
 const (
@@ -28,7 +34,9 @@ const (
 	ContextMonitor ActionContext = "monitor"
 	// ContextWorkSession indicates transition from work session commands
 	ContextWorkSession ActionContext = "worksession"
-	// ContextAdmin indicates administrative bypass (allows self-approval)
+	// ContextAdmin indicates administrative bypass (allows self-approval).
+	// Exists for solo developers who are both creator and reviewer — without this,
+	// DifferentReviewerGuard would block them from ever approving their own work.
 	ContextAdmin ActionContext = "admin"
 )
 

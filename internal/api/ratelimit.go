@@ -31,6 +31,9 @@ func NewRateLimiter() *RateLimiter {
 		buckets: make(map[string]*bucket),
 		done:    make(chan struct{}),
 	}
+	// Cleanup interval of 5 minutes balances memory reclamation against lock
+	// contention: each cleanup locks the entire bucket map, so running too
+	// frequently would contend with Allow() on busy servers.
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -80,7 +83,14 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-// Default rate limits per endpoint tier (used as documentation/fallbacks).
+// Default rate limits per endpoint tier (per 1-minute window).
+// - Auth (10/min, per IP): low and IP-keyed to limit credential stuffing; legitimate
+//   users authenticate once per session so this rarely fires.
+// - Push (60/min): one push per CLI command; 60 covers rapid batch operations.
+// - Pull (120/min): higher than push because autosync polls and the TUI may pull
+//   on every refresh cycle.
+// - Other (300/min): admin/list endpoints are cheap reads; generous limit avoids
+//   blocking dashboards or scripts.
 const (
 	rateLimitAuth  = 10  // /auth/* per IP
 	rateLimitPush  = 60  // /sync/push per API key

@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+// Lock timing constants tuned for CLI responsiveness:
+// - 5ms initial backoff: low enough that uncontended locks resolve in one sleep
+// - 50ms cap: prevents long sleeps while still reducing CPU spin under contention
+// - 500ms timeout: long enough for autosync writes to complete, short enough
+//   that users don't perceive a hang on td commands
 const (
 	lockFileName   = "db.lock"
 	defaultTimeout = 500 * time.Millisecond
@@ -90,6 +95,8 @@ func (l *writeLocker) release() error {
 }
 
 // writeHolder writes current process info to the lock file for debugging.
+// This enables stale lock diagnostics: if a process crashes while holding the
+// lock, the next acquirer can report which PID held it and whether it's still alive.
 func (l *writeLocker) writeHolder() {
 	if l.lockFile == nil {
 		return

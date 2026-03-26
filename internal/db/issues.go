@@ -65,7 +65,11 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 
 		labels := strings.Join(issue.Labels, ",")
 
-		// Retry loop for rare ID collisions (6 hex chars = 16.7M keyspace)
+		// Retry loop for rare ID collisions (6 hex chars = 16.7M keyspace).
+		// 3 retries is sufficient: P(collision) per attempt ≈ N/16.7M where N is
+		// existing issues. Even at 10K issues, P(3 consecutive collisions) < 10^-9.
+		// We detect collisions via string-based UNIQUE constraint check on the error
+		// message because database/sql doesn't expose SQLite error codes directly.
 		const maxRetries = 3
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			id, err := generateID()

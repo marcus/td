@@ -93,6 +93,15 @@ func getCurrentBranch() string {
 }
 
 // getContextID generates a unique identifier for the current execution context.
+// The precedence chain is ordered by specificity and stability:
+//  1. TD_SESSION_ID: explicit user override — always wins
+//  2. AI agent env vars: AI tools set these per-conversation, giving each agent
+//     a stable identity even if the terminal PID is shared
+//  3. Terminal emulator env vars: unique per window/pane, survives shell restarts
+//  4. Process fallback (ppid+tty): least stable, but always available
+//
+// This is used for audit/diagnostics only — session matching uses branch+agent
+// fingerprint, not context ID.
 func getContextID() string {
 	if val := os.Getenv("TD_SESSION_ID"); val != "" {
 		return "explicit:" + val
