@@ -14,9 +14,9 @@ import (
 
 // Sentinel errors for common HTTP error classes.
 var (
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrForbidden    = errors.New("forbidden")
-	ErrNotFound     = errors.New("not found")
+	ErrUnauthorized = errors.New("unauthorized: re-authenticate with \"td auth login\"")
+	ErrForbidden    = errors.New("forbidden: you do not have permission for this action")
+	ErrNotFound     = errors.New("not found: the requested resource does not exist")
 )
 
 // Client is an HTTP client for the td-sync server.

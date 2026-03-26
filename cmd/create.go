@@ -52,8 +52,8 @@ var createCmd = &cobra.Command{
 		}
 
 		if title == "" {
-			output.Error("title is required")
-			return fmt.Errorf("title is required")
+			output.Error("title is required: provide via argument or --title flag")
+			return fmt.Errorf("title is required: provide via argument or --title flag")
 		}
 
 		// Parse type prefix from title if --type not explicitly provided
@@ -102,7 +102,7 @@ var createCmd = &cobra.Command{
 		if pts, _ := cmd.Flags().GetInt("points"); pts > 0 {
 			if !models.IsValidPoints(pts) {
 				output.Error("invalid points: %d (must be Fibonacci: 1,2,3,5,8,13,21)", pts)
-				return fmt.Errorf("invalid points")
+				return fmt.Errorf("invalid points %d: must be Fibonacci (1,2,3,5,8,13,21)", pts)
 			}
 			issue.Points = pts
 		}

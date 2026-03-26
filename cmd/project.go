@@ -31,7 +31,7 @@ var syncProjectCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		name := args[0]
@@ -75,7 +75,7 @@ var syncProjectLinkCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -195,7 +195,7 @@ var syncProjectListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		serverURL := syncconfig.GetServerURL()
@@ -227,7 +227,7 @@ var syncProjectMembersCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -241,7 +241,7 @@ var syncProjectMembersCmd = &cobra.Command{
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
 			output.Error("project not linked (run: td sync-project link <id>)")
-			return fmt.Errorf("not linked")
+			return fmt.Errorf("project not linked: run \"td sync-project link <id>\"")
 		}
 
 		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
@@ -271,7 +271,7 @@ var syncProjectInviteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -285,7 +285,7 @@ var syncProjectInviteCmd = &cobra.Command{
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
 			output.Error("project not linked (run: td sync-project link <id>)")
-			return fmt.Errorf("not linked")
+			return fmt.Errorf("project not linked: run \"td sync-project link <id>\"")
 		}
 
 		email := args[0]
@@ -317,7 +317,7 @@ var syncProjectKickCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -331,7 +331,7 @@ var syncProjectKickCmd = &cobra.Command{
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
 			output.Error("project not linked (run: td sync-project link <id>)")
-			return fmt.Errorf("not linked")
+			return fmt.Errorf("project not linked: run \"td sync-project link <id>\"")
 		}
 
 		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
@@ -352,7 +352,7 @@ var syncProjectRoleCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -366,7 +366,7 @@ var syncProjectRoleCmd = &cobra.Command{
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
 			output.Error("project not linked (run: td sync-project link <id>)")
-			return fmt.Errorf("not linked")
+			return fmt.Errorf("project not linked: run \"td sync-project link <id>\"")
 		}
 
 		if !validRoles[args[1]] {
@@ -392,7 +392,7 @@ var syncProjectJoinCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		serverURL := syncconfig.GetServerURL()
@@ -406,8 +406,8 @@ var syncProjectJoinCmd = &cobra.Command{
 		}
 
 		if len(projects) == 0 {
-			output.Error("no projects found")
-			return fmt.Errorf("no projects found")
+			output.Error("no projects found: create one with \"td sync-project create <name>\"")
+			return fmt.Errorf("no projects found: create one with \"td sync-project create <name>\"")
 		}
 
 		var selected syncclient.ProjectResponse
@@ -428,8 +428,8 @@ var syncProjectJoinCmd = &cobra.Command{
 
 			num, err := strconv.Atoi(input)
 			if err != nil || num < 1 || num > len(projects) {
-				output.Error("invalid selection %q", input)
-				return fmt.Errorf("invalid selection")
+				output.Error("invalid selection %q: choose a number between 1 and %d", input, len(projects))
+				return fmt.Errorf("invalid selection %q: choose a number between 1 and %d", input, len(projects))
 			}
 			selected = projects[num-1]
 		} else {

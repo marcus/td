@@ -53,13 +53,13 @@ Examples:
 						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
 					}
 					fmt.Printf("\nUsage: td show <issue-id>\n")
-					return fmt.Errorf("issue ID required")
+					return fmt.Errorf("issue ID required: run \"td list\" to see available issues")
 				} else {
 					output.Error("no issue ID specified and no issues in progress")
 					fmt.Printf("\nUsage: td show <issue-id>\n")
 					fmt.Printf("Try: td list        # see all issues\n")
 					fmt.Printf("     td next        # see highest priority open issue\n")
-					return fmt.Errorf("issue ID required")
+					return fmt.Errorf("issue ID required: run \"td list\" to see available issues")
 				}
 			}
 		}

@@ -139,7 +139,7 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen:
 		// Restore previous state
 		if action.PreviousData == "" {
-			return fmt.Errorf("no previous data to restore")
+			return fmt.Errorf("cannot undo: no previous state was recorded for this action")
 		}
 		var issue models.Issue
 		if err := json.Unmarshal([]byte(action.PreviousData), &issue); err != nil {
@@ -265,7 +265,7 @@ func undoBoardAction(database *db.DB, action *models.ActionLog, sessionID string
 	case models.ActionBoardDelete, models.ActionDelete:
 		// Undo delete by restoring from previous data
 		if action.PreviousData == "" {
-			return fmt.Errorf("no previous data to restore")
+			return fmt.Errorf("cannot undo: no previous state was recorded for this action")
 		}
 		var board models.Board
 		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {
@@ -289,7 +289,7 @@ func undoBoardAction(database *db.DB, action *models.ActionLog, sessionID string
 	case models.ActionBoardUpdate, models.ActionUpdate:
 		// Restore previous state (handles both "board_update" and generic "update")
 		if action.PreviousData == "" {
-			return fmt.Errorf("no previous data to restore")
+			return fmt.Errorf("cannot undo: no previous state was recorded for this action")
 		}
 		var board models.Board
 		if err := json.Unmarshal([]byte(action.PreviousData), &board); err != nil {

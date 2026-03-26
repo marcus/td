@@ -62,7 +62,7 @@ var syncCmd = &cobra.Command{
 
 		if !syncconfig.IsAuthenticated() {
 			output.Error("not logged in (run: td auth login)")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\"")
 		}
 
 		baseDir := getBaseDir()
@@ -80,7 +80,7 @@ var syncCmd = &cobra.Command{
 		}
 		if syncState == nil {
 			output.Error("project not linked (run: td sync-project link <id>)")
-			return fmt.Errorf("not linked")
+			return fmt.Errorf("project not linked: run \"td sync-project link <id>\"")
 		}
 
 		deviceID, err := syncconfig.GetDeviceID()
