@@ -51,7 +51,7 @@ var wsStartCmd = &cobra.Command{
 		activeWS, _ := config.GetActiveWorkSession(baseDir)
 		if activeWS != "" {
 			output.Error("work session already active: %s", activeWS)
-			return fmt.Errorf("work session already active")
+			return fmt.Errorf("work session %q already active: run \"td ws end\" first", activeWS)
 		}
 
 		name := args[0]
@@ -111,7 +111,7 @@ var wsTagCmd = &cobra.Command{
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session. Run 'td ws start <name>' first")
-			return fmt.Errorf("no active work session")
+			return fmt.Errorf("no active work session: run \"td ws start <name>\"")
 		}
 
 		for _, issueID := range args {
@@ -198,7 +198,7 @@ var wsUntagCmd = &cobra.Command{
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session")
-			return fmt.Errorf("no active work session")
+			return fmt.Errorf("no active work session: run \"td ws start <name>\"")
 		}
 
 		for _, issueID := range args {
@@ -238,7 +238,7 @@ var wsLogCmd = &cobra.Command{
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session")
-			return fmt.Errorf("no active work session")
+			return fmt.Errorf("no active work session: run \"td ws start <name>\"")
 		}
 
 		// Determine log type
@@ -424,7 +424,7 @@ Flags support values, stdin (-), or file (@path):
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session")
-			return fmt.Errorf("no active work session")
+			return fmt.Errorf("no active work session: run \"td ws start <name>\"")
 		}
 
 		ws, err := database.GetWorkSession(wsID)
@@ -573,7 +573,7 @@ var wsEndCmd = &cobra.Command{
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 		if wsID == "" {
 			output.Error("no active work session")
-			return fmt.Errorf("no active work session")
+			return fmt.Errorf("no active work session: run \"td ws start <name>\"")
 		}
 
 		ws, err := database.GetWorkSession(wsID)

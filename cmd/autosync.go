@@ -320,7 +320,7 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		pushResp, err := client.Push(state.ProjectID, pushReq)
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
-				return fmt.Errorf("unauthorized")
+				return fmt.Errorf("unauthorized: re-authenticate with \"td auth login\"")
 			}
 			return fmt.Errorf("push batch %d/%d: %w", i/pushBatchSize+1, (len(events)+pushBatchSize-1)/pushBatchSize, err)
 		}

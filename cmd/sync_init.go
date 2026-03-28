@@ -45,7 +45,7 @@ var syncInitCmd = &cobra.Command{
 		// Step 2: Authentication
 		if !syncconfig.IsAuthenticated() {
 			output.Error("Not authenticated. Run 'td auth login' first, then re-run 'td sync init'.")
-			return fmt.Errorf("not authenticated")
+			return fmt.Errorf("not authenticated: run \"td auth login\" first, then re-run \"td sync init\"")
 		}
 
 		creds, err := syncconfig.LoadAuth()
@@ -88,7 +88,7 @@ var syncInitCmd = &cobra.Command{
 			case "c":
 				name := promptLine(reader, "Project name: ", "")
 				if name == "" {
-					return fmt.Errorf("project name required")
+					return fmt.Errorf("project name required: enter a non-empty name")
 				}
 
 				project, err := client.CreateProject(name, "")
@@ -112,8 +112,8 @@ var syncInitCmd = &cobra.Command{
 					return err
 				}
 				if len(projects) == 0 {
-					output.Error("no projects found")
-					return fmt.Errorf("no projects found")
+					output.Error("no projects found on server: create one with \"td sync-project create <name>\"")
+					return fmt.Errorf("no projects found on server")
 				}
 
 				fmt.Println("Available projects:")
@@ -124,8 +124,8 @@ var syncInitCmd = &cobra.Command{
 				input := promptLine(reader, "Select project number: ", "")
 				num, err := strconv.Atoi(input)
 				if err != nil || num < 1 || num > len(projects) {
-					output.Error("invalid selection %q", input)
-					return fmt.Errorf("invalid selection")
+					output.Error("invalid selection %q: choose a number between 1 and %d", input, len(projects))
+					return fmt.Errorf("invalid selection %q: choose a number between 1 and %d", input, len(projects))
 				}
 
 				selected := projects[num-1]

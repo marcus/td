@@ -289,7 +289,7 @@ Supports bulk operations:
 
 		if len(issueIDs) == 0 {
 			output.Error("no issues to approve. Provide issue IDs or use --all")
-			return fmt.Errorf("no issues specified")
+			return fmt.Errorf("no issues specified: provide issue IDs or use --all")
 		}
 
 		approved := 0
@@ -585,7 +585,7 @@ Examples:
 				output.Error("no issue specified and no focused issue")
 				fmt.Println("  Usage: td close <issue-id>")
 				fmt.Println("  Or set focus first: td focus <issue-id>")
-				return fmt.Errorf("no issue specified")
+				return fmt.Errorf("no issue specified and no focused issue: provide an issue ID or run \"td focus <id>\" first")
 			}
 			args = []string{focusedID}
 		}
