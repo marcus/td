@@ -33,6 +33,12 @@ var resumeCmd = &cobra.Command{
 var usageCmd = &cobra.Command{
 	Use:     "usage",
 	Short:   "Generate optimized context block for AI agents",
+	Long: `Generate an optimized context block for AI agents.
+
+Outputs the current session, focused issue, work session, in-progress items,
+reviewable issues, and ready-to-start issues. Includes workflow instructions
+by default; use -q to suppress them after the first read. Use --new-session
+at conversation start or after /clear to force a fresh session.`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -199,7 +205,7 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  3. `td handoff <id>` to capture state (REQUIRED)")
 			fmt.Println("     Multi-issue: `td ws handoff`")
 			fmt.Println("  4. `td review <id>` to submit for review")
-			fmt.Println("  5. Different session: `td approve <id>` to complete")
+			fmt.Println("  5. Reviewer: `td approve <id>` to close in_review work, or `td reject <id>` to send it back to open")
 			fmt.Println()
 			fmt.Println("  Use `td ws` commands when implementing multiple related issues.")
 			fmt.Println()
@@ -209,6 +215,8 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  td context <id>         Full context for resuming")
 			fmt.Println("  td next                 Highest priority open issue")
 			fmt.Println("  td critical-path        What unblocks the most work")
+			fmt.Println("  td status --json        Machine-readable session and review state")
+			fmt.Println("  td list --json          Machine-readable issue listings for scripts")
 			fmt.Println("  td reviewable           Issues you can review")
 			fmt.Println("  td approve/reject <id>  Complete review")
 			fmt.Println()

@@ -108,27 +108,25 @@ var createCmd = &cobra.Command{
 		}
 
 		// Labels (support --labels, --label, --tags, --tag)
-		labelsStr, _ := cmd.Flags().GetString("labels")
-		if labelsStr == "" {
-			if s, _ := cmd.Flags().GetString("label"); s != "" {
-				labelsStr = s
+		// All label flags support repeated flags (-l a -l b) and comma-separated (-l "a,b")
+		labelsArr, _ := cmd.Flags().GetStringArray("labels")
+		if len(labelsArr) == 0 {
+			if arr, _ := cmd.Flags().GetStringArray("label"); len(arr) > 0 {
+				labelsArr = arr
 			}
 		}
-		if labelsStr == "" {
-			if s, _ := cmd.Flags().GetString("tags"); s != "" {
-				labelsStr = s
+		if len(labelsArr) == 0 {
+			if arr, _ := cmd.Flags().GetStringArray("tags"); len(arr) > 0 {
+				labelsArr = arr
 			}
 		}
-		if labelsStr == "" {
-			if s, _ := cmd.Flags().GetString("tag"); s != "" {
-				labelsStr = s
+		if len(labelsArr) == 0 {
+			if arr, _ := cmd.Flags().GetStringArray("tag"); len(arr) > 0 {
+				labelsArr = arr
 			}
 		}
-		if labelsStr != "" {
-			issue.Labels = strings.Split(labelsStr, ",")
-			for i := range issue.Labels {
-				issue.Labels[i] = strings.TrimSpace(issue.Labels[i])
-			}
+		if len(labelsArr) > 0 {
+			issue.Labels = mergeMultiValueFlag(labelsArr)
 		}
 
 		// Description (support --description, --desc, and --body)
@@ -208,19 +206,17 @@ var createCmd = &cobra.Command{
 			output.Warning("failed to record session history: %v", err)
 		}
 
-		// Handle dependencies
-		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
-			for _, dep := range strings.Split(dependsOn, ",") {
-				dep = strings.TrimSpace(dep)
+		// Handle dependencies (support repeated flags and comma-separated)
+		if dependsArr, _ := cmd.Flags().GetStringArray("depends-on"); len(dependsArr) > 0 {
+			for _, dep := range mergeMultiValueFlag(dependsArr) {
 				if err := database.AddDependencyLogged(issue.ID, dep, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add dependency %s: %v", dep, err)
 				}
 			}
 		}
 
-		if blocks, _ := cmd.Flags().GetString("blocks"); blocks != "" {
-			for _, blocked := range strings.Split(blocks, ",") {
-				blocked = strings.TrimSpace(blocked)
+		if blocksArr, _ := cmd.Flags().GetStringArray("blocks"); len(blocksArr) > 0 {
+			for _, blocked := range mergeMultiValueFlag(blocksArr) {
 				if err := database.AddDependencyLogged(blocked, issue.ID, "depends_on", sess.ID); err != nil {
 					output.Warning("failed to add blocks %s: %v", blocked, err)
 				}
@@ -239,10 +235,10 @@ func init() {
 	createCmd.Flags().StringP("type", "t", "", "Issue type (bug, feature, task, epic, chore)")
 	createCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	createCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
-	createCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
-	createCmd.Flags().String("label", "", "Alias for --labels (single or comma-separated)")
-	createCmd.Flags().String("tags", "", "Alias for --labels")
-	createCmd.Flags().String("tag", "", "Alias for --labels")
+	createCmd.Flags().StringArrayP("labels", "l", nil, "Labels (repeatable, comma-separated)")
+	createCmd.Flags().StringArray("label", nil, "Alias for --labels")
+	createCmd.Flags().StringArray("tags", nil, "Alias for --labels")
+	createCmd.Flags().StringArray("tag", nil, "Alias for --labels")
 	createCmd.Flags().StringP("description", "d", "", "Description text")
 	createCmd.Flags().String("desc", "", "Alias for --description")
 	createCmd.Flags().String("body", "", "Alias for --description")
@@ -250,8 +246,8 @@ func init() {
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
 	createCmd.Flags().String("parent", "", "Parent issue ID")
 	createCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
-	createCmd.Flags().String("depends-on", "", "Issues this depends on")
-	createCmd.Flags().String("blocks", "", "Issues this blocks")
+	createCmd.Flags().StringArray("depends-on", nil, "Issues this depends on (repeatable, comma-separated)")
+	createCmd.Flags().StringArray("blocks", nil, "Issues this blocks (repeatable, comma-separated)")
 	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	createCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01)")
 	createCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15)")
@@ -275,6 +271,24 @@ func parseTypeFromTitle(title string) (models.Type, string) {
 		}
 	}
 	return "", title
+}
+
+// mergeMultiValueFlag takes a string array from a repeated flag, splits each
+// element on commas, trims whitespace, and deduplicates. This allows both
+// `-l "a,b"` and `-l a -l b` (and mixed: `-l "a,b" -l c`) to work.
+func mergeMultiValueFlag(values []string) []string {
+	var result []string
+	seen := make(map[string]bool)
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" && !seen[part] {
+				seen[part] = true
+				result = append(result, part)
+			}
+		}
+	}
+	return result
 }
 
 // validateTitle checks that the title is descriptive enough

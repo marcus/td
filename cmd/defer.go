@@ -14,6 +14,12 @@ import (
 var deferCmd = &cobra.Command{
 	Use:     "defer [issue-id] [date]",
 	Short:   "Defer an issue until a future date",
+	Long: `Defer an issue until a future date.
+
+Hides the issue from default list views until the specified date. Supports
+natural date expressions (e.g., +7d, monday, 2026-03-01). Repeated deferrals
+increment the defer count. Use --clear to remove the deferral and make the
+issue immediately actionable.`,
 	GroupID: "workflow",
 	Args:    cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {

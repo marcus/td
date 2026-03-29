@@ -42,6 +42,12 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	}
 	_, err := sm.Validate(ctx)
 	if err != nil {
+		if issue.Status == models.StatusInReview {
+			return SubmitReviewResult{
+				Success: false,
+				Message: fmt.Sprintf("cannot review %s: already in review", issue.ID) + "\n" + reviewFollowupGuidance(issue),
+			}
+		}
 		return SubmitReviewResult{
 			Success: false,
 			Message: fmt.Sprintf("cannot review %s: %v", issue.ID, err),
@@ -241,6 +247,40 @@ func approvalReason(cmd *cobra.Command) string {
 	return ""
 }
 
+func closeFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	if issue != nil && issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
+// reviewFollowupGuidance returns the next workflow command after a failed
+// review submission attempt.
+func reviewFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	if issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
+// approveFollowupGuidance returns the next workflow command after a failed
+// approval attempt.
+func approveFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review first: td review "
+	}
+	if issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues",
@@ -285,6 +325,28 @@ Supports bulk operations:
 			}
 		} else {
 			issueIDs = args
+			if len(issueIDs) == 0 {
+				issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+				if err != nil {
+					output.Error("failed to list reviewable issues: %v", err)
+					return err
+				}
+				switch len(issues) {
+				case 0:
+					output.Error("no issues to approve. Provide issue IDs or use --all")
+					return fmt.Errorf("no issues specified")
+				case 1:
+					issueIDs = []string{issues[0].ID}
+				default:
+					output.Error("no issue ID specified. Multiple issues awaiting your review:")
+					for _, issue := range issues {
+						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					}
+					fmt.Printf("\nUsage: td approve <issue-id>\n")
+					fmt.Printf("Or use: td approve --all\n")
+					return fmt.Errorf("issue ID required")
+				}
+			}
 		}
 
 		if len(issueIDs) == 0 {
@@ -314,6 +376,7 @@ Supports bulk operations:
 						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot approve %s: invalid transition from %s", issueID, issue.Status))
 					} else {
 						output.Warning("cannot approve %s: invalid transition from %s", issueID, issue.Status)
+						fmt.Println(approveFollowupGuidance(issue))
 					}
 				}
 				skipped++
@@ -647,7 +710,7 @@ Examples:
 			if !eligibility.Allowed {
 				if selfCloseException == "" {
 					output.Error("%s", eligibility.RejectionMessage)
-					output.Error("  Submit for review: td review %s", issueID)
+					output.Error("%s", closeFollowupGuidance(issue))
 					skipped++
 					continue
 				}

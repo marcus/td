@@ -146,6 +146,14 @@ td start <id>
 - Run relevant test suites
 - For TUI changes: describe what you verified manually
 
+Batch review loops:
+
+- `EPIC_IDS=.` means "use the active epic context" when a focused issue is not set.
+- `td list --epic . -s in_review` and `td list --epic . -s open,in_progress` should work in that batch mode.
+- If `EPIC_IDS=.` cannot resolve cleanly, check `td status --json` and `td list --json` first; if there is still no active context, fall back to explicit epic IDs instead of guessing.
+- For scripted state lookups, prefer `td status --json` and `td list --json`; do not scrape the human-readable dashboard output.
+- Use `td review <id>` for `open`/`in_progress` work, and `td approve <id>` once a task is already `in_review`.
+
 ### Step 4: Commit and close
 
 ```bash

@@ -21,6 +21,11 @@ var syncProjectCmd = &cobra.Command{
 	Use:     "sync-project",
 	Aliases: []string{"sp"},
 	Short:   "Manage sync projects",
+	Long: `Manage sync projects.
+
+Create, list, link, unlink, and join remote sync projects. Also manages
+project membership (invite, kick, role changes). A local td database must
+be linked to a remote project before sync can operate.`,
 	GroupID: "system",
 }
 

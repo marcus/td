@@ -1,0 +1,3 @@
+STARTED td-fe5f4f (session: ses_a9fc51)
+Git: e73c752 (main) 6 modified, 13 untracked
+Warning: Starting with uncommitted changes

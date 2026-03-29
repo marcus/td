@@ -419,33 +419,30 @@ func TestCreateTagFlagParsing(t *testing.T) {
 		t.Error("Expected --tags flag to be defined")
 	}
 
-	// Test that --tag flag can be set
+	// Test that --tag flag can be set (StringArray accepts individual values via Set)
 	if err := createCmd.Flags().Set("tag", "test,data"); err != nil {
 		t.Errorf("Failed to set --tag flag: %v", err)
 	}
 
-	tagValue, err := createCmd.Flags().GetString("tag")
+	tagValue, err := createCmd.Flags().GetStringArray("tag")
 	if err != nil {
 		t.Errorf("Failed to get --tag flag value: %v", err)
 	}
-	if tagValue != "test,data" {
-		t.Errorf("Expected tag value 'test,data', got %s", tagValue)
+	if len(tagValue) != 1 || tagValue[0] != "test,data" {
+		t.Errorf("Expected tag value ['test,data'], got %v", tagValue)
 	}
-
-	// Reset flags
-	createCmd.Flags().Set("tag", "")
 
 	// Test that --tags flag can be set
 	if err := createCmd.Flags().Set("tags", "backend,api"); err != nil {
 		t.Errorf("Failed to set --tags flag: %v", err)
 	}
 
-	tagsValue, err := createCmd.Flags().GetString("tags")
+	tagsValue, err := createCmd.Flags().GetStringArray("tags")
 	if err != nil {
 		t.Errorf("Failed to get --tags flag value: %v", err)
 	}
-	if tagsValue != "backend,api" {
-		t.Errorf("Expected tags value 'backend,api', got %s", tagsValue)
+	if len(tagsValue) != 1 || tagsValue[0] != "backend,api" {
+		t.Errorf("Expected tags value ['backend,api'], got %v", tagsValue)
 	}
 }
 

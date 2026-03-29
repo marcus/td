@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/marcus/td/internal/dateparse"
 	"github.com/marcus/td/internal/db"
@@ -17,6 +16,12 @@ var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
 	Aliases: []string{"edit"},
 	Short:   "Update one or more fields on existing issues",
+	Long: `Update one or more fields on existing issues.
+
+Accepts one or more issue IDs and applies the specified field changes to each.
+Supports title, description, type, priority, points, labels, status, parent,
+dependencies, defer/due dates, and inline comments. Text fields support
+--append mode to add to existing content instead of replacing it.`,
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -99,14 +104,13 @@ var updateCmd = &cobra.Command{
 				issue.Points = pts
 			}
 
-			if labels, _ := cmd.Flags().GetString("labels"); cmd.Flags().Changed("labels") {
-				if labels == "" {
+			if cmd.Flags().Changed("labels") {
+				labelsArr, _ := cmd.Flags().GetStringArray("labels")
+				merged := mergeMultiValueFlag(labelsArr)
+				if len(merged) == 0 {
 					issue.Labels = nil
 				} else {
-					issue.Labels = strings.Split(labels, ",")
-					for i := range issue.Labels {
-						issue.Labels[i] = strings.TrimSpace(issue.Labels[i])
-					}
+					issue.Labels = merged
 				}
 			}
 
@@ -183,34 +187,26 @@ var updateCmd = &cobra.Command{
 				}
 			}
 
-			// Update dependencies
-			if dependsOn, _ := cmd.Flags().GetString("depends-on"); cmd.Flags().Changed("depends-on") {
-				// Clear existing and set new
+			// Update dependencies (support repeated flags and comma-separated)
+			if cmd.Flags().Changed("depends-on") {
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
 					database.RemoveDependencyLogged(issueID, dep, sess.ID)
 				}
-				// Add new deps
-				if dependsOn != "" {
-					for _, dep := range strings.Split(dependsOn, ",") {
-						dep = strings.TrimSpace(dep)
-						database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
-					}
+				dependsArr, _ := cmd.Flags().GetStringArray("depends-on")
+				for _, dep := range mergeMultiValueFlag(dependsArr) {
+					database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
 				}
 			}
 
-			if blocks, _ := cmd.Flags().GetString("blocks"); cmd.Flags().Changed("blocks") {
-				// For blocks, we need to find issues that depend on this one and update them
+			if cmd.Flags().Changed("blocks") {
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
 					database.RemoveDependencyLogged(b, issueID, sess.ID)
 				}
-				// Add new blocks
-				if blocks != "" {
-					for _, b := range strings.Split(blocks, ",") {
-						b = strings.TrimSpace(b)
-						database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
-					}
+				blocksArr, _ := cmd.Flags().GetStringArray("blocks")
+				for _, b := range mergeMultiValueFlag(blocksArr) {
+					database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
 				}
 			}
 
@@ -253,11 +249,11 @@ func init() {
 	updateCmd.Flags().String("type", "", "New type")
 	updateCmd.Flags().String("priority", "", "New priority")
 	updateCmd.Flags().Int("points", 0, "New story points")
-	updateCmd.Flags().String("labels", "", "Replace labels")
+	updateCmd.Flags().StringArray("labels", nil, "Replace labels (repeatable, comma-separated)")
 	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
-	updateCmd.Flags().String("depends-on", "", "Replace dependencies")
-	updateCmd.Flags().String("blocks", "", "Replace blocked issues")
+	updateCmd.Flags().StringArray("depends-on", nil, "Replace dependencies (repeatable, comma-separated)")
+	updateCmd.Flags().StringArray("blocks", nil, "Replace blocked issues (repeatable, comma-separated)")
 	updateCmd.Flags().Bool("append", false, "Append to text fields instead of replacing")
 	updateCmd.Flags().String("status", "", "New status (open, in_progress, in_review, blocked, closed)")
 	updateCmd.Flags().StringP("comment", "m", "", "Add a comment to the updated issue(s)")
