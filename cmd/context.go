@@ -33,6 +33,12 @@ var resumeCmd = &cobra.Command{
 var usageCmd = &cobra.Command{
 	Use:     "usage",
 	Short:   "Generate optimized context block for AI agents",
+	Long: `Generate an optimized context block for AI agents.
+
+Outputs the current session, focused issue, work session, in-progress items,
+reviewable issues, and ready-to-start issues. Includes workflow instructions
+by default; use -q to suppress them after the first read. Use --new-session
+at conversation start or after /clear to force a fresh session.`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

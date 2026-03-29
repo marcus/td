@@ -17,6 +17,11 @@ import (
 var authCmd = &cobra.Command{
 	Use:     "auth",
 	Short:   "Manage sync authentication",
+	Long: `Manage sync authentication.
+
+Log in, log out, and check authentication status for the td sync server.
+Uses a device-code OAuth flow — 'td auth login' displays a URL and code
+to complete authentication in a browser.`,
 	GroupID: "system",
 }
 

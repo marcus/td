@@ -13,6 +13,12 @@ import (
 var featureCmd = &cobra.Command{
 	Use:     "feature",
 	Short:   "Manage experimental feature flags",
+	Long: `Manage experimental feature flags.
+
+List, get, set, and unset feature flags that gate experimental functionality
+such as sync CLI commands and auto-sync. Flags can be set per-project or via
+environment variables. Use 'td feature list' to see all flags and their
+resolved state.`,
 	GroupID: "system",
 }
 

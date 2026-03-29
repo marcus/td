@@ -16,6 +16,12 @@ var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
 	Aliases: []string{"edit"},
 	Short:   "Update one or more fields on existing issues",
+	Long: `Update one or more fields on existing issues.
+
+Accepts one or more issue IDs and applies the specified field changes to each.
+Supports title, description, type, priority, points, labels, status, parent,
+dependencies, defer/due dates, and inline comments. Text fields support
+--append mode to add to existing content instead of replacing it.`,
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
