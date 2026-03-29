@@ -49,7 +49,12 @@ func intPtr(n int) *int    { return &n }
 
 var configCmd = &cobra.Command{
 	Use:     "config",
-	Short:   "Manage td configuration",
+	Short: "Manage td configuration",
+	Long: `Manage td configuration.
+
+Get, set, and list configuration values that control sync behavior. Settings
+include the sync server URL, auto-sync toggles, debounce/interval timing,
+and snapshot thresholds.`,
 	GroupID: "system",
 }
 

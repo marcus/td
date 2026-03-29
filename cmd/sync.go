@@ -53,7 +53,15 @@ var errBootstrapNotNeeded = errors.New("bootstrap not needed")
 
 var syncCmd = &cobra.Command{
 	Use:     "sync",
-	Short:   "Sync local data with remote server",
+	Short: "Sync local data with remote server",
+	Long: `Sync local data with remote server.
+
+Pushes pending local events and pulls remote changes from the sync server.
+On first sync, attempts a snapshot bootstrap if the server has enough events.
+
+Use --push or --pull to run only one direction, or --status to inspect sync
+state without transferring data. Requires authentication (td auth login) and
+a linked project (td sync-project link).`,
 	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pushOnly, _ := cmd.Flags().GetBool("push")

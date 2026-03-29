@@ -12,8 +12,13 @@ import (
 )
 
 var dueCmd = &cobra.Command{
-	Use:     "due [issue-id] [date]",
-	Short:   "Set a due date on an issue",
+	Use:   "due [issue-id] [date]",
+	Short: "Set a due date on an issue",
+	Long: `Set a due date on an issue.
+
+Accepts natural date expressions like friday, +2w, or 2026-03-15. Issues
+approaching their due date appear in td list --due-soon, and overdue
+issues appear in td list --overdue. Use --clear to remove the due date.`,
 	GroupID: "workflow",
 	Args:    cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {

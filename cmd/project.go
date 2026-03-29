@@ -20,7 +20,12 @@ var validRoles = map[string]bool{"owner": true, "writer": true, "reader": true}
 var syncProjectCmd = &cobra.Command{
 	Use:     "sync-project",
 	Aliases: []string{"sp"},
-	Short:   "Manage sync projects",
+	Short: "Manage sync projects",
+	Long: `Manage sync projects.
+
+Create, link, unlink, join, and administer remote sync projects. A project
+groups devices that share the same issue data. Use subcommands to manage
+project membership and roles (owner, writer, reader).`,
 	GroupID: "system",
 }
 

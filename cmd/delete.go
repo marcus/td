@@ -10,8 +10,13 @@ import (
 )
 
 var deleteCmd = &cobra.Command{
-	Use:     "delete [issue-id...]",
-	Short:   "Soft-delete one or more issues",
+	Use:   "delete [issue-id...]",
+	Short: "Soft-delete one or more issues",
+	Long: `Soft-delete one or more issues.
+
+Marks issues as deleted without permanently removing them from the database.
+Deleted issues are hidden from listings but can be restored with td restore.
+Use td deleted to view soft-deleted issues.`,
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

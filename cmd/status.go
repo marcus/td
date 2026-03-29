@@ -16,6 +16,11 @@ var statusCmd = &cobra.Command{
 	Use:     "status",
 	Aliases: []string{"current"},
 	Short:   "Show dashboard: session, focus, reviews, blocked, ready issues",
+	Long: `Show a dashboard of current session state.
+
+Displays focused issue, issues in review (with reviewability), blocked issues
+with their dependencies, and open issues ready to start. Use --json for
+machine-readable output suitable for scripts and integrations.`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

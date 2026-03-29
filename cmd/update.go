@@ -15,7 +15,15 @@ import (
 var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
 	Aliases: []string{"edit"},
-	Short:   "Update one or more fields on existing issues",
+	Short: "Update one or more fields on existing issues",
+	Long: `Update one or more fields on existing issues.
+
+Accepts one or more issue IDs and applies the specified field changes to each.
+Only flags that are explicitly set are modified; unspecified fields are left
+unchanged. Use --append to add to text fields instead of replacing them.
+
+Status transitions are validated against the workflow state machine. Dependencies
+can be replaced with --depends-on and --blocks.`,
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

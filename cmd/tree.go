@@ -11,8 +11,12 @@ import (
 )
 
 var treeCmd = &cobra.Command{
-	Use:     "tree [issue-id]",
-	Short:   "Visualize parent/child relationships",
+	Use:   "tree [issue-id]",
+	Short: "Visualize parent/child relationships",
+	Long: `Visualize the parent/child hierarchy rooted at the given issue.
+
+Recursively displays all descendant issues as an indented tree. Use --depth
+to limit traversal depth, or --json for a nested JSON representation.`,
 	GroupID: "query",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

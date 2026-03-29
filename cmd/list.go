@@ -17,7 +17,15 @@ import (
 var listCmd = &cobra.Command{
 	Use:     "list [filters]",
 	Aliases: []string{"ls"},
-	Short:   "List issues matching given filters",
+	Short: "List issues matching given filters",
+	Long: `List issues matching given filters.
+
+Supports filtering by status, type, priority, labels, dates, and free-text
+search. Use positional arguments or --filter for TDQ query expressions.
+
+By default, closed and deferred issues are hidden. Use --all to include them.
+
+Output formats: short (default), --long for details, --json for machine use.`,
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

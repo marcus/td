@@ -12,8 +12,13 @@ import (
 )
 
 var doctorCmd = &cobra.Command{
-	Use:     "doctor",
-	Short:   "Run diagnostic checks for sync setup",
+	Use:   "doctor",
+	Short: "Run diagnostic checks for sync setup",
+	Long: `Run diagnostic checks for sync setup.
+
+Verifies authentication config, server reachability, API key validity, local
+database state, project linkage, and pending event count. Use this to
+troubleshoot sync connectivity or configuration issues.`,
 	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		runDoctor()

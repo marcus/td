@@ -12,8 +12,12 @@ import (
 )
 
 var resumeCmd = &cobra.Command{
-	Use:     "resume [issue-id]",
-	Short:   "Show context and set focus",
+	Use:   "resume [issue-id]",
+	Short: "Show context and set focus",
+	Long: `Show full issue details and set focus to the given issue.
+
+Displays the issue context (equivalent to td show) and then sets the working
+focus so subsequent commands like td log operate on this issue by default.`,
 	GroupID: "session",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,8 +35,13 @@ var resumeCmd = &cobra.Command{
 }
 
 var usageCmd = &cobra.Command{
-	Use:     "usage",
-	Short:   "Generate optimized context block for AI agents",
+	Use:   "usage",
+	Short: "Generate optimized context block for AI agents",
+	Long: `Generate an optimized context block for AI agents.
+
+Outputs current session identity, focused issue with handoff state, in-progress
+work, reviewable issues, and ready-to-start items. Includes workflow instructions
+unless --quiet is set. Use --new-session at conversation start or after /clear.`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
