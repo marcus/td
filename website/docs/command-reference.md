@@ -10,10 +10,10 @@ Complete reference for all `td` commands.
 
 | Command | Description |
 |---------|-------------|
-| `td create "title" [flags]` | Create issue. Flags: `--type`, `--priority`, `--description`, `--parent`, `--epic`, `--minor` |
+| `td create "title" [flags]` | Create issue. Flags: `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--parent`, `--epic`, `--minor` |
 | `td list [flags]` | List issues. Flags: `--status`, `--type`, `--priority`, `--epic` |
 | `td show <id>` | Display full issue details |
-| `td update <id> [flags]` | Update fields. Flags: `--title`, `--type`, `--priority`, `--description`, `--labels` |
+| `td update <id> [flags]` | Update fields. Flags: `--title`, `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--labels` |
 | `td delete <id>` | Soft-delete issue |
 | `td restore <id>` | Restore soft-deleted issue |
 
@@ -49,6 +49,18 @@ Date formats: `+7d`, `+2w`, `+1m`, `monday`, `tomorrow`, `next-week`, `next-mont
 The `--defer` and `--due` flags are also available on `td create` and `td update`.
 
 **List filters:** `--all` (include deferred), `--deferred`, `--surfacing`, `--overdue`, `--due-soon`
+
+## Agent-Safe Rich Text Input
+
+Use `--description-file` and `--acceptance-file` for markdown-heavy fields so shells do not mangle code fences, quotes, or blank lines. Pass `-` to read the full field from stdin.
+
+```bash
+td create "Document sync failure modes" \
+  --description-file docs/issue-description.md \
+  --acceptance-file docs/issue-acceptance.md
+
+cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
+```
 
 ## Query & Search
 

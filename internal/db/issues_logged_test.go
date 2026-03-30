@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/marcus/td/internal/models"
@@ -149,6 +150,109 @@ func TestUpdateIssueLogged(t *testing.T) {
 	}
 	if newIssue.Priority != models.PriorityP0 {
 		t.Errorf("new_data priority: got %s, want P0", newIssue.Priority)
+	}
+}
+
+func TestTransitionIssueLogged(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Transition me",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	updated, err := database.TransitionIssueLogged(issue.ID, models.StatusOpen, "sess-review", models.ActionReview, func(current *models.Issue) {
+		current.Status = models.StatusInReview
+		current.ImplementerSession = "sess-review"
+	})
+	if err != nil {
+		t.Fatalf("TransitionIssueLogged failed: %v", err)
+	}
+
+	if updated.Status != models.StatusInReview {
+		t.Fatalf("updated status = %s, want %s", updated.Status, models.StatusInReview)
+	}
+	if updated.ImplementerSession != "sess-review" {
+		t.Fatalf("updated implementer = %q, want %q", updated.ImplementerSession, "sess-review")
+	}
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if got.Status != models.StatusInReview {
+		t.Fatalf("persisted status = %s, want %s", got.Status, models.StatusInReview)
+	}
+	if got.ImplementerSession != "sess-review" {
+		t.Fatalf("persisted implementer = %q, want %q", got.ImplementerSession, "sess-review")
+	}
+}
+
+func TestTransitionIssueLogged_RejectsStaleStatusWithoutOverwritingCurrentRow(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Original title",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	current.Title = "Updated elsewhere"
+	current.Status = models.StatusClosed
+	if err := database.UpdateIssue(current); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	_, err = database.TransitionIssueLogged(issue.ID, models.StatusOpen, "sess-review", models.ActionReview, func(latest *models.Issue) {
+		latest.Status = models.StatusInReview
+		latest.ImplementerSession = "sess-review"
+	})
+	if err == nil {
+		t.Fatal("expected stale transition error, got nil")
+	}
+
+	var staleErr *StaleIssueTransitionError
+	if !errors.As(err, &staleErr) {
+		t.Fatalf("expected StaleIssueTransitionError, got %T (%v)", err, err)
+	}
+	if staleErr.ExpectedStatus != models.StatusOpen {
+		t.Fatalf("expected status = %s, want %s", staleErr.ExpectedStatus, models.StatusOpen)
+	}
+	if staleErr.Issue == nil || staleErr.Issue.Status != models.StatusClosed {
+		t.Fatalf("current status = %v, want %s", staleErr.Issue, models.StatusClosed)
+	}
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if got.Status != models.StatusClosed {
+		t.Fatalf("status overwritten: got %s, want %s", got.Status, models.StatusClosed)
+	}
+	if got.Title != "Updated elsewhere" {
+		t.Fatalf("title overwritten: got %q, want %q", got.Title, "Updated elsewhere")
+	}
+	if got.ImplementerSession != "" {
+		t.Fatalf("implementer overwritten: got %q, want empty", got.ImplementerSession)
 	}
 }
 

@@ -252,3 +252,137 @@ func TestEvaluateCloseEligibility(t *testing.T) {
 		})
 	}
 }
+
+func TestCloseFollowupGuidance(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{
+			name:  "open issue points to review",
+			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
+			want:  "  Submit for review: td review td-open",
+		},
+		{
+			name:  "in progress issue points to review",
+			issue: &models.Issue{ID: "td-progress", Status: models.StatusInProgress},
+			want:  "  Submit for review: td review td-progress",
+		},
+		{
+			name:  "in review issue points to approve",
+			issue: &models.Issue{ID: "td-review", Status: models.StatusInReview},
+			want:  "  Already in review: td approve td-review",
+		},
+		{
+			name:  "blocked issue points to unblock",
+			issue: &models.Issue{ID: "td-blocked", Status: models.StatusBlocked},
+			want:  "  Unblock it first: td unblock td-blocked",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
+		},
+		{
+			name:  "nil issue falls back to review wording",
+			issue: nil,
+			want:  "  Submit for review: td review ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := closeFollowupGuidance(tt.issue)
+			if got != tt.want {
+				t.Fatalf("closeFollowupGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReviewFollowupGuidance(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{
+			name:  "open issue points to review",
+			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
+			want:  "  Submit for review: td review td-open",
+		},
+		{
+			name:  "in progress issue points to review",
+			issue: &models.Issue{ID: "td-progress", Status: models.StatusInProgress},
+			want:  "  Submit for review: td review td-progress",
+		},
+		{
+			name:  "in review issue points to approve",
+			issue: &models.Issue{ID: "td-review", Status: models.StatusInReview},
+			want:  "  Already in review: td approve td-review",
+		},
+		{
+			name:  "blocked issue points to unblock",
+			issue: &models.Issue{ID: "td-blocked", Status: models.StatusBlocked},
+			want:  "  Unblock it first: td unblock td-blocked",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
+		},
+		{
+			name:  "nil issue falls back to review wording",
+			issue: nil,
+			want:  "  Submit for review: td review ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reviewFollowupGuidance(tt.issue)
+			if got != tt.want {
+				t.Fatalf("reviewFollowupGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApproveFollowupGuidance(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{
+			name:  "in review issue points to approve",
+			issue: &models.Issue{ID: "td-review", Status: models.StatusInReview},
+			want:  "  Approve it: td approve td-review",
+		},
+		{
+			name:  "open issue points to review first",
+			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
+			want:  "  Submit for review first: td review td-open",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
+		},
+		{
+			name:  "nil issue falls back to review wording",
+			issue: nil,
+			want:  "  Submit for review first: td review ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := approveFollowupGuidance(tt.issue)
+			if got != tt.want {
+				t.Fatalf("approveFollowupGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

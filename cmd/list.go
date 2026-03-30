@@ -179,7 +179,7 @@ var listCmd = &cobra.Command{
 
 		// Parent filter
 		if parentID, _ := cmd.Flags().GetString("parent"); parentID != "" {
-			resolvedParentID, err := resolveListIssueFilterID(baseDir, parentID, "parent")
+			resolvedParentID, err := resolveListIssueFilterID(database, baseDir, parentID, "parent")
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -189,7 +189,7 @@ var listCmd = &cobra.Command{
 
 		// Epic filter
 		if epicID, _ := cmd.Flags().GetString("epic"); epicID != "" {
-			resolvedEpicID, err := resolveListIssueFilterID(baseDir, epicID, "epic")
+			resolvedEpicID, err := resolveListIssueFilterID(database, baseDir, epicID, "epic")
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -595,7 +595,7 @@ func parseDateFilter(s string) (after, before time.Time) {
 	return time.Time{}, time.Time{}
 }
 
-func resolveListIssueFilterID(baseDir, rawID, flagName string) (string, error) {
+func resolveListIssueFilterID(database *db.DB, baseDir, rawID, flagName string) (string, error) {
 	trimmedID := strings.TrimSpace(rawID)
 	if trimmedID == "" {
 		return "", nil
@@ -607,12 +607,124 @@ func resolveListIssueFilterID(baseDir, rawID, flagName string) (string, error) {
 			return "", fmt.Errorf("resolve --%s .: %w", flagName, err)
 		}
 		if strings.TrimSpace(focusedID) == "" {
-			return "", fmt.Errorf("--%s . requires a focused issue", flagName)
+			var resolveErr error
+			if resolvedID, err := resolveListIssueFilterFromSession(database); err == nil && resolvedID != "" {
+				return resolvedID, nil
+			} else if err != nil {
+				resolveErr = err
+			}
+
+			if resolvedID, err := resolveListIssueFilterFromWorkSession(database, baseDir); err == nil && resolvedID != "" {
+				return resolvedID, nil
+			} else if err != nil {
+				resolveErr = err
+			}
+
+			if resolveErr != nil {
+				return "", fmt.Errorf("--%s . requires a focused issue, recent session activity, or an active work session: %w", flagName, resolveErr)
+			}
+			return "", fmt.Errorf("--%s . requires a focused issue, recent session activity, or an active work session", flagName)
 		}
 		return db.NormalizeIssueID(focusedID), nil
 	}
 
 	return db.NormalizeIssueID(trimmedID), nil
+}
+
+func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		return "", err
+	}
+
+	issues, err := database.ListIssues(db.ListIssuesOptions{
+		// Review-phase work still needs to resolve the epic root when the
+		// current session has already moved the issue into review.
+		Status:      []models.Status{models.StatusInProgress, models.StatusInReview},
+		Implementer: sess.ID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := resolveCommonIssueRootAncestorID(database, issueIDsFromIssues(issues)); err != nil || resolved != "" {
+		return resolved, err
+	}
+
+	// Fall back to the session's logged issue history so the dot path keeps
+	// working after review transitions have cleared the focused work item.
+	sessionLogIDs, err := database.GetIssueSessionLog(sess.ID)
+	if err != nil {
+		return "", err
+	}
+
+	return resolveCommonIssueRootAncestorID(database, sessionLogIDs)
+}
+
+func resolveListIssueFilterFromWorkSession(database *db.DB, baseDir string) (string, error) {
+	wsID, err := config.GetActiveWorkSession(baseDir)
+	if err != nil || strings.TrimSpace(wsID) == "" {
+		return "", err
+	}
+
+	issueIDs, err := database.GetWorkSessionIssues(wsID)
+	if err != nil {
+		return "", err
+	}
+
+	return resolveCommonIssueRootAncestorID(database, issueIDs)
+}
+
+func issueIDsFromIssues(issues []models.Issue) []string {
+	ids := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		ids = append(ids, issue.ID)
+	}
+	return ids
+}
+
+func resolveCommonIssueRootAncestorID(database *db.DB, issueIDs []string) (string, error) {
+	resolved := ""
+	for _, issueID := range issueIDs {
+		rootID, err := resolveIssueRootAncestorID(database, issueID)
+		if err != nil {
+			return "", err
+		}
+		if rootID == "" {
+			continue
+		}
+		if resolved == "" {
+			resolved = rootID
+			continue
+		}
+		if resolved != rootID {
+			return "", fmt.Errorf("multiple issue roots found")
+		}
+	}
+	return resolved, nil
+}
+
+func resolveIssueRootAncestorID(database *db.DB, issueID string) (string, error) {
+	currentID := db.NormalizeIssueID(strings.TrimSpace(issueID))
+	if currentID == "" {
+		return "", nil
+	}
+
+	seen := map[string]bool{}
+	for {
+		if seen[currentID] {
+			return "", fmt.Errorf("cycle detected while resolving issue root for %s", currentID)
+		}
+		seen[currentID] = true
+
+		issue, err := database.GetIssue(currentID)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(issue.ParentID) == "" {
+			return issue.ID, nil
+		}
+		currentID = issue.ParentID
+	}
 }
 
 func init() {

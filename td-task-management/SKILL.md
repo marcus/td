@@ -149,6 +149,8 @@ td context td-a1b2  # Refresh context when blocker resolves
 
 ### Creating/Managing Issues
 - `td create "title" --type feature --priority P1` - Create
+- `td create "title" --description-file body.md --acceptance-file acceptance.md` - Agent-safe rich text
+- `cat body.md | td update <id> --append --description-file -` - Append rich text from stdin
 - `td list` - List all
 - `td list --status in_progress` - Filter by status
 - `td block <id>` - Mark as blocked

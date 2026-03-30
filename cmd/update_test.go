@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/db"
@@ -560,4 +563,116 @@ func TestUpdateCmdHasStatusFlag(t *testing.T) {
 
 	// Reset
 	updateCmd.Flags().Set("status", "")
+}
+
+func TestUpdateRichTextAppendFromFileAndStdin(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:       "Rich text update target",
+		Description: "Existing description",
+		Acceptance:  "Existing acceptance",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	saveAndRestoreCommandFlags(t, updateCmd, "description", "desc", "body", "description-file", "acceptance", "acceptance-file", "append")
+
+	description := "## Imported\n\n```sh\necho hello\n```\n"
+	descriptionPath := filepath.Join(dir, "description.md")
+	if err := os.WriteFile(descriptionPath, []byte(description), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	acceptance := "- [ ] keep spacing\n\n- [ ] preserve quotes \"ok\"\n"
+	replaceStdinWithFile(t, acceptance)
+
+	if err := updateCmd.Flags().Set("description-file", descriptionPath); err != nil {
+		t.Fatalf("Set description-file failed: %v", err)
+	}
+	if err := updateCmd.Flags().Set("acceptance-file", "-"); err != nil {
+		t.Fatalf("Set acceptance-file failed: %v", err)
+	}
+	if err := updateCmd.Flags().Set("append", "true"); err != nil {
+		t.Fatalf("Set append failed: %v", err)
+	}
+
+	if err := updateCmd.RunE(updateCmd, []string{issue.ID}); err != nil {
+		t.Fatalf("updateCmd.RunE failed: %v", err)
+	}
+
+	updated, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+
+	wantDescription := "Existing description\n\n" + description
+	if updated.Description != wantDescription {
+		t.Fatalf("description mismatch\nwant: %q\ngot:  %q", wantDescription, updated.Description)
+	}
+
+	wantAcceptance := "Existing acceptance\n\n" + acceptance
+	if updated.Acceptance != wantAcceptance {
+		t.Fatalf("acceptance mismatch\nwant: %q\ngot:  %q", wantAcceptance, updated.Acceptance)
+	}
+}
+
+func TestUpdateRichTextConflictErrors(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Conflict target", Description: "old"}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	saveAndRestoreCommandFlags(t, updateCmd, "description", "desc", "body", "description-file")
+
+	descriptionPath := filepath.Join(dir, "description.md")
+	if err := os.WriteFile(descriptionPath, []byte("from file"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if err := updateCmd.Flags().Set("description", "inline"); err != nil {
+		t.Fatalf("Set description failed: %v", err)
+	}
+	if err := updateCmd.Flags().Set("description-file", descriptionPath); err != nil {
+		t.Fatalf("Set description-file failed: %v", err)
+	}
+
+	err = updateCmd.RunE(updateCmd, []string{issue.ID})
+	if err == nil {
+		t.Fatal("expected updateCmd.RunE to fail")
+	}
+	if !strings.Contains(err.Error(), "--description-file") || !strings.Contains(err.Error(), "--description") {
+		t.Fatalf("expected actionable conflict error, got %v", err)
+	}
+
+	updated, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if updated.Description != "old" {
+		t.Fatalf("expected description to remain unchanged, got %q", updated.Description)
+	}
 }

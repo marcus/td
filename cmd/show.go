@@ -55,11 +55,26 @@ Examples:
 					fmt.Printf("\nUsage: td show <issue-id>\n")
 					return fmt.Errorf("issue ID required")
 				} else {
-					output.Error("no issue ID specified and no issues in progress")
-					fmt.Printf("\nUsage: td show <issue-id>\n")
-					fmt.Printf("Try: td list        # see all issues\n")
-					fmt.Printf("     td next        # see highest priority open issue\n")
-					return fmt.Errorf("issue ID required")
+					inReview, _ := database.ListIssues(db.ListIssuesOptions{
+						Status: []models.Status{models.StatusInReview},
+						Limit:  5,
+					})
+					if len(inReview) == 1 {
+						args = []string{inReview[0].ID}
+					} else if len(inReview) > 1 {
+						output.Error("no issue ID specified. Multiple issues in review:")
+						for _, issue := range inReview {
+							fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+						}
+						fmt.Printf("\nUsage: td show <issue-id>\n")
+						return fmt.Errorf("issue ID required")
+					} else {
+						output.Error("no issue ID specified and no issues in progress")
+						fmt.Printf("\nUsage: td show <issue-id>\n")
+						fmt.Printf("Try: td list        # see all issues\n")
+						fmt.Printf("     td next        # see highest priority open issue\n")
+						return fmt.Errorf("issue ID required")
+					}
 				}
 			}
 		}

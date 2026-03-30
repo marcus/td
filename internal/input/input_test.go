@@ -1,6 +1,7 @@
 package input
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,5 +263,49 @@ func TestExpandFlagValuesNilSlice(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Errorf("Expected nil or empty result, got %v", result)
+	}
+}
+
+func TestReadTextFromFilePreservesExactContent(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "body.md")
+	want := "Intro\n\n```go\nfmt.Println(\"hi\")\n```\n  indented\n"
+	if err := os.WriteFile(filePath, []byte(want), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	got, stdinUsed, err := ReadText(filePath, strings.NewReader("unused"), false)
+	if err != nil {
+		t.Fatalf("ReadText failed: %v", err)
+	}
+	if stdinUsed {
+		t.Fatal("stdinUsed should be false for file input")
+	}
+	if got != want {
+		t.Fatalf("content mismatch\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestReadTextFromStdinPreservesExactContent(t *testing.T) {
+	want := "# Title\n\n- item\n\n> quote\n"
+	got, stdinUsed, err := ReadText("-", strings.NewReader(want), false)
+	if err != nil {
+		t.Fatalf("ReadText failed: %v", err)
+	}
+	if !stdinUsed {
+		t.Fatal("stdinUsed should be true for stdin input")
+	}
+	if got != want {
+		t.Fatalf("content mismatch\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestReadTextRejectsSecondStdinRead(t *testing.T) {
+	_, stdinUsed, err := ReadText("-", strings.NewReader("ignored"), true)
+	if !stdinUsed {
+		t.Fatal("stdinUsed should remain true")
+	}
+	if !errors.Is(err, ErrStdinAlreadyUsed) {
+		t.Fatalf("expected ErrStdinAlreadyUsed, got %v", err)
 	}
 }

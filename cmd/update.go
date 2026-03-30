@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/marcus/td/internal/dateparse"
 	"github.com/marcus/td/internal/db"
@@ -17,6 +16,9 @@ var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
 	Aliases: []string{"edit"},
 	Short:   "Update one or more fields on existing issues",
+	Example: "  td update td-a1b2 --priority P1 --description \"Short inline note\"\n" +
+		"  td update td-a1b2 --description-file description.md\n" +
+		"  cat acceptance.md | td update td-a1b2 --append --acceptance-file -",
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,24 +52,38 @@ var updateCmd = &cobra.Command{
 			}
 
 			appendMode, _ := cmd.Flags().GetBool("append")
+			stdinUsed := false
 
-			// Check description and its aliases (--desc, --body, -d)
-			desc, _ := cmd.Flags().GetString("description")
-			if desc == "" {
-				desc, _ = cmd.Flags().GetString("desc")
+			description, descriptionProvided, nextStdinUsed, err := resolveRichTextField(
+				cmd,
+				[]string{"description", "desc", "body"},
+				"description-file",
+				stdinUsed,
+			)
+			if err != nil {
+				output.Error("%v", err)
+				return err
 			}
-			if desc == "" {
-				desc, _ = cmd.Flags().GetString("body")
-			}
-			if desc != "" {
+			if descriptionProvided {
 				if appendMode && issue.Description != "" {
-					issue.Description = issue.Description + "\n\n" + desc
+					issue.Description = issue.Description + "\n\n" + description
 				} else {
-					issue.Description = desc
+					issue.Description = description
 				}
 			}
+			stdinUsed = nextStdinUsed
 
-			if acceptance, _ := cmd.Flags().GetString("acceptance"); acceptance != "" {
+			acceptance, acceptanceProvided, _, err := resolveRichTextField(
+				cmd,
+				[]string{"acceptance"},
+				"acceptance-file",
+				stdinUsed,
+			)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			if acceptanceProvided {
 				if appendMode && issue.Acceptance != "" {
 					issue.Acceptance = issue.Acceptance + "\n\n" + acceptance
 				} else {
@@ -99,14 +115,13 @@ var updateCmd = &cobra.Command{
 				issue.Points = pts
 			}
 
-			if labels, _ := cmd.Flags().GetString("labels"); cmd.Flags().Changed("labels") {
-				if labels == "" {
+			if cmd.Flags().Changed("labels") {
+				labelsArr, _ := cmd.Flags().GetStringArray("labels")
+				merged := mergeMultiValueFlag(labelsArr)
+				if len(merged) == 0 {
 					issue.Labels = nil
 				} else {
-					issue.Labels = strings.Split(labels, ",")
-					for i := range issue.Labels {
-						issue.Labels[i] = strings.TrimSpace(issue.Labels[i])
-					}
+					issue.Labels = merged
 				}
 			}
 
@@ -183,34 +198,26 @@ var updateCmd = &cobra.Command{
 				}
 			}
 
-			// Update dependencies
-			if dependsOn, _ := cmd.Flags().GetString("depends-on"); cmd.Flags().Changed("depends-on") {
-				// Clear existing and set new
+			// Update dependencies (support repeated flags and comma-separated)
+			if cmd.Flags().Changed("depends-on") {
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
 					database.RemoveDependencyLogged(issueID, dep, sess.ID)
 				}
-				// Add new deps
-				if dependsOn != "" {
-					for _, dep := range strings.Split(dependsOn, ",") {
-						dep = strings.TrimSpace(dep)
-						database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
-					}
+				dependsArr, _ := cmd.Flags().GetStringArray("depends-on")
+				for _, dep := range mergeMultiValueFlag(dependsArr) {
+					database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
 				}
 			}
 
-			if blocks, _ := cmd.Flags().GetString("blocks"); cmd.Flags().Changed("blocks") {
-				// For blocks, we need to find issues that depend on this one and update them
+			if cmd.Flags().Changed("blocks") {
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
 					database.RemoveDependencyLogged(b, issueID, sess.ID)
 				}
-				// Add new blocks
-				if blocks != "" {
-					for _, b := range strings.Split(blocks, ",") {
-						b = strings.TrimSpace(b)
-						database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
-					}
+				blocksArr, _ := cmd.Flags().GetStringArray("blocks")
+				for _, b := range mergeMultiValueFlag(blocksArr) {
+					database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
 				}
 			}
 
@@ -249,15 +256,17 @@ func init() {
 	updateCmd.Flags().StringP("description", "d", "", "New description")
 	updateCmd.Flags().String("desc", "", "Alias for --description")
 	updateCmd.Flags().String("body", "", "Alias for --description")
+	updateCmd.Flags().String("description-file", "", "Read description from file or - for stdin (preserves formatting)")
 	updateCmd.Flags().String("acceptance", "", "New acceptance criteria")
+	updateCmd.Flags().String("acceptance-file", "", "Read acceptance criteria from file or - for stdin (preserves formatting)")
 	updateCmd.Flags().String("type", "", "New type")
 	updateCmd.Flags().String("priority", "", "New priority")
 	updateCmd.Flags().Int("points", 0, "New story points")
-	updateCmd.Flags().String("labels", "", "Replace labels")
+	updateCmd.Flags().StringArrayP("labels", "l", nil, "Replace labels (repeatable, comma-separated)")
 	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
-	updateCmd.Flags().String("depends-on", "", "Replace dependencies")
-	updateCmd.Flags().String("blocks", "", "Replace blocked issues")
+	updateCmd.Flags().StringArray("depends-on", nil, "Replace dependencies (repeatable, comma-separated)")
+	updateCmd.Flags().StringArray("blocks", nil, "Replace blocked issues (repeatable, comma-separated)")
 	updateCmd.Flags().Bool("append", false, "Append to text fields instead of replacing")
 	updateCmd.Flags().String("status", "", "New status (open, in_progress, in_review, blocked, closed)")
 	updateCmd.Flags().StringP("comment", "m", "", "Add a comment to the updated issue(s)")

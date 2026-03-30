@@ -10,6 +10,25 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
+// StaleIssueTransitionError reports that an issue's status changed after the
+// caller read it but before the logged transition acquired the write lock.
+type StaleIssueTransitionError struct {
+	Issue          *models.Issue
+	ExpectedStatus models.Status
+}
+
+func (e *StaleIssueTransitionError) Error() string {
+	if e == nil || e.Issue == nil {
+		return "issue status changed concurrently"
+	}
+	return fmt.Sprintf(
+		"issue status changed concurrently: %s is now %s (expected %s)",
+		e.Issue.ID,
+		e.Issue.Status,
+		e.ExpectedStatus,
+	)
+}
+
 // marshalIssue returns a JSON representation of an issue for action_log storage.
 func marshalIssue(issue *models.Issue) string {
 	data, _ := json.Marshal(issue)
@@ -221,6 +240,38 @@ func (db *DB) UpdateIssueLogged(issue *models.Issue, sessionID string, actionTyp
 	return db.withWriteLock(func() error {
 		return db.updateIssueAndLog(issue, sessionID, actionType)
 	})
+}
+
+// TransitionIssueLogged applies a status transition against the current issue
+// row while holding the write lock. If the issue status changed since the
+// caller last read it, the transition is rejected instead of overwriting the
+// newer state.
+func (db *DB) TransitionIssueLogged(issueID string, expectedStatus models.Status, sessionID string, actionType models.ActionType, mutate func(issue *models.Issue)) (*models.Issue, error) {
+	var updated *models.Issue
+	err := db.withWriteLock(func() error {
+		current, err := db.scanIssueRow(issueID)
+		if err != nil {
+			return err
+		}
+		if current.Status != expectedStatus {
+			return &StaleIssueTransitionError{
+				Issue:          current,
+				ExpectedStatus: expectedStatus,
+			}
+		}
+		if mutate != nil {
+			mutate(current)
+		}
+		if err := db.updateIssueAndLog(current, sessionID, actionType); err != nil {
+			return err
+		}
+		updated = current
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 // DeleteIssueLogged soft-deletes an issue and logs the action atomically within a single withWriteLock call.

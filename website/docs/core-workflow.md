@@ -14,11 +14,18 @@ Create issues with a title, type, and optional priority:
 td create "Add user authentication" --type feature --priority P1
 td create "Login button misaligned" --type bug
 td create "Refactor auth module" --type task --priority P2
+td create "Capture sync edge cases" --description-file docs/issue-description.md
 ```
 
 **Types:** `bug`, `feature`, `task`, `epic`, `chore`
 
 **Priorities:** `P0` (critical) through `P4` (lowest). Defaults to P2 if omitted.
+
+For markdown-heavy descriptions or acceptance criteria, prefer `--description-file` and `--acceptance-file`. They preserve blank lines, indentation, and fenced code blocks exactly, and `-` reads the whole field from stdin:
+
+```bash
+cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
+```
 
 ## Starting Work
 

@@ -8,6 +8,7 @@ import (
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 )
 
 func TestParseDateFilter(t *testing.T) {
@@ -517,6 +518,12 @@ func TestStatusAllVariations(t *testing.T) {
 
 func TestResolveListIssueFilterID(t *testing.T) {
 	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
 	if err := config.SetFocus(dir, "td-focused"); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
 	}
@@ -549,7 +556,7 @@ func TestResolveListIssueFilterID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveListIssueFilterID(dir, tc.rawID, tc.flagName)
+			got, err := resolveListIssueFilterID(database, dir, tc.rawID, tc.flagName)
 			if err != nil {
 				t.Fatalf("resolveListIssueFilterID returned error: %v", err)
 			}
@@ -562,12 +569,216 @@ func TestResolveListIssueFilterID(t *testing.T) {
 
 func TestResolveListIssueFilterIDDotRequiresFocus(t *testing.T) {
 	dir := t.TempDir()
-
-	_, err := resolveListIssueFilterID(dir, ".", "epic")
-	if err == nil {
-		t.Fatal("expected error when resolving --epic . without focus")
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "--epic . requires a focused issue") {
+	defer database.Close()
+
+	_, err = resolveListIssueFilterID(database, dir, ".", "epic")
+	if err == nil {
+		t.Fatal("expected error when resolving --epic . without session context")
+	}
+	if !strings.Contains(err.Error(), "--epic . requires a focused issue, recent session activity, or an active work session") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveListIssueFilterIDDotUsesSessionLogHistory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	epic := &models.Issue{
+		Title:  "Session log epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Session log child",
+		Status:   models.StatusClosed,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+
+	if err := database.AddLog(&models.Log{
+		IssueID:   child.ID,
+		SessionID: sess.ID,
+		Message:   "Approved after review",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	got, err := resolveListIssueFilterID(database, dir, ".", "epic")
+	if err != nil {
+		t.Fatalf("resolveListIssueFilterID returned error: %v", err)
+	}
+	if got != epic.ID {
+		t.Fatalf("resolveListIssueFilterID returned %q, want epic root %q", got, epic.ID)
+	}
+}
+
+func TestResolveListIssueFilterIDDotUsesCurrentSessionEpic(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	epic := &models.Issue{
+		Title:              "Session epic",
+		Type:               models.TypeEpic,
+		Status:             models.StatusInProgress,
+		ImplementerSession: sess.ID,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
+	if err := database.UpdateIssue(epic); err != nil {
+		t.Fatalf("UpdateIssue epic failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:              "Session child",
+		ParentID:           epic.ID,
+		Status:             models.StatusInProgress,
+		ImplementerSession: sess.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue child failed: %v", err)
+	}
+
+	got, err := resolveListIssueFilterID(database, dir, ".", "epic")
+	if err != nil {
+		t.Fatalf("resolveListIssueFilterID returned error: %v", err)
+	}
+	if got != epic.ID {
+		t.Fatalf("resolveListIssueFilterID returned %q, want epic root %q", got, epic.ID)
+	}
+}
+
+func TestResolveListIssueFilterIDDotUsesCurrentSessionReviewPhaseEpic(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	epic := &models.Issue{
+		Title:              "Review phase epic",
+		Type:               models.TypeEpic,
+		Status:             models.StatusInProgress,
+		ImplementerSession: sess.ID,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
+	if err := database.UpdateIssue(epic); err != nil {
+		t.Fatalf("UpdateIssue epic failed: %v", err)
+	}
+
+	reviewTask := &models.Issue{
+		Title:              "Review phase child",
+		ParentID:           epic.ID,
+		Status:             models.StatusInReview,
+		ImplementerSession: sess.ID,
+	}
+	if err := database.CreateIssue(reviewTask); err != nil {
+		t.Fatalf("CreateIssue review task failed: %v", err)
+	}
+	if err := database.UpdateIssue(reviewTask); err != nil {
+		t.Fatalf("UpdateIssue review task failed: %v", err)
+	}
+
+	got, err := resolveListIssueFilterID(database, dir, ".", "epic")
+	if err != nil {
+		t.Fatalf("resolveListIssueFilterID returned error: %v", err)
+	}
+	if got != epic.ID {
+		t.Fatalf("resolveListIssueFilterID returned %q, want epic root %q", got, epic.ID)
+	}
+}
+
+func TestResolveListIssueFilterIDDotUsesActiveWorkSessionEpic(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	ws := &models.WorkSession{Name: "dispatch-loop", SessionID: sess.ID}
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
+
+	epic := &models.Issue{
+		Title:  "Work session epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Work session child",
+		ParentID: epic.ID,
+		Status:   models.StatusInProgress,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, child.ID, sess.ID); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
+
+	got, err := resolveListIssueFilterID(database, dir, ".", "epic")
+	if err != nil {
+		t.Fatalf("resolveListIssueFilterID returned error: %v", err)
+	}
+	if got != epic.ID {
+		t.Fatalf("resolveListIssueFilterID returned %q, want epic root %q", got, epic.ID)
 	}
 }

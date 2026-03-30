@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -419,33 +421,30 @@ func TestCreateTagFlagParsing(t *testing.T) {
 		t.Error("Expected --tags flag to be defined")
 	}
 
-	// Test that --tag flag can be set
+	// Test that --tag flag can be set (StringArray accepts individual values via Set)
 	if err := createCmd.Flags().Set("tag", "test,data"); err != nil {
 		t.Errorf("Failed to set --tag flag: %v", err)
 	}
 
-	tagValue, err := createCmd.Flags().GetString("tag")
+	tagValue, err := createCmd.Flags().GetStringArray("tag")
 	if err != nil {
 		t.Errorf("Failed to get --tag flag value: %v", err)
 	}
-	if tagValue != "test,data" {
-		t.Errorf("Expected tag value 'test,data', got %s", tagValue)
+	if len(tagValue) != 1 || tagValue[0] != "test,data" {
+		t.Errorf("Expected tag value ['test,data'], got %v", tagValue)
 	}
-
-	// Reset flags
-	createCmd.Flags().Set("tag", "")
 
 	// Test that --tags flag can be set
 	if err := createCmd.Flags().Set("tags", "backend,api"); err != nil {
 		t.Errorf("Failed to set --tags flag: %v", err)
 	}
 
-	tagsValue, err := createCmd.Flags().GetString("tags")
+	tagsValue, err := createCmd.Flags().GetStringArray("tags")
 	if err != nil {
 		t.Errorf("Failed to get --tags flag value: %v", err)
 	}
-	if tagsValue != "backend,api" {
-		t.Errorf("Expected tags value 'backend,api', got %s", tagsValue)
+	if len(tagsValue) != 1 || tagsValue[0] != "backend,api" {
+		t.Errorf("Expected tags value ['backend,api'], got %v", tagsValue)
 	}
 }
 
@@ -850,13 +849,13 @@ func TestValidateTitleMinLength(t *testing.T) {
 		maxLen    int
 		wantError bool
 	}{
-		{"Short", 15, 200, true},                              // 5 chars < 15
-		{"This is fine!", 15, 200, true},                      // 13 chars < 15
-		{"This is long enough to pass", 15, 200, false},       // 27 chars >= 15
-		{"Exactly fifteen!", 15, 200, false},                  // 16 chars >= 15
-		{"Fix the login bug", 15, 200, false},                 // 17 chars >= 15
-		{"A", 1, 200, false},                                  // Custom min=1
-		{"Unicode: 日本語テスト長さ確認", 15, 200, false},               // Unicode rune count (19 runes >= 15)
+		{"Short", 15, 200, true},                        // 5 chars < 15
+		{"This is fine!", 15, 200, true},                // 13 chars < 15
+		{"This is long enough to pass", 15, 200, false}, // 27 chars >= 15
+		{"Exactly fifteen!", 15, 200, false},            // 16 chars >= 15
+		{"Fix the login bug", 15, 200, false},           // 17 chars >= 15
+		{"A", 1, 200, false},                            // Custom min=1
+		{"Unicode: 日本語テスト長さ確認", 15, 200, false},         // Unicode rune count (19 runes >= 15)
 	}
 
 	for _, tt := range tests {
@@ -879,11 +878,11 @@ func TestValidateTitleMaxLength(t *testing.T) {
 		wantError bool
 	}{
 		{"This is a normal length title that should pass easily", 15, 200, false},
-		{strings.Repeat("a", 200), 15, 200, false},  // Exactly 200 chars
-		{strings.Repeat("a", 201), 15, 200, true},   // 201 chars > 200
-		{strings.Repeat("a", 300), 15, 200, true},   // Way too long
-		{strings.Repeat("a", 50), 15, 50, false},    // Custom max
-		{strings.Repeat("a", 51), 15, 50, true},     // Custom max exceeded
+		{strings.Repeat("a", 200), 15, 200, false}, // Exactly 200 chars
+		{strings.Repeat("a", 201), 15, 200, true},  // 201 chars > 200
+		{strings.Repeat("a", 300), 15, 200, true},  // Way too long
+		{strings.Repeat("a", 50), 15, 50, false},   // Custom max
+		{strings.Repeat("a", 51), 15, 50, true},    // Custom max exceeded
 	}
 
 	for _, tt := range tests {
@@ -959,5 +958,100 @@ func TestConfigGetTitleLengthLimitsDefaults(t *testing.T) {
 	}
 	if max != config.DefaultTitleMaxLength {
 		t.Errorf("Expected default max %d, got %d", config.DefaultTitleMaxLength, max)
+	}
+}
+
+func TestCreateRichTextFromFileAndStdin(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	saveAndRestoreCommandFlags(t, createCmd, "description", "desc", "body", "notes", "description-file", "acceptance", "acceptance-file")
+
+	description := "Intro\n\n```go\nfmt.Println(\"hello\")\n```\n  indented\n"
+	descriptionPath := filepath.Join(dir, "description.md")
+	if err := os.WriteFile(descriptionPath, []byte(description), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	acceptance := "- keep blank lines\n\n- preserve `code`\n"
+	replaceStdinWithFile(t, acceptance)
+
+	if err := createCmd.Flags().Set("description-file", descriptionPath); err != nil {
+		t.Fatalf("Set description-file failed: %v", err)
+	}
+	if err := createCmd.Flags().Set("acceptance-file", "-"); err != nil {
+		t.Fatalf("Set acceptance-file failed: %v", err)
+	}
+
+	if err := createCmd.RunE(createCmd, []string{"Rich text import task"}); err != nil {
+		t.Fatalf("createCmd.RunE failed: %v", err)
+	}
+
+	issues, err := database.ListIssues(db.ListIssuesOptions{})
+	if err != nil {
+		t.Fatalf("ListIssues failed: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+
+	if issues[0].Description != description {
+		t.Fatalf("description mismatch\nwant: %q\ngot:  %q", description, issues[0].Description)
+	}
+	if issues[0].Acceptance != acceptance {
+		t.Fatalf("acceptance mismatch\nwant: %q\ngot:  %q", acceptance, issues[0].Acceptance)
+	}
+}
+
+func TestCreateRichTextConflictErrors(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	saveAndRestoreCommandFlags(t, createCmd, "description", "desc", "body", "notes", "description-file")
+
+	descriptionPath := filepath.Join(dir, "description.md")
+	if err := os.WriteFile(descriptionPath, []byte("file body"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	if err := createCmd.Flags().Set("description", "inline body"); err != nil {
+		t.Fatalf("Set description failed: %v", err)
+	}
+	if err := createCmd.Flags().Set("description-file", descriptionPath); err != nil {
+		t.Fatalf("Set description-file failed: %v", err)
+	}
+
+	err = createCmd.RunE(createCmd, []string{"Conflicting rich text task"})
+	if err == nil {
+		t.Fatal("expected createCmd.RunE to fail")
+	}
+	if !strings.Contains(err.Error(), "--description-file") || !strings.Contains(err.Error(), "--description") {
+		t.Fatalf("expected actionable conflict error, got %v", err)
+	}
+
+	issues, err := database.ListIssues(db.ListIssuesOptions{})
+	if err != nil {
+		t.Fatalf("ListIssues failed: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected 0 issues after conflict, got %d", len(issues))
 	}
 }
