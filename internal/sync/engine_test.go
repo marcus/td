@@ -48,7 +48,7 @@ func TestInsertServerEvents_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Accepted != 3 {
 		t.Fatalf("accepted: got %d, want 3", result.Accepted)
@@ -90,7 +90,7 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if r1.Accepted != 3 {
 		t.Fatalf("first: accepted=%d, want 3", r1.Accepted)
@@ -102,7 +102,7 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if r2.Accepted != 0 {
 		t.Fatalf("second: accepted=%d, want 0", r2.Accepted)
@@ -122,7 +122,7 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 
 	// Verify total count in DB
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM events").Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM events").Scan(&count) //nolint:errcheck // test query
 	if count != 3 {
 		t.Fatalf("total events: got %d, want 3", count)
 	}
@@ -149,7 +149,7 @@ func TestInsertServerEvents_ValidationReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Accepted != 0 {
 		t.Fatalf("accepted: got %d, want 0", result.Accepted)
@@ -185,14 +185,14 @@ func TestGetEventsSince_All(t *testing.T) {
 	if _, err := InsertServerEvents(tx, events); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	tx, _ = db.Begin()
 	result, err := GetEventsSince(tx, 0, 100, "")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Events) != 5 {
 		t.Fatalf("events: got %d, want 5", len(result.Events))
@@ -216,14 +216,14 @@ func TestGetEventsSince_Partial(t *testing.T) {
 	if _, err := InsertServerEvents(tx, events); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	tx, _ = db.Begin()
 	result, err := GetEventsSince(tx, 3, 100, "")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Events) != 2 {
 		t.Fatalf("events: got %d, want 2", len(result.Events))
@@ -247,14 +247,14 @@ func TestGetEventsSince_Limit(t *testing.T) {
 	if _, err := InsertServerEvents(tx, events); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	tx, _ = db.Begin()
 	result, err := GetEventsSince(tx, 0, 3, "")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Events) != 3 {
 		t.Fatalf("events: got %d, want 3", len(result.Events))
@@ -277,14 +277,14 @@ func TestGetEventsSince_ExcludeDevice(t *testing.T) {
 	if _, err := InsertServerEvents(tx, events); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	tx, _ = db.Begin()
 	result, err := GetEventsSince(tx, 0, 100, "d1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Events) != 2 {
 		t.Fatalf("events: got %d, want 2", len(result.Events))
@@ -304,7 +304,7 @@ func TestGetEventsSince_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Events) != 0 {
 		t.Fatalf("events: got %d, want 0", len(result.Events))

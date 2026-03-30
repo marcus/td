@@ -25,8 +25,8 @@ func TestSearchByTitle(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	// Search for "login"
 	opts := db.ListIssuesOptions{
@@ -67,7 +67,7 @@ func TestSearchByDescription(t *testing.T) {
 		Description: "Database connection pool is exhausted",
 		Status:      models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "database",
@@ -113,8 +113,8 @@ func TestSearchByLabel(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "backend",
@@ -154,7 +154,7 @@ func TestSearchNoResults(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "nonexistent_keyword_xyz",
@@ -187,8 +187,8 @@ func TestSearchWithStatusFilter(t *testing.T) {
 		Status: models.StatusClosed,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "issue",
@@ -227,8 +227,8 @@ func TestSearchWithTypeFilter(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "feature",
@@ -267,8 +267,8 @@ func TestSearchWithPriorityFilter(t *testing.T) {
 		Status:   models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search:   "bug",
@@ -300,7 +300,7 @@ func TestSearchWithLimit(t *testing.T) {
 			Title:  "Test issue",
 			Status: models.StatusOpen,
 		}
-		database.CreateIssue(issue)
+		database.CreateIssue(issue) //nolint:errcheck // test setup
 	}
 
 	opts := db.ListIssuesOptions{
@@ -339,8 +339,8 @@ func TestSearchRelevanceScoring(t *testing.T) {
 		Status:      models.StatusOpen,
 	}
 
-	database.CreateIssue(exactMatch)
-	database.CreateIssue(descMatch)
+	database.CreateIssue(exactMatch) //nolint:errcheck // test setup
+	database.CreateIssue(descMatch) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "database query",
@@ -375,7 +375,7 @@ func TestSearchCaseInsensitive(t *testing.T) {
 		Title:  "FIX LOGIN BUTTON",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts1 := db.ListIssuesOptions{
 		Search: "fix login",
@@ -410,8 +410,8 @@ func TestSearchMultipleKeywords(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "database",
@@ -442,7 +442,7 @@ func TestSearchEmptyQuery(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "",
@@ -470,7 +470,7 @@ func TestSearchSpecialCharacters(t *testing.T) {
 		Title:  "Fix bug in auth_service.go",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search: "auth_service",
@@ -501,7 +501,7 @@ func TestSearchWithMultipleFilters(t *testing.T) {
 		Status:   models.StatusOpen,
 		Labels:   []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	opts := db.ListIssuesOptions{
 		Search:   "database",

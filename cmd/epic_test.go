@@ -88,5 +88,5 @@ func TestEpicCreateHasHiddenTypeFlag(t *testing.T) {
 	}
 
 	// Reset
-	epicCreateCmd.Flags().Set("type", "")
+	epicCreateCmd.Flags().Set("type", "") //nolint:errcheck // test setup
 }

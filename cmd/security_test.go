@@ -75,7 +75,7 @@ func TestCloseCommandSecurityLogging(t *testing.T) {
 	defer os.RemoveAll(baseDir)
 
 	// Ensure .todos directory exists for session
-	os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755)
+	os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755) //nolint:errcheck // test setup
 
 	// Init DB
 	database, err := db.Initialize(baseDir)

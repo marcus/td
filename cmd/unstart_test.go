@@ -40,5 +40,5 @@ func TestUnstartReasonFlag(t *testing.T) {
 	}
 
 	// Reset
-	unstartCmd.Flags().Set("reason", "")
+	unstartCmd.Flags().Set("reason", "") //nolint:errcheck // test setup
 }

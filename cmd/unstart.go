@@ -89,7 +89,7 @@ Examples:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,

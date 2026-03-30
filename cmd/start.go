@@ -129,7 +129,7 @@ Examples:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
@@ -138,7 +138,7 @@ Examples:
 
 			// Record git snapshot
 			if gitErr == nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				database.AddGitSnapshot(&models.GitSnapshot{ //nolint:errcheck // best-effort git snapshot
 					IssueID:    issueID,
 					Event:      "start",
 					CommitSHA:  gitState.CommitSHA,
@@ -153,7 +153,7 @@ Examples:
 
 		// Set focus to first issue if single issue, or clear if multiple
 		if len(args) == 1 && started == 1 {
-			config.SetFocus(baseDir, args[0])
+			config.SetFocus(baseDir, args[0]) //nolint:errcheck // best-effort focus set
 		}
 
 		// Show git state once at the end

@@ -111,7 +111,7 @@ func init() {
 	taskCreateCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	// Hidden type flag - set programmatically to "task"
 	taskCreateCmd.Flags().StringP("type", "t", "", "")
-	taskCreateCmd.Flags().MarkHidden("type")
+	taskCreateCmd.Flags().MarkHidden("type") //nolint:errcheck // flag was just defined above
 
 	// taskListCmd flags
 	taskListCmd.Flags().BoolP("all", "a", false, "Show all tasks including closed")

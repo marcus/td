@@ -83,7 +83,7 @@ func TestGetPendingEvents_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "device1", "sync-sess")
 	if err != nil {
@@ -153,7 +153,7 @@ func TestGetPendingEvents_SkipsUndone(t *testing.T) {
 		`{"title":"Also keep"}`, `{"title":"Keep"}`, 0, "")
 
 	tx, _ := db.Begin()
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "d1", "s1")
 	if err != nil {
@@ -176,7 +176,7 @@ func TestGetPendingEvents_SkipsSynced(t *testing.T) {
 		`{"title":"Pending"}`, `{}`, 0, "")
 
 	tx, _ := db.Begin()
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "d1", "s1")
 	if err != nil {
@@ -225,7 +225,7 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 	}
 
 	tx, _ := db.Begin()
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "d1", "s1")
 	if err != nil {
@@ -260,7 +260,7 @@ func TestGetPendingEvents_EntityTypeNormalization(t *testing.T) {
 		`{"foo":"bar"}`, `{}`, 0, "")
 
 	tx, _ := db.Begin()
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "d1", "s1")
 	if err != nil {
@@ -318,7 +318,7 @@ func TestApplyRemoteEvents_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyRemoteEvents: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Applied != 3 {
 		t.Fatalf("Applied: got %d, want 3", result.Applied)
@@ -379,7 +379,7 @@ func TestApplyRemoteEvents_PartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyRemoteEvents: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Applied != 2 {
 		t.Fatalf("Applied: got %d, want 2", result.Applied)
@@ -396,7 +396,7 @@ func TestApplyRemoteEvents_PartialFailure(t *testing.T) {
 
 	// Verify good entities exist
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count) //nolint:errcheck // test query
 	if count != 2 {
 		t.Fatalf("issues count: got %d, want 2", count)
 	}
@@ -411,7 +411,7 @@ func TestApplyRemoteEvents_ConflictTracking(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Apply remote event that overwrites
 	remotePayload, _ := json.Marshal(map[string]any{
@@ -432,7 +432,7 @@ func TestApplyRemoteEvents_ConflictTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Overwrites != 1 {
 		t.Fatalf("expected 1 overwrite, got %d", result.Overwrites)
@@ -479,7 +479,7 @@ func TestApplyRemoteEvents_MultipleOverwritesProduceConflicts(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i2", p2); err != nil {
 		t.Fatalf("seed i2: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Apply batch of remote events that overwrite both
 	makePayload := func(title, status string) []byte {
@@ -500,7 +500,7 @@ func TestApplyRemoteEvents_MultipleOverwritesProduceConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Applied != 2 {
 		t.Fatalf("Applied=%d, want 2", result.Applied)
@@ -534,7 +534,7 @@ func TestApplyRemoteEvents_DeleteDoesNotProduceConflict(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Apply a delete event from remote
 	deletePayload, _ := json.Marshal(map[string]any{
@@ -550,7 +550,7 @@ func TestApplyRemoteEvents_DeleteDoesNotProduceConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Applied != 1 {
 		t.Fatalf("Applied=%d, want 1", result.Applied)
@@ -564,7 +564,7 @@ func TestApplyRemoteEvents_DeleteDoesNotProduceConflict(t *testing.T) {
 
 	// Verify row is actually deleted
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count) //nolint:errcheck // test query
 	if count != 0 {
 		t.Fatal("row should be deleted")
 	}
@@ -583,7 +583,7 @@ func TestApplyRemoteEvents_ConflictDataCorrectness(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", localFields); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Remote overwrites with different data
 	remoteFields := map[string]any{
@@ -605,7 +605,7 @@ func TestApplyRemoteEvents_ConflictDataCorrectness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if len(result.Conflicts) != 1 {
 		t.Fatalf("expected 1 conflict, got %d", len(result.Conflicts))
@@ -660,7 +660,7 @@ func TestApplyRemoteEvents_NoConflictWhenUnchangedSinceSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// lastSyncAt is AFTER the local row's updated_at → no conflict expected
 	syncTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -679,7 +679,7 @@ func TestApplyRemoteEvents_NoConflictWhenUnchangedSinceSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Applied != 1 {
 		t.Fatalf("Applied=%d, want 1", result.Applied)
@@ -703,7 +703,7 @@ func TestApplyRemoteEvents_ConflictWhenModifiedAfterSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// lastSyncAt is BEFORE the local row's updated_at → conflict expected
 	syncTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
@@ -722,7 +722,7 @@ func TestApplyRemoteEvents_ConflictWhenModifiedAfterSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Overwrites != 1 {
 		t.Fatalf("Overwrites=%d, want 1 (local was modified after sync)", result.Overwrites)
@@ -741,7 +741,7 @@ func TestApplyRemoteEvents_NilLastSyncAtSkipsConflicts(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Apply remote overwrite with nil lastSyncAt (bootstrap scenario)
 	remotePayload, _ := json.Marshal(map[string]any{
@@ -758,7 +758,7 @@ func TestApplyRemoteEvents_NilLastSyncAtSkipsConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	if result.Overwrites != 0 {
 		t.Fatalf("Overwrites=%d, want 0 (nil lastSyncAt = no conflicts)", result.Overwrites)
@@ -777,8 +777,8 @@ func TestMarkEventsSynced(t *testing.T) {
 
 	// Get rowids for first two rows
 	var rowid1, rowid2 int64
-	db.QueryRow("SELECT rowid FROM action_log WHERE id = ?", "al-00000001").Scan(&rowid1)
-	db.QueryRow("SELECT rowid FROM action_log WHERE id = ?", "al-00000002").Scan(&rowid2)
+	db.QueryRow("SELECT rowid FROM action_log WHERE id = ?", "al-00000001").Scan(&rowid1) //nolint:errcheck // test query
+	db.QueryRow("SELECT rowid FROM action_log WHERE id = ?", "al-00000002").Scan(&rowid2) //nolint:errcheck // test query
 
 	acks := []Ack{
 		{ClientActionID: rowid1, ServerSeq: 100},
@@ -789,13 +789,13 @@ func TestMarkEventsSynced(t *testing.T) {
 	if err := MarkEventsSynced(tx, acks); err != nil {
 		t.Fatalf("MarkEventsSynced: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil { t.Fatalf("commit: %v", err) }
 
 	// Verify synced rows
 	var syncedAt sql.NullString
 	var serverSeq sql.NullInt64
 
-	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000001").Scan(&syncedAt, &serverSeq)
+	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000001").Scan(&syncedAt, &serverSeq) //nolint:errcheck // test query
 	if !syncedAt.Valid {
 		t.Error("al-00000001: synced_at should be set")
 	}
@@ -803,7 +803,7 @@ func TestMarkEventsSynced(t *testing.T) {
 		t.Errorf("al-00000001: server_seq got %v, want 100", serverSeq)
 	}
 
-	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000002").Scan(&syncedAt, &serverSeq)
+	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000002").Scan(&syncedAt, &serverSeq) //nolint:errcheck // test query
 	if !syncedAt.Valid {
 		t.Error("al-00000002: synced_at should be set")
 	}
@@ -812,7 +812,7 @@ func TestMarkEventsSynced(t *testing.T) {
 	}
 
 	// Verify unsynced row
-	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000003").Scan(&syncedAt, &serverSeq)
+	db.QueryRow("SELECT synced_at, server_seq FROM action_log WHERE id = ?", "al-00000003").Scan(&syncedAt, &serverSeq) //nolint:errcheck // test query
 	if syncedAt.Valid {
 		t.Error("al-00000003: synced_at should NOT be set")
 	}
@@ -822,7 +822,7 @@ func TestMarkEventsSynced(t *testing.T) {
 
 	// Verify GetPendingEvents now only returns the unsynced one
 	tx, _ = db.Begin()
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 	events, err := GetPendingEvents(tx, "d1", "s1")
 	if err != nil {
 		t.Fatalf("GetPendingEvents: %v", err)
@@ -853,7 +853,7 @@ func TestGetPendingEvents_NullID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "device1", "sync-sess")
 	if err != nil {
@@ -890,7 +890,7 @@ func TestGetPendingEvents_RealActionTypesIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // cleanup
 
 	events, err := GetPendingEvents(tx, "device-int", "sess-int")
 	if err != nil {

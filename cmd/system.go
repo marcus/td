@@ -814,7 +814,7 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID 
 		}
 		if matches := pointsRegex.FindStringSubmatch(line); matches != nil {
 			var pts int
-			fmt.Sscanf(matches[1], "%d", &pts)
+			fmt.Sscanf(matches[1], "%d", &pts) //nolint:errcheck // best-effort points parsing, zero on failure is fine
 			currentIssue.Points = pts
 			inDescription = false
 			continue

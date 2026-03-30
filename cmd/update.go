@@ -202,22 +202,22 @@ var updateCmd = &cobra.Command{
 			if cmd.Flags().Changed("depends-on") {
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
-					database.RemoveDependencyLogged(issueID, dep, sess.ID)
+					database.RemoveDependencyLogged(issueID, dep, sess.ID) //nolint:errcheck // best-effort dependency cleanup before re-add
 				}
 				dependsArr, _ := cmd.Flags().GetStringArray("depends-on")
 				for _, dep := range mergeMultiValueFlag(dependsArr) {
-					database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID)
+					database.AddDependencyLogged(issueID, dep, "depends_on", sess.ID) //nolint:errcheck // best-effort dependency cleanup before re-add
 				}
 			}
 
 			if cmd.Flags().Changed("blocks") {
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
-					database.RemoveDependencyLogged(b, issueID, sess.ID)
+					database.RemoveDependencyLogged(b, issueID, sess.ID) //nolint:errcheck // best-effort dependency cleanup before re-add
 				}
 				blocksArr, _ := cmd.Flags().GetStringArray("blocks")
 				for _, b := range mergeMultiValueFlag(blocksArr) {
-					database.AddDependencyLogged(b, issueID, "depends_on", sess.ID)
+					database.AddDependencyLogged(b, issueID, "depends_on", sess.ID) //nolint:errcheck // best-effort dependency cleanup before re-add
 				}
 			}
 
@@ -271,7 +271,7 @@ func init() {
 	updateCmd.Flags().String("status", "", "New status (open, in_progress, in_review, blocked, closed)")
 	updateCmd.Flags().StringP("comment", "m", "", "Add a comment to the updated issue(s)")
 	updateCmd.Flags().StringP("note", "c", "", "Alias for --comment")
-	updateCmd.Flags().MarkHidden("note")
+	updateCmd.Flags().MarkHidden("note") //nolint:errcheck // flag was just defined above
 	updateCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01; empty to clear)")
 	updateCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15; empty to clear)")
 }
