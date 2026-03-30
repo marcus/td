@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 )
 
 func TestClearFocusIfNeeded(t *testing.T) {
@@ -115,6 +117,110 @@ func TestReviewRequiresHandoff(t *testing.T) {
 
 	// Note: Full command testing would require setting up session and executing command
 	// This test verifies the handoff check logic by checking database state
+}
+
+func TestSubmitIssueForReviewReportsStaleConcurrentTransition(t *testing.T) {
+	t.Setenv("TD_SESSION_ID", "ses-review-test")
+
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Needs review",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	staleCopy, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue stale copy failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue current failed: %v", err)
+	}
+	current.Status = models.StatusBlocked
+	if err := database.UpdateIssue(current); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	result := submitIssueForReview(database, staleCopy, sess, dir, "")
+	if result.Success {
+		t.Fatal("expected stale review submission to fail")
+	}
+	if !strings.Contains(result.Message, "status changed concurrently from open to blocked") {
+		t.Fatalf("expected stale transition message, got %q", result.Message)
+	}
+	if !strings.Contains(result.Message, "td unblock "+issue.ID) {
+		t.Fatalf("expected unblock guidance, got %q", result.Message)
+	}
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if got.Status != models.StatusBlocked {
+		t.Fatalf("status overwritten: got %s, want %s", got.Status, models.StatusBlocked)
+	}
+}
+
+func TestStaleTransitionMessageIncludesGuidance(t *testing.T) {
+	tests := []struct {
+		name     string
+		action   string
+		staleErr *db.StaleIssueTransitionError
+		guidance func(*models.Issue) string
+		want     string
+	}{
+		{
+			name:   "review points blocked issues to unblock",
+			action: "review",
+			staleErr: &db.StaleIssueTransitionError{
+				Issue:          &models.Issue{ID: "td-blocked", Status: models.StatusBlocked},
+				ExpectedStatus: models.StatusOpen,
+			},
+			guidance: reviewFollowupGuidance,
+			want:     "cannot review td-blocked: status changed concurrently from open to blocked\n  Unblock it first: td unblock td-blocked",
+		},
+		{
+			name:   "approve points closed issues to reopen",
+			action: "approve",
+			staleErr: &db.StaleIssueTransitionError{
+				Issue:          &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+				ExpectedStatus: models.StatusInReview,
+			},
+			guidance: approveFollowupGuidance,
+			want:     "cannot approve td-closed: status changed concurrently from in_review to closed\n  Reopen it first: td reopen td-closed",
+		},
+		{
+			name:     "nil error falls back to generic message",
+			action:   "close",
+			staleErr: nil,
+			guidance: closeFollowupGuidance,
+			want:     "cannot close: issue status changed concurrently",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := staleTransitionMessage(tt.action, tt.staleErr, tt.guidance)
+			if got != tt.want {
+				t.Fatalf("staleTransitionMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestApproveRequiresDifferentSession(t *testing.T) {
@@ -652,7 +758,7 @@ func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
 	database.UpdateIssue(child2)
 
 	// Cascade up should now update epic
-	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child2.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -704,7 +810,7 @@ func TestCascadeUpToClosedAllChildrenClosed(t *testing.T) {
 	sessionID := "ses_test"
 
 	// All children closed, cascade up should update epic
-	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusClosed, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child2.ID, models.StatusClosed, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -761,7 +867,7 @@ func TestCascadeUpRecursive(t *testing.T) {
 
 	// Child is only child of parent, parent is only child of grandparent
 	// Cascade up from child should update both parent and grandparent
-	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 2 {
 		t.Errorf("Expected 2 cascaded (parent + grandparent), got %d", cascaded)
@@ -809,7 +915,7 @@ func TestCascadeUpNoActionNonEpicParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up to non-epic parent
-	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (parent not epic), got %d", cascaded)
@@ -861,7 +967,7 @@ func TestCascadeUpNoActionNotAllChildrenReady(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up because child2 is still open
-	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (not all children ready), got %d", cascaded)
@@ -913,7 +1019,7 @@ func TestCascadeUpReviewAllowsClosedSiblings(t *testing.T) {
 	sessionID := "ses_test"
 
 	// For in_review target, closed siblings should count as "ready"
-	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -1181,7 +1287,7 @@ func TestCascadeUpNoActionNoParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should return 0 since no parent
-	cascaded, _ := database.CascadeUpParentStatus( task.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(task.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (no parent), got %d", cascaded)

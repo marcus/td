@@ -275,6 +275,16 @@ func TestCloseFollowupGuidance(t *testing.T) {
 			want:  "  Already in review: td approve td-review",
 		},
 		{
+			name:  "blocked issue points to unblock",
+			issue: &models.Issue{ID: "td-blocked", Status: models.StatusBlocked},
+			want:  "  Unblock it first: td unblock td-blocked",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
+		},
+		{
 			name:  "nil issue falls back to review wording",
 			issue: nil,
 			want:  "  Submit for review: td review ",
@@ -313,6 +323,16 @@ func TestReviewFollowupGuidance(t *testing.T) {
 			want:  "  Already in review: td approve td-review",
 		},
 		{
+			name:  "blocked issue points to unblock",
+			issue: &models.Issue{ID: "td-blocked", Status: models.StatusBlocked},
+			want:  "  Unblock it first: td unblock td-blocked",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
+		},
+		{
 			name:  "nil issue falls back to review wording",
 			issue: nil,
 			want:  "  Submit for review: td review ",
@@ -344,6 +364,11 @@ func TestApproveFollowupGuidance(t *testing.T) {
 			name:  "open issue points to review first",
 			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
 			want:  "  Submit for review first: td review td-open",
+		},
+		{
+			name:  "closed issue points to reopen",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Reopen it first: td reopen td-closed",
 		},
 		{
 			name:  "nil issue falls back to review wording",

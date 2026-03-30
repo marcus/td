@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -60,13 +61,21 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 		}
 	}
 
-	// Update issue (atomic update + action log)
-	issue.Status = models.StatusInReview
-	if issue.ImplementerSession == "" {
-		issue.ImplementerSession = sess.ID
-	}
-
-	if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReview); err != nil {
+	// Update issue (atomic update + action log) while rejecting stale concurrent transitions.
+	_, err = database.TransitionIssueLogged(issue.ID, issue.Status, sess.ID, models.ActionReview, func(current *models.Issue) {
+		current.Status = models.StatusInReview
+		if current.ImplementerSession == "" {
+			current.ImplementerSession = sess.ID
+		}
+	})
+	if err != nil {
+		var staleErr *db.StaleIssueTransitionError
+		if errors.As(err, &staleErr) {
+			return SubmitReviewResult{
+				Success: false,
+				Message: staleTransitionMessage("review", staleErr, reviewFollowupGuidance),
+			}
+		}
 		return SubmitReviewResult{
 			Success: false,
 			Message: fmt.Sprintf("failed to update %s: %v", issue.ID, err),
@@ -251,8 +260,14 @@ func closeFollowupGuidance(issue *models.Issue) string {
 	if issue == nil {
 		return "  Submit for review: td review "
 	}
-	if issue != nil && issue.Status == models.StatusInReview {
+	if issue.Status == models.StatusInReview {
 		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	}
+	if issue.Status == models.StatusBlocked {
+		return fmt.Sprintf("  Unblock it first: td unblock %s", issue.ID)
+	}
+	if issue.Status == models.StatusClosed {
+		return fmt.Sprintf("  Reopen it first: td reopen %s", issue.ID)
 	}
 	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
 }
@@ -266,6 +281,12 @@ func reviewFollowupGuidance(issue *models.Issue) string {
 	if issue.Status == models.StatusInReview {
 		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
 	}
+	if issue.Status == models.StatusBlocked {
+		return fmt.Sprintf("  Unblock it first: td unblock %s", issue.ID)
+	}
+	if issue.Status == models.StatusClosed {
+		return fmt.Sprintf("  Reopen it first: td reopen %s", issue.ID)
+	}
 	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
 }
 
@@ -278,7 +299,23 @@ func approveFollowupGuidance(issue *models.Issue) string {
 	if issue.Status == models.StatusInReview {
 		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
 	}
+	if issue.Status == models.StatusClosed {
+		return fmt.Sprintf("  Reopen it first: td reopen %s", issue.ID)
+	}
 	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
+func staleTransitionMessage(action string, staleErr *db.StaleIssueTransitionError, guidance func(*models.Issue) string) string {
+	if staleErr == nil || staleErr.Issue == nil {
+		return fmt.Sprintf("cannot %s: issue status changed concurrently", action)
+	}
+	return fmt.Sprintf(
+		"cannot %s %s: status changed concurrently from %s to %s",
+		action,
+		staleErr.Issue.ID,
+		staleErr.ExpectedStatus,
+		staleErr.Issue.Status,
+	) + "\n" + guidance(staleErr.Issue)
 }
 
 var approveCmd = &cobra.Command{
@@ -429,17 +466,32 @@ Supports bulk operations:
 				continue
 			}
 
-			// Update issue (atomic update + action log)
-			issue.Status = models.StatusClosed
-			issue.ReviewerSession = sess.ID
-			now := time.Now()
-			issue.ClosedAt = &now
-
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionApprove); err != nil {
+			// Update issue (atomic update + action log) while rejecting stale concurrent transitions.
+			updatedIssue, err := database.TransitionIssueLogged(issueID, issue.Status, sess.ID, models.ActionApprove, func(current *models.Issue) {
+				current.Status = models.StatusClosed
+				current.ReviewerSession = sess.ID
+				now := time.Now()
+				current.ClosedAt = &now
+			})
+			if err != nil {
+				var staleErr *db.StaleIssueTransitionError
+				if errors.As(err, &staleErr) {
+					msg := staleTransitionMessage("approve", staleErr, approveFollowupGuidance)
+					if !all {
+						if jsonOutput {
+							output.JSONError(output.ErrCodeDatabaseError, msg)
+						} else {
+							output.Warning("%s", msg)
+						}
+					}
+					skipped++
+					continue
+				}
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
 			}
+			issue = updatedIssue
 
 			// Record session action for bypass prevention
 			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionReviewed); err != nil {
@@ -569,11 +621,24 @@ Supports bulk operations:
 				continue
 			}
 
-			// Update issue: reset to open so td next can pick it up again
-			issue.Status = models.StatusOpen
-			issue.ImplementerSession = ""
-
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReject); err != nil {
+			// Update issue: reset to open so td next can pick it up again while
+			// rejecting stale concurrent transitions.
+			_, err = database.TransitionIssueLogged(issueID, issue.Status, sess.ID, models.ActionReject, func(current *models.Issue) {
+				current.Status = models.StatusOpen
+				current.ImplementerSession = ""
+			})
+			if err != nil {
+				var staleErr *db.StaleIssueTransitionError
+				if errors.As(err, &staleErr) {
+					msg := staleTransitionMessage("reject", staleErr, reviewFollowupGuidance)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeDatabaseError, msg)
+					} else {
+						output.Warning("%s", msg)
+					}
+					skipped++
+					continue
+				}
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, err.Error())
 				} else {
@@ -718,16 +783,24 @@ Examples:
 				output.Warning("  Reason: %s", selfCloseException)
 			}
 
-			// Update issue (atomic update + action log)
-			issue.Status = models.StatusClosed
-			now := time.Now()
-			issue.ClosedAt = &now
-
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionClose); err != nil {
+			// Update issue (atomic update + action log) while rejecting stale concurrent transitions.
+			updatedIssue, err := database.TransitionIssueLogged(issueID, issue.Status, sess.ID, models.ActionClose, func(current *models.Issue) {
+				current.Status = models.StatusClosed
+				now := time.Now()
+				current.ClosedAt = &now
+			})
+			if err != nil {
+				var staleErr *db.StaleIssueTransitionError
+				if errors.As(err, &staleErr) {
+					output.Warning("%s", staleTransitionMessage("close", staleErr, closeFollowupGuidance))
+					skipped++
+					continue
+				}
 				output.Warning("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
 			}
+			issue = updatedIssue
 
 			// Log (supports --reason, --comment, --message, and --self-close-exception)
 			reason := approvalReason(cmd)
