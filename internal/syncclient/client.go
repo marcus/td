@@ -264,8 +264,8 @@ func (c *Client) Pull(projectID string, afterSeq int64, limit int, excludeDevice
 
 // SnapshotResponse holds the result of a snapshot download.
 type SnapshotResponse struct {
-	Data           []byte
-	SnapshotSeq    int64
+	Data        []byte
+	SnapshotSeq int64
 }
 
 // GetSnapshot downloads a snapshot database for bootstrap.

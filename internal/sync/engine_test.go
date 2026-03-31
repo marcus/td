@@ -1,3 +1,4 @@
+//nolint:errcheck // Sync engine tests intentionally keep transaction setup terse.
 package sync
 
 import (
@@ -48,7 +49,7 @@ func TestInsertServerEvents_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if result.Accepted != 3 {
 		t.Fatalf("accepted: got %d, want 3", result.Accepted)
@@ -90,7 +91,7 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if r1.Accepted != 3 {
 		t.Fatalf("first: accepted=%d, want 3", r1.Accepted)
@@ -102,7 +103,7 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second insert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if r2.Accepted != 0 {
 		t.Fatalf("second: accepted=%d, want 0", r2.Accepted)
@@ -122,7 +123,9 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 
 	// Verify total count in DB
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM events").Scan(&count)
+	if err := db.QueryRow("SELECT COUNT(*) FROM events").Scan(&count); err != nil {
+		t.Fatalf("count events: %v", err)
+	}
 	if count != 3 {
 		t.Fatalf("total events: got %d, want 3", count)
 	}
@@ -149,7 +152,7 @@ func TestInsertServerEvents_ValidationReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if result.Accepted != 0 {
 		t.Fatalf("accepted: got %d, want 0", result.Accepted)
@@ -185,14 +188,14 @@ func TestGetEventsSince_All(t *testing.T) {
 	if _, err := InsertServerEvents(tx, events); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	tx, _ = db.Begin()
 	result, err := GetEventsSince(tx, 0, 100, "")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if len(result.Events) != 5 {
 		t.Fatalf("events: got %d, want 5", len(result.Events))

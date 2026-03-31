@@ -129,22 +129,26 @@ Examples:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("failed to add log for %s: %v", issueID, err)
+			}
 
 			// Record git snapshot
 			if gitErr == nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				if err := database.AddGitSnapshot(&models.GitSnapshot{
 					IssueID:    issueID,
 					Event:      "start",
 					CommitSHA:  gitState.CommitSHA,
 					Branch:     gitState.Branch,
 					DirtyFiles: gitState.DirtyFiles,
-				})
+				}); err != nil {
+					output.Warning("failed to capture git snapshot for %s: %v", issueID, err)
+				}
 			}
 
 			fmt.Printf("STARTED %s (session: %s)\n", issueID, sess.ID)
@@ -153,7 +157,9 @@ Examples:
 
 		// Set focus to first issue if single issue, or clear if multiple
 		if len(args) == 1 && started == 1 {
-			config.SetFocus(baseDir, args[0])
+			if err := config.SetFocus(baseDir, args[0]); err != nil {
+				output.Warning("started %s but failed to set focus: %v", args[0], err)
+			}
 		}
 
 		// Show git state once at the end

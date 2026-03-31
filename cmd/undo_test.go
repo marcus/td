@@ -1,3 +1,4 @@
+//nolint:errcheck // Command tests use compact DB fixture setup across many independent cases.
 package cmd
 
 import (

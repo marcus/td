@@ -49,12 +49,14 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date cleared",
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("failed to add log for %s: %v", issueID, err)
+			}
 
 			fmt.Printf("DUE DATE CLEARED %s\n", issueID)
 		} else {
@@ -75,12 +77,14 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date set: " + dateStr,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("failed to add log for %s: %v", issueID, err)
+			}
 
 			fmt.Printf("DUE DATE SET %s: %s\n", issueID, dateStr)
 		}

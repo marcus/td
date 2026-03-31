@@ -1,3 +1,4 @@
+//nolint:errcheck // Log tests intentionally favor concise repeated fixture setup.
 package cmd
 
 import (
@@ -71,7 +72,9 @@ func TestLogMultipleMessages(t *testing.T) {
 			Message:   msg,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog failed: %v", err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
@@ -167,7 +170,9 @@ func TestLogRetrievalLimit(t *testing.T) {
 			Message:   "Message " + string(rune(i)),
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog failed: %v", err)
+		}
 	}
 
 	// Test different limits
@@ -212,7 +217,9 @@ func TestLogForMultipleIssues(t *testing.T) {
 			Message:   "Issue 1 log",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog issue1 failed: %v", err)
+		}
 	}
 
 	// Add logs to issue 2
@@ -223,7 +230,9 @@ func TestLogForMultipleIssues(t *testing.T) {
 			Message:   "Issue 2 log",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog issue2 failed: %v", err)
+		}
 	}
 
 	logs1, _ := database.GetLogs(issue1.ID, 10)
@@ -270,7 +279,9 @@ func TestLogWithMultipleSessions(t *testing.T) {
 			Message:   "Log from " + session,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog session %s failed: %v", session, err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
@@ -432,7 +443,9 @@ func TestLogRetrieval(t *testing.T) {
 			Message:   msg,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatalf("AddLog message %q failed: %v", msg, err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)

@@ -1,3 +1,4 @@
+//nolint:errcheck // Focus tests intentionally keep repeated fixture setup terse.
 package cmd
 
 import (
@@ -58,14 +59,18 @@ func TestFocusChangeFocus(t *testing.T) {
 	database.CreateIssue(issue2)
 
 	// Focus on issue 1
-	config.SetFocus(dir, issue1.ID)
+	if err := config.SetFocus(dir, issue1.ID); err != nil {
+		t.Fatalf("SetFocus issue1 failed: %v", err)
+	}
 	focused1, _ := config.GetFocus(dir)
 	if focused1 != issue1.ID {
 		t.Errorf("First focus failed: expected %s, got %s", issue1.ID, focused1)
 	}
 
 	// Change focus to issue 2
-	config.SetFocus(dir, issue2.ID)
+	if err := config.SetFocus(dir, issue2.ID); err != nil {
+		t.Fatalf("SetFocus issue2 failed: %v", err)
+	}
 	focused2, _ := config.GetFocus(dir)
 	if focused2 != issue2.ID {
 		t.Errorf("Focus change failed: expected %s, got %s", issue2.ID, focused2)
@@ -106,7 +111,9 @@ func TestUnfocus(t *testing.T) {
 	database.CreateIssue(issue)
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatalf("SetFocus issue failed: %v", err)
+	}
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
 		t.Error("Focus not set correctly")

@@ -81,10 +81,14 @@ func addToGitignore(path string) {
 
 	// Add newline if file doesn't end with one
 	if len(contentStr) > 0 && !strings.HasSuffix(contentStr, "\n") {
-		f.WriteString("\n")
+		if _, err := f.WriteString("\n"); err != nil {
+			return
+		}
 	}
 
-	f.WriteString(".todos/\n")
+	if _, err := f.WriteString(".todos/\n"); err != nil {
+		return
+	}
 	fmt.Println("Added .todos/ to .gitignore")
 }
 

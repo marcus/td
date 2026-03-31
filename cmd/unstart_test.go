@@ -1,3 +1,4 @@
+//nolint:errcheck // Unstart flag tests intentionally keep reset logic terse.
 package cmd
 
 import (
@@ -40,5 +41,7 @@ func TestUnstartReasonFlag(t *testing.T) {
 	}
 
 	// Reset
-	unstartCmd.Flags().Set("reason", "")
+	if err := unstartCmd.Flags().Set("reason", ""); err != nil {
+		t.Errorf("Failed to reset --reason flag: %v", err)
+	}
 }

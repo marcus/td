@@ -1,3 +1,4 @@
+//nolint:errcheck // Event sync tests use compact fixture setup across many table-driven cases.
 package sync
 
 import (
@@ -54,6 +55,20 @@ func beginTx(t *testing.T, db *sql.DB) *sql.Tx {
 	return tx
 }
 
+func mustCommitTx(t *testing.T, tx *sql.Tx) {
+	t.Helper()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit tx: %v", err)
+	}
+}
+
+func rollbackTx(t *testing.T, tx *sql.Tx) {
+	t.Helper()
+	if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+		t.Fatalf("rollback tx: %v", err)
+	}
+}
+
 func TestUpsertEntity_Create(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
@@ -95,10 +110,12 @@ func TestUpsertEntity_Update(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var title, status string
-	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if err := db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status); err != nil {
+		t.Fatalf("query replaced issue: %v", err)
+	}
 	if title != "new" || status != "closed" {
 		t.Fatalf("got title=%q status=%q", title, status)
 	}
@@ -113,7 +130,7 @@ func TestUpsertExistingEntity(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	// Upsert with completely different data
 	tx = beginTx(t, db)
@@ -121,12 +138,14 @@ func TestUpsertExistingEntity(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var title string
 	var priority sql.NullString
 	var status sql.NullString
-	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	if err := db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority); err != nil {
+		t.Fatalf("query existing issue: %v", err)
+	}
 	if title != "replaced" {
 		t.Fatalf("title should be replaced, got %q", title)
 	}
@@ -148,7 +167,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	// Upsert with only title
 	tx = beginTx(t, db)
@@ -156,11 +175,13 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var title string
 	var status, priority sql.NullString
-	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	if err := db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority); err != nil {
+		t.Fatalf("query partial payload issue: %v", err)
+	}
 	if title != "partial" {
 		t.Fatalf("title should be partial, got %q", title)
 	}
@@ -175,7 +196,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 func TestNilPayload(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -191,7 +212,7 @@ func TestNilPayload(t *testing.T) {
 func TestEmptyEntityID(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -207,7 +228,7 @@ func TestEmptyEntityID(t *testing.T) {
 func TestMalformedJSON(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -234,7 +255,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	// Delete
 	tx = beginTx(t, db)
@@ -247,7 +268,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	// Update after delete should be ignored
 	tx = beginTx(t, db)
@@ -260,10 +281,12 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	if err := db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count); err != nil {
+		t.Fatalf("count deleted issue: %v", err)
+	}
 	if count != 0 {
 		t.Fatalf("expected issue to remain deleted, got count=%d", count)
 	}
@@ -272,7 +295,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	// Injection column name is not a valid table column, so it gets silently dropped.
 	// With no known fields remaining, the upsert returns an error — no injection occurs.
@@ -288,7 +311,9 @@ func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 
 	// Verify the table wasn't dropped
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count)
+	if err := tx.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count); err != nil {
+		t.Fatalf("count issues after injection: %v", err)
+	}
 	if count != 0 {
 		t.Fatalf("expected 0 rows, got %d", count)
 	}
@@ -299,16 +324,18 @@ func TestDeleteEntity(t *testing.T) {
 	tx := beginTx(t, db)
 	p, _ := json.Marshal(map[string]any{"title": "bye"})
 	_, _ = upsertEntity(tx, "issues", "i1", p)
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	tx = beginTx(t, db)
 	if err := deleteEntity(tx, "issues", "i1"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	if err := db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count); err != nil {
+		t.Fatalf("count issues after delete: %v", err)
+	}
 	if count != 0 {
 		t.Fatalf("expected 0 rows, got %d", count)
 	}
@@ -335,10 +362,12 @@ func TestSoftDeleteEntity(t *testing.T) {
 	if err := softDeleteEntity(tx, "issues", "i1", now); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var deletedAt sql.NullTime
-	db.QueryRow("SELECT deleted_at FROM issues WHERE id = ?", "i1").Scan(&deletedAt)
+	if err := db.QueryRow("SELECT deleted_at FROM issues WHERE id = ?", "i1").Scan(&deletedAt); err != nil {
+		t.Fatalf("query deleted_at: %v", err)
+	}
 	if !deletedAt.Valid {
 		t.Fatal("deleted_at should be set")
 	}
@@ -356,7 +385,7 @@ func TestSoftDeleteEntity_Missing(t *testing.T) {
 func TestApplyEvent_UnknownAction(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "bogus",
@@ -371,7 +400,7 @@ func TestApplyEvent_UnknownAction(t *testing.T) {
 func TestApplyEvent_InvalidEntityType(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer rollbackTx(t, tx)
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -398,10 +427,12 @@ func TestApplyEvent_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply create: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var title string
-	db.QueryRow("SELECT title FROM issues WHERE id = ?", "i1").Scan(&title)
+	if err := db.QueryRow("SELECT title FROM issues WHERE id = ?", "i1").Scan(&title); err != nil {
+		t.Fatalf("query created title: %v", err)
+	}
 	if title != "via apply" {
 		t.Fatalf("got title=%q", title)
 	}
@@ -414,7 +445,7 @@ func TestApplyEvent_Update(t *testing.T) {
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
 	_, _ = ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	// Update
 	tx = beginTx(t, db)
@@ -423,10 +454,12 @@ func TestApplyEvent_Update(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply update: %v", err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	var title, status string
-	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if err := db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status); err != nil {
+		t.Fatalf("query updated issue: %v", err)
+	}
 	if title != "updated" || status != "closed" {
 		t.Fatalf("got title=%q status=%q", title, status)
 	}

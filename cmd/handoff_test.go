@@ -1,3 +1,4 @@
+//nolint:errcheck // Handoff tests use compact DB fixture setup for many behavior checks.
 package cmd
 
 import (
@@ -69,7 +70,9 @@ func TestHandoffRecordsGitSnapshot(t *testing.T) {
 		SessionID: "ses_test",
 		Done:      []string{"Work done"},
 	}
-	database.AddHandoff(handoff)
+	if err := database.AddHandoff(handoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
 
 	// Record git snapshot
 	snapshot := &models.GitSnapshot{
@@ -304,7 +307,9 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 		SessionID: "ses_1",
 		Done:      []string{"First work"},
 	}
-	database.AddHandoff(handoff1)
+	if err := database.AddHandoff(handoff1); err != nil {
+		t.Fatalf("AddHandoff handoff1 failed: %v", err)
+	}
 
 	// Second handoff
 	handoff2 := &models.Handoff{
@@ -312,7 +317,9 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 		SessionID: "ses_2",
 		Done:      []string{"Second work"},
 	}
-	database.AddHandoff(handoff2)
+	if err := database.AddHandoff(handoff2); err != nil {
+		t.Fatalf("AddHandoff handoff2 failed: %v", err)
+	}
 
 	if handoff1.ID == handoff2.ID {
 		t.Error("Handoffs should have different IDs")
@@ -345,7 +352,9 @@ func TestHandoffNoteFlag(t *testing.T) {
 	}
 
 	// Reset
-	handoffCmd.Flags().Set("note", "")
+	if err := handoffCmd.Flags().Set("note", ""); err != nil {
+		t.Errorf("Failed to reset --note flag: %v", err)
+	}
 }
 
 // TestGetLatestHandoff tests retrieving the most recent handoff
@@ -361,17 +370,21 @@ func TestGetLatestHandoff(t *testing.T) {
 	database.CreateIssue(issue)
 
 	// Add handoffs
-	database.AddHandoff(&models.Handoff{
+	if err := database.AddHandoff(&models.Handoff{
 		IssueID:   issue.ID,
 		SessionID: "ses_old",
 		Done:      []string{"Old work"},
-	})
+	}); err != nil {
+		t.Fatalf("AddHandoff old failed: %v", err)
+	}
 
-	database.AddHandoff(&models.Handoff{
+	if err := database.AddHandoff(&models.Handoff{
 		IssueID:   issue.ID,
 		SessionID: "ses_new",
 		Done:      []string{"New work"},
-	})
+	}); err != nil {
+		t.Fatalf("AddHandoff new failed: %v", err)
+	}
 
 	// Get latest
 	latest, err := database.GetLatestHandoff(issue.ID)
@@ -441,7 +454,9 @@ func TestHandoffMessageFlag(t *testing.T) {
 	}
 
 	// Reset
-	handoffCmd.Flags().Set("message", "")
+	if err := handoffCmd.Flags().Set("message", ""); err != nil {
+		t.Errorf("Failed to reset --message flag: %v", err)
+	}
 }
 
 // TestCascadeHandoffBasic tests that handoff cascades to children

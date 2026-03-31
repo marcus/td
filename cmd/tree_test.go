@@ -1,3 +1,4 @@
+//nolint:errcheck // Command tests use compact DB fixture setup across many independent cases.
 package cmd
 
 import (
@@ -98,9 +99,15 @@ func TestTreeNestedHierarchy(t *testing.T) {
 	level2.ParentID = level1.ID
 	level3.ParentID = level2.ID
 
-	database.UpdateIssue(level1)
-	database.UpdateIssue(level2)
-	database.UpdateIssue(level3)
+	if err := database.UpdateIssue(level1); err != nil {
+		t.Fatalf("UpdateIssue level1 failed: %v", err)
+	}
+	if err := database.UpdateIssue(level2); err != nil {
+		t.Fatalf("UpdateIssue level2 failed: %v", err)
+	}
+	if err := database.UpdateIssue(level3); err != nil {
+		t.Fatalf("UpdateIssue level3 failed: %v", err)
+	}
 
 	// Verify hierarchy
 	l1, _ := database.GetIssue(level1.ID)
@@ -181,9 +188,15 @@ func TestTreeWithDifferentTypes(t *testing.T) {
 	bug.ParentID = epic.ID
 	task.ParentID = epic.ID
 
-	database.UpdateIssue(feature)
-	database.UpdateIssue(bug)
-	database.UpdateIssue(task)
+	if err := database.UpdateIssue(feature); err != nil {
+		t.Fatalf("UpdateIssue feature failed: %v", err)
+	}
+	if err := database.UpdateIssue(bug); err != nil {
+		t.Fatalf("UpdateIssue bug failed: %v", err)
+	}
+	if err := database.UpdateIssue(task); err != nil {
+		t.Fatalf("UpdateIssue task failed: %v", err)
+	}
 
 	// Verify hierarchy
 	f, _ := database.GetIssue(feature.ID)
@@ -253,7 +266,9 @@ func TestTreeReparenting(t *testing.T) {
 
 	// Change parent
 	child.ParentID = parent2.ID
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue child failed: %v", err)
+	}
 
 	// Verify new parent
 	c2, _ := database.GetIssue(child.ID)
@@ -419,7 +434,9 @@ func TestTreeDeleteParent(t *testing.T) {
 	database.CreateIssue(child)
 
 	// Delete parent
-	database.DeleteIssue(parent.ID)
+	if err := database.DeleteIssue(parent.ID); err != nil {
+		t.Fatalf("DeleteIssue parent failed: %v", err)
+	}
 
 	// Verify parent is deleted
 	pDeleted, _ := database.GetIssue(parent.ID)

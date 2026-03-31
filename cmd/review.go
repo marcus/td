@@ -19,7 +19,9 @@ import (
 func clearFocusIfNeeded(baseDir, issueID string) {
 	focusedID, _ := config.GetFocus(baseDir)
 	if focusedID == issueID {
-		config.ClearFocus(baseDir)
+		if err := config.ClearFocus(baseDir); err != nil {
+			output.Warning("failed to clear focus for %s: %v", issueID, err)
+		}
 	}
 }
 
@@ -677,12 +679,14 @@ Supports bulk operations:
 				}
 				logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION: %s)", agentInfo, reason)
 				logType = models.LogTypeSecurity
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				if err := db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,
 					Reason:    "creator_approval_exception: " + reason,
-				})
+				}); err != nil {
+					output.Warning("failed to record security event for %s: %v", issueID, err)
+				}
 			}
 
 			if err := database.AddLog(&models.Log{
@@ -844,7 +848,9 @@ Supports bulk operations:
 				if reason != "" {
 					result["reason"] = reason
 				}
-				output.JSON(result)
+				if err := output.JSON(result); err != nil {
+					output.JSONError(output.ErrCodeDatabaseError, err.Error())
+				}
 			} else {
 				fmt.Printf("REJECTED %s → open\n", issueID)
 			}
@@ -979,12 +985,14 @@ Examples:
 				logType = models.LogTypeSecurity
 
 				// Also log to the separate security audit file
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				if err := db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,
 					Reason:    selfCloseException,
-				})
+				}); err != nil {
+					output.Warning("failed to record security event for %s: %v", issueID, err)
+				}
 			} else if reason != "" {
 				logMsg = "Closed: " + reason
 			}
