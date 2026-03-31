@@ -152,7 +152,7 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n1 != 2 {
 		t.Fatalf("first backfill: expected 2, got %d", n1)
@@ -164,7 +164,7 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n2 != 0 {
 		t.Fatalf("second backfill: expected 0, got %d", n2)
@@ -172,7 +172,9 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 
 	// Verify still only 2 entries total
 	var count int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_type='issue'`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_type='issue'`).Scan(&count); err != nil {
+		t.Fatalf("count issue action_log rows: %v", err)
+	}
 	if count != 2 {
 		t.Fatalf("expected 2 total action_log rows, got %d", count)
 	}
@@ -194,7 +196,7 @@ func TestBackfillOrphanEntities_SkipsEntitiesWithEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (the orphan), got %d", n)
@@ -202,7 +204,9 @@ func TestBackfillOrphanEntities_SkipsEntitiesWithEvents(t *testing.T) {
 
 	// Verify td-200 still has exactly 1 action_log entry (not duplicated)
 	var count int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-200'`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-200'`).Scan(&count); err != nil {
+		t.Fatalf("count td-200 action_log rows: %v", err)
+	}
 	if count != 1 {
 		t.Fatalf("expected 1 entry for td-200, got %d", count)
 	}
@@ -221,7 +225,7 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (missing create), got %d", n)
@@ -229,7 +233,9 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 
 	// Verify a create action_log entry was added
 	var count int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-210' AND action_type='create'`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-210' AND action_type='create'`).Scan(&count); err != nil {
+		t.Fatalf("count td-210 create action_log rows: %v", err)
+	}
 	if count != 1 {
 		t.Fatalf("expected 1 create entry for td-210, got %d", count)
 	}
@@ -249,14 +255,16 @@ func TestBackfillStaleIssues_AddsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 1 {
 		t.Fatalf("expected 1 stale backfill, got %d", n)
 	}
 
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='create'`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='create'`).Scan(&count); err != nil {
+		t.Fatalf("count td-700 create action_log rows: %v", err)
+	}
 	if count != 2 {
 		t.Fatalf("expected 2 create entries for td-700 (original + backfill), got %d", count)
 	}
@@ -275,7 +283,7 @@ func TestBackfillStaleIssues_SkipsWhenUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 0 {
 		t.Fatalf("expected 0 stale updates, got %d", n)
@@ -295,7 +303,7 @@ func TestBackfillStaleIssues_BackfillsInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 1 {
 		t.Fatalf("expected 1 stale update for invalid JSON, got %d", n)
@@ -314,7 +322,7 @@ func TestBackfillOrphanEntities_MultipleEntityTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 3 {
 		t.Fatalf("expected 3 backfilled, got %d", n)
@@ -400,7 +408,7 @@ func TestBackfillOrphanEntities_IncludesSoftDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (soft-deleted), got %d", n)
@@ -408,9 +416,13 @@ func TestBackfillOrphanEntities_IncludesSoftDeleted(t *testing.T) {
 
 	// Verify the new_data includes deleted_at
 	var nd string
-	_ = db.QueryRow(`SELECT new_data FROM action_log WHERE entity_id='td-500'`).Scan(&nd)
+	if err := db.QueryRow(`SELECT new_data FROM action_log WHERE entity_id='td-500'`).Scan(&nd); err != nil {
+		t.Fatalf("query td-500 new_data: %v", err)
+	}
 	var fields map[string]any
-	_ = json.Unmarshal([]byte(nd), &fields)
+	if err := json.Unmarshal([]byte(nd), &fields); err != nil {
+		t.Fatalf("unmarshal td-500 new_data: %v", err)
+	}
 	if fields["deleted_at"] == nil {
 		t.Error("expected deleted_at in new_data for soft-deleted entity")
 	}
@@ -430,7 +442,7 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	mustCommitTx(t, tx)
 
 	if n != 0 {
 		t.Fatalf("expected 0 backfilled after pull, got %d", n)
@@ -438,7 +450,9 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 
 	// Verify no action_log entries were created
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count); err != nil {
+		t.Fatalf("count all action_log rows: %v", err)
+	}
 	if count != 0 {
 		t.Fatalf("expected 0 action_log rows, got %d", count)
 	}

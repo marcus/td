@@ -1,3 +1,4 @@
+//nolint:errcheck // Update tests use concise dependency fixture setup across many cases.
 package cmd
 
 import (
@@ -217,8 +218,12 @@ func TestUpdateReplaceDependencies(t *testing.T) {
 	}
 
 	// Replace with new dependency
-	database.RemoveDependency(issue.ID, dep1.ID)
-	database.AddDependency(issue.ID, dep2.ID, "depends_on")
+	if err := database.RemoveDependency(issue.ID, dep1.ID); err != nil {
+		t.Fatalf("RemoveDependency failed: %v", err)
+	}
+	if err := database.AddDependency(issue.ID, dep2.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// Verify replacement
 	deps, _ = database.GetDependencies(issue.ID)
@@ -249,7 +254,9 @@ func TestUpdateClearDependencies(t *testing.T) {
 	// Clear all dependencies
 	deps, _ := database.GetDependencies(issue.ID)
 	for _, dep := range deps {
-		database.RemoveDependency(issue.ID, dep)
+		if err := database.RemoveDependency(issue.ID, dep); err != nil {
+			t.Fatalf("RemoveDependency %s failed: %v", dep, err)
+		}
 	}
 
 	// Verify cleared
@@ -279,7 +286,9 @@ func TestUpdateReplaceBlocks(t *testing.T) {
 	database.AddDependency(blocked1.ID, blocker.ID, "depends_on")
 
 	// Replace: remove blocked1, add blocked2
-	database.RemoveDependency(blocked1.ID, blocker.ID)
+	if err := database.RemoveDependency(blocked1.ID, blocker.ID); err != nil {
+		t.Fatalf("RemoveDependency blocked1 failed: %v", err)
+	}
 	database.AddDependency(blocked2.ID, blocker.ID, "depends_on")
 
 	// Verify
@@ -562,7 +571,9 @@ func TestUpdateCmdHasStatusFlag(t *testing.T) {
 	}
 
 	// Reset
-	updateCmd.Flags().Set("status", "")
+	if err := updateCmd.Flags().Set("status", ""); err != nil {
+		t.Errorf("Failed to reset --status flag: %v", err)
+	}
 }
 
 func TestUpdateRichTextAppendFromFileAndStdin(t *testing.T) {

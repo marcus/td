@@ -237,6 +237,7 @@ var (
 	kanbanSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	// Modal border style for simple modal frames (notes loading, error states)
+	//nolint:unused // Reserved for the staged notes modal UI.
 	modalBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("240")).

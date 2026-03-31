@@ -1,3 +1,4 @@
+//nolint:errcheck // Dependency tests rely on concise graph setup helpers and fixtures.
 package cmd
 
 import (
@@ -25,7 +26,9 @@ func TestWouldCreateCycleSimple(t *testing.T) {
 	database.CreateIssue(issue2)
 
 	// Add issue2 depends on issue1
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// Check if adding issue1 depends on issue2 would create cycle
 	if !dependency.WouldCreateCycle(database, issue1.ID, issue2.ID) {
@@ -50,8 +53,12 @@ func TestWouldCreateCycleTransitive(t *testing.T) {
 	database.CreateIssue(issue2)
 	database.CreateIssue(issue3)
 
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	database.AddDependency(issue3.ID, issue2.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency issue2 failed: %v", err)
+	}
+	if err := database.AddDependency(issue3.ID, issue2.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency issue3 failed: %v", err)
+	}
 
 	// issue1 -> issue3 would create cycle: issue1 -> issue3 -> issue2 -> issue1
 	if !dependency.WouldCreateCycle(database, issue1.ID, issue3.ID) {
@@ -82,7 +89,9 @@ func TestWouldCreateCycleNoCycle(t *testing.T) {
 	database.CreateIssue(issue3)
 
 	// issue2 depends on issue1 (no cycle yet)
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// issue3 -> issue1 should be fine (no cycle)
 	if dependency.WouldCreateCycle(database, issue3.ID, issue1.ID) {
@@ -131,8 +140,12 @@ func TestGetTransitiveBlockedDirect(t *testing.T) {
 	database.CreateIssue(blocked2)
 
 	// Both blocked1 and blocked2 depend on blocker
-	database.AddDependency(blocked1.ID, blocker.ID, "depends_on")
-	database.AddDependency(blocked2.ID, blocker.ID, "depends_on")
+	if err := database.AddDependency(blocked1.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency blocked1 failed: %v", err)
+	}
+	if err := database.AddDependency(blocked2.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency blocked2 failed: %v", err)
+	}
 
 	allBlocked := dependency.GetTransitiveBlocked(database, blocker.ID, make(map[string]bool))
 	if len(allBlocked) != 2 {
@@ -159,9 +172,15 @@ func TestGetTransitiveBlockedChain(t *testing.T) {
 	database.CreateIssue(issue3)
 	database.CreateIssue(issue4)
 
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	database.AddDependency(issue3.ID, issue2.ID, "depends_on")
-	database.AddDependency(issue4.ID, issue3.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency issue2 failed: %v", err)
+	}
+	if err := database.AddDependency(issue3.ID, issue2.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency issue3 failed: %v", err)
+	}
+	if err := database.AddDependency(issue4.ID, issue3.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency issue4 failed: %v", err)
+	}
 
 	// issue1 transitively blocks 3 issues
 	allBlocked := dependency.GetTransitiveBlocked(database, issue1.ID, make(map[string]bool))
@@ -200,10 +219,18 @@ func TestGetTransitiveBlockedDiamond(t *testing.T) {
 	database.CreateIssue(mid2)
 	database.CreateIssue(bottom)
 
-	database.AddDependency(mid1.ID, top.ID, "depends_on")
-	database.AddDependency(mid2.ID, top.ID, "depends_on")
-	database.AddDependency(bottom.ID, mid1.ID, "depends_on")
-	database.AddDependency(bottom.ID, mid2.ID, "depends_on")
+	if err := database.AddDependency(mid1.ID, top.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency mid1 failed: %v", err)
+	}
+	if err := database.AddDependency(mid2.ID, top.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency mid2 failed: %v", err)
+	}
+	if err := database.AddDependency(bottom.ID, mid1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency bottom->mid1 failed: %v", err)
+	}
+	if err := database.AddDependency(bottom.ID, mid2.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency bottom->mid2 failed: %v", err)
+	}
 
 	// getTransitiveBlocked returns all paths, so bottom appears twice (via mid1 and mid2)
 	// This is how it counts total blocking relationships, not unique issues
@@ -363,7 +390,9 @@ func TestDepAddDependsOnFlag(t *testing.T) {
 	}
 
 	// Reset
-	depAddCmd.Flags().Set("depends-on", "")
+	if err := depAddCmd.Flags().Set("depends-on", ""); err != nil {
+		t.Errorf("Failed to reset --depends-on flag: %v", err)
+	}
 }
 
 // TestAddDependencySingle tests adding a single dependency
@@ -600,7 +629,9 @@ func TestAddDependencyValidation(t *testing.T) {
 				database.CreateIssue(issue1)
 				database.CreateIssue(issue2)
 				// Add dependency first time
-				addDependency(database, issue1.ID, issue2.ID, "ses_test")
+				if err := addDependency(database, issue1.ID, issue2.ID, "ses_test"); err != nil {
+					t.Fatalf("seed dependency failed: %v", err)
+				}
 				return issue1.ID, issue2.ID
 			},
 			wantError:   false, // addDependency returns nil for duplicates (with warning)
@@ -679,8 +710,12 @@ func TestAddDependencyPersistence(t *testing.T) {
 	database.CreateIssue(issue3)
 
 	// Add dependencies
-	addDependency(database, issue2.ID, issue1.ID, "ses_test")
-	addDependency(database, issue3.ID, issue2.ID, "ses_test")
+	if err := addDependency(database, issue2.ID, issue1.ID, "ses_test"); err != nil {
+		t.Fatalf("AddDependency issue2 failed: %v", err)
+	}
+	if err := addDependency(database, issue3.ID, issue2.ID, "ses_test"); err != nil {
+		t.Fatalf("AddDependency issue3 failed: %v", err)
+	}
 
 	database.Close()
 

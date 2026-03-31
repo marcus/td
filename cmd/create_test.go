@@ -1,3 +1,4 @@
+//nolint:errcheck // Command tests use compact DB fixture setup across many independent cases.
 package cmd
 
 import (
@@ -278,7 +279,9 @@ func TestIssueDefaultStatus(t *testing.T) {
 	issue := &models.Issue{
 		Title: "New Issue",
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusOpen {
@@ -299,13 +302,21 @@ func TestCreateMultipleDependencies(t *testing.T) {
 	prereq1 := &models.Issue{Title: "Prereq 1"}
 	prereq2 := &models.Issue{Title: "Prereq 2"}
 	prereq3 := &models.Issue{Title: "Prereq 3"}
-	database.CreateIssue(prereq1)
-	database.CreateIssue(prereq2)
-	database.CreateIssue(prereq3)
+	if err := database.CreateIssue(prereq1); err != nil {
+		t.Fatalf("CreateIssue prereq1 failed: %v", err)
+	}
+	if err := database.CreateIssue(prereq2); err != nil {
+		t.Fatalf("CreateIssue prereq2 failed: %v", err)
+	}
+	if err := database.CreateIssue(prereq3); err != nil {
+		t.Fatalf("CreateIssue prereq3 failed: %v", err)
+	}
 
 	// Create dependent issue
 	dependent := &models.Issue{Title: "Dependent"}
-	database.CreateIssue(dependent)
+	if err := database.CreateIssue(dependent); err != nil {
+		t.Fatalf("CreateIssue dependent failed: %v", err)
+	}
 
 	// Add multiple dependencies
 	if err := database.AddDependency(dependent.ID, prereq1.ID, "depends_on"); err != nil {
@@ -351,7 +362,9 @@ func TestCreateIssueIDFormat(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	// ID should be "td-" + 6 hex chars = 9 total chars
 	if !strings.HasPrefix(issue.ID, "td-") {
@@ -372,7 +385,9 @@ func TestCreateIssueTimestamps(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	if issue.CreatedAt.IsZero() {
 		t.Error("Expected CreatedAt to be set")
@@ -406,7 +421,9 @@ func TestCreateNotesFlagAlias(t *testing.T) {
 	}
 
 	// Reset
-	createCmd.Flags().Set("notes", "")
+	if err := createCmd.Flags().Set("notes", ""); err != nil {
+		t.Errorf("Failed to reset --notes flag: %v", err)
+	}
 }
 
 // TestCreateTagFlagParsing tests that --tag and --tags flags are defined and work

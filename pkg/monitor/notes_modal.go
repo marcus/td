@@ -1,3 +1,4 @@
+//nolint:unused // Notes modal implementation is staged but not yet wired into the active monitor flow.
 package monitor
 
 import (
@@ -19,20 +20,20 @@ import (
 // NotesState holds the state for the notes modal system.
 type NotesState struct {
 	// List state
-	Notes       []models.Note
-	ListCursor  int
+	Notes        []models.Note
+	ListCursor   int
 	ShowArchived bool
 
 	// Detail state
-	DetailNote    *models.Note
-	DetailRender  string // Pre-rendered markdown content
+	DetailNote   *models.Note
+	DetailRender string // Pre-rendered markdown content
 
 	// Edit state
-	Editing       bool
-	Creating      bool
-	EditTitle     *textinput.Model
-	EditContent   *textarea.Model
-	EditNoteID    string // ID of note being edited (empty for create)
+	Editing     bool
+	Creating    bool
+	EditTitle   *textinput.Model
+	EditContent *textarea.Model
+	EditNoteID  string // ID of note being edited (empty for create)
 
 	// Delete confirmation
 	DeleteConfirm bool

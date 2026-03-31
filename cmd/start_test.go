@@ -1,3 +1,4 @@
+//nolint:errcheck // Start command tests use compact fixture setup across many scenarios.
 package cmd
 
 import (

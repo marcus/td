@@ -156,7 +156,7 @@ func logAgentError(args []string, errMsg string) {
 	}
 
 	// Log the error (silently fails if project not initialized)
-	db.LogAgentError(dir, args, errMsg, sessionID)
+	_ = db.LogAgentError(dir, args, errMsg, sessionID)
 }
 
 // handleUnknownFlagError checks if error is an unknown flag and suggests alternatives

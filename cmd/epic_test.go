@@ -88,5 +88,7 @@ func TestEpicCreateHasHiddenTypeFlag(t *testing.T) {
 	}
 
 	// Reset
-	epicCreateCmd.Flags().Set("type", "")
+	if err := epicCreateCmd.Flags().Set("type", ""); err != nil {
+		t.Errorf("Failed to reset type flag: %v", err)
+	}
 }

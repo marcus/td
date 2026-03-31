@@ -1,3 +1,4 @@
+//nolint:errcheck // Show command flag-reset tests intentionally keep setup minimal.
 package cmd
 
 import (
@@ -37,7 +38,9 @@ func TestShowFormatFlagParsing(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("format", "")
+	if err := showCmd.Flags().Set("format", ""); err != nil {
+		t.Errorf("Failed to reset --format flag: %v", err)
+	}
 }
 
 // TestShowAcceptsZeroArgs tests that show can be called with no arguments
@@ -80,7 +83,9 @@ func TestShowJSONFlagStillWorks(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("json", "false")
+	if err := showCmd.Flags().Set("json", "false"); err != nil {
+		t.Errorf("Failed to reset --json flag: %v", err)
+	}
 }
 
 // TestShowRenderMarkdownFlagExists tests that --render-markdown flag is defined

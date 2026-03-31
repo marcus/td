@@ -216,12 +216,14 @@ Or use flags with values, stdin (-), or file (@path):
 					}
 
 					// Add log entry for visibility
-					database.AddLog(&models.Log{
+					if err := database.AddLog(&models.Log{
 						IssueID:   child.ID,
 						SessionID: sess.ID,
 						Message:   fmt.Sprintf("Cascaded handoff from %s", issueID),
 						Type:      models.LogTypeProgress,
-					})
+					}); err != nil {
+						output.Warning("cascade log %s: %v", child.ID, err)
+					}
 
 					cascaded++
 				}

@@ -1,3 +1,4 @@
+//nolint:errcheck // Work-session tests cover many flows and keep fixture setup intentionally compact.
 package cmd
 
 import (
@@ -56,8 +57,12 @@ func TestWsStartWithActiveSessionErrors(t *testing.T) {
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "first-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// Check active session is set
 	activeWS, err := config.GetActiveWorkSession(dir)
@@ -83,11 +88,17 @@ func TestWsStopEndsSession(t *testing.T) {
 
 	// Create active session
 	ws := &models.WorkSession{Name: "active-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// End session
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatalf("ClearActiveWorkSession failed: %v", err)
+	}
 
 	// Verify session is no longer active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -123,8 +134,12 @@ func TestWsTagAddsIssueToSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "tagging-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
@@ -159,7 +174,9 @@ func TestWsTagMultipleIssues(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "multi-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
 
 	// Create issues
 	issues := []*models.Issue{
@@ -170,7 +187,9 @@ func TestWsTagMultipleIssues(t *testing.T) {
 
 	for _, issue := range issues {
 		database.CreateIssue(issue)
-		database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+		if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+			t.Fatalf("TagIssueToWorkSession failed: %v", err)
+		}
 	}
 
 	// Verify all issues are tagged
@@ -207,7 +226,9 @@ func TestWsTagInvalidIssueErrors(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "invalid-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
 
 	// Try to get non-existent issue
 	_, err = database.GetIssue("td-nonexistent")
@@ -227,12 +248,16 @@ func TestWsUntagRemovesIssueFromSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "untag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
 
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
 	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
 
 	// Verify issue is tagged
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -270,11 +295,17 @@ func TestWsUntagPartialRemoval(t *testing.T) {
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 	database.CreateIssue(issue1)
 	database.CreateIssue(issue2)
-	database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session"); err != nil {
+		t.Fatalf("TagIssueToWorkSession issue1 failed: %v", err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session"); err != nil {
+		t.Fatalf("TagIssueToWorkSession issue2 failed: %v", err)
+	}
 
 	// Untag only issue1
-	database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session")
+	if err := database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session"); err != nil {
+		t.Fatalf("UntagIssueFromWorkSession issue1 failed: %v", err)
+	}
 
 	// Verify only issue2 remains
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -302,7 +333,9 @@ func TestWsLogAddsLogEntry(t *testing.T) {
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
 	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
 
 	// Add log to work session (log attached to work session, not specific issue)
 	log := &models.Log{
@@ -468,7 +501,9 @@ func TestWsHandoffEndsSession(t *testing.T) {
 	// Create and set active session
 	ws := &models.WorkSession{Name: "ending-session", SessionID: "ses_test"}
 	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// Verify session is active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -477,7 +512,9 @@ func TestWsHandoffEndsSession(t *testing.T) {
 	}
 
 	// Clear active session (simulates handoff ending session)
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatalf("ClearActiveWorkSession failed: %v", err)
+	}
 
 	// Verify session is ended
 	activeWS, _ = config.GetActiveWorkSession(dir)
@@ -498,12 +535,16 @@ func TestWsCurrentShowsActiveSession(t *testing.T) {
 	// Create work session
 	ws := &models.WorkSession{Name: "current-session", SessionID: "ses_test"}
 	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// Tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
 	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
 
 	// Get current session
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -623,10 +664,14 @@ func TestWsEndWithoutHandoff(t *testing.T) {
 	// Create and set active session
 	ws := &models.WorkSession{Name: "no-handoff-session", SessionID: "ses_test"}
 	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
 
 	// End without handoff
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatalf("ClearActiveWorkSession failed: %v", err)
+	}
 
 	// Verify session ended
 	activeWS, _ := config.GetActiveWorkSession(dir)

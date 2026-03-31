@@ -1,3 +1,4 @@
+//nolint:errcheck // Review tests cover many state combinations and keep setup intentionally compact.
 package cmd
 
 import (
@@ -1048,7 +1049,9 @@ func TestReviewMinorFlag(t *testing.T) {
 	}
 
 	// Reset
-	reviewCmd.Flags().Set("minor", "false")
+	if err := reviewCmd.Flags().Set("minor", "false"); err != nil {
+		t.Errorf("Failed to reset --minor flag: %v", err)
+	}
 }
 
 func TestReviewReasonShorthand(t *testing.T) {
@@ -1071,7 +1074,9 @@ func TestReviewReasonShorthand(t *testing.T) {
 	}
 
 	// Reset
-	reviewCmd.Flags().Set("reason", "")
+	if err := reviewCmd.Flags().Set("reason", ""); err != nil {
+		t.Errorf("Failed to reset --reason flag: %v", err)
+	}
 }
 
 func TestApproveReasonShorthand(t *testing.T) {
@@ -1135,7 +1140,9 @@ func TestCloseSelfCloseExceptionRequiresValue(t *testing.T) {
 	}
 
 	// Reset flag to default before test
-	flag.Value.Set("")
+	if err := flag.Value.Set(""); err != nil {
+		t.Fatalf("Failed to reset --self-close-exception: %v", err)
+	}
 
 	// Set a test value
 	if err := flag.Value.Set("test reason"); err != nil {
@@ -1148,7 +1155,9 @@ func TestCloseSelfCloseExceptionRequiresValue(t *testing.T) {
 	}
 
 	// Reset for other tests
-	flag.Value.Set("")
+	if err := flag.Value.Set(""); err != nil {
+		t.Fatalf("Failed to reset --self-close-exception: %v", err)
+	}
 }
 
 func TestCloseSelfCloseScenarios(t *testing.T) {

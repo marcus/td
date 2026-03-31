@@ -1,3 +1,4 @@
+//nolint:errcheck // Cascade CLI tests prioritize compact setup for many scenario permutations.
 package cmd
 
 import (
@@ -19,10 +20,14 @@ func TestCascadeCLIBasic(t *testing.T) {
 	defer database.Close()
 
 	epic := &models.Issue{Title: "Epic: Feature X", Type: models.TypeEpic, Status: models.StatusOpen}
-	database.CreateIssue(epic)
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
 
 	child := &models.Issue{Title: "Task: Implement", Type: models.TypeTask, Status: models.StatusOpen, ParentID: epic.ID}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
 
 	sessionID := "ses_test_cascade"
 
@@ -30,7 +35,9 @@ func TestCascadeCLIBasic(t *testing.T) {
 	child.Status = models.StatusClosed
 	now := time.Now()
 	child.ClosedAt = &now
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue child failed: %v", err)
+	}
 
 	cascaded, cascadedIDs := database.CascadeUpParentStatus(child.ID, models.StatusClosed, sessionID)
 
@@ -55,14 +62,18 @@ func TestCascadeCLIMultipleChildren(t *testing.T) {
 
 	sessionID := "ses_multi_children"
 	epic := &models.Issue{Title: "Epic: Big Feature", Type: models.TypeEpic, Status: models.StatusOpen}
-	database.CreateIssue(epic)
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
 
 	children := make([]*models.Issue, 3)
 	for i := 0; i < 3; i++ {
 		children[i] = &models.Issue{
 			Title: fmt.Sprintf("Child %d", i+1), Type: models.TypeTask, Status: models.StatusOpen, ParentID: epic.ID,
 		}
-		database.CreateIssue(children[i])
+		if err := database.CreateIssue(children[i]); err != nil {
+			t.Fatalf("CreateIssue child %d failed: %v", i+1, err)
+		}
 	}
 
 	// Close first two
@@ -70,7 +81,9 @@ func TestCascadeCLIMultipleChildren(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		children[i].Status = models.StatusClosed
 		children[i].ClosedAt = &now
-		database.UpdateIssue(children[i])
+		if err := database.UpdateIssue(children[i]); err != nil {
+			t.Fatalf("UpdateIssue child %d failed: %v", i+1, err)
+		}
 	}
 
 	// Should NOT cascade yet
@@ -82,7 +95,9 @@ func TestCascadeCLIMultipleChildren(t *testing.T) {
 	// Close last child
 	children[2].Status = models.StatusClosed
 	children[2].ClosedAt = &now
-	database.UpdateIssue(children[2])
+	if err := database.UpdateIssue(children[2]); err != nil {
+		t.Fatalf("UpdateIssue final child failed: %v", err)
+	}
 
 	// Now cascade
 	cascaded, _ = database.CascadeUpParentStatus(children[2].ID, models.StatusClosed, sessionID)
@@ -105,18 +120,26 @@ func TestCascadeCLINestedHierarchy(t *testing.T) {
 	sessionID := "ses_nested"
 
 	grandparent := &models.Issue{Title: "Epic: L1", Type: models.TypeEpic, Status: models.StatusOpen}
-	database.CreateIssue(grandparent)
+	if err := database.CreateIssue(grandparent); err != nil {
+		t.Fatalf("CreateIssue grandparent failed: %v", err)
+	}
 
 	parent := &models.Issue{Title: "Epic: L2", Type: models.TypeEpic, Status: models.StatusOpen, ParentID: grandparent.ID}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue parent failed: %v", err)
+	}
 
 	child := &models.Issue{Title: "Task: L3", Type: models.TypeTask, Status: models.StatusOpen, ParentID: parent.ID}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
 
 	now := time.Now()
 	child.Status = models.StatusClosed
 	child.ClosedAt = &now
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue child failed: %v", err)
+	}
 
 	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusClosed, sessionID)
 
@@ -143,13 +166,19 @@ func TestCascadeCLIStatusRules(t *testing.T) {
 
 	sessionID := "ses_rules"
 	epic := &models.Issue{Title: "Epic for review", Type: models.TypeEpic, Status: models.StatusOpen}
-	database.CreateIssue(epic)
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
 
 	child := &models.Issue{Title: "Child for review", Type: models.TypeTask, Status: models.StatusOpen, ParentID: epic.ID}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
 
 	child.Status = models.StatusInReview
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue review child failed: %v", err)
+	}
 
 	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusInReview, sessionID)
 
@@ -170,12 +199,16 @@ func TestCascadeCLINoParent(t *testing.T) {
 	defer database.Close()
 
 	task := &models.Issue{Title: "Orphan Task", Type: models.TypeTask, Status: models.StatusOpen}
-	database.CreateIssue(task)
+	if err := database.CreateIssue(task); err != nil {
+		t.Fatalf("CreateIssue task failed: %v", err)
+	}
 
 	now := time.Now()
 	task.Status = models.StatusClosed
 	task.ClosedAt = &now
-	database.UpdateIssue(task)
+	if err := database.UpdateIssue(task); err != nil {
+		t.Fatalf("UpdateIssue orphan task failed: %v", err)
+	}
 
 	cascaded, cascadedIDs := database.CascadeUpParentStatus(task.ID, models.StatusClosed, "ses_orphan")
 
@@ -195,15 +228,21 @@ func TestCascadeCLIUndoable(t *testing.T) {
 
 	sessionID := "ses_undo_test"
 	epic := &models.Issue{Title: "Epic for undo", Type: models.TypeEpic, Status: models.StatusOpen}
-	database.CreateIssue(epic)
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue epic failed: %v", err)
+	}
 
 	child := &models.Issue{Title: "Child for undo", Type: models.TypeTask, Status: models.StatusOpen, ParentID: epic.ID}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue child failed: %v", err)
+	}
 
 	now := time.Now()
 	child.Status = models.StatusClosed
 	child.ClosedAt = &now
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue undo child failed: %v", err)
+	}
 
 	database.CascadeUpParentStatus(child.ID, models.StatusClosed, sessionID)
 
@@ -231,7 +270,9 @@ func TestCascadeCLINonEpicParent(t *testing.T) {
 	defer database.Close()
 
 	parentTask := &models.Issue{Title: "Parent Task", Type: models.TypeTask, Status: models.StatusOpen}
-	database.CreateIssue(parentTask)
+	if err := database.CreateIssue(parentTask); err != nil {
+		t.Fatalf("CreateIssue parentTask failed: %v", err)
+	}
 
 	childTask := &models.Issue{Title: "Child Task", Type: models.TypeTask, Status: models.StatusOpen, ParentID: parentTask.ID}
 	database.CreateIssue(childTask)
@@ -239,7 +280,9 @@ func TestCascadeCLINonEpicParent(t *testing.T) {
 	now := time.Now()
 	childTask.Status = models.StatusClosed
 	childTask.ClosedAt = &now
-	database.UpdateIssue(childTask)
+	if err := database.UpdateIssue(childTask); err != nil {
+		t.Fatalf("UpdateIssue childTask failed: %v", err)
+	}
 
 	cascaded, _ := database.CascadeUpParentStatus(childTask.ID, models.StatusClosed, "ses_non_epic")
 
@@ -295,7 +338,9 @@ func TestCascadeCLITableDriven(t *testing.T) {
 				if tt.targetStatus == models.StatusClosed {
 					children[i].ClosedAt = &now
 				}
-				database.UpdateIssue(children[i])
+				if err := database.UpdateIssue(children[i]); err != nil {
+					t.Fatalf("UpdateIssue child %d failed: %v", i+1, err)
+				}
 			}
 
 			cascaded, _ := database.CascadeUpParentStatus(children[tt.childrenToClose-1].ID, tt.targetStatus, sessionID)
@@ -331,12 +376,16 @@ func TestCascadeCLIInReviewStatus(t *testing.T) {
 	database.CreateIssue(child2)
 
 	child1.Status = models.StatusInReview
-	database.UpdateIssue(child1)
+	if err := database.UpdateIssue(child1); err != nil {
+		t.Fatalf("UpdateIssue child1 failed: %v", err)
+	}
 
 	now := time.Now()
 	child2.Status = models.StatusClosed
 	child2.ClosedAt = &now
-	database.UpdateIssue(child2)
+	if err := database.UpdateIssue(child2); err != nil {
+		t.Fatalf("UpdateIssue child2 failed: %v", err)
+	}
 
 	cascaded, _ := database.CascadeUpParentStatus(child1.ID, models.StatusInReview, "ses_review")
 
@@ -397,7 +446,9 @@ func TestCascadeCLIAlreadyClosed(t *testing.T) {
 
 	child.Status = models.StatusClosed
 	child.ClosedAt = &now
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatalf("UpdateIssue child failed: %v", err)
+	}
 
 	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusClosed, "ses_already_closed")
 
