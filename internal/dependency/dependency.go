@@ -94,18 +94,11 @@ func GetDependencies(database *db.DB, issueID string) ([]models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var deps []models.Issue
-	for _, depID := range depIDs {
-		issue, err := database.GetIssue(depID)
-		if err != nil {
-			// Skip issues that no longer exist
-			continue
-		}
-		deps = append(deps, *issue)
+	if len(depIDs) == 0 {
+		return nil, nil
 	}
 
-	return deps, nil
+	return database.GetIssuesByIDs(depIDs)
 }
 
 // GetDependents returns issues that depend on issueID.
@@ -114,18 +107,11 @@ func GetDependents(database *db.DB, issueID string) ([]models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var dependents []models.Issue
-	for _, id := range blockedIDs {
-		issue, err := database.GetIssue(id)
-		if err != nil {
-			// Skip issues that no longer exist
-			continue
-		}
-		dependents = append(dependents, *issue)
+	if len(blockedIDs) == 0 {
+		return nil, nil
 	}
 
-	return dependents, nil
+	return database.GetIssuesByIDs(blockedIDs)
 }
 
 // GetTransitiveBlocked returns all unique issues transitively blocked by issueID.
@@ -145,15 +131,32 @@ func getTransitiveBlockedFiltered(database *db.DB, issueID string, visited map[s
 	visited[issueID] = true
 
 	blocked, _ := database.GetBlockedBy(issueID)
-	var all []string
+	if len(blocked) == 0 {
+		return nil
+	}
 
+	// Filter out already-visited IDs
+	var toCheck []string
 	for _, id := range blocked {
-		if visited[id] {
-			continue
+		if !visited[id] {
+			toCheck = append(toCheck, id)
 		}
-		if excludeClosed {
-			issue, err := database.GetIssue(id)
-			if err != nil || issue.Status == models.StatusClosed {
+	}
+	if len(toCheck) == 0 {
+		return nil
+	}
+
+	// Batch-fetch statuses to avoid N+1 GetIssue calls
+	var statuses map[string]models.Status
+	if excludeClosed {
+		statuses, _ = database.GetIssueStatuses(toCheck)
+	}
+
+	var all []string
+	for _, id := range toCheck {
+		if excludeClosed && statuses != nil {
+			s, found := statuses[id]
+			if !found || s == models.StatusClosed {
 				visited[id] = true
 				continue
 			}

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 29
+const SchemaVersion = 30
 
 const schema = `
 -- Issues table
@@ -478,6 +478,14 @@ ALTER TABLE issues ADD COLUMN due_date TEXT;
 ALTER TABLE issues ADD COLUMN defer_count INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_issues_defer_until ON issues(defer_until);
 CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
+`,
+	},
+	{
+		Version:     30,
+		Description: "Add composite indexes for dependency and implementer queries",
+		SQL: `
+CREATE INDEX IF NOT EXISTS idx_issues_impl_status ON issues(implementer_session, status);
+CREATE INDEX IF NOT EXISTS idx_deps_depends_on ON issue_dependencies(depends_on_id);
 `,
 	},
 }
