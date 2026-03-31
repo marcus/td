@@ -72,7 +72,7 @@ func addToGitignore(path string) {
 		return
 	}
 
-	// Append to file
+	// Append to file with a section header
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -84,7 +84,7 @@ func addToGitignore(path string) {
 		f.WriteString("\n")
 	}
 
-	f.WriteString(".todos/\n")
+	f.WriteString("\n\n# td\n.todos/\n")
 	fmt.Println("Added .todos/ to .gitignore")
 }
 
