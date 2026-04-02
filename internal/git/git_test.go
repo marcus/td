@@ -1,9 +1,11 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,44 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func runCmdOutput(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func commitFile(t *testing.T, dir, path, content, message string) string {
+	t.Helper()
+
+	fullPath := filepath.Join(dir, path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatalf("Failed to create parent dir: %v", err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", path); err != nil {
+		t.Fatalf("Failed to git add %s: %v", path, err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", message); err != nil {
+		t.Fatalf("Failed to commit %q: %v", message, err)
+	}
+
+	sha, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to get HEAD sha: %v", err)
+	}
+	return sha
+}
+
+func tagHead(t *testing.T, dir, tag string) {
+	t.Helper()
+	if err := runCmd(dir, "git", "tag", tag); err != nil {
+		t.Fatalf("Failed to create tag %s: %v", tag, err)
+	}
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +507,84 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestGetLatestSemverTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHead(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add feature")
+	tagHead(t, dir, "v0.2.0")
+	commitFile(t, dir, "fix.txt", "fix\n", "fix: patch release")
+
+	tag, err := GetLatestSemverTag(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("GetLatestSemverTag failed: %v", err)
+	}
+	if tag != "v0.2.0" {
+		t.Fatalf("tag = %q, want %q", tag, "v0.2.0")
+	}
+}
+
+func TestGetReleaseNotesDataExplicitRange(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHead(t, dir, "v0.1.0")
+	commitFile(t, dir, "docs/guide.md", "# Guide\n", "docs: add guide")
+	midSHA := commitFile(t, dir, "cmd/release_notes.go", "package cmd\n", "feat: add command")
+	commitFile(t, dir, "cmd/release_notes_test.go", "package cmd\n", "test: add command coverage")
+
+	data, err := GetReleaseNotesData(dir, ReleaseNotesOptions{FromRef: midSHA + "^", ToRef: "HEAD"})
+	if err != nil {
+		t.Fatalf("GetReleaseNotesData failed: %v", err)
+	}
+
+	if data.BaselineTag != "" {
+		t.Fatalf("BaselineTag = %q, want empty for explicit range", data.BaselineTag)
+	}
+	if data.FromRef != midSHA+"^" {
+		t.Fatalf("FromRef = %q, want %q", data.FromRef, midSHA+"^")
+	}
+	if len(data.Commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(data.Commits))
+	}
+	if data.Commits[0].Subject != "feat: add command" {
+		t.Fatalf("first subject = %q", data.Commits[0].Subject)
+	}
+	if data.Commits[1].Subject != "test: add command coverage" {
+		t.Fatalf("second subject = %q", data.Commits[1].Subject)
+	}
+	if len(data.Files) != 2 {
+		t.Fatalf("expected 2 changed files, got %d (%v)", len(data.Files), data.Files)
+	}
+}
+
+func TestGetReleaseNotesDataNoTag(t *testing.T) {
+	dir := initTestRepo(t)
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add feature")
+
+	_, err := GetReleaseNotesData(dir, ReleaseNotesOptions{})
+	if !errors.Is(err, ErrNoSemverTag) {
+		t.Fatalf("expected ErrNoSemverTag, got %v", err)
+	}
+}
+
+func TestGetReleaseNotesDataNoCommits(t *testing.T) {
+	dir := initTestRepo(t)
+	tagHead(t, dir, "v0.1.0")
+
+	_, err := GetReleaseNotesData(dir, ReleaseNotesOptions{})
+	if !errors.Is(err, ErrNoCommits) {
+		t.Fatalf("expected ErrNoCommits, got %v", err)
+	}
+}
+
+func TestGetReleaseNotesDataNotRepo(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := GetReleaseNotesData(dir, ReleaseNotesOptions{})
+	if !errors.Is(err, ErrNotRepository) {
+		t.Fatalf("expected ErrNotRepository, got %v", err)
 	}
 }

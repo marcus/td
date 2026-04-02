@@ -8,7 +8,7 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 
 1. Builds binaries for darwin/linux × amd64/arm64
 2. Creates a GitHub release with binary assets and checksums
-3. Generates a changelog from commits since the last tag
+3. Generates GitHub release notes from commits since the last tag
 4. Pushes a Homebrew tap formula (`Casks/td.rb`) to `marcus/homebrew-tap`
 
 ## Prerequisites
@@ -33,9 +33,15 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Draft and Update CHANGELOG.md
 
-Add entry at the top of `CHANGELOG.md`:
+Generate a draft from git history:
+
+```bash
+td release-notes --version vX.Y.Z
+```
+
+Review the output, edit as needed, then paste the entry at the top of `CHANGELOG.md`:
 
 ```markdown
 ## [vX.Y.Z] - YYYY-MM-DD
@@ -134,8 +140,9 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Draft release notes and update changelog
+td release-notes --version vX.Y.Z
+# (Review/edit the draft, then paste it into CHANGELOG.md)
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,6 +161,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] `td release-notes --version vX.Y.Z` reviewed and edited
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
