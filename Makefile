@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version install-hooks test-commit-msg
 
 SHELL := /bin/sh
 
@@ -13,7 +13,8 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
-		"  make install-hooks             # install git pre-commit hook" \
+		"  make install-hooks             # install git pre-commit and commit-msg hooks" \
+		"  make test-commit-msg           # run commit-msg hook regression checks" \
 		"  make test                      # go test ./..." \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
@@ -52,6 +53,10 @@ release: tag
 	git push origin "$(VERSION)"
 
 install-hooks:
-	@echo "Installing git pre-commit hook..."
+	@echo "Installing git hooks..."
 	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "Done. Hook installed at .git/hooks/pre-commit"
+	@ln -sf ../../scripts/commit-msg.sh .git/hooks/commit-msg
+	@echo "Done. Hooks installed at .git/hooks/pre-commit and .git/hooks/commit-msg"
+
+test-commit-msg:
+	@./scripts/test_commit_msg_hook.sh

@@ -34,13 +34,12 @@ go test ./...              # Test all
 ```bash
 # Commit changes with proper message
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat: describe the changes (td-abc123)
 
 Details here
 
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+Nightshift-Task: commit-normalize
+Nightshift-Ref: https://github.com/marcus/nightshift"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
@@ -55,6 +54,15 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Use `make install-hooks` in this repo to install both local Git hooks:
+- `pre-commit` runs `gofmt`, `go vet`, and `go build`
+- `commit-msg` enforces `<type>: <summary> (td-<id>)` for task work
+
+Allowed `commit-msg` exceptions:
+- `docs: Update changelog for vX.Y.Z`
+- `td: bump to vX.Y.Z`
+- Git-generated merge, revert, `fixup!`, and `squash!` subjects
 
 ## Architecture
 

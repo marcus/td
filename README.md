@@ -189,8 +189,13 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks:
+#   pre-commit runs gofmt, go vet, and go build on staged work
+#   commit-msg enforces <type>: <summary> (td-<id>) for task commits
 make install-hooks
+
+# Example task commit
+git commit -m "feat: normalize commit messages (td-abc123)"
 ```
 
 ## Tests & Quality Checks
@@ -207,8 +212,13 @@ make test
 # Format code (runs gofmt)
 make fmt
 
+# Run commit message hook regression checks
+make test-commit-msg
+
 # No linter configured yet — clean gofmt is current quality bar
 ```
+
+Task-oriented commits should use a conventional prefix plus trailing td reference, such as `fix: preserve stash on branch switch (td-abc123)`. The `commit-msg` hook allows release-specific exceptions that already exist in this repo, including `docs: Update changelog for vX.Y.Z`, `td: bump to vX.Y.Z`, and Git-generated merge, revert, `fixup!`, or `squash!` subjects.
 
 ## Release
 
