@@ -127,6 +127,21 @@ strip_trailing_refs() {
   printf '%s' "$stripped"
 }
 
+has_only_allowed_trailing_refs() {
+  local subject="$1"
+  local stripped
+  local invalid_trailing_paren_regex='[[:space:]]+\([^)]+\)$'
+
+  stripped="$(strip_trailing_refs "$subject")"
+  [[ -n "$stripped" ]] || return 1
+
+  if [[ "$stripped" =~ $invalid_trailing_paren_regex ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
 is_valid_subject() {
   local subject="$1"
   local parsed type scope summary
@@ -139,6 +154,7 @@ is_valid_subject() {
 $parsed
 EOF
     is_allowed_type "$type" || return 1
+    has_only_allowed_trailing_refs "$summary" || return 1
     summary="$(strip_trailing_refs "$summary")"
     [[ -n "$summary" ]] || return 1
     return 0

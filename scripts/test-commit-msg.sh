@@ -180,6 +180,18 @@ expect_reject "rejects ref-only summary chain" \
   $'docs(scope): (td-a1b2c3) (#12)\n' \
   'Examples:'
 
+expect_reject "rejects unknown trailing ref" \
+  $'feat(cli): add thing (random)\n' \
+  'Optional trailing refs'
+
+expect_reject "rejects malformed PR trailing ref" \
+  $'feat(cli): add thing (#abc)\n' \
+  'Optional trailing refs'
+
+expect_reject "rejects malformed td trailing ref" \
+  $'feat(cli): add thing (td-)\n' \
+  'Optional trailing refs'
+
 if [[ "$FAIL" -gt 0 ]]; then
   echo ""
   echo "Failed $FAIL commit-msg hook test(s); passed $PASS."
