@@ -260,7 +260,7 @@ func init() {
 	updateCmd.Flags().String("acceptance", "", "New acceptance criteria")
 	updateCmd.Flags().String("acceptance-file", "", "Read acceptance criteria from file or - for stdin (preserves formatting)")
 	updateCmd.Flags().String("type", "", "New type")
-	updateCmd.Flags().String("priority", "", "New priority")
+	updateCmd.Flags().StringP("priority", "p", "", "New priority (P0, P1, P2, P3, P4)")
 	updateCmd.Flags().Int("points", 0, "New story points")
 	updateCmd.Flags().StringArrayP("labels", "l", nil, "Replace labels (repeatable, comma-separated)")
 	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
