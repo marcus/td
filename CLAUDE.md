@@ -27,6 +27,7 @@ Use `td usage -q` after first read.
 ```bash
 go build -o td .           # Build locally
 go test ./...              # Test all
+make install-hooks         # Install pre-commit + commit-msg hooks
 ```
 
 ## Version & Release
@@ -34,13 +35,12 @@ go test ./...              # Test all
 ```bash
 # Commit changes with proper message
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat(cli): describe the changes (td-a1b2c3)
 
 Details here
 
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+Nightshift-Task: <task-id>
+Nightshift-Ref: https://github.com/marcus/nightshift"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
