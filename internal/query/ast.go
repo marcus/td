@@ -209,10 +209,10 @@ var CrossEntityFields = map[string]map[string]string{
 
 // Enum values for validation
 var EnumValues = map[string][]string{
-	"status":   {"open", "in_progress", "blocked", "in_review", "closed"},
-	"type":     {"bug", "feature", "task", "epic", "chore"},
-	"priority": {"P0", "P1", "P2", "P3", "P4"},
-	"log.type": {"progress", "blocker", "decision", "hypothesis", "tried", "result", "orchestration"},
+	"status":    {"open", "in_progress", "blocked", "in_review", "closed"},
+	"type":      {"bug", "feature", "task", "epic", "chore"},
+	"priority":  {"P0", "P1", "P2", "P3", "P4"},
+	"log.type":  {"progress", "blocker", "decision", "hypothesis", "tried", "result", "orchestration"},
 	"file.role": {"implementation", "test", "reference", "config"},
 }
 
@@ -278,8 +278,8 @@ var NoteSortFieldToColumn = map[string]string{
 // Query represents a parsed TDQ query
 type Query struct {
 	Root Node
-	Raw  string       // original query string
-	Sort *SortClause  // optional sort clause
+	Raw  string      // original query string
+	Sort *SortClause // optional sort clause
 }
 
 func (q *Query) String() string {
