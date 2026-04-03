@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version install-hooks test-commit-msg
 
 SHELL := /bin/sh
 
@@ -13,7 +13,8 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
-		"  make install-hooks             # install git pre-commit hook" \
+		"  make install-hooks             # install git pre-commit and commit-msg hooks" \
+		"  make test-commit-msg           # run commit-msg hook smoke tests" \
 		"  make test                      # go test ./..." \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
@@ -52,6 +53,34 @@ release: tag
 	git push origin "$(VERSION)"
 
 install-hooks:
-	@echo "Installing git pre-commit hook..."
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "Done. Hook installed at .git/hooks/pre-commit"
+	@hooks_dir=$$(git rev-parse --git-path hooks); \
+	pre_hook="$$hooks_dir/pre-commit"; \
+	commit_hook="$$hooks_dir/commit-msg"; \
+	echo "Installing git hooks into $$hooks_dir"; \
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'set -eu' \
+		'repo_root=$$(git rev-parse --show-toplevel 2>/dev/null || pwd)' \
+		'hook="$$repo_root/scripts/pre-commit.sh"' \
+		'if [ ! -x "$$hook" ]; then' \
+		'  echo "Skipping pre-commit hook: $$hook not found or not executable" >&2' \
+		'  exit 0' \
+		'fi' \
+		'exec "$$hook" "$$@"' > "$$pre_hook"; \
+	chmod +x "$$pre_hook"; \
+	printf '%s\n' \
+		'#!/bin/sh' \
+		'set -eu' \
+		'repo_root=$$(git rev-parse --show-toplevel 2>/dev/null || pwd)' \
+		'hook="$$repo_root/scripts/commit-msg.sh"' \
+		'if [ ! -x "$$hook" ]; then' \
+		'  echo "Skipping commit-msg hook: $$hook not found or not executable" >&2' \
+		'  exit 0' \
+		'fi' \
+		'exec "$$hook" "$$@"' > "$$commit_hook"; \
+	chmod +x "$$commit_hook"; \
+	echo "Installed pre-commit wrapper -> $$pre_hook"; \
+	echo "Installed commit-msg wrapper -> $$commit_hook"
+
+test-commit-msg:
+	@./scripts/test_commit_msg.sh

@@ -34,7 +34,7 @@ go test ./...              # Test all
 ```bash
 # Commit changes with proper message
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat(cli): describe changes (td-a1b2)
 
 Details here
 
@@ -55,6 +55,8 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Commit subjects should follow `type(scope?): summary`, with an optional ` (td-<id>)` suffix when there is a matching task. Running `make install-hooks` installs the repo-managed `commit-msg` normalizer alongside `pre-commit`.
 
 ## Architecture
 
