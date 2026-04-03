@@ -189,15 +189,22 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install repo-managed git hooks:
+#   pre-commit  -> gofmt, go vet, go build on staged files
+#   commit-msg  -> normalize commit subjects to type(scope?): summary
 make install-hooks
 ```
+
+Commit subjects should use `type(scope?): summary`, with an optional ` (td-<id>)` suffix when the change maps to a tracked task. Examples: `fix: reduce noisy review auto-handoff warning (td-db1f2a)` and `docs(release): update changelog for v0.43.0`.
 
 ## Tests & Quality Checks
 
 ```bash
 # Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
 make test
+
+# Run the commit-msg hook smoke tests
+make test-commit-msg
 
 # Expected output: ok for each package, ~2s total runtime
 # Example:
