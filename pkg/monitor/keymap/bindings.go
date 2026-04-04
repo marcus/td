@@ -411,6 +411,10 @@ func DefaultBindings() []Binding {
 		{Key: "up", Command: CmdCursorUp, Context: ContextKanban, Description: "Move up in column"},
 		{Key: "enter", Command: CmdOpenDetails, Context: ContextKanban, Description: "Open issue details"},
 		{Key: "f", Command: CmdToggleKanbanFullscreen, Context: ContextKanban, Description: "Toggle fullscreen"},
+
+		// Panel zoom
+		{Key: "z", Command: CmdTogglePanelZoom, Context: ContextMain, Description: "Toggle panel zoom"},
+		{Key: "z", Command: CmdTogglePanelZoom, Context: ContextBoard, Description: "Toggle panel zoom"},
 	}
 }
 

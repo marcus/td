@@ -157,6 +157,7 @@ const (
 	CmdOpenKanban            Command = "open-kanban"
 	CmdCloseKanban           Command = "close-kanban"
 	CmdToggleKanbanFullscreen Command = "toggle-kanban-fullscreen"
+	CmdTogglePanelZoom        Command = "toggle-panel-zoom"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

@@ -142,25 +142,38 @@ func (m Model) renderBaseView() string {
 	availableHeight := m.Height - footerHeight - searchBarHeight
 
 	// Calculate individual panel heights from ratios
-	panelHeights := [3]int{
-		int(float64(availableHeight) * m.PaneHeights[0]),
-		int(float64(availableHeight) * m.PaneHeights[1]),
-		int(float64(availableHeight) * m.PaneHeights[2]),
+	var panelHeights [3]int
+	if m.PanelZoomed {
+		// Zoomed panel gets all available height, others get 0
+		for i := range panelHeights {
+			if Panel(i) == m.ZoomedPanel {
+				panelHeights[i] = availableHeight
+			}
+		}
+	} else {
+		panelHeights = [3]int{
+			int(float64(availableHeight) * m.PaneHeights[0]),
+			int(float64(availableHeight) * m.PaneHeights[1]),
+			int(float64(availableHeight) * m.PaneHeights[2]),
+		}
+		// Adjust last panel to absorb rounding errors
+		panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
 	}
-	// Adjust last panel to absorb rounding errors
-	panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
 
-	// Render each panel with its specific height
-	currentWork := m.renderCurrentWorkPanel(panelHeights[0])
-	activity := m.renderActivityPanel(panelHeights[2])
-	taskList := m.renderTaskListPanel(panelHeights[1])
+	// Render each panel with its specific height (skip panels with 0 height)
+	var panelParts []string
+	if panelHeights[0] > 0 {
+		panelParts = append(panelParts, m.renderCurrentWorkPanel(panelHeights[0]))
+	}
+	if panelHeights[1] > 0 {
+		panelParts = append(panelParts, m.renderTaskListPanel(panelHeights[1]))
+	}
+	if panelHeights[2] > 0 {
+		panelParts = append(panelParts, m.renderActivityPanel(panelHeights[2]))
+	}
 
 	// Stack panels vertically (Current Work → Task List → Activity)
-	panels := lipgloss.JoinVertical(lipgloss.Left,
-		currentWork,
-		taskList,
-		activity,
-	)
+	panels := lipgloss.JoinVertical(lipgloss.Left, panelParts...)
 
 	// Add search bar if present
 	var content string

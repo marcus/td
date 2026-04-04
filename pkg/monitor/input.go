@@ -788,13 +788,22 @@ func (m *Model) updatePanelBounds() {
 	availableHeight := m.Height - footerHeight - searchBarHeight
 
 	// Calculate panel heights from ratios
-	panelHeights := [3]int{
-		int(float64(availableHeight) * m.PaneHeights[0]),
-		int(float64(availableHeight) * m.PaneHeights[1]),
-		int(float64(availableHeight) * m.PaneHeights[2]),
+	var panelHeights [3]int
+	if m.PanelZoomed {
+		for i := range panelHeights {
+			if Panel(i) == m.ZoomedPanel {
+				panelHeights[i] = availableHeight
+			}
+		}
+	} else {
+		panelHeights = [3]int{
+			int(float64(availableHeight) * m.PaneHeights[0]),
+			int(float64(availableHeight) * m.PaneHeights[1]),
+			int(float64(availableHeight) * m.PaneHeights[2]),
+		}
+		// Adjust last panel to absorb rounding errors
+		panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
 	}
-	// Adjust last panel to absorb rounding errors
-	panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
 
 	// Calculate Y positions for each panel (stacked vertically)
 	// Order: search bar (optional) → Current Work → Task List → Activity → footer

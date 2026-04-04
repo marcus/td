@@ -173,6 +173,10 @@ type Model struct {
 	KanbanCol        int   // Currently selected column (0-based)
 	KanbanRow        int   // Currently selected row within the column (0-based)
 	KanbanFullscreen bool  // Whether kanban view fills the entire viewport
+
+	// Panel zoom state
+	ZoomedPanel Panel // Which panel is zoomed (-1 = none)
+	PanelZoomed bool  // Whether any panel is currently zoomed
 	KanbanColScrolls []int // Per-column scroll offsets (one per kanbanColumnOrder entry)
 
 	// Board mode state
