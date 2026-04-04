@@ -1563,4 +1563,3 @@ func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
 
 	return m, nil
 }
-

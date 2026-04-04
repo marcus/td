@@ -116,7 +116,7 @@ type Model struct {
 
 	// Activity detail modal state
 	ActivityDetailOpen         bool
-	ActivityDetailItem         *ActivityItem  // The selected activity item
+	ActivityDetailItem         *ActivityItem // The selected activity item
 	ActivityDetailScroll       int
 	ActivityDetailModal        *modal.Modal   // Declarative modal instance
 	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
@@ -128,8 +128,8 @@ type Model struct {
 	NotesMouseHandler *mouse.Handler // Mouse handler for notes modal
 
 	// Form modal state
-	FormOpen        bool
-	FormState       *FormState
+	FormOpen         bool
+	FormState        *FormState
 	FormScrollOffset int // Scroll offset for form modal when content overflows
 
 	// Getting Started modal state
@@ -169,14 +169,14 @@ type Model struct {
 	BoardEditorDeleteConfirm bool                    // Whether delete confirmation is active
 
 	// Kanban view state
-	KanbanOpen       bool  // Whether kanban modal overlay is open
-	KanbanCol        int   // Currently selected column (0-based)
-	KanbanRow        int   // Currently selected row within the column (0-based)
-	KanbanFullscreen bool  // Whether kanban view fills the entire viewport
+	KanbanOpen       bool // Whether kanban modal overlay is open
+	KanbanCol        int  // Currently selected column (0-based)
+	KanbanRow        int  // Currently selected row within the column (0-based)
+	KanbanFullscreen bool // Whether kanban view fills the entire viewport
 
 	// Panel zoom state
-	ZoomedPanel Panel // Which panel is zoomed (-1 = none)
-	PanelZoomed bool  // Whether any panel is currently zoomed
+	ZoomedPanel      Panel // Which panel is zoomed (-1 = none)
+	PanelZoomed      bool  // Whether any panel is currently zoomed
 	KanbanColScrolls []int // Per-column scroll offsets (one per kanbanColumnOrder entry)
 
 	// Board mode state
