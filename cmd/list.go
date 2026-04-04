@@ -470,6 +470,10 @@ var nextCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+			return output.JSON(result.issues)
+		}
+
 		if len(result.issues) == 0 {
 			fmt.Println("No open issues")
 			return nil
@@ -762,6 +766,7 @@ func init() {
 	listCmd.Flags().BoolP("all", "a", false, "Include closed and deferred issues")
 
 	deletedCmd.Flags().Bool("json", false, "JSON output")
+	nextCmd.Flags().Bool("json", false, "JSON output")
 
 	listCmd.Flags().Bool("deferred", false, "Show only currently deferred tasks")
 	listCmd.Flags().Bool("overdue", false, "Show tasks past their due date")
