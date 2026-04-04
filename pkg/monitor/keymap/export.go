@@ -127,6 +127,7 @@ var commandMetadata = map[Command]struct {
 	CmdOpenKanban:             {"Kanban", "Open kanban view", 2},
 	CmdCloseKanban:            {"Close", "Close kanban view", 3},
 	CmdToggleKanbanFullscreen: {"Fullscreen", "Toggle fullscreen kanban", 2},
+	CmdTogglePanelZoom:        {"Zoom", "Toggle panel zoom", 1},
 }
 
 // ExportBindings returns all bindings in a format sidecar can consume.

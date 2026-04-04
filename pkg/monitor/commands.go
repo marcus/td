@@ -1507,6 +1507,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.KanbanFullscreen = !m.KanbanFullscreen
 		return m, nil
 
+	case keymap.CmdTogglePanelZoom:
+		if m.PanelZoomed && m.ZoomedPanel == m.ActivePanel {
+			m.PanelZoomed = false
+		} else {
+			m.PanelZoomed = true
+			m.ZoomedPanel = m.ActivePanel
+		}
+		return m, nil
+
 	// Getting started commands
 	case keymap.CmdOpenGettingStarted:
 		return m.openGettingStarted()

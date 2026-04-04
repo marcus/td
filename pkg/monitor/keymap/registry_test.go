@@ -109,7 +109,7 @@ func TestLookup(t *testing.T) {
 		},
 		{
 			name:    "unknown key returns not found",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}},
+			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}},
 			context: ContextMain,
 			want:    "",
 			found:   false,
