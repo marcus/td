@@ -249,14 +249,18 @@ func TestBackfillStaleIssues_AddsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 1 {
 		t.Fatalf("expected 1 stale backfill, got %d", n)
 	}
 
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='create'`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-700' AND action_type='create'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
 	if count != 2 {
 		t.Fatalf("expected 2 create entries for td-700 (original + backfill), got %d", count)
 	}
@@ -275,7 +279,9 @@ func TestBackfillStaleIssues_SkipsWhenUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 0 {
 		t.Fatalf("expected 0 stale updates, got %d", n)
@@ -295,7 +301,9 @@ func TestBackfillStaleIssues_BackfillsInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 1 {
 		t.Fatalf("expected 1 stale update for invalid JSON, got %d", n)
@@ -314,7 +322,9 @@ func TestBackfillOrphanEntities_MultipleEntityTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 3 {
 		t.Fatalf("expected 3 backfilled, got %d", n)
@@ -400,7 +410,9 @@ func TestBackfillOrphanEntities_IncludesSoftDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (soft-deleted), got %d", n)
@@ -430,7 +442,9 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	if n != 0 {
 		t.Fatalf("expected 0 backfilled after pull, got %d", n)
@@ -438,7 +452,9 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 
 	// Verify no action_log entries were created
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
 	if count != 0 {
 		t.Fatalf("expected 0 action_log rows, got %d", count)
 	}

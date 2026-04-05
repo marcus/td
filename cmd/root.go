@@ -156,7 +156,9 @@ func logAgentError(args []string, errMsg string) {
 	}
 
 	// Log the error (silently fails if project not initialized)
-	db.LogAgentError(dir, args, errMsg, sessionID)
+	if err := db.LogAgentError(dir, args, errMsg, sessionID); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to log agent error: %v\n", err)
+	}
 }
 
 // handleUnknownFlagError checks if error is an unknown flag and suggests alternatives

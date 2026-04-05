@@ -397,7 +397,7 @@ func serveAutoSyncPush(database *db.DB, client *syncclient.Client, state *db.Syn
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	events, err := tdsync.GetPendingEvents(tx, deviceID, sessionID)
 	if err != nil {
@@ -502,12 +502,12 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 		// Accept all entity types in SSE path (no feature gating for live sync)
 		allowAll := func(string) bool { return true }
 		if _, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, allowAll, state.LastSyncAt); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("apply events: %w", err)
 		}
 
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("update sync state: %w", err)
 		}
 

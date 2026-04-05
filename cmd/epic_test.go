@@ -88,5 +88,5 @@ func TestEpicCreateHasHiddenTypeFlag(t *testing.T) {
 	}
 
 	// Reset
-	epicCreateCmd.Flags().Set("type", "")
+	mustSetFlag(t, epicCreateCmd.Flags(), "type", "")
 }

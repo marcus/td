@@ -37,7 +37,7 @@ func TestShowFormatFlagParsing(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("format", "")
+	mustSetFlag(t, showCmd.Flags(), "format", "")
 }
 
 // TestShowAcceptsZeroArgs tests that show can be called with no arguments
@@ -80,7 +80,7 @@ func TestShowJSONFlagStillWorks(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("json", "false")
+	mustSetFlag(t, showCmd.Flags(), "json", "false")
 }
 
 // TestShowRenderMarkdownFlagExists tests that --render-markdown flag is defined
