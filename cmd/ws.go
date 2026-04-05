@@ -75,7 +75,10 @@ var wsStartCmd = &cobra.Command{
 		}
 
 		// Set as active
-		config.SetActiveWorkSession(baseDir, ws.ID)
+		if err := config.SetActiveWorkSession(baseDir, ws.ID); err != nil {
+			output.Error("failed to activate work session: %v", err)
+			return err
+		}
 
 		fmt.Printf("WORK SESSION STARTED: %s\n", ws.ID)
 		fmt.Printf("Name: %s\n", name)
@@ -141,30 +144,39 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
+				if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
+					output.Warning("failed to start %s: %v", issueID, err)
+					continue
+				}
 
 				// Record session action for bypass prevention
-				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
+				if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted); err != nil {
+					output.Warning("failed to record session action for %s: %v", issueID, err)
+				}
 
 				// Log the start
-				database.AddLog(&models.Log{
+				if err := database.AddLog(&models.Log{
 					IssueID:       issueID,
 					SessionID:     sess.ID,
 					WorkSessionID: wsID,
 					Message:       "Started (via work session)",
 					Type:          models.LogTypeProgress,
-				})
+				}); err != nil {
+					output.Warning("failed to add log for %s: %v", issueID, err)
+				}
 
 				// Capture git state
 				gitState, _ := git.GetState()
 				if gitState != nil {
-					database.AddGitSnapshot(&models.GitSnapshot{
+					if err := database.AddGitSnapshot(&models.GitSnapshot{
 						IssueID:    issueID,
 						Event:      "start",
 						CommitSHA:  gitState.CommitSHA,
 						Branch:     gitState.Branch,
 						DirtyFiles: gitState.DirtyFiles,
-					})
+					}); err != nil {
+						output.Warning("failed to capture git snapshot for %s: %v", issueID, err)
+					}
 				}
 
 				fmt.Printf("STARTED %s (session: %s)\n", issueID, sess.ID)
@@ -266,23 +278,27 @@ var wsLogCmd = &cobra.Command{
 		only, _ := cmd.Flags().GetString("only")
 		if only != "" {
 			// Log to specific issue only
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:       only,
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
 				Message:       args[0],
 				Type:          logType,
-			})
+			}); err != nil {
+				output.Warning("failed to add work-session log for %s: %v", only, err)
+			}
 			fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, only)
 		} else {
 			// Store single log entry with work_session_id, no issue_id
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:       "",
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
 				Message:       args[0],
 				Type:          logType,
-			})
+			}); err != nil {
+				output.Warning("failed to add work-session log for %s: %v", wsID, err)
+			}
 
 			// Get tagged issues for display
 			issueIDs, _ := database.GetWorkSessionIssues(wsID)
@@ -489,18 +505,23 @@ Flags support values, stdin (-), or file (@path):
 				Uncertain: handoff.Uncertain,
 			}
 
-			database.AddHandoff(issueHandoff)
+			if err := database.AddHandoff(issueHandoff); err != nil {
+				output.Warning("failed to record handoff for %s: %v", issueID, err)
+				continue
+			}
 
 			// Capture git state
 			gitState, _ := git.GetState()
 			if gitState != nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				if err := database.AddGitSnapshot(&models.GitSnapshot{
 					IssueID:    issueID,
 					Event:      "handoff",
 					CommitSHA:  gitState.CommitSHA,
 					Branch:     gitState.Branch,
 					DirtyFiles: gitState.DirtyFiles,
-				})
+				}); err != nil {
+					output.Warning("failed to capture git snapshot for %s: %v", issueID, err)
+				}
 			}
 		}
 
@@ -517,8 +538,12 @@ Flags support values, stdin (-), or file (@path):
 				ws.EndSHA = gitState.CommitSHA
 			}
 
-			database.UpdateWorkSession(ws)
-			config.ClearActiveWorkSession(baseDir)
+			if err := database.UpdateWorkSession(ws); err != nil {
+				output.Warning("failed to update work session %s: %v", wsID, err)
+			}
+			if err := config.ClearActiveWorkSession(baseDir); err != nil {
+				output.Warning("failed to clear active work session %s: %v", wsID, err)
+			}
 		}
 
 		fmt.Printf("HANDOFF RECORDED %s\n", wsID)
@@ -588,8 +613,12 @@ var wsEndCmd = &cobra.Command{
 		// End session
 		now := time.Now()
 		ws.EndedAt = &now
-		database.UpdateWorkSession(ws)
-		config.ClearActiveWorkSession(baseDir)
+		if err := database.UpdateWorkSession(ws); err != nil {
+			output.Warning("failed to update work session %s: %v", wsID, err)
+		}
+		if err := config.ClearActiveWorkSession(baseDir); err != nil {
+			output.Warning("failed to clear active work session %s: %v", wsID, err)
+		}
 
 		output.Warning("No handoff recorded for %s", wsID)
 		if len(issueIDs) > 0 {

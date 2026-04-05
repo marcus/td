@@ -278,7 +278,7 @@ func TestIssueDefaultStatus(t *testing.T) {
 	issue := &models.Issue{
 		Title: "New Issue",
 	}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusOpen {
@@ -299,13 +299,13 @@ func TestCreateMultipleDependencies(t *testing.T) {
 	prereq1 := &models.Issue{Title: "Prereq 1"}
 	prereq2 := &models.Issue{Title: "Prereq 2"}
 	prereq3 := &models.Issue{Title: "Prereq 3"}
-	database.CreateIssue(prereq1)
-	database.CreateIssue(prereq2)
-	database.CreateIssue(prereq3)
+	mustCreateIssue(t, database, prereq1)
+	mustCreateIssue(t, database, prereq2)
+	mustCreateIssue(t, database, prereq3)
 
 	// Create dependent issue
 	dependent := &models.Issue{Title: "Dependent"}
-	database.CreateIssue(dependent)
+	mustCreateIssue(t, database, dependent)
 
 	// Add multiple dependencies
 	if err := database.AddDependency(dependent.ID, prereq1.ID, "depends_on"); err != nil {
@@ -351,7 +351,7 @@ func TestCreateIssueIDFormat(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// ID should be "td-" + 6 hex chars = 9 total chars
 	if !strings.HasPrefix(issue.ID, "td-") {
@@ -372,7 +372,7 @@ func TestCreateIssueTimestamps(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	if issue.CreatedAt.IsZero() {
 		t.Error("Expected CreatedAt to be set")
@@ -406,7 +406,7 @@ func TestCreateNotesFlagAlias(t *testing.T) {
 	}
 
 	// Reset
-	createCmd.Flags().Set("notes", "")
+	mustSetFlag(t, createCmd.Flags(), "notes", "")
 }
 
 // TestCreateTagFlagParsing tests that --tag and --tags flags are defined and work

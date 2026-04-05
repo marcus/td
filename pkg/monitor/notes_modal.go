@@ -14,25 +14,56 @@ import (
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
+var (
+	_ = NotesDataMsg{}
+	_ = NoteDetailMsg{}
+	_ = NoteMarkdownRenderedMsg{}
+	_ = NoteSavedMsg{}
+	_ = NoteDeletedMsg{}
+	_ = NotePinToggledMsg{}
+	_ = NoteArchivedMsg{}
+	_ = Model.openNotesModal
+	_ = (*Model).closeNotesModal
+	_ = Model.fetchNotes
+	_ = Model.fetchNotesWithArchived
+	_ = Model.renderNoteMarkdownAsync
+	_ = (*Model).createNotesListModal
+	_ = (*Model).createNoteDetailModal
+	_ = (*Model).createNoteEditModal
+	_ = (*Model).createNoteDeleteConfirmModal
+	_ = Model.handleNotesAction
+	_ = Model.openNoteCreator
+	_ = Model.openNoteEditor
+	_ = Model.saveNote
+	_ = Model.cancelNoteEdit
+	_ = Model.toggleNotePin
+	_ = Model.toggleNoteArchive
+	_ = Model.renderNotesModal
+	_ = Model.wrapSimpleModal
+	_ = formatNoteListItem
+	_ = formatNoteMeta
+	_ = formatNoteAge
+)
+
 // --- Notes Modal State ---
 
 // NotesState holds the state for the notes modal system.
 type NotesState struct {
 	// List state
-	Notes       []models.Note
-	ListCursor  int
+	Notes        []models.Note
+	ListCursor   int
 	ShowArchived bool
 
 	// Detail state
-	DetailNote    *models.Note
-	DetailRender  string // Pre-rendered markdown content
+	DetailNote   *models.Note
+	DetailRender string // Pre-rendered markdown content
 
 	// Edit state
-	Editing       bool
-	Creating      bool
-	EditTitle     *textinput.Model
-	EditContent   *textarea.Model
-	EditNoteID    string // ID of note being edited (empty for create)
+	Editing     bool
+	Creating    bool
+	EditTitle   *textinput.Model
+	EditContent *textarea.Model
+	EditNoteID  string // ID of note being edited (empty for create)
 
 	// Delete confirmation
 	DeleteConfirm bool

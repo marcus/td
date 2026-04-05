@@ -54,18 +54,18 @@ func TestFocusChangeFocus(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	mustCreateIssue(t, database, issue1)
+	mustCreateIssue(t, database, issue2)
 
 	// Focus on issue 1
-	config.SetFocus(dir, issue1.ID)
+	mustSetFocus(t, dir, issue1.ID)
 	focused1, _ := config.GetFocus(dir)
 	if focused1 != issue1.ID {
 		t.Errorf("First focus failed: expected %s, got %s", issue1.ID, focused1)
 	}
 
 	// Change focus to issue 2
-	config.SetFocus(dir, issue2.ID)
+	mustSetFocus(t, dir, issue2.ID)
 	focused2, _ := config.GetFocus(dir)
 	if focused2 != issue2.ID {
 		t.Errorf("Focus change failed: expected %s, got %s", issue2.ID, focused2)
@@ -103,10 +103,10 @@ func TestUnfocus(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	mustSetFocus(t, dir, issue.ID)
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
 		t.Error("Focus not set correctly")
@@ -146,7 +146,7 @@ func TestFocusWithDifferentStatuses(t *testing.T) {
 			Title:  string(status),
 			Status: status,
 		}
-		database.CreateIssue(issue)
+		mustCreateIssue(t, database, issue)
 
 		// Focus on this issue
 		if err := config.SetFocus(dir, issue.ID); err != nil {
@@ -173,10 +173,10 @@ func TestFocusPersistence(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	mustSetFocus(t, dir, issue.ID)
 
 	// Close and reopen database
 	database.Close()
@@ -205,7 +205,7 @@ func TestFocusFileCreation(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// Set focus
 	if err := config.SetFocus(dir, issue.ID); err != nil {
@@ -233,7 +233,7 @@ func TestFocusMultipleIssuesSequential(t *testing.T) {
 
 	for i := 0; i < issueCount; i++ {
 		issue := &models.Issue{Title: "Issue " + string(rune(i))}
-		database.CreateIssue(issue)
+		mustCreateIssue(t, database, issue)
 		issues[i] = issue
 	}
 
@@ -294,12 +294,12 @@ func TestFocusIDFormat(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	originalID := issue.ID
 
 	// Set focus
-	config.SetFocus(dir, originalID)
+	mustSetFocus(t, dir, originalID)
 
 	// Verify ID is preserved exactly
 	focused, _ := config.GetFocus(dir)
@@ -318,10 +318,10 @@ func TestFocusWhitespace(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	mustSetFocus(t, dir, issue.ID)
 
 	// Verify no whitespace issues
 	focused, _ := config.GetFocus(dir)
@@ -340,7 +340,7 @@ func TestFocusWithSpecialCharacters(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	mustCreateIssue(t, database, issue)
 
 	// IDs should be alphanumeric format like "td-xxxxx"
 	if len(issue.ID) == 0 || issue.ID[:3] != "td-" {
@@ -348,7 +348,7 @@ func TestFocusWithSpecialCharacters(t *testing.T) {
 	}
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	mustSetFocus(t, dir, issue.ID)
 
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
@@ -369,15 +369,15 @@ func TestFocusConcurrentChanges(t *testing.T) {
 	issue2 := &models.Issue{Title: "Issue 2"}
 	issue3 := &models.Issue{Title: "Issue 3"}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	mustCreateIssue(t, database, issue1)
+	mustCreateIssue(t, database, issue2)
+	mustCreateIssue(t, database, issue3)
 
 	// Rapidly change focus
 	for i := 0; i < 3; i++ {
-		config.SetFocus(dir, issue1.ID)
-		config.SetFocus(dir, issue2.ID)
-		config.SetFocus(dir, issue3.ID)
+		mustSetFocus(t, dir, issue1.ID)
+		mustSetFocus(t, dir, issue2.ID)
+		mustSetFocus(t, dir, issue3.ID)
 	}
 
 	// Final focus should be issue 3
