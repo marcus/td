@@ -101,8 +101,24 @@ Examples:
 EOF
 }
 
+is_valid_td_suffix() {
+  local value
+
+  value=$(trim "${1-}")
+  [[ "$value" =~ ^[Tt][Dd]-[A-Za-z0-9._-]+$ ]]
+}
+
+is_td_like_suffix() {
+  local value
+
+  value=$(trim "${1-}")
+  value=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
+
+  [[ "$value" =~ ^td($|[^[:alpha:]].*) ]]
+}
+
 normalize_subject() {
-  local subject trimmed base td_suffix type scope summary
+  local subject trimmed base td_suffix type scope summary trailing_paren
 
   subject=${1-}
   trimmed=$(trim "$subject")
@@ -121,6 +137,15 @@ normalize_subject() {
 
   td_suffix=""
   base="$trimmed"
+  if [[ "$base" =~ ^(.+)[[:space:]]+\(([^()]*)\)[[:space:]]*$ ]]; then
+    trailing_paren=$(trim "${BASH_REMATCH[2]}")
+
+    if ! is_valid_td_suffix "$trailing_paren" && is_td_like_suffix "$trailing_paren"; then
+      print_error "$subject"
+      return 1
+    fi
+  fi
+
   if [[ "$base" =~ ^(.+)[[:space:]]+\(([Tt][Dd]-[A-Za-z0-9._-]+)\)[[:space:]]*$ ]]; then
     base=$(trim "${BASH_REMATCH[1]}")
     td_suffix=" ($(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]'))"
