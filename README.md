@@ -136,7 +136,7 @@ cat docs/issue-description.md | td update td-a1b2 --append --description-file -
 td start <issue-id>
 ```
 
-For complete guides, see the [full documentation](https://marcus.github.io/td/docs/intro).
+For complete guides, see [Getting Started](https://marcus.github.io/td/docs/intro), [Notes](https://marcus.github.io/td/docs/notes), and [Sync & Collaboration](https://marcus.github.io/td/docs/sync-collaboration).
 
 ## Claude Code / OpenAI Codex Skill
 
