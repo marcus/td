@@ -6,7 +6,7 @@ sidebar_position: 13
 
 Complete reference for the `td` CLI, including note management, work session helpers, diagnostics, and the feature-gated sync workflow.
 
-> **Note**: Sync and config commands are hidden unless the `sync_cli` feature is enabled. Use `export TD_ENABLE_FEATURE=sync_cli`, or run `td feature set sync_cli true` and restart your shell before using `td sync`, `td auth`, `td config`, `td doctor`, or `td sync-project`.
+> **Note**: Sync and config commands are hidden unless `sync_cli` is enabled for the current process. Use `export TD_ENABLE_FEATURE=sync_cli` in your shell, or prefix one command with `TD_FEATURE_SYNC_CLI=true`. `td feature set sync_cli true` updates project config, but it does not register hidden commands.
 
 ## Core Issue Commands
 
@@ -140,7 +140,7 @@ Complete reference for the `td` CLI, including note management, work session hel
 
 ## Sync And Collaboration Commands
 
-These commands are available only when `sync_cli` is enabled. See [Sync & Collaboration](./sync-collaboration.md) for setup and troubleshooting.
+These commands are available only when `sync_cli` is enabled through an environment override for the current process. See [Sync & Collaboration](./sync-collaboration.md) for setup and troubleshooting.
 
 | Command | Description |
 |---------|-------------|

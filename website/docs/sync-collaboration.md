@@ -8,21 +8,23 @@ Use td sync when you want one local project database to stay in sync across mach
 
 ## Enable Sync Commands
 
-The sync surface is feature-gated. If `td sync` or `td auth` shows as an unknown command, enable `sync_cli` first.
+The sync surface is feature-gated. If `td sync` or `td auth` shows as an unknown command, enable `sync_cli` for the current process before starting `td`.
 
-Recommended for immediate use in a shell:
+Recommended for an interactive shell session:
 
 ```bash
 export TD_ENABLE_FEATURE=sync_cli
 ```
 
-Project-level alternative:
+For a single command, prefix the invocation instead:
 
 ```bash
-td feature set sync_cli true
+TD_FEATURE_SYNC_CLI=true td sync --help
 ```
 
-`td feature set` writes the flag to project config, but command registration happens when the process starts, so restart your shell after setting it.
+Add the export to your shell profile if you use sync regularly.
+
+> **Important**: `td feature set sync_cli true` writes project config, but these commands are registered before project config is loaded. It is not enough to make `td sync`, `td auth`, `td config`, `td doctor`, or `td sync-project` appear.
 
 ## Quick Setup
 
@@ -154,11 +156,13 @@ Notes sync with the rest of the project by default. If you want notes to stay lo
 td feature set sync_notes false
 ```
 
+Unlike `sync_cli`, `sync_notes` is read at runtime from project config, so `td feature set` works for this flag.
+
 ## Troubleshooting
 
 **`unknown command "sync"` or `unknown command "auth"`**
 
-Enable `sync_cli` first. See [Enable Sync Commands](#enable-sync-commands).
+Enable `sync_cli` with `export TD_ENABLE_FEATURE=sync_cli` or prefix the command with `TD_FEATURE_SYNC_CLI=true`. Project config alone will not expose the hidden commands. See [Enable Sync Commands](#enable-sync-commands).
 
 **`not logged in (run: td auth login)`**
 

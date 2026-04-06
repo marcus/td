@@ -95,6 +95,8 @@ If you are using the sync workflow, notes can sync with the rest of the project 
 td feature set sync_notes false
 ```
 
+Unlike the `sync_cli` command gate, `sync_notes` is resolved from project config at runtime, so this flag takes effect without needing an environment override.
+
 Re-enable it later with:
 
 ```bash
