@@ -93,5 +93,9 @@ Works with Claude Code, Cursor, Codex, Copilot, and Gemini CLI.
 ## Next Steps
 
 - [Core Workflow](./core-workflow.md) -- Issue lifecycle, logging, handoffs, and reviews in depth
+- [Notes](./notes.md) -- Capture durable context that does not belong to one issue
 - [Boards](./boards.md) -- Visual overview of issue status across your project
+- [Work Sessions](./work-sessions.md) -- Coordinate multi-issue implementation bursts
+- [Sync & Collaboration](./sync-collaboration.md) -- Share a project across machines or teammates
 - [Query Language](./query-language.md) -- Filter and search issues with structured queries
+- [Command Reference](./command-reference.md) -- Full CLI surface, including feature-gated commands

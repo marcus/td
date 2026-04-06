@@ -6,6 +6,7 @@ const sidebars = {
       label: 'Features',
       items: [
         'core-workflow',
+        'notes',
         'boards',
         'dependencies',
         'query-language',
@@ -13,6 +14,7 @@ const sidebars = {
         'work-sessions',
         'deferral',
         'file-tracking',
+        'sync-collaboration',
       ],
     },
     {
