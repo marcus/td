@@ -16,7 +16,7 @@ var (
 	// ErrNoEntries indicates there were commits in the range, but none survived filtering.
 	ErrNoEntries = errors.New("no changelog entries")
 
-	conventionalPrefixPattern = regexp.MustCompile(`^(?P<type>[a-z]+)(?:\([^)]+\))?(?:!)?:\s*(?P<rest>.+)$`)
+	conventionalPrefixPattern = regexp.MustCompile(`(?i)^(?P<type>[a-z]+)(?:\([^)]+\))?(?:!)?:\s*(?P<rest>.+)$`)
 	internalPrefixPattern     = regexp.MustCompile(`^(?:\[[^\]]+\]\s*)+`)
 	internalSuffixPattern     = regexp.MustCompile(`\s+\(td-[^)]+\)$`)
 	releaseHousekeeping       = []*regexp.Regexp{

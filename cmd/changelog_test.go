@@ -38,7 +38,11 @@ func runGitCommand(t *testing.T, dir string, args ...string) string {
 func writeAndCommit(t *testing.T, dir, fileName, contents, subject string, body ...string) string {
 	t.Helper()
 
-	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(contents), 0644); err != nil {
+	fullPath := filepath.Join(dir, fileName)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatalf("mkdir for %s failed: %v", fileName, err)
+	}
+	if err := os.WriteFile(fullPath, []byte(contents), 0644); err != nil {
 		t.Fatalf("write %s failed: %v", fileName, err)
 	}
 	runGitCommand(t, dir, "add", fileName)
@@ -50,6 +54,11 @@ func writeAndCommit(t *testing.T, dir, fileName, contents, subject string, body 
 	runGitCommand(t, dir, args...)
 
 	return runGitCommand(t, dir, "rev-parse", "HEAD")
+}
+
+func currentBranchName(t *testing.T, dir string) string {
+	t.Helper()
+	return runGitCommand(t, dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
 func runChangelogCommand(t *testing.T, dir string, args ...string) (string, error) {
@@ -137,6 +146,43 @@ func TestChangelogCommandExplicitRangeOverride(t *testing.T) {
 	}
 }
 
+func TestChangelogCommandDefaultsFromLatestReachableSemverTag(t *testing.T) {
+	dir := initChangelogRepo(t)
+	runGitCommand(t, dir, "tag", "v0.1.0")
+
+	writeAndCommit(t, dir, "feature-a.txt", "feature a\n", "feat: add commit on main before release branch")
+
+	branch := currentBranchName(t, dir)
+	runGitCommand(t, dir, "checkout", "-b", "release/v0.2.0")
+	writeAndCommit(t, dir, "release.txt", "release\n", "fix: release-branch-only patch")
+	runGitCommand(t, dir, "tag", "v0.2.0")
+	runGitCommand(t, dir, "checkout", branch)
+
+	writeAndCommit(t, dir, "feature-b.txt", "feature b\n", "fix: add post-release bug fix")
+
+	out, err := runChangelogCommand(t, dir,
+		"--version", "v0.3.0",
+		"--date", "2026-04-06",
+	)
+	if err != nil {
+		t.Fatalf("command returned error: %v", err)
+	}
+
+	wantSnippets := []string{
+		"- Add commit on main before release branch",
+		"- Add post-release bug fix",
+	}
+	for _, snippet := range wantSnippets {
+		if !strings.Contains(out, snippet) {
+			t.Fatalf("expected output to contain %q\nfull output:\n%s", snippet, out)
+		}
+	}
+
+	if strings.Contains(out, "release-branch-only patch") {
+		t.Fatalf("did not expect release branch commit in output:\n%s", out)
+	}
+}
+
 func TestChangelogCommandErrorsWithoutVersion(t *testing.T) {
 	dir := initChangelogRepo(t)
 	runGitCommand(t, dir, "tag", "v0.1.0")
@@ -172,5 +218,19 @@ func TestChangelogCommandErrorsWithoutTagsWhenFromUnset(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "no semver tags found; use --from to specify a starting revision") {
 		t.Fatalf("expected no tags error, got %v", err)
+	}
+}
+
+func TestChangelogCommandFiltersUppercaseMetaByDefault(t *testing.T) {
+	dir := initChangelogRepo(t)
+	runGitCommand(t, dir, "tag", "v0.1.0")
+	writeAndCommit(t, dir, ".github/workflows/ci.yml", "name: ci\n", "CI: fix pipeline")
+
+	_, err := runChangelogCommand(t, dir,
+		"--version", "v0.2.0",
+		"--date", "2026-04-06",
+	)
+	if err == nil || !strings.Contains(err.Error(), "no changelog-worthy commits found in range v0.1.0..HEAD") {
+		t.Fatalf("expected filtered-meta error, got %v", err)
 	}
 }

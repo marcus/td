@@ -59,6 +59,7 @@ func TestRenderIncludesMetaWhenRequested(t *testing.T) {
 	commits := []git.Commit{
 		{Subject: "docs: document release workflow caveats"},
 		{Subject: "test: cover explicit range overrides"},
+		{Subject: "CI: fix release pipeline"},
 	}
 
 	got, err := Render(commits, Options{
@@ -78,6 +79,23 @@ func TestRenderIncludesMetaWhenRequested(t *testing.T) {
 	}
 	if !strings.Contains(got, "- Cover explicit range overrides") {
 		t.Fatalf("expected test bullet in output:\n%s", got)
+	}
+	if !strings.Contains(got, "- Fix release pipeline") {
+		t.Fatalf("expected CI bullet in output:\n%s", got)
+	}
+}
+
+func TestRenderFiltersUppercaseMetaByDefault(t *testing.T) {
+	commits := []git.Commit{
+		{Subject: "CI: fix release pipeline"},
+	}
+
+	_, err := Render(commits, Options{
+		Version: "v0.44.0",
+		Date:    time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
+	})
+	if !errors.Is(err, ErrNoEntries) {
+		t.Fatalf("expected ErrNoEntries, got %v", err)
 	}
 }
 

@@ -35,7 +35,7 @@ git tag -l | sort -V | tail -1
 
 ### 2. Generate and Polish the Changelog
 
-Generate a draft entry from commits since the latest version tag:
+Generate a draft entry from commits since the latest version tag reachable from `HEAD`:
 
 ```bash
 td changelog --version vX.Y.Z > /tmp/td-changelog.md

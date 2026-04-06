@@ -101,19 +101,32 @@ func GetCommitsSince(sha string) (int, error) {
 	return count, nil
 }
 
-// GetLatestSemverTag returns the latest semver-compatible tag in the current repository.
+// GetLatestSemverTag returns the latest semver-compatible tag reachable from HEAD
+// in the current repository.
 func GetLatestSemverTag() (string, error) {
 	return GetLatestSemverTagInDir("")
 }
 
-// GetLatestSemverTagInDir returns the latest semver-compatible tag in the given repository.
+// GetLatestSemverTagInDir returns the latest semver-compatible tag reachable
+// from HEAD in the given repository.
 func GetLatestSemverTagInDir(dir string) (string, error) {
-	output, err := runGitInDir(dir, "tag", "--list", "--sort=-version:refname", "v*")
+	return GetLatestSemverTagReachableFromInDir(dir, "HEAD")
+}
+
+// GetLatestSemverTagReachableFromInDir returns the highest semver-compatible
+// tag reachable from the given revision in the provided repository.
+func GetLatestSemverTagReachableFromInDir(dir, rev string) (string, error) {
+	rev = strings.TrimSpace(rev)
+	if rev == "" {
+		rev = "HEAD"
+	}
+
+	output, err := runGitInDir(dir, "tag", "--merged", rev, "--list", "--sort=-version:refname", "v*")
 	if err != nil {
 		if errors.Is(err, ErrNotRepository) {
 			return "", err
 		}
-		return "", fmt.Errorf("list git tags: %w", err)
+		return "", fmt.Errorf("list git tags reachable from %s: %w", rev, err)
 	}
 
 	for _, line := range strings.Split(output, "\n") {

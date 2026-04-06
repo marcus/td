@@ -28,8 +28,8 @@ func newChangelogCmd() *cobra.Command {
 		GroupID: "system",
 		Long: `Generate a paste-ready Markdown changelog entry from commits in a git range.
 
-By default, td uses the latest semver tag as the start of the range and HEAD as
-the end of the range.`,
+By default, td uses the latest semver tag reachable from the end revision as the
+start of the range and HEAD as the end of the range.`,
 		Example: `  td changelog --version v0.44.0
   td changelog --version v0.44.0 --date 2026-04-06
   td changelog --version v0.44.0 --from v0.43.0 --to HEAD
@@ -64,8 +64,13 @@ the end of the range.`,
 			from = strings.TrimSpace(from)
 			to = strings.TrimSpace(to)
 
+			targetRev := to
+			if targetRev == "" {
+				targetRev = "HEAD"
+			}
+
 			if from == "" {
-				from, err = gitpkg.GetLatestSemverTagInDir(repoDir)
+				from, err = gitpkg.GetLatestSemverTagReachableFromInDir(repoDir, targetRev)
 				if err != nil {
 					switch {
 					case errors.Is(err, gitpkg.ErrNoSemverTags):
@@ -110,7 +115,7 @@ the end of the range.`,
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "release version for the generated heading (required)")
-	cmd.Flags().StringVar(&from, "from", "", "starting revision (default: latest semver tag)")
+	cmd.Flags().StringVar(&from, "from", "", "starting revision (default: latest semver tag reachable from --to)")
 	cmd.Flags().StringVar(&to, "to", "HEAD", "ending revision (default: HEAD)")
 	cmd.Flags().StringVar(&releaseDate, "date", time.Now().Format("2006-01-02"), "release date in YYYY-MM-DD format")
 	cmd.Flags().BoolVar(&includeMeta, "include-meta", false, "include docs/test/ci/chore commits in the output")

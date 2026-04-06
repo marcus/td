@@ -215,7 +215,7 @@ make fmt
 Releases are automated via GoReleaser. Pushing a version tag triggers GitHub Actions to build binaries and update the Homebrew formula.
 
 ```bash
-# Draft changelog text from commits since the latest semver tag
+# Draft changelog text from commits since the latest semver tag on the current history
 td changelog --version v0.2.0 > /tmp/td-changelog.md
 
 # Create and push an annotated tag (triggers automated release)
