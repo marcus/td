@@ -33,9 +33,23 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Generate and Polish the Changelog
 
-Add entry at the top of `CHANGELOG.md`:
+Generate a draft entry from commits since the latest version tag:
+
+```bash
+td changelog --version vX.Y.Z > /tmp/td-changelog.md
+```
+
+If you need a manual backfill or want to test a narrower range:
+
+```bash
+td changelog --version vX.Y.Z --from v0.43.0 --to HEAD
+```
+
+Review the generated text and polish it before pasting it at the top of `CHANGELOG.md`. By default, `td changelog` skips merge commits and low-signal `docs:`, `test:`, `ci:`, and `chore:` commits to stay close to the current release-note filters. Add `--include-meta` if you want those included in the draft.
+
+Paste the draft at the top of `CHANGELOG.md` using this structure:
 
 ```markdown
 ## [vX.Y.Z] - YYYY-MM-DD
@@ -134,8 +148,8 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Generate changelog draft, then paste/polish it into CHANGELOG.md
+td changelog --version vX.Y.Z > /tmp/td-changelog.md
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,7 +168,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
-- [ ] CHANGELOG.md updated with new version entry
+- [ ] `td changelog --version vX.Y.Z` reviewed and pasted into `CHANGELOG.md`
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
