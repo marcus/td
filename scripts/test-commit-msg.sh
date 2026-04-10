@@ -72,6 +72,26 @@ run_hook_fail() {
   echo "PASS: $label"
 }
 
+run_hook_ok_in_repo() {
+  local label="$1"
+  local repo_dir="$2"
+  local input="$3"
+  local expected="$4"
+  local file="$TMPDIR_ROOT/${PASS_COUNT}.txt"
+  local stderr_file="$TMPDIR_ROOT/${PASS_COUNT}.stderr"
+
+  printf '%s' "$input" > "$file"
+  (
+    cd "$repo_dir"
+    "$HOOK" "$file"
+  ) 2> "$stderr_file"
+
+  assert_file_matches "$label" "$file" "$expected"
+
+  PASS_COUNT=$((PASS_COUNT + 1))
+  echo "PASS: $label"
+}
+
 run_hook_ok "canonical pass-through" \
   $'feat: add issue detail status line (td-79fac9)\n\nBody stays here.\n' \
   $'feat: add issue detail status line (td-79fac9)\n\nBody stays here.\n'
@@ -95,6 +115,18 @@ run_hook_ok "td suffix normalization" \
 run_hook_ok "body and trailer preservation with commented template header" \
   $'# Please enter the commit message for your changes.\n\nDocs - Update changelog ( TD-A1B2 )\n\nKeep this body line exactly.\n\nNightshift-Task: commit-normalize\nNightshift-Ref: https://github.com/marcus/nightshift\n' \
   $'# Please enter the commit message for your changes.\n\ndocs: update changelog (td-a1b2)\n\nKeep this body line exactly.\n\nNightshift-Task: commit-normalize\nNightshift-Ref: https://github.com/marcus/nightshift\n'
+
+AUTO_COMMENT_CHAR_REPO="$TMPDIR_ROOT/comment-char-auto"
+git init -q "$AUTO_COMMENT_CHAR_REPO"
+(
+  cd "$AUTO_COMMENT_CHAR_REPO"
+  git config core.commentChar auto
+)
+
+run_hook_ok_in_repo "auto core.commentChar template header" \
+  "$AUTO_COMMENT_CHAR_REPO" \
+  $'; Please enter the commit message for your changes.\n\nDocs - Update changelog\n' \
+  $'; Please enter the commit message for your changes.\n\ndocs: update changelog\n'
 
 run_hook_ok "human-written merge prefix gets normalized" \
   $'Merge - Update changelog\n' \

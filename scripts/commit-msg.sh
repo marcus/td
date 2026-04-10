@@ -123,14 +123,32 @@ is_git_generated_subject() {
   return 1
 }
 
+is_git_comment_preamble_line() {
+  local line="$1"
+
+  DETECTED_COMMENT_CHAR=""
+
+  if [[ "$line" =~ ^([[:punct:]])[[:space:]]+(Please\ enter\ the\ commit\ message\ for\ your\ changes\.|Please\ enter\ a\ commit\ message\ to\ explain\ .+|On\ branch\ .+|Your\ branch\ .+|Changes\ to\ be\ committed:|Changes\ not\ staged\ for\ commit:|Untracked\ files:|All\ conflicts\ fixed\ but\ you\ are\ still\ (merging|cherry-picking)\.|It\ looks\ like\ you\ may\ be\ committing\ .+|interactive\ rebase\ in\ progress;.+|Last\ commands\ done\ .+|No\ commands\ remaining\.)$ ]]; then
+    DETECTED_COMMENT_CHAR="${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
 find_subject_line() {
   local file="$1"
-  local comment_char="$2"
+  local configured_comment_char="$2"
+  local comment_char=""
   local line
   local line_number=0
 
   SUBJECT_LINE_NUMBER=""
   SUBJECT_LINE=""
+
+  if [[ -n "$configured_comment_char" && "$configured_comment_char" != "auto" ]]; then
+    comment_char="${configured_comment_char:0:1}"
+  fi
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     line_number=$((line_number + 1))
@@ -140,7 +158,12 @@ find_subject_line() {
       continue
     fi
 
-    if [[ "$line" == "$comment_char"* ]]; then
+    if [[ -n "$comment_char" && "$line" == "$comment_char"* ]]; then
+      continue
+    fi
+
+    if [[ -z "$comment_char" ]] && is_git_comment_preamble_line "$line"; then
+      comment_char="$DETECTED_COMMENT_CHAR"
       continue
     fi
 
@@ -231,10 +254,9 @@ main() {
   [[ -f "$commit_msg_file" ]] || fail "commit message file not found: $commit_msg_file"
 
   comment_char=$(git config --get core.commentChar 2>/dev/null || true)
-  if [[ -z "$comment_char" || "$comment_char" == "auto" ]]; then
+  if [[ -z "$comment_char" ]]; then
     comment_char="#"
   fi
-  comment_char="${comment_char:0:1}"
 
   if ! find_subject_line "$commit_msg_file" "$comment_char"; then
     exit 0

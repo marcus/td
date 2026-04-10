@@ -53,18 +53,22 @@ release: tag
 	git push origin "$(VERSION)"
 
 install-hooks:
-	@hooks_dir="$$(git rev-parse --git-path hooks)"; \
-	mkdir -p "$$hooks_dir"; \
-	for hook in pre-commit commit-msg; do \
+	@for hook in pre-commit commit-msg; do \
+		hook_path="$$(git rev-parse --git-path hooks/$$hook)"; \
+		hooks_dir="$$(dirname "$$hook_path")"; \
+		mkdir -p "$$hooks_dir"; \
+		tmp_hook="$$(mktemp "$$hooks_dir/.$${hook}.tmp.XXXXXX")"; \
 		printf '%s\n' \
 			'#!/bin/sh' \
 			'set -eu' \
 			'repo_root=$$(git rev-parse --show-toplevel)' \
 			"exec \"\$$repo_root/scripts/$${hook}.sh\" \"\$$@\"" \
-			> "$$hooks_dir/$$hook"; \
-		chmod +x "$$hooks_dir/$$hook"; \
-		echo "Installed $$hook hook at $$hooks_dir/$$hook"; \
+			> "$$tmp_hook"; \
+		chmod +x "$$tmp_hook"; \
+		mv -f "$$tmp_hook" "$$hook_path"; \
+		echo "Installed $$hook hook at $$hook_path"; \
 	done
 
 test-hooks:
 	./scripts/test-commit-msg.sh
+	./scripts/test-install-hooks.sh
