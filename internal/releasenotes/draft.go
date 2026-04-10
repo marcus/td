@@ -60,14 +60,28 @@ func Generate(repoDir string, opts Options) (*Draft, error) {
 		return nil, err
 	}
 
-	toRef := strings.TrimSpace(opts.ToRef)
+	rawToRef := strings.TrimSpace(opts.ToRef)
+	toRef := rawToRef
 	if toRef == "" {
 		toRef = "HEAD"
 	}
 
 	fromRef := strings.TrimSpace(opts.FromRef)
 	if fromRef == "" {
-		fromRef, err = gitutil.GetLatestSemverTag(root, toRef)
+		usePreviousTag := rawToRef != "" && !strings.EqualFold(toRef, "HEAD")
+		if usePreviousTag {
+			taggedReleaseTarget, err := gitutil.RefPointsToSemverTag(root, toRef)
+			if err != nil {
+				return nil, err
+			}
+			if taggedReleaseTarget {
+				fromRef, err = gitutil.GetPreviousSemverTag(root, toRef)
+			} else {
+				fromRef, err = gitutil.GetLatestSemverTag(root, toRef)
+			}
+		} else {
+			fromRef, err = gitutil.GetLatestSemverTag(root, toRef)
+		}
 		if err != nil {
 			return nil, err
 		}

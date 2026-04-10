@@ -63,12 +63,12 @@ func releaseNotesRepoDir() string {
 	if workDirFlag != "" {
 		return normalizeWorkDir(workDirFlag)
 	}
-	if envDir := os.Getenv("TD_WORK_DIR"); envDir != "" {
-		return normalizeWorkDir(envDir)
-	}
 	cwd, err := os.Getwd()
 	if err == nil {
 		return cwd
+	}
+	if envDir := os.Getenv("TD_WORK_DIR"); envDir != "" {
+		return normalizeWorkDir(envDir)
 	}
 	return getBaseDir()
 }

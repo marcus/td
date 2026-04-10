@@ -548,6 +548,45 @@ func TestGetLatestSemverTagReturnsErrNoSemverTag(t *testing.T) {
 	}
 }
 
+func TestGetPreviousSemverTagSkipsTargetReleaseTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+
+	tag, err := GetPreviousSemverTag(dir, "v0.2.0")
+	if err != nil {
+		t.Fatalf("GetPreviousSemverTag failed: %v", err)
+	}
+	if tag != "v0.1.0" {
+		t.Fatalf("expected v0.1.0, got %q", tag)
+	}
+}
+
+func TestRefPointsToSemverTagReturnsTrueForTaggedCommit(t *testing.T) {
+	dir := initTestRepo(t)
+
+	releaseSHA := commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+
+	tagged, err := RefPointsToSemverTag(dir, "v0.2.0")
+	if err != nil {
+		t.Fatalf("RefPointsToSemverTag(tag) failed: %v", err)
+	}
+	if !tagged {
+		t.Fatal("expected semver tag ref to report true")
+	}
+
+	tagged, err = RefPointsToSemverTag(dir, releaseSHA)
+	if err != nil {
+		t.Fatalf("RefPointsToSemverTag(sha) failed: %v", err)
+	}
+	if !tagged {
+		t.Fatal("expected tagged commit sha to report true")
+	}
+}
+
 func TestListCommitsInRangeReturnsCommitsWithFiles(t *testing.T) {
 	dir := initTestRepo(t)
 

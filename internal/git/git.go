@@ -228,22 +228,85 @@ func GetLatestSemverTag(dir, ref string) (string, error) {
 		return "", err
 	}
 
-	output, err := runGitInDir(root, "tag", "--merged", ref, "--sort=-version:refname")
+	tags, err := listSemverTagsMerged(root, ref)
 	if err != nil {
 		return "", err
 	}
 
-	for _, line := range strings.Split(output, "\n") {
-		tag := strings.TrimSpace(line)
-		if tag == "" {
-			continue
-		}
-		if semverTagPattern.MatchString(tag) {
-			return tag, nil
-		}
+	for _, tag := range tags {
+		return tag, nil
 	}
 
 	return "", ErrNoSemverTag
+}
+
+// GetPreviousSemverTag returns the latest reachable semver tag before ref.
+// Any semver tags pointing at ref itself are skipped.
+func GetPreviousSemverTag(dir, ref string) (string, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return "", err
+	}
+
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+
+	targetCommit, err := resolveCommitRef(root, ref)
+	if err != nil {
+		return "", err
+	}
+
+	tags, err := listSemverTagsMerged(root, ref)
+	if err != nil {
+		return "", err
+	}
+
+	for _, tag := range tags {
+		tagCommit, err := resolveCommitRef(root, tag)
+		if err != nil {
+			return "", err
+		}
+		if tagCommit == targetCommit {
+			continue
+		}
+		return tag, nil
+	}
+
+	return "", ErrNoSemverTag
+}
+
+// RefPointsToSemverTag reports whether ref resolves to a commit with at least
+// one semver tag pointing at it.
+func RefPointsToSemverTag(dir, ref string) (bool, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return false, err
+	}
+
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+
+	if _, err := resolveCommitRef(root, ref); err != nil {
+		return false, err
+	}
+
+	output, err := runGitInDir(root, "tag", "--points-at", ref, "--sort=-version:refname")
+	if err != nil {
+		return false, err
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		tag := strings.TrimSpace(line)
+		if semverTagPattern.MatchString(tag) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // ListCommitsInRange returns non-merge commits in chronological order with
@@ -306,10 +369,8 @@ func ListCommitsInRange(dir, fromRef, toRef string) ([]Commit, error) {
 }
 
 func verifyCommitRef(dir, ref string) error {
-	if _, err := runGitInDir(dir, "rev-parse", "--verify", ref+"^{commit}"); err != nil {
-		return fmt.Errorf("invalid git ref %q: %w", ref, err)
-	}
-	return nil
+	_, err := resolveCommitRef(dir, ref)
+	return err
 }
 
 func listFilesForCommit(dir, sha string) ([]string, error) {
@@ -336,6 +397,32 @@ func splitUniqueLines(output string) []string {
 	}
 	sort.Strings(lines)
 	return lines
+}
+
+func listSemverTagsMerged(dir, ref string) ([]string, error) {
+	output, err := runGitInDir(dir, "tag", "--merged", ref, "--sort=-version:refname")
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		tag := strings.TrimSpace(line)
+		if tag == "" || !semverTagPattern.MatchString(tag) {
+			continue
+		}
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
+}
+
+func resolveCommitRef(dir, ref string) (string, error) {
+	output, err := runGitInDir(dir, "rev-parse", "--verify", ref+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("invalid git ref %q: %w", ref, err)
+	}
+	return strings.TrimSpace(output), nil
 }
 
 func runGit(args ...string) (string, error) {

@@ -90,6 +90,39 @@ func runReleaseNotesCommand(t *testing.T, dir string, flagPairs ...string) (stri
 	return output.String(), err
 }
 
+func runReleaseNotesCommandFromCWD(t *testing.T, cwd string, flagPairs ...string) (string, error) {
+	t.Helper()
+
+	baseDirOverride = nil
+
+	_ = releaseNotesCmd.Flags().Set("from", "")
+	_ = releaseNotesCmd.Flags().Set("to", "HEAD")
+	_ = releaseNotesCmd.Flags().Set("version", "")
+
+	for i := 0; i+1 < len(flagPairs); i += 2 {
+		if err := releaseNotesCmd.Flags().Set(flagPairs[i], flagPairs[i+1]); err != nil {
+			t.Fatalf("failed to set --%s: %v", flagPairs[i], err)
+		}
+	}
+
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %v", err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("chdir failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(origWD)
+	})
+
+	var output bytes.Buffer
+	releaseNotesCmd.SetOut(&output)
+
+	err = releaseNotesCmd.RunE(releaseNotesCmd, nil)
+	return output.String(), err
+}
+
 func TestReleaseNotesCommandFormatsMarkdownWithOrderedSections(t *testing.T) {
 	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
 	dir := initReleaseNotesRepo(t)
@@ -180,6 +213,33 @@ func TestReleaseNotesCommandHonorsToFlag(t *testing.T) {
 	}
 }
 
+func TestReleaseNotesCommandDefaultsFromPreviousTagWhenToIsReleaseTag(t *testing.T) {
+	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	dir := initReleaseNotesRepo(t)
+
+	tagReleaseNotesRepo(t, dir, "v0.1.0")
+	commitReleaseNotesFile(t, dir, "feature.txt", "feature\n", "feat: add release notes command")
+	tagReleaseNotesRepo(t, dir, "v0.2.0")
+	commitReleaseNotesFile(t, dir, "fix.txt", "fix\n", "fix: patch release")
+
+	output, err := runReleaseNotesCommand(
+		t,
+		dir,
+		"to", "v0.2.0",
+		"version", "v0.2.0",
+	)
+	if err != nil {
+		t.Fatalf("releaseNotesCmd.RunE returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "add release notes command") {
+		t.Fatalf("expected output to include tagged release commit, got:\n%s", output)
+	}
+	if strings.Contains(output, "patch release") {
+		t.Fatalf("expected output to stop at the requested release tag, got:\n%s", output)
+	}
+}
+
 func TestReleaseNotesCommandShowsEmptyRangeFallback(t *testing.T) {
 	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
 	dir := initReleaseNotesRepo(t)
@@ -198,5 +258,30 @@ _No committed changes found between v0.1.0 and HEAD._
 
 	if output != expected {
 		t.Fatalf("unexpected markdown output:\n%s", output)
+	}
+}
+
+func TestReleaseNotesCommandPrefersCurrentWorktreeOverEnvVar(t *testing.T) {
+	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	dir := initReleaseNotesRepo(t)
+
+	tagReleaseNotesRepo(t, dir, "v0.1.0")
+
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	runGit(t, dir, "worktree", "add", wtPath, "-b", "release-notes-worktree")
+	commitReleaseNotesFile(t, wtPath, "feature.txt", "feature\n", "feat: add worktree feature")
+
+	t.Setenv("TD_WORK_DIR", dir)
+
+	output, err := runReleaseNotesCommandFromCWD(t, wtPath, "version", "v0.2.0")
+	if err != nil {
+		t.Fatalf("releaseNotesCmd.RunE returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "add worktree feature") {
+		t.Fatalf("expected output to use cwd worktree history, got:\n%s", output)
+	}
+	if strings.Contains(output, "_No committed changes found") {
+		t.Fatalf("expected non-empty worktree draft, got:\n%s", output)
 	}
 }
