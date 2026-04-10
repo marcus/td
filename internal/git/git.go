@@ -4,13 +4,25 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
 
-// State represents the current git state
+var (
+	// ErrNotRepository indicates the target directory is not inside a git repo.
+	ErrNotRepository = errors.New("not a git repository")
+	// ErrNoSemverTag indicates no reachable semver tag was found.
+	ErrNoSemverTag = errors.New("no reachable semver tag found")
+
+	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
+)
+
+// State represents the current git state.
 type State struct {
 	CommitSHA  string
 	Branch     string
@@ -20,25 +32,44 @@ type State struct {
 	DirtyFiles int
 }
 
-// GetState returns the current git state
+// FileChange represents changes to a file.
+type FileChange struct {
+	Path      string
+	Additions int
+	Deletions int
+	IsNew     bool
+}
+
+// DiffStats summarizes git diff statistics.
+type DiffStats struct {
+	FilesChanged int
+	Additions    int
+	Deletions    int
+}
+
+// Commit captures the metadata needed for release-note drafting.
+type Commit struct {
+	SHA     string
+	Subject string
+	Files   []string
+}
+
+// GetState returns the current git state.
 func GetState() (*State, error) {
 	state := &State{}
 
-	// Get current commit SHA
 	sha, err := runGit("rev-parse", "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("not a git repository")
 	}
 	state.CommitSHA = strings.TrimSpace(sha)
 
-	// Get current branch
 	branch, err := runGit("rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		branch = "HEAD"
 	}
 	state.Branch = strings.TrimSpace(branch)
 
-	// Get status
 	status, _ := runGit("status", "--porcelain")
 	lines := strings.Split(strings.TrimSpace(status), "\n")
 
@@ -49,7 +80,6 @@ func GetState() (*State, error) {
 			if len(line) < 2 {
 				continue
 			}
-			// Check first two characters for status
 			if line[0] == '?' && line[1] == '?' {
 				state.Untracked++
 			} else {
@@ -62,7 +92,7 @@ func GetState() (*State, error) {
 	return state, nil
 }
 
-// GetCommitsSince returns the number of commits since a given SHA
+// GetCommitsSince returns the number of commits since a given SHA.
 func GetCommitsSince(sha string) (int, error) {
 	output, err := runGit("rev-list", "--count", sha+"..HEAD")
 	if err != nil {
@@ -75,7 +105,7 @@ func GetCommitsSince(sha string) (int, error) {
 	return count, nil
 }
 
-// GetChangedFilesSince returns changed files since a given SHA
+// GetChangedFilesSince returns changed files since a given SHA.
 func GetChangedFilesSince(sha string) ([]FileChange, error) {
 	output, err := runGit("diff", "--stat", sha+"..HEAD")
 	if err != nil {
@@ -83,14 +113,6 @@ func GetChangedFilesSince(sha string) ([]FileChange, error) {
 	}
 
 	return parseStatOutput(output), nil
-}
-
-// FileChange represents changes to a file
-type FileChange struct {
-	Path      string
-	Additions int
-	Deletions int
-	IsNew     bool
 }
 
 func parseStatOutput(output string) []FileChange {
@@ -103,7 +125,6 @@ func parseStatOutput(output string) []FileChange {
 			continue
 		}
 
-		// Parse format: file.go | 10 ++++----
 		parts := strings.Split(line, "|")
 		if len(parts) != 2 {
 			continue
@@ -113,8 +134,6 @@ func parseStatOutput(output string) []FileChange {
 		stats := strings.TrimSpace(parts[1])
 
 		change := FileChange{Path: path}
-
-		// Count + and -
 		for _, c := range stats {
 			if c == '+' {
 				change.Additions++
@@ -129,14 +148,7 @@ func parseStatOutput(output string) []FileChange {
 	return changes
 }
 
-// DiffStats summarizes git diff statistics
-type DiffStats struct {
-	FilesChanged int
-	Additions    int
-	Deletions    int
-}
-
-// GetDiffStatsSince returns diff statistics since a given SHA
+// GetDiffStatsSince returns diff statistics since a given SHA.
 func GetDiffStatsSince(sha string) (*DiffStats, error) {
 	output, err := runGit("diff", "--shortstat", sha+"..HEAD")
 	if err != nil {
@@ -144,8 +156,6 @@ func GetDiffStatsSince(sha string) (*DiffStats, error) {
 	}
 
 	stats := &DiffStats{}
-
-	// Parse format: "3 files changed, 45 insertions(+), 12 deletions(-)"
 	output = strings.TrimSpace(output)
 	if output == "" {
 		return stats, nil
@@ -177,23 +187,167 @@ func GetDiffStatsSince(sha string) (*DiffStats, error) {
 	return stats, nil
 }
 
-// IsRepo checks if we're in a git repository
+// IsRepo checks if we're in a git repository.
 func IsRepo() bool {
-	_, err := runGit("rev-parse", "--git-dir")
+	return IsRepoAt("")
+}
+
+// GetRootDir returns the git repository root directory.
+func GetRootDir() (string, error) {
+	return GetRootDirFrom("")
+}
+
+// IsRepoAt checks whether dir is inside a git repository.
+func IsRepoAt(dir string) bool {
+	_, err := runGitInDir(dir, "rev-parse", "--git-dir")
 	return err == nil
 }
 
-// GetRootDir returns the git repository root directory
-func GetRootDir() (string, error) {
-	output, err := runGit("rev-parse", "--show-toplevel")
+// GetRootDirFrom returns the git repository root for dir.
+func GetRootDirFrom(dir string) (string, error) {
+	output, err := runGitInDir(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w", ErrNotRepository)
 	}
 	return strings.TrimSpace(output), nil
 }
 
+// GetLatestSemverTag returns the latest reachable semver tag for ref.
+func GetLatestSemverTag(dir, ref string) (string, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return "", err
+	}
+
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+
+	if err := verifyCommitRef(root, ref); err != nil {
+		return "", err
+	}
+
+	output, err := runGitInDir(root, "tag", "--merged", ref, "--sort=-version:refname")
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		tag := strings.TrimSpace(line)
+		if tag == "" {
+			continue
+		}
+		if semverTagPattern.MatchString(tag) {
+			return tag, nil
+		}
+	}
+
+	return "", ErrNoSemverTag
+}
+
+// ListCommitsInRange returns non-merge commits in chronological order with
+// each commit's touched files.
+func ListCommitsInRange(dir, fromRef, toRef string) ([]Commit, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	fromRef = strings.TrimSpace(fromRef)
+	if fromRef == "" {
+		return nil, fmt.Errorf("start git ref is required")
+	}
+
+	toRef = strings.TrimSpace(toRef)
+	if toRef == "" {
+		toRef = "HEAD"
+	}
+
+	if err := verifyCommitRef(root, fromRef); err != nil {
+		return nil, err
+	}
+	if err := verifyCommitRef(root, toRef); err != nil {
+		return nil, err
+	}
+
+	output, err := runGitInDir(root, "log", "--no-merges", "--reverse", "--format=%H%x00%s", fromRef+".."+toRef)
+	if err != nil {
+		return nil, err
+	}
+
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return []Commit{}, nil
+	}
+
+	lines := strings.Split(output, "\n")
+	commits := make([]Commit, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\x00", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		sha := strings.TrimSpace(parts[0])
+		files, err := listFilesForCommit(root, sha)
+		if err != nil {
+			return nil, err
+		}
+
+		commits = append(commits, Commit{
+			SHA:     sha,
+			Subject: strings.TrimSpace(parts[1]),
+			Files:   files,
+		})
+	}
+
+	return commits, nil
+}
+
+func verifyCommitRef(dir, ref string) error {
+	if _, err := runGitInDir(dir, "rev-parse", "--verify", ref+"^{commit}"); err != nil {
+		return fmt.Errorf("invalid git ref %q: %w", ref, err)
+	}
+	return nil
+}
+
+func listFilesForCommit(dir, sha string) ([]string, error) {
+	output, err := runGitInDir(dir, "show", "--pretty=format:", "--name-only", "--diff-filter=ACDMRT", sha)
+	if err != nil {
+		return nil, err
+	}
+	return splitUniqueLines(output), nil
+}
+
+func splitUniqueLines(output string) []string {
+	seen := make(map[string]struct{})
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
 func runGit(args ...string) (string, error) {
+	return runGitInDir("", args...)
+}
+
+func runGitInDir(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
