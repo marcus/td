@@ -86,6 +86,7 @@ Client-server event streaming via HTTP:
 ```bash
 go build -o td .           # Build
 go test ./...              # All tests
+make install-hooks         # Install pre-commit + commit-msg hooks
 go test ./internal/db/     # DB layer only
 go test ./internal/query/  # Query parser only
 go test ./internal/sync/   # Sync protocol only
@@ -174,4 +175,5 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit subjects reference td when applicable.** Format: `type: <summary> (td-<id>)` or `type(scope): <summary> (td-<id>)`
+- **Install hooks before committing.** `make install-hooks` adds both the `pre-commit` checks and the `commit-msg` normalizer

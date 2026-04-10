@@ -27,20 +27,17 @@ Use `td usage -q` after first read.
 ```bash
 go build -o td .           # Build locally
 go test ./...              # Test all
+make install-hooks         # Install pre-commit + commit-msg hooks
 ```
 
 ## Version & Release
 
 ```bash
-# Commit changes with proper message
+# Commit changes with canonical subject format
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat: describe changes (td-a1b2)
 
-Details here
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+Details here"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
@@ -55,6 +52,8 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Commit subjects should be `type: summary` or `type(scope): summary`, with an optional trailing ` (td-<id>)`. `make install-hooks` installs a `commit-msg` normalizer that rewrites safe variants like `Docs - Update changelog` and rejects malformed `td` suffixes.
 
 ## Architecture
 
