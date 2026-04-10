@@ -285,3 +285,25 @@ func TestReleaseNotesCommandPrefersCurrentWorktreeOverEnvVar(t *testing.T) {
 		t.Fatalf("expected non-empty worktree draft, got:\n%s", output)
 	}
 }
+
+func TestReleaseNotesCommandFallsBackToEnvVarWhenCWDIsNotRepo(t *testing.T) {
+	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	dir := initReleaseNotesRepo(t)
+
+	tagReleaseNotesRepo(t, dir, "v0.1.0")
+	commitReleaseNotesFile(t, dir, "feature.txt", "feature\n", "feat: add env-backed release notes")
+
+	t.Setenv("TD_WORK_DIR", dir)
+
+	output, err := runReleaseNotesCommandFromCWD(t, t.TempDir(), "version", "v0.2.0")
+	if err != nil {
+		t.Fatalf("releaseNotesCmd.RunE returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "add env-backed release notes") {
+		t.Fatalf("expected output to use TD_WORK_DIR fallback repo, got:\n%s", output)
+	}
+	if strings.Contains(output, "_No committed changes found") {
+		t.Fatalf("expected non-empty env fallback draft, got:\n%s", output)
+	}
+}

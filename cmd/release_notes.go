@@ -64,11 +64,14 @@ func releaseNotesRepoDir() string {
 		return normalizeWorkDir(workDirFlag)
 	}
 	cwd, err := os.Getwd()
-	if err == nil {
+	if err == nil && gitutil.IsRepoAt(cwd) {
 		return cwd
 	}
 	if envDir := os.Getenv("TD_WORK_DIR"); envDir != "" {
 		return normalizeWorkDir(envDir)
+	}
+	if err == nil {
+		return cwd
 	}
 	return getBaseDir()
 }
