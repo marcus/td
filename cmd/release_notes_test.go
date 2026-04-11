@@ -240,6 +240,58 @@ func TestReleaseNotesCommandDefaultsFromPreviousTagWhenToIsReleaseTag(t *testing
 	}
 }
 
+func TestReleaseNotesCommandDefaultsToLatestRetaggedVersion(t *testing.T) {
+	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	dir := initReleaseNotesRepo(t)
+
+	tagReleaseNotesRepo(t, dir, "v0.1.0")
+	commitReleaseNotesFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagReleaseNotesRepo(t, dir, "v0.2.0")
+	tagReleaseNotesRepo(t, dir, "v0.2.1")
+	commitReleaseNotesFile(t, dir, "fix.txt", "fix\n", "fix: patch release")
+
+	output, err := runReleaseNotesCommand(t, dir, "version", "v0.2.2")
+	if err != nil {
+		t.Fatalf("releaseNotesCmd.RunE returned error: %v", err)
+	}
+
+	if strings.Contains(output, "add initial feature") {
+		t.Fatalf("expected default range to start from the latest retagged version, got:\n%s", output)
+	}
+	if !strings.Contains(output, "patch release") {
+		t.Fatalf("expected output to include unreleased patch, got:\n%s", output)
+	}
+}
+
+func TestReleaseNotesCommandTreatsRetaggedReleaseAsEmptyRange(t *testing.T) {
+	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
+	dir := initReleaseNotesRepo(t)
+
+	tagReleaseNotesRepo(t, dir, "v0.1.0")
+	commitReleaseNotesFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagReleaseNotesRepo(t, dir, "v0.2.0")
+	tagReleaseNotesRepo(t, dir, "v0.2.1")
+
+	output, err := runReleaseNotesCommand(
+		t,
+		dir,
+		"to", "v0.2.1",
+		"version", "v0.2.1",
+	)
+	if err != nil {
+		t.Fatalf("releaseNotesCmd.RunE returned error: %v", err)
+	}
+
+	expected := `## [v0.2.1] - 2026-04-10
+
+_No committed changes found between v0.2.0 and v0.2.1._
+`
+
+	if output != expected {
+		t.Fatalf("unexpected markdown output:\n%s", output)
+	}
+}
+
 func TestReleaseNotesCommandShowsEmptyRangeFallback(t *testing.T) {
 	saveAndRestoreReleaseNotesState(t, time.Date(2026, 4, 10, 9, 0, 0, 0, time.UTC))
 	dir := initReleaseNotesRepo(t)

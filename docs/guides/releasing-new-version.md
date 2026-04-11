@@ -42,6 +42,12 @@ td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
 ```
 
 If you need to override the default git range, pass `--from` and `--to`.
+For an already-tagged or retagged release, point `--to` at the tag and `td`
+will use the prior semver tag automatically:
+
+```bash
+td release-notes --to vX.Y.Z --version vX.Y.Z > /tmp/td-release-notes.md
+```
 
 Review the draft, edit it for clarity, and then add the final entry at the top of `CHANGELOG.md`:
 

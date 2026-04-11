@@ -564,6 +564,46 @@ func TestGetPreviousSemverTagSkipsTargetReleaseTag(t *testing.T) {
 	}
 }
 
+func TestGetPreviousSemverTagReturnsPreviousVersionOnRetaggedRelease(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+	tagHeadAnnotated(t, dir, "v0.2.1")
+
+	tag, err := GetPreviousSemverTag(dir, "v0.2.1")
+	if err != nil {
+		t.Fatalf("GetPreviousSemverTag failed: %v", err)
+	}
+	if tag != "v0.2.0" {
+		t.Fatalf("expected v0.2.0, got %q", tag)
+	}
+}
+
+func TestGetSemverTagsPointingAtReturnsSortedSemverTags(t *testing.T) {
+	dir := initTestRepo(t)
+
+	commitSHA := commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+	tagHeadAnnotated(t, dir, "v0.2.1")
+	if err := runCmd(dir, "git", "tag", "-a", "release-candidate", "-m", "non semver"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+
+	tags, err := GetSemverTagsPointingAt(dir, commitSHA)
+	if err != nil {
+		t.Fatalf("GetSemverTagsPointingAt failed: %v", err)
+	}
+
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 semver tags, got %d", len(tags))
+	}
+	if tags[0] != "v0.2.1" || tags[1] != "v0.2.0" {
+		t.Fatalf("unexpected semver tags: %v", tags)
+	}
+}
+
 func TestRefPointsToSemverTagReturnsTrueForTaggedCommit(t *testing.T) {
 	dir := initTestRepo(t)
 
