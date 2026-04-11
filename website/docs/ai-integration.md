@@ -65,6 +65,24 @@ td review <id>             # 5. Submit for review
 
 Steps 3-4 are critical for multi-context work. Logs and handoffs persist across context windows, so the next agent picks up exactly where you left off.
 
+## Commit Message Workflow
+
+Install the hooks once per clone:
+
+```bash
+make install-hooks
+```
+
+Then commit against the focused issue with:
+
+```bash
+git commit \
+  -m "$(td commit-message 'implement feature X')" \
+  -m "Optional body"
+```
+
+The `commit-msg` hook rewrites only the first line to `feat|fix|chore: <summary> (td-<id>)`, so manual edits in `COMMIT_EDITMSG` stay consistent while bodies and trailers remain untouched.
+
 ## Session Isolation for Agents
 
 Each agent instance (terminal, context window) gets a unique session ID. This ensures:
@@ -119,4 +137,5 @@ To disable and revert to strict mode: `td feature set balanced_review_policy fal
 - **Log frequently** -- short, hyper-concise messages. These survive context resets.
 - **Handoff before stopping** -- if work is incomplete, `td handoff` captures state for the next agent.
 - **Don't start new sessions mid-work** -- sessions track implementers. A new session mid-task bypasses review enforcement.
+- **Use `td commit-message` for git subjects** -- it defaults from the focused issue, and the `commit-msg` hook enforces the same format in editors.
 - **Use quiet mode after first read** -- `td usage -q` avoids repeating workflow instructions every time.
