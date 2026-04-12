@@ -818,9 +818,9 @@ func TestAddHandoff_EmptyArrays(t *testing.T) {
 		IssueID:   issue.ID,
 		SessionID: "ses_test",
 		Done:      []string{"Task 1"},
-		Remaining: []string{},  // Empty
-		Decisions: nil,         // Nil
-		Uncertain: []string{},  // Empty
+		Remaining: []string{}, // Empty
+		Decisions: nil,        // Nil
+		Uncertain: []string{}, // Empty
 	}
 
 	err = db.AddHandoff(handoff)
