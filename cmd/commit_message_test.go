@@ -99,6 +99,37 @@ func TestCommitMessageCommandAllowsTypedNoIssueSubjectWithoutFocus(t *testing.T)
 	}
 }
 
+func TestCommitMessageCommandNormalizesHumanAuthoredMergeSubject(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title: "Merge support docs",
+		Type:  models.TypeFeature,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatalf("SetFocus failed: %v", err)
+	}
+
+	got, err := runCommitMessageCommand(t, dir, []string{"Merge support docs"}, "", "", "")
+	if err != nil {
+		t.Fatalf("commitMessageCmd.RunE returned error: %v", err)
+	}
+
+	want := "feat: Merge support docs (" + issue.ID + ")"
+	if got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
 func TestCommitMessageCommandRewritesFileInPlace(t *testing.T) {
 	dir := t.TempDir()
 

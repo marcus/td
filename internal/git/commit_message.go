@@ -35,7 +35,7 @@ var (
 	validCommitIssueIDPattern    = regexp.MustCompile(`(?i)^td-[0-9a-f]{4,8}$`)
 	bareCommitIssueIDPattern     = regexp.MustCompile(`(?i)^[0-9a-f]{4,8}$`)
 	autosquashSubjectPattern     = regexp.MustCompile(`^(fixup|squash|amend)!\s+`)
-	mergeSubjectPattern          = regexp.MustCompile(`^Merge\b`)
+	mergeSubjectPattern          = regexp.MustCompile(`^Merge (?:(?:branch|branches)|(?:remote-tracking branch|remote-tracking branches)|tag|commit) '`)
 	revertSubjectPattern         = regexp.MustCompile(`^Revert\s+"`)
 )
 

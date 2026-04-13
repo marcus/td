@@ -171,6 +171,18 @@ func TestNormalizeCommitMessageSkipsSpecialGitSubjects(t *testing.T) {
 			message: "Merge branch 'feat/commit-message-normalizer'\n\n# Conflicts:\n",
 		},
 		{
+			name:    "merge remote tracking branch",
+			message: "Merge remote-tracking branch 'origin/main'\n",
+		},
+		{
+			name:    "merge branches into integration branch",
+			message: "Merge branches 'topic-a' and 'topic-b' into next\n",
+		},
+		{
+			name:    "merge tag",
+			message: "Merge tag 'v0.43.0' into release\n",
+		},
+		{
 			name:    "revert commit",
 			message: "Revert \"feat: add commit message normalizer (td-a1b2)\"\n\nThis reverts commit 0123456789abcdef.\n",
 		},
@@ -187,6 +199,49 @@ func TestNormalizeCommitMessageSkipsSpecialGitSubjects(t *testing.T) {
 			}
 			if got != tt.message {
 				t.Fatalf("NormalizeCommitMessage = %q, want %q", got, tt.message)
+			}
+		})
+	}
+}
+
+func TestShouldSkipCommitMessageNormalizationOnlyForGitGeneratedMergeSubjects(t *testing.T) {
+	tests := []struct {
+		name    string
+		subject string
+		want    bool
+	}{
+		{
+			name:    "generated merge branch subject",
+			subject: "Merge branch 'feature/docs-cleanup'",
+			want:    true,
+		},
+		{
+			name:    "generated merge remote tracking subject",
+			subject: "Merge remote-tracking branch 'origin/main' into release",
+			want:    true,
+		},
+		{
+			name:    "generated merge tag subject",
+			subject: "Merge tag 'v0.43.0'",
+			want:    true,
+		},
+		{
+			name:    "human authored merge summary",
+			subject: "Merge support docs",
+			want:    false,
+		},
+		{
+			name:    "human authored merge prefix with colon",
+			subject: "Merge: support docs",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ShouldSkipCommitMessageNormalization(tt.subject)
+			if got != tt.want {
+				t.Fatalf("ShouldSkipCommitMessageNormalization(%q) = %v, want %v", tt.subject, got, tt.want)
 			}
 		})
 	}
