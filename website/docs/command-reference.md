@@ -139,9 +139,17 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | Command | Description |
 |---------|-------------|
 | `td init` | Initialize project |
+| `td commit-message "summary"` | Print or rewrite a normalized commit subject. Flags: `--issue`, `--type`, `--file` |
 | `td monitor` | Live TUI dashboard |
 | `td undo` | Undo last action |
 | `td version` | Show version |
 | `td export` | Export database |
 | `td import` | Import issues |
 | `td stats [subcommand]` | Usage statistics |
+
+For repository checkouts, run `make install-hooks` once to install the matching
+`pre-commit` and `commit-msg` hooks. The `commit-msg` hook calls
+`td commit-message --file ...`, only rewrites the first line, and preserves
+Git-generated merge/autosquash subjects. If no issue is focused, typed
+conventional subjects such as `docs: Update changelog for v0.43.0` remain
+no-issue commits.
