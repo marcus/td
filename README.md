@@ -189,9 +189,31 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit subject normalization)
 make install-hooks
 ```
+
+## Commit Messages
+
+Install the hooks once per clone:
+
+```bash
+make install-hooks
+```
+
+Generate a canonical subject for the focused issue, or pass `--issue td-abc123`
+explicitly:
+
+```bash
+git commit \
+  -m "$(td commit-message 'normalize commit message workflow')" \
+  -m "Optional body text"
+```
+
+The `commit-msg` hook rewrites only the first line, preserves commit bodies and
+trailers, and leaves Git-generated merge/revert/autosquash subjects untouched.
+If no issue is focused, typed conventional subjects such as
+`docs: Update changelog for v0.43.0` stay no-issue commits.
 
 ## Tests & Quality Checks
 
