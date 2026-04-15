@@ -49,12 +49,14 @@ var deferCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Deferral cleared",
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("failed to record deferral log for %s: %v", issueID, err)
+			}
 
 			fmt.Printf("DEFERRAL CLEARED %s\n", issueID)
 			return nil
@@ -88,12 +90,14 @@ var deferCmd = &cobra.Command{
 			logMsg = fmt.Sprintf("Deferred until %s (deferred %d times)", dateStr, issue.DeferCount)
 		}
 
-		database.AddLog(&models.Log{
+		if err := database.AddLog(&models.Log{
 			IssueID:   issueID,
 			SessionID: sess.ID,
 			Message:   logMsg,
 			Type:      models.LogTypeProgress,
-		})
+		}); err != nil {
+			output.Warning("failed to record deferral log for %s: %v", issueID, err)
+		}
 
 		fmt.Printf("DEFERRED %s until %s\n", issueID, dateStr)
 		return nil

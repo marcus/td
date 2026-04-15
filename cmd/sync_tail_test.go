@@ -1,3 +1,4 @@
+//nolint:errcheck // Legacy tests keep setup terse; production paths handle these return values explicitly.
 package cmd
 
 import (
@@ -85,7 +86,7 @@ func TestPrintSyncEntry(t *testing.T) {
 				DeviceID:   "",
 				Timestamp:  time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
 			},
-			contains:    []string{"pull", "comments", "c_short", "delete", "seq:7"},
+			contains: []string{"pull", "comments", "c_short", "delete", "seq:7"},
 		},
 	}
 

@@ -75,9 +75,17 @@ func Generate(repoDir string, opts Options) (*Draft, error) {
 				return nil, err
 			}
 			if taggedReleaseTarget {
-				fromRef, err = gitutil.GetPreviousSemverTag(root, toRef)
+				previousTag, tagErr := gitutil.GetPreviousSemverTag(root, toRef)
+				if tagErr != nil {
+					return nil, tagErr
+				}
+				fromRef = previousTag
 			} else {
-				fromRef, err = gitutil.GetLatestSemverTag(root, toRef)
+				latestTag, tagErr := gitutil.GetLatestSemverTag(root, toRef)
+				if tagErr != nil {
+					return nil, tagErr
+				}
+				fromRef = latestTag
 			}
 		} else {
 			fromRef, err = gitutil.GetLatestSemverTag(root, toRef)

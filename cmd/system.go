@@ -557,11 +557,11 @@ var importCmd = &cobra.Command{
 
 // exportedItem matches the JSON structure produced by the export command.
 type exportedItem struct {
-	Issue        models.Issue              `json:"issue"`
-	Logs         []models.Log              `json:"logs"`
-	Handoffs     []models.Handoff          `json:"handoffs"`
-	Dependencies []models.IssueDependency  `json:"dependencies"`
-	Files        []models.IssueFile        `json:"files"`
+	Issue        models.Issue             `json:"issue"`
+	Logs         []models.Log             `json:"logs"`
+	Handoffs     []models.Handoff         `json:"handoffs"`
+	Dependencies []models.IssueDependency `json:"dependencies"`
+	Files        []models.IssueFile       `json:"files"`
 }
 
 // UnmarshalJSON supports backward-compatible deserialization:
@@ -814,8 +814,9 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID 
 		}
 		if matches := pointsRegex.FindStringSubmatch(line); matches != nil {
 			var pts int
-			fmt.Sscanf(matches[1], "%d", &pts)
-			currentIssue.Points = pts
+			if _, err := fmt.Sscanf(matches[1], "%d", &pts); err == nil {
+				currentIssue.Points = pts
+			}
 			inDescription = false
 			continue
 		}
