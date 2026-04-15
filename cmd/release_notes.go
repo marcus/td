@@ -31,7 +31,7 @@ CHANGELOG.md manually.`,
 		toRef, _ := cmd.Flags().GetString("to")
 		versionLabel, _ := cmd.Flags().GetString("version")
 
-		draft, err := releasenotes.Generate(releaseNotesRepoDir(), releasenotes.Options{
+		draft, err := releasenotes.Generate(gitHistoryRepoDir(), releasenotes.Options{
 			FromRef: fromRef,
 			ToRef:   toRef,
 			Version: versionLabel,
@@ -53,10 +53,10 @@ CHANGELOG.md manually.`,
 	},
 }
 
-// releaseNotesRepoDir uses the active worktree instead of td's resolved
+// gitHistoryRepoDir uses the active worktree instead of td's resolved
 // database root so repo-scoped git history is drafted from the branch the user
 // is actually on.
-func releaseNotesRepoDir() string {
+func gitHistoryRepoDir() string {
 	if baseDirOverride != nil {
 		return *baseDirOverride
 	}
