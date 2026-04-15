@@ -216,7 +216,7 @@ Releases are automated via GoReleaser. Pushing a version tag triggers GitHub Act
 
 ```bash
 # Draft a changelog entry from the latest tag through HEAD
-td release-notes --version v0.2.0
+td changelog --version v0.2.0
 
 # Create and push an annotated tag (triggers automated release)
 make release VERSION=v0.2.0
@@ -422,7 +422,7 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Reject                           | `td reject <id> --reason "..."`                  |
 | Link files                       | `td link <id> <files...>`                        |
 | Check file changes               | `td files <id>`                                  |
-| Draft release notes              | `td release-notes --version v0.2.0`              |
+| Draft changelog entry            | `td changelog --version v0.2.0`                  |
 | Undo last action                 | `td undo`                                        |
 | New named session                | `td session --new "feature-work"`                |
 | Live dashboard                   | `td monitor`                                     |

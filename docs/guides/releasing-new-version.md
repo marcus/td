@@ -38,7 +38,7 @@ git tag -l | sort -V | tail -1
 Generate a starting draft from committed history:
 
 ```bash
-td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
+td changelog --version vX.Y.Z > /tmp/td-changelog.md
 ```
 
 If you need to override the default git range, pass `--from` and `--to`.
@@ -46,8 +46,10 @@ For an already-tagged or retagged release, point `--to` at the tag and `td`
 will use the prior semver tag automatically:
 
 ```bash
-td release-notes --to vX.Y.Z --version vX.Y.Z > /tmp/td-release-notes.md
+td changelog --to vX.Y.Z --version vX.Y.Z > /tmp/td-changelog.md
 ```
+
+Use `--include-meta` if you want documentation, test, CI, or chore commits included in the draft.
 
 Review the draft, edit it for clarity, and then add the final entry at the top of `CHANGELOG.md`:
 
@@ -148,11 +150,11 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Draft release notes
-td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
+# Draft changelog entry
+td changelog --version vX.Y.Z > /tmp/td-changelog.md
 
 # Update changelog
-# (Review /tmp/td-release-notes.md, then edit CHANGELOG.md and add the final entry at top)
+# (Review /tmp/td-changelog.md, then edit CHANGELOG.md and add the final entry at top)
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -171,7 +173,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
-- [ ] `td release-notes --version vX.Y.Z` used to draft the changelog entry
+- [ ] `td changelog --version vX.Y.Z` used to draft the changelog entry
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
