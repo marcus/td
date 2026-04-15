@@ -222,7 +222,9 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 
 	// Write snapshot
 	if err := os.WriteFile(dbPath, snapshot.Data, 0644); err != nil {
-		os.Rename(backupPath, dbPath)
+		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
+			return nil, fmt.Errorf("write snapshot: %w (restore backup: %v)", err, restoreErr)
+		}
 		reopened, reopenErr := db.Open(baseDir)
 		if reopenErr != nil {
 			return nil, fmt.Errorf("write failed (%w) and reopen failed: %v", err, reopenErr)
@@ -233,7 +235,9 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	// Reopen and update sync_state
 	reopened, err := db.Open(baseDir)
 	if err != nil {
-		os.Rename(backupPath, dbPath)
+		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
+			return nil, fmt.Errorf("reopen after bootstrap: %w (restore backup: %v)", err, restoreErr)
+		}
 		reopened2, reopenErr := db.Open(baseDir)
 		if reopenErr != nil {
 			return nil, fmt.Errorf("reopen failed (%w) and restore reopen failed: %v", err, reopenErr)
@@ -249,7 +253,9 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	)
 	if err != nil {
 		reopened.Close()
-		os.Rename(backupPath, dbPath)
+		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
+			return nil, fmt.Errorf("update sync_state: %w (restore backup: %v)", err, restoreErr)
+		}
 		reopened2, reopenErr := db.Open(baseDir)
 		if reopenErr != nil {
 			return nil, fmt.Errorf("sync_state update failed (%w) and restore reopen failed: %v", err, reopenErr)
@@ -284,6 +290,13 @@ func copyFile(src, dst string) error {
 	return out.Sync()
 }
 
+func restoreSnapshotBackup(backupPath, dbPath string) error {
+	if err := os.Rename(backupPath, dbPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 const pushBatchSize = 500
 
 func filterEventsForSync(events []tdsync.Event, validator tdsync.EntityValidator) []tdsync.Event {
@@ -316,7 +329,7 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		output.Error("begin tx: %v", err)
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	events, err := tdsync.GetPendingEvents(tx, deviceID, sess.ID)
 	if err != nil {
@@ -492,21 +505,27 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 
 		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, state.LastSyncAt)
 		if err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				slog.Debug("sync: rollback after apply failure", "err", rollbackErr)
+			}
 			output.Error("apply events: %v", err)
 			return err
 		}
 
 		// Store conflict records
 		if err := storeConflicts(tx, result.Conflicts); err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				slog.Debug("sync: rollback after conflict storage failure", "err", rollbackErr)
+			}
 			output.Error("store conflicts: %v", err)
 			return err
 		}
 
 		// Update sync_state within the same transaction to avoid race
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				slog.Debug("sync: rollback after sync state failure", "err", rollbackErr)
+			}
 			output.Error("update sync state: %v", err)
 			return err
 		}

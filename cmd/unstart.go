@@ -89,12 +89,14 @@ Examples:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
-			})
+			}); err != nil {
+				output.Warning("failed to record unstart log for %s: %v", issueID, err)
+			}
 
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
