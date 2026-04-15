@@ -1,3 +1,4 @@
+//nolint:errcheck // Legacy tests keep setup terse; production paths handle these return values explicitly.
 package cmd
 
 import "testing"
