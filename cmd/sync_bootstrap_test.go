@@ -50,3 +50,27 @@ func TestRunBootstrapSkipsWhenPendingEvents(t *testing.T) {
 		t.Fatalf("db unusable after bootstrap skip: %v", err)
 	}
 }
+
+func TestReopenAfterBootstrapFailureMarksRecoveryErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	database, err := db.Initialize(tmpDir)
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	reopened, err := reopenAfterBootstrapFailure(tmpDir, "write snapshot", errors.New("write failed"), errors.New("rename failed"))
+	if reopened == nil {
+		t.Fatal("expected reopened db handle")
+	}
+	defer func() { _ = reopened.Close() }()
+
+	if !errors.Is(err, errBootstrapRecoveryFailed) {
+		t.Fatalf("expected bootstrap recovery error, got %v", err)
+	}
+	if _, queryErr := reopened.Conn().Exec("SELECT 1"); queryErr != nil {
+		t.Fatalf("reopened db unusable: %v", queryErr)
+	}
+}

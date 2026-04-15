@@ -50,6 +50,7 @@ var syncEntityValidator tdsync.EntityValidator = func(entityType string) bool {
 
 // errBootstrapNotNeeded signals that the server event count is below the snapshot threshold.
 var errBootstrapNotNeeded = errors.New("bootstrap not needed")
+var errBootstrapRecoveryFailed = errors.New("bootstrap recovery failed")
 
 var syncCmd = &cobra.Command{
 	Use:     "sync",
@@ -71,7 +72,7 @@ var syncCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil {
@@ -112,6 +113,10 @@ var syncCmd = &cobra.Command{
 					return err
 				}
 			} else if !errors.Is(err, errBootstrapNotNeeded) {
+				if newDB == nil || errors.Is(err, errBootstrapRecoveryFailed) {
+					output.Error("bootstrap failed: %v", err)
+					return err
+				}
 				output.Warning("bootstrap failed, falling back to normal pull: %v", err)
 			}
 		}
@@ -222,27 +227,15 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 
 	// Write snapshot
 	if err := os.WriteFile(dbPath, snapshot.Data, 0644); err != nil {
-		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
-			return nil, fmt.Errorf("write snapshot: %w (restore backup: %v)", err, restoreErr)
-		}
-		reopened, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("write failed (%w) and reopen failed: %v", err, reopenErr)
-		}
-		return reopened, fmt.Errorf("write snapshot: %w", err)
+		restoreErr := restoreSnapshotBackup(backupPath, dbPath)
+		return reopenAfterBootstrapFailure(baseDir, "write snapshot", err, restoreErr)
 	}
 
 	// Reopen and update sync_state
 	reopened, err := db.Open(baseDir)
 	if err != nil {
-		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
-			return nil, fmt.Errorf("reopen after bootstrap: %w (restore backup: %v)", err, restoreErr)
-		}
-		reopened2, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("reopen failed (%w) and restore reopen failed: %v", err, reopenErr)
-		}
-		return reopened2, fmt.Errorf("reopen after bootstrap: %w", err)
+		restoreErr := restoreSnapshotBackup(backupPath, dbPath)
+		return reopenAfterBootstrapFailure(baseDir, "reopen after bootstrap", err, restoreErr)
 	}
 
 	// Use INSERT OR REPLACE since the snapshot DB may not have a sync_state row
@@ -253,14 +246,8 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	)
 	if err != nil {
 		reopened.Close()
-		if restoreErr := restoreSnapshotBackup(backupPath, dbPath); restoreErr != nil {
-			return nil, fmt.Errorf("update sync_state: %w (restore backup: %v)", err, restoreErr)
-		}
-		reopened2, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("sync_state update failed (%w) and restore reopen failed: %v", err, reopenErr)
-		}
-		return reopened2, fmt.Errorf("update sync_state: %w", err)
+		restoreErr := restoreSnapshotBackup(backupPath, dbPath)
+		return reopenAfterBootstrapFailure(baseDir, "update sync_state", err, restoreErr)
 	}
 
 	fmt.Printf("Bootstrap complete (seq %d).\n", snapshot.SnapshotSeq)
@@ -295,6 +282,20 @@ func restoreSnapshotBackup(backupPath, dbPath string) error {
 		return err
 	}
 	return nil
+}
+
+func reopenAfterBootstrapFailure(baseDir, operation string, cause, restoreErr error) (*db.DB, error) {
+	reopened, reopenErr := db.Open(baseDir)
+	if reopenErr != nil {
+		if restoreErr != nil {
+			return nil, fmt.Errorf("%w: %s: %v (reopen database: %v)", errBootstrapRecoveryFailed, operation, restoreErr, reopenErr)
+		}
+		return nil, fmt.Errorf("%s failed (%w) and reopen failed: %v", operation, cause, reopenErr)
+	}
+	if restoreErr != nil {
+		return reopened, fmt.Errorf("%w: %s: %v (restore backup: %v)", errBootstrapRecoveryFailed, operation, cause, restoreErr)
+	}
+	return reopened, fmt.Errorf("%s: %w", operation, cause)
 }
 
 const pushBatchSize = 500

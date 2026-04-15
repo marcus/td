@@ -76,8 +76,7 @@ var wsStartCmd = &cobra.Command{
 
 		// Set as active
 		if err := config.SetActiveWorkSession(baseDir, ws.ID); err != nil {
-			output.Error("failed to activate work session: %v", err)
-			return err
+			output.Warning("work session %s created but failed to persist as active: %v", ws.ID, err)
 		}
 
 		fmt.Printf("WORK SESSION STARTED: %s\n", ws.ID)
@@ -545,8 +544,7 @@ Flags support values, stdin (-), or file (@path):
 				return err
 			}
 			if err := config.ClearActiveWorkSession(baseDir); err != nil {
-				output.Error("failed to clear active work session: %v", err)
-				return err
+				output.Warning("work session %s ended but failed to clear active state: %v", ws.ID, err)
 			}
 		}
 
@@ -622,8 +620,7 @@ var wsEndCmd = &cobra.Command{
 			return err
 		}
 		if err := config.ClearActiveWorkSession(baseDir); err != nil {
-			output.Error("failed to clear active work session: %v", err)
-			return err
+			output.Warning("work session %s ended but failed to clear active state: %v", ws.ID, err)
 		}
 
 		output.Warning("No handoff recorded for %s", wsID)
