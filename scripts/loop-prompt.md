@@ -158,7 +158,7 @@ Batch review loops:
 
 ```bash
 git add <specific files>
-git commit -m "feat: <summary> (td-<id>)"
+git commit -m "$(td commit-message 'brief summary')"
 td review <id>
 ```
 
@@ -169,9 +169,10 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **ONE task per iteration.** Complete it, verify it, commit it, mark it done, then exit.
 - **Tests are mandatory.** Every change needs tests. `go test ./...` must pass.
 - **Quality gates before every commit.** `go build` and `go test ./...` must pass.
+- **Install hooks once per clone.** `make install-hooks` adds pre-commit checks and commit subject normalization.
 - **Don't break the action log.** All mutations through `*Logged()` functions.
 - **Don't break migrations.** Never modify existing migrations, only append new ones.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit messages reference td.** Use `td commit-message 'brief summary'`, or let the `commit-msg` hook normalize the first line to `feat|fix|docs|test|chore|ci: <summary> (td-<id>)`.
