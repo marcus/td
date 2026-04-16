@@ -189,9 +189,33 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit subject normalization)
 make install-hooks
 ```
+
+## Commit Messages
+
+Install the hooks once per clone:
+
+```bash
+make install-hooks
+```
+
+Generate a canonical subject for the focused issue, or pass `--issue td-abc123`
+explicitly:
+
+```bash
+git commit \
+  -m "$(td commit-message 'normalize commit message workflow')" \
+  -m "Optional body text"
+```
+
+The `commit-msg` hook rewrites only the first line, preserves commit bodies and
+trailers, and leaves Git-generated merge/revert/autosquash subjects untouched.
+Existing breaking-change markers such as `feat!:` and `fix(cli)!:` are
+preserved during normalization.
+If no issue is focused, only typed `docs`, `test`, `chore`, and `ci` subjects
+such as `docs: Update changelog for v0.43.0` stay no-issue commits.
 
 ## Tests & Quality Checks
 
@@ -422,6 +446,7 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Reject                           | `td reject <id> --reason "..."`                  |
 | Link files                       | `td link <id> <files...>`                        |
 | Check file changes               | `td files <id>`                                  |
+| Normalize commit subject         | `td commit-message "summary"`                    |
 | Draft release notes              | `td release-notes --version v0.2.0`              |
 | Undo last action                 | `td undo`                                        |
 | New named session                | `td session --new "feature-work"`                |
