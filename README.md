@@ -8,7 +8,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 `td` is a lightweight CLI for tracking tasks across AI coding sessions. It provides structured handoffs (done/remaining/decisions/uncertain) so new sessions continue from accurate state instead of guessing. Session-based review workflows prevent "works on my context" bugs. Works with Claude Code, Cursor, Copilot, and any AI that runs shell commands.
 
-**Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
+**Key Features**: Query-based boards, freeform project notes, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
 
 ![td](docs/td.png)
 
@@ -24,6 +24,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [Epics](#epics)
 - [Multi-Issue Work Sessions](#multi-issue-work-sessions)
 - [File Tracking](#file-tracking)
+- [Notes](#notes)
 - [Minor Tasks](#minor-tasks)
 - [Analytics & Stats](#analytics--stats)
 - [Full Command Reference](#full-command-reference)
@@ -364,6 +365,22 @@ td files td-a1b2                    # Shows [modified], [unchanged], [new], [del
 
 Files are SHA-tracked at link time. No more "did I already change this file?"
 
+## Notes
+
+> Full documentation: [Notes](https://marcus.github.io/td/docs/notes)
+
+Use notes for project knowledge that should stay local and searchable without becoming an issue: architecture decisions, meeting notes, scratch plans, debugging breadcrumbs, or runbooks for future sessions.
+
+```bash
+td note add "Architecture decisions"
+td note list --search "oauth"
+td note show nt-abc123
+td note pin nt-abc123
+td note archive nt-abc123
+```
+
+If you omit `--content` on `td note add` or `td note edit`, `td` opens `$EDITOR` (falling back to `vi`) so you can write longer notes in your normal editor.
+
 ## Minor Tasks
 
 For trivial changes that don't need separate review sessions:
@@ -458,6 +475,16 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Add child to parent | `td tree add-child <parent> <child>` |
 | Show issue tree     | `td tree <id>`                       |
 
+### Notes
+
+| Action              | Command                                  |
+| ------------------- | ---------------------------------------- |
+| Create note         | `td note add "Architecture decisions"`   |
+| List notes          | `td note list --search "oauth"`          |
+| Show note           | `td note show <note-id>`                 |
+| Edit note           | `td note edit <note-id> --title "ADR"`   |
+| Pin or archive note | `td note pin <note-id>` / `td note archive <note-id>` |
+
 ### Query & Search
 
 | Action       | Command                 |
@@ -524,6 +551,7 @@ open --> in_progress --> in_review --> closed
 Full documentation is available at [marcus.github.io/td](https://marcus.github.io/td/), including:
 - [Getting Started](https://marcus.github.io/td/docs/intro)
 - [Core Workflow](https://marcus.github.io/td/docs/core-workflow)
+- [Notes](https://marcus.github.io/td/docs/notes)
 - [AI Agent Integration](https://marcus.github.io/td/docs/ai-integration)
 - [Command Reference](https://marcus.github.io/td/docs/command-reference)
 

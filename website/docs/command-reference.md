@@ -62,6 +62,22 @@ td create "Document sync failure modes" \
 cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 ```
 
+## Notes
+
+| Command | Description |
+|---------|-------------|
+| `td note add "title" [--content "..."]` | Create a note. Omitting `--content` opens `$EDITOR` (fallback: `vi`) |
+| `td note list [flags]` | List notes. Flags: `--pinned`, `--archived`, `--all`, `--search`, `--limit`, `--json`, `--output json` |
+| `td note show <id> [--json]` | Display full note details |
+| `td note edit <id> [flags]` | Update note. Flags: `--title`, `--content`. With no flags, opens the current content in your editor |
+| `td note delete <id>` | Soft-delete note |
+| `td note pin <id>` | Pin note |
+| `td note unpin <id>` | Unpin note |
+| `td note archive <id>` | Archive note |
+| `td note unarchive <id>` | Unarchive note |
+
+`td note list` hides archived notes by default, orders pinned notes first, and defaults to 50 results.
+
 ## Query & Search
 
 | Command | Description |
