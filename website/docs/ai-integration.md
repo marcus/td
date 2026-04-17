@@ -65,6 +65,29 @@ td review <id>             # 5. Submit for review
 
 Steps 3-4 are critical for multi-context work. Logs and handoffs persist across context windows, so the next agent picks up exactly where you left off.
 
+## Commit Message Workflow
+
+Install the hooks from the checkout or linked worktree you plan to commit from:
+
+```bash
+make install-hooks
+```
+
+Then commit against the focused issue with:
+
+```bash
+git commit \
+  -m "$(td commit-message 'implement feature X')" \
+  -m "Optional body"
+```
+
+The `commit-msg` hook rewrites only the first line, preserves bodies and
+trailers, and leaves Git-generated merge/revert/autosquash subjects untouched.
+Existing breaking-change markers such as `feat!:` and `fix(cli)!:` are
+preserved during normalization.
+If no issue is focused, only typed `docs`, `test`, `chore`, and `ci` subjects
+such as `docs: Update changelog for v0.43.0` remain no-issue commits.
+
 ## Session Isolation for Agents
 
 Each agent instance (terminal, context window) gets a unique session ID. This ensures:
@@ -119,4 +142,5 @@ To disable and revert to strict mode: `td feature set balanced_review_policy fal
 - **Log frequently** -- short, hyper-concise messages. These survive context resets.
 - **Handoff before stopping** -- if work is incomplete, `td handoff` captures state for the next agent.
 - **Don't start new sessions mid-work** -- sessions track implementers. A new session mid-task bypasses review enforcement.
+- **Use `td commit-message` for git subjects** -- it defaults from the focused issue, and the `commit-msg` hook enforces the same format in editors without rewriting merge/revert/autosquash commits or stripping `!` breaking markers.
 - **Use quiet mode after first read** -- `td usage -q` avoids repeating workflow instructions every time.
