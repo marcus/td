@@ -13,7 +13,7 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
-		"  make install-hooks             # install git pre-commit hook" \
+		"  make install-hooks             # install git pre-commit + commit-msg hooks" \
 		"  make test                      # go test ./..." \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
@@ -52,6 +52,11 @@ release: tag
 	git push origin "$(VERSION)"
 
 install-hooks:
-	@echo "Installing git pre-commit hook..."
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "Done. Hook installed at .git/hooks/pre-commit"
+	@repo_root=$$(git rev-parse --show-toplevel); \
+	pre_commit_hook=$$(git rev-parse --git-path hooks/pre-commit); \
+	commit_msg_hook=$$(git rev-parse --git-path hooks/commit-msg); \
+	mkdir -p "$$(dirname "$$pre_commit_hook")"; \
+	echo "Installing git hooks for $$repo_root..."; \
+	ln -sf "$$repo_root/scripts/pre-commit.sh" "$$pre_commit_hook"; \
+	ln -sf "$$repo_root/scripts/commit-msg.sh" "$$commit_msg_hook"; \
+	echo "Done. Hooks installed at $$pre_commit_hook and $$commit_msg_hook"
