@@ -61,7 +61,7 @@ Review the draft, edit it for clarity, and then add the final entry at the top o
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "$(td commit-message --type docs 'Update changelog for vX.Y.Z')"
 ```
 
 ### 3. Verify Tests Pass
@@ -148,7 +148,7 @@ td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
 # Update changelog
 # (Review /tmp/td-release-notes.md, then edit CHANGELOG.md and add the final entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "$(td commit-message --type docs 'Update changelog for vX.Y.Z')"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main

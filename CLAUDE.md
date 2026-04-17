@@ -27,20 +27,20 @@ Use `td usage -q` after first read.
 ```bash
 go build -o td .           # Build locally
 go test ./...              # Test all
+make install-hooks         # Install pre-commit + commit-msg hooks
 ```
 
 ## Version & Release
 
 ```bash
-# Commit changes with proper message
+# Install the local hooks from the checkout or linked worktree you commit from
+make install-hooks
+
+# Commit changes with the normalized td subject
 git add .
-git commit -m "feat: description of changes
-
-Details here
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+git commit \
+  -m "$(td commit-message 'describe changes')" \
+  -m "Details here"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
