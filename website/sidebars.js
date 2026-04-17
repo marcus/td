@@ -9,6 +9,7 @@ const sidebars = {
         'boards',
         'dependencies',
         'query-language',
+        'notes',
         'epics',
         'work-sessions',
         'deferral',
