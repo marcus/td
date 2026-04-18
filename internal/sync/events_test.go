@@ -378,6 +378,91 @@ func TestApplyEvent_DeleteIssueClearsChildParentID(t *testing.T) {
 	}
 }
 
+// TestApplyEvent_DeleteIssueSchemaCascadesChildren verifies that after
+// td-0001eb removed the application-level cascade emulation, deleting an
+// issue via a sync event still removes child rows in FK-backed relations
+// (handoffs in this test). The deletion must be driven by the schema-level
+// ON DELETE CASCADE added in migration 30 — events.go no longer issues any
+// DELETE on children.
+func TestApplyEvent_DeleteIssueSchemaCascadesChildren(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	// Enable FK enforcement (mirrors the CLI issues.db opener).
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		t.Fatalf("enable foreign_keys: %v", err)
+	}
+
+	// Schema mirrors migration 30's shape for the relevant tables: issues
+	// (no parent_id FK) + handoffs (issue_id FK with ON DELETE CASCADE).
+	const fkSchema = `
+		CREATE TABLE issues (
+			id         TEXT PRIMARY KEY,
+			title      TEXT,
+			parent_id  TEXT DEFAULT '',
+			deleted_at DATETIME
+		);
+		CREATE TABLE handoffs (
+			id         TEXT PRIMARY KEY,
+			issue_id   TEXT NOT NULL,
+			done       TEXT DEFAULT '[]',
+			remaining  TEXT DEFAULT '[]',
+			decisions  TEXT DEFAULT '[]',
+			uncertain  TEXT DEFAULT '[]',
+			FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+		);`
+	if _, err := db.Exec(fkSchema); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	// Seed a parent issue and a handoff that references it.
+	if _, err := db.Exec(`INSERT INTO issues (id, title) VALUES ('i1', 'parent')`); err != nil {
+		t.Fatalf("seed issue: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO handoffs (id, issue_id) VALUES ('h1', 'i1')`); err != nil {
+		t.Fatalf("seed handoff: %v", err)
+	}
+
+	// Apply a delete event through the sync path. events.go only emits a
+	// single DELETE FROM issues (plus the parent_id UPDATE) — the schema
+	// cascade is what must remove the handoff.
+	tx := beginTx(t, db)
+	_, err = ApplyEvent(tx, Event{
+		ActionType: "delete",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte(`{}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("apply delete: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	// Issue gone.
+	var issueCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = 'i1'").Scan(&issueCount); err != nil {
+		t.Fatalf("query issues: %v", err)
+	}
+	if issueCount != 0 {
+		t.Fatalf("issue should be deleted, got %d rows", issueCount)
+	}
+
+	// Handoff must be gone too — and only the schema cascade can have done
+	// it, since events.go no longer DELETEs handoffs.
+	var handoffCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM handoffs WHERE id = 'h1'").Scan(&handoffCount); err != nil {
+		t.Fatalf("query handoffs: %v", err)
+	}
+	if handoffCount != 0 {
+		t.Fatalf("handoff should have been removed by schema ON DELETE CASCADE, got %d rows", handoffCount)
+	}
+}
+
 func TestDeleteEntity_Missing(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)

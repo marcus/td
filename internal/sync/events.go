@@ -419,17 +419,20 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 }
 
 // deleteEntity hard-deletes a row. No-op if the row does not exist.
-// Snapshot/event-replay DBs keep foreign_keys disabled, so runtime cleanup
-// must handle relationships that would otherwise be enforced by the schema.
+//
+// Migration 30 (td-4846e6) added schema-level ON DELETE CASCADE to every
+// child relation that used to be emulated here (handoffs, git_snapshots,
+// issue_files, issue_dependencies, work_session_issues, comments,
+// issue_session_history, board_issue_positions). On the CLI issues.db
+// (PRAGMA foreign_keys=ON) those cascades fire automatically, so no
+// application-level cascade is needed for FK-backed relations.
+//
+// The one exception is issues.parent_id: per migration 30's rationale,
+// td uses '' (empty string) as the "no parent" sentinel, which is
+// incompatible with a schema-level FK (SQLite treats '' as a real value).
+// That relation has no FK at all, so parent_id cleanup must still happen
+// here. This was the regression fix from commit baa9b23 (td-4846e6).
 func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
-	if entityType == "boards" {
-		if _, err := tx.Exec(
-			`UPDATE board_issue_positions SET deleted_at = CURRENT_TIMESTAMP WHERE board_id = ? AND deleted_at IS NULL`,
-			entityID,
-		); err != nil {
-			return fmt.Errorf("cascade soft-delete positions for board %s: %w", entityID, err)
-		}
-	}
 	if entityType == "issues" {
 		if _, err := tx.Exec(`UPDATE issues SET parent_id = '' WHERE parent_id = ?`, entityID); err != nil {
 			return fmt.Errorf("clear child parent links for issue %s: %w", entityID, err)
