@@ -1,0 +1,6 @@
+=== RUN   TestDescribeStaleTransitionUpdate
+    review_policy_test.go:408: cannot approve td-764f76: status changed from in_review to closed in another session
+          Already closed: td show td-764f76
+--- PASS: TestDescribeStaleTransitionUpdate (0.04s)
+PASS
+ok  	github.com/marcus/td/cmd	(cached)

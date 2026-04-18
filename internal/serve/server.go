@@ -201,11 +201,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 }
 
-// placeholder returns 501 Not Implemented for all unimplemented routes.
-func (s *Server) placeholder(w http.ResponseWriter, r *http.Request) {
-	WriteError(w, "not_implemented", "endpoint not yet implemented", http.StatusNotImplemented)
-}
-
 // ============================================================================
 // Middleware
 // ============================================================================

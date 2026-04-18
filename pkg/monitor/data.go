@@ -178,11 +178,7 @@ func isTDQQuery(q string) bool {
 
 	// Check for spaceless field=value patterns (e.g., type=epic, status!=open)
 	spacelessPattern := regexp.MustCompile(`\w+([=!<>~]=?|!~)\w`)
-	if spacelessPattern.MatchString(q) {
-		return true
-	}
-
-	return false
+	return spacelessPattern.MatchString(q)
 }
 
 // fetchTaskList retrieves categorized issues for the task list panel

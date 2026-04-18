@@ -23,6 +23,7 @@ type Config struct {
 	RateLimitPull  int // /sync/pull per API key per minute (default: 120)
 	RateLimitOther int // all other per API key per minute (default: 300)
 
+	TrustedProxies     []string // trusted proxy IPs; when empty, X-Forwarded-For is ignored
 	CORSAllowedOrigins []string // allowed origins for admin CORS; empty = disabled
 
 	AuthEventRetention      time.Duration // retention period for auth events (default: 90 days)
@@ -106,6 +107,15 @@ func LoadConfig() Config {
 	if v := os.Getenv("SYNC_RATE_LIMIT_EVENT_RETENTION"); v != "" {
 		if d := parseDaysDuration(v); d > 0 {
 			cfg.RateLimitEventRetention = d
+		}
+	}
+
+	if v := os.Getenv("SYNC_TRUSTED_PROXIES"); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				cfg.TrustedProxies = append(cfg.TrustedProxies, p)
+			}
 		}
 	}
 

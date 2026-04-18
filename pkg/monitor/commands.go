@@ -46,6 +46,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.FormOpen {
 		return keymap.ContextForm
 	}
+	if m.NotesOpen {
+		return keymap.ContextNotes
+	}
 	if m.HandoffsOpen {
 		return keymap.ContextHandoffs
 	}
@@ -271,6 +274,9 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				step = 1
 			}
 			m.FormScrollOffset += step
+			if maxScroll := m.formScrollToBottom(); m.FormScrollOffset > maxScroll {
+				m.FormScrollOffset = maxScroll
+			}
 			return m, nil
 		}
 	}
@@ -366,7 +372,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyBackspace:
 			if len(m.HelpFilter) > 0 {
-				m.HelpFilter = m.HelpFilter[:len(m.HelpFilter)-1]
+				runes := []rune(m.HelpFilter)
+				m.HelpFilter = string(runes[:len(runes)-1])
 				m.HelpScroll = 0
 			}
 			return m, nil
@@ -1806,8 +1813,8 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1907,8 +1914,8 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
@@ -2087,9 +2094,14 @@ func (m Model) fetchBoards() tea.Cmd {
 
 // fetchBoardIssues returns a command that fetches issues for a board
 func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
-	// Capture status filter at call time (closure captures by value)
-	statusFilter := m.BoardMode.StatusFilter
-	if statusFilter == nil {
+	// Deep copy status filter — maps are reference types so a shallow
+	// assignment shares the underlying data with the caller, creating
+	// a data race when the Update loop mutates the map concurrently.
+	statusFilter := make(map[models.Status]bool, len(m.BoardMode.StatusFilter))
+	for k, v := range m.BoardMode.StatusFilter {
+		statusFilter[k] = v
+	}
+	if len(statusFilter) == 0 {
 		statusFilter = DefaultBoardStatusFilter()
 	}
 

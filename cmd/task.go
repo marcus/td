@@ -100,14 +100,14 @@ func init() {
 	taskCmd.AddCommand(taskListCmd)
 
 	// Copy relevant flags from createCmd to taskCreateCmd
-	taskCreateCmd.Flags().String("title", "", "Issue title (max 100 characters)")
+	taskCreateCmd.Flags().String("title", "", "Issue title (max 200 characters)")
 	taskCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	taskCreateCmd.Flags().StringP("description", "d", "", "Description text")
-	taskCreateCmd.Flags().String("labels", "", "Comma-separated labels")
+	taskCreateCmd.Flags().StringArrayP("labels", "l", nil, "Labels (repeatable, comma-separated)")
 	taskCreateCmd.Flags().String("parent", "", "Parent issue ID")
 	taskCreateCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
-	taskCreateCmd.Flags().String("depends-on", "", "Issues this depends on")
-	taskCreateCmd.Flags().String("blocks", "", "Issues this blocks")
+	taskCreateCmd.Flags().StringArray("depends-on", nil, "Issues this depends on (repeatable, comma-separated)")
+	taskCreateCmd.Flags().StringArray("blocks", nil, "Issues this blocks (repeatable, comma-separated)")
 	taskCreateCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	// Hidden type flag - set programmatically to "task"
 	taskCreateCmd.Flags().StringP("type", "t", "", "")

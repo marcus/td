@@ -177,6 +177,9 @@ func (db *DB) GetWorkSessionIssues(wsID string) ([]string, error) {
 		}
 		ids = append(ids, id)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return ids, nil
 }
 
@@ -213,5 +216,8 @@ func (db *DB) ListWorkSessions(limit int) ([]models.WorkSession, error) {
 		sessions = append(sessions, ws)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return sessions, nil
 }

@@ -35,6 +35,7 @@ const (
 	ContextCloseConfirm      Context = "close-confirm"      // When close confirmation modal is open (has text input)
 	ContextSyncPrompt        Context = "td-sync-prompt"    // When sync prompt modal is open
 	ContextKanban            Context = "kanban"            // When kanban view modal is open
+	ContextNotes             Context = "notes"             // When notes modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -98,6 +99,9 @@ const (
 
 	// Handoffs modal
 	CmdOpenHandoffs Command = "open-handoffs"
+
+	// Notes modal
+	CmdOpenNotes Command = "open-notes"
 
 	// Clipboard
 	CmdCopyToClipboard   Command = "copy-to-clipboard"

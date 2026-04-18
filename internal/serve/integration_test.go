@@ -488,6 +488,109 @@ func TestIntegration_ListIssues_FilterByType(t *testing.T) {
 	}
 }
 
+func TestIntegration_ListIssues_FilterByPriority(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	highID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":    "High priority list filter",
+		"priority": "P1",
+	})
+	iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":    "Lower priority list filter",
+		"priority": "P3",
+	})
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/issues?priority=P1", nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("list by priority failed")
+	}
+
+	issues, _ := data["issues"].([]interface{})
+	if len(issues) != 1 {
+		t.Errorf("priority=P1: got %d issues, want 1", len(issues))
+	}
+	if len(issues) > 0 {
+		issue, _ := issues[0].(map[string]interface{})
+		if issue["id"] != highID {
+			t.Errorf("expected id=%s, got %v", highID, issue["id"])
+		}
+	}
+}
+
+func TestIntegration_ListIssues_FilterByLabels(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	labelledID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Labelled list filter",
+		"labels": []string{"dispatch", "agent:codex"},
+	})
+	iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Unlabelled list filter",
+		"labels": []string{"other"},
+	})
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/issues?labels=dispatch", nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("list by labels failed")
+	}
+
+	issues, _ := data["issues"].([]interface{})
+	if len(issues) != 1 {
+		t.Errorf("labels=dispatch: got %d issues, want 1", len(issues))
+	}
+	if len(issues) > 0 {
+		issue, _ := issues[0].(map[string]interface{})
+		if issue["id"] != labelledID {
+			t.Errorf("expected id=%s, got %v", labelledID, issue["id"])
+		}
+	}
+}
+
+func TestIntegration_ListIssues_FilterByEpic(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	epicID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title": "Epic list filter",
+		"type":  "epic",
+	})
+	child1 := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":     "Epic child one for list filter",
+		"parent_id": epicID,
+	})
+	child2 := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":     "Epic child two for list filter",
+		"parent_id": epicID,
+	})
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/issues?epic="+epicID, nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("list by epic failed")
+	}
+
+	issues, _ := data["issues"].([]interface{})
+	if len(issues) != 2 {
+		t.Errorf("epic=%s: got %d issues, want 2", epicID, len(issues))
+	}
+	for _, raw := range issues {
+		issue, _ := raw.(map[string]interface{})
+		if issue["id"] == epicID {
+			t.Errorf("epic issue %s should not be returned by epic filter", epicID)
+		}
+		if issue["id"] != child1 && issue["id"] != child2 {
+			t.Errorf("unexpected issue returned by epic filter: %v", issue["id"])
+		}
+		if issue["parent_id"] != epicID {
+			t.Errorf("parent_id = %v, want %s", issue["parent_id"], epicID)
+		}
+	}
+}
+
 func TestIntegration_ListIssues_Pagination(t *testing.T) {
 	baseURL, _, cleanup := setupIntegrationServer(t)
 	defer cleanup()
@@ -771,7 +874,7 @@ func TestIntegration_CreateIssue_ValidationErrors(t *testing.T) {
 	resp = iDoJSON(t, "POST", baseURL+"/v1/issues", map[string]interface{}{
 		"title": "Bad type integration test", "type": "invalid_type",
 	})
-	ok, _, errP = iParseEnvelope(t, resp)
+	ok, _, _ = iParseEnvelope(t, resp)
 	if ok {
 		t.Error("should fail with invalid type")
 	}
@@ -829,6 +932,43 @@ func TestIntegration_UpdateIssue_PartialUpdate(t *testing.T) {
 	// Priority should be unchanged
 	if issue["priority"] != "P2" {
 		t.Errorf("priority = %v, want 'P2' (unchanged)", issue["priority"])
+	}
+}
+
+func TestIntegration_UpdateIssue_Fields(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	id := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":       "Update fields integration issue",
+		"description": "Original description",
+		"priority":    "P3",
+		"labels":      []string{"old", "tag"},
+	})
+
+	resp := iDoJSON(t, "PATCH", baseURL+"/v1/issues/"+id, map[string]interface{}{
+		"description": "Updated description",
+		"priority":    "P0",
+		"labels":      []string{"dispatch", "agent:codex"},
+	})
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("update fields failed")
+	}
+
+	issue, _ := data["issue"].(map[string]interface{})
+	if issue["description"] != "Updated description" {
+		t.Errorf("description = %v, want 'Updated description'", issue["description"])
+	}
+	if issue["priority"] != "P0" {
+		t.Errorf("priority = %v, want P0", issue["priority"])
+	}
+	labels, _ := issue["labels"].([]interface{})
+	if len(labels) != 2 {
+		t.Fatalf("labels has %d items, want 2", len(labels))
+	}
+	if labels[0] != "dispatch" || labels[1] != "agent:codex" {
+		t.Errorf("labels = %v, want [dispatch agent:codex]", labels)
 	}
 }
 
@@ -2306,7 +2446,7 @@ func TestIntegration_PaginationValidation(t *testing.T) {
 
 	// limit=1001 should fail
 	resp = iDoJSON(t, "GET", baseURL+"/v1/issues?limit=1001", nil)
-	ok, _, errP = iParseEnvelope(t, resp)
+	ok, _, _ = iParseEnvelope(t, resp)
 	if ok {
 		t.Error("limit=1001 should fail")
 	}
@@ -2316,7 +2456,7 @@ func TestIntegration_PaginationValidation(t *testing.T) {
 
 	// offset=-1 should fail
 	resp = iDoJSON(t, "GET", baseURL+"/v1/issues?offset=-1", nil)
-	ok, _, errP = iParseEnvelope(t, resp)
+	ok, _, _ = iParseEnvelope(t, resp)
 	if ok {
 		t.Error("offset=-1 should fail")
 	}

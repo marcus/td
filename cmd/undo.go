@@ -132,25 +132,8 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 		return database.DeleteIssueLogged(action.EntityID, sessionID)
 
 	case models.ActionDelete:
-		// Undo delete by restoring, log for sync
-		// First restore the issue
-		if err := database.RestoreIssue(action.EntityID); err != nil {
-			return err
-		}
-		// Then log the restore action for sync
-		issue, err := database.GetIssue(action.EntityID)
-		if err != nil {
-			return fmt.Errorf("failed to get issue for logging: %w", err)
-		}
-		newData, _ := json.Marshal(issue)
-		return database.LogAction(&models.ActionLog{
-			SessionID:    sessionID,
-			ActionType:   models.ActionRestore,
-			EntityType:   "issue",
-			EntityID:     action.EntityID,
-			PreviousData: action.PreviousData, // deleted state
-			NewData:      string(newData),
-		})
+		// Undo delete by restoring atomically (restore + action log in single lock)
+		return database.RestoreIssueLogged(action.EntityID, sessionID)
 
 	case models.ActionUpdate, models.ActionStart, models.ActionReview,
 		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen:

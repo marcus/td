@@ -68,7 +68,7 @@ func TestCORS_AllowedOrigin(t *testing.T) {
 	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "Authorization, Content-Type" {
 		t.Fatalf("expected Allow-Headers, got %q", got)
 	}
-	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, OPTIONS" {
+	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, PATCH, PUT, DELETE, OPTIONS" {
 		t.Fatalf("expected Allow-Methods, got %q", got)
 	}
 	if w.Code != http.StatusOK {

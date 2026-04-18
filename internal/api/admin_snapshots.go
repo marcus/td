@@ -50,7 +50,7 @@ func (s *Server) handleAdminSnapshotMeta(w http.ResponseWriter, r *http.Request)
 		// Events DB might not exist yet - head is 0
 		headSeq = 0
 	} else {
-		eventsDB.QueryRow(`SELECT COALESCE(MAX(server_seq), 0) FROM events`).Scan(&headSeq)
+		_ = eventsDB.QueryRow(`SELECT COALESCE(MAX(server_seq), 0) FROM events`).Scan(&headSeq)
 	}
 
 	// Find cached snapshot

@@ -1421,3 +1421,8 @@ a.sc-features-grid__item:hover {
   filter: drop-shadow(0 6px 24px rgba(180, 100, 255, 0.7));
   transform: translateY(-2px);
 }
+
+/* Fix mobile navbar sidebar: prevent secondary panel from translating off-screen */
+.navbar-sidebar__items--show-secondary {
+  transform: none !important;
+}

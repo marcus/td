@@ -254,9 +254,9 @@ func TestReadAgentErrorsFiltered(t *testing.T) {
 			}
 
 			// Log test errors
-			LogAgentError(testDir, []string{"cmd1"}, "error1", "ses_1")
-			LogAgentError(testDir, []string{"cmd2"}, "error2", "ses_2")
-			LogAgentError(testDir, []string{"cmd3"}, "error3", "ses_1")
+			_ = LogAgentError(testDir, []string{"cmd1"}, "error1", "ses_1")
+			_ = LogAgentError(testDir, []string{"cmd2"}, "error2", "ses_2")
+			_ = LogAgentError(testDir, []string{"cmd3"}, "error3", "ses_1")
 
 			errors, err := ReadAgentErrorsFiltered(testDir, tt.sessionID, tt.since, tt.limit)
 			if err != nil {
@@ -292,9 +292,9 @@ func TestReadAgentErrorsFilteredNewest(t *testing.T) {
 	}
 
 	// Log multiple errors
-	LogAgentError(testDir, []string{"cmd1"}, "error1", "ses_1")
-	LogAgentError(testDir, []string{"cmd2"}, "error2", "ses_1")
-	LogAgentError(testDir, []string{"cmd3"}, "error3", "ses_1")
+	_ = LogAgentError(testDir, []string{"cmd1"}, "error1", "ses_1")
+	_ = LogAgentError(testDir, []string{"cmd2"}, "error2", "ses_1")
+	_ = LogAgentError(testDir, []string{"cmd3"}, "error3", "ses_1")
 
 	errors, err := ReadAgentErrorsFiltered(testDir, "", time.Time{}, 0)
 	if err != nil {

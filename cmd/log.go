@@ -81,15 +81,13 @@ Supports stdin input for multi-line messages or piped input:
 				// Check if stdin has data
 				stat, _ := os.Stdin.Stat()
 				if (stat.Mode() & os.ModeCharDevice) == 0 {
-					if stat.Size() > 0 {
-						reader := bufio.NewReader(os.Stdin)
-						data, err := io.ReadAll(reader)
-						if err != nil {
-							output.Error("failed to read stdin: %v", err)
-							return err
-						}
-						message = strings.TrimSpace(string(data))
+					reader := bufio.NewReader(os.Stdin)
+					data, err := io.ReadAll(reader)
+					if err != nil {
+						output.Error("failed to read stdin: %v", err)
+						return err
 					}
+					message = strings.TrimSpace(string(data))
 				}
 			} else {
 				// It's a message, get issue ID from flag or focus
@@ -118,15 +116,13 @@ Supports stdin input for multi-line messages or piped input:
 		if message == "" {
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
-				if stat.Size() > 0 {
-					reader := bufio.NewReader(os.Stdin)
-					data, err := io.ReadAll(reader)
-					if err != nil {
-						output.Error("failed to read stdin: %v", err)
-						return err
-					}
-					message = strings.TrimSpace(string(data))
+				reader := bufio.NewReader(os.Stdin)
+				data, err := io.ReadAll(reader)
+				if err != nil {
+					output.Error("failed to read stdin: %v", err)
+					return err
 				}
+				message = strings.TrimSpace(string(data))
 			}
 		}
 

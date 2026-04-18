@@ -99,21 +99,10 @@ var (
 			Foreground(lipgloss.Color("255")).
 			MarginTop(1)
 
-	// Selected row style - inverted colors for visibility
-	selectedRowStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("237")).
-				Foreground(lipgloss.Color("255"))
-
-	// Highlight row style - background only, preserves text colors
-	highlightRowStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("237"))
-
 	// Stats modal styles
 	statsBarFilled  = "█"
 	statsBarEmpty   = "░"
 	statsTableLabel = lipgloss.NewStyle().Foreground(mutedColor)
-	statsTableValue = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
-	statsSection    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).MarginTop(1)
 
 	// Epic task styles
 	epicTasksFocusedStyle = lipgloss.NewStyle().
@@ -246,6 +235,12 @@ var (
 	kanbanTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
 	kanbanHintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	kanbanSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	// Modal border style for simple modal frames (notes loading, error states)
+	modalBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("240")).
+				Padding(1, 2)
 )
 
 // formatStatus renders a status with color
@@ -253,6 +248,34 @@ func formatStatus(s models.Status) string {
 	style, ok := statusStyles[s]
 	if !ok {
 		return string(s)
+	}
+	return style.Render(string(s))
+}
+
+// issueDetailStatusStyle renders the top-of-modal status using the same color
+// tokens as the modal action/status buttons. in_progress keeps warning/orange
+// as the closest existing in-flight fallback beyond the requested mappings.
+func issueDetailStatusStyle(s models.Status) (lipgloss.Style, bool) {
+	switch s {
+	case models.StatusOpen:
+		return lipgloss.NewStyle().Foreground(cyanColor).Bold(true), true
+	case models.StatusInProgress:
+		return lipgloss.NewStyle().Foreground(warningColor).Bold(true), true
+	case models.StatusBlocked:
+		return lipgloss.NewStyle().Foreground(errorColor).Bold(true), true
+	case models.StatusInReview:
+		return lipgloss.NewStyle().Foreground(secondaryColor).Bold(true), true
+	case models.StatusClosed:
+		return lipgloss.NewStyle().Foreground(successColor).Bold(true), true
+	default:
+		return lipgloss.Style{}, false
+	}
+}
+
+func formatIssueDetailStatus(s models.Status) string {
+	style, ok := issueDetailStatusStyle(s)
+	if !ok {
+		return formatStatus(s)
 	}
 	return style.Render(string(s))
 }
@@ -341,32 +364,6 @@ func highlightRow(line string, width int) string {
 	lineWidth := lipgloss.Width(line)
 	if lineWidth > width {
 		// Truncate with ellipsis, leaving room for "..."
-		line = ansi.Truncate(line, width-3, "...")
-		lineWidth = lipgloss.Width(line)
-	}
-
-	// Inject background after every ANSI escape sequence
-	line = ansiPattern.ReplaceAllString(line, "${0}"+bgCode)
-
-	// Prepend background at start
-	line = bgCode + line
-
-	// Pad to width if needed
-	if lineWidth < width {
-		line = line + strings.Repeat(" ", width-lineWidth)
-	}
-
-	return line + reset
-}
-
-// hoverRow applies a subtle hover highlight to a row (for mouse hover)
-func hoverRow(line string, width int) string {
-	bgCode := "\x1b[48;5;236m" // Background color 236 (slightly darker than highlight)
-	reset := "\x1b[0m"
-
-	// First, truncate if line is too wide (ANSI-aware truncation)
-	lineWidth := lipgloss.Width(line)
-	if lineWidth > width {
 		line = ansi.Truncate(line, width-3, "...")
 		lineWidth = lipgloss.Width(line)
 	}

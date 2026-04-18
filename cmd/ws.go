@@ -457,9 +457,7 @@ Flags support values, stdin (-), or file (@path):
 		if !stdinUsed {
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
-				if stat.Size() > 0 {
-					parseWSHandoffInput(handoff)
-				}
+				parseWSHandoffInput(handoff)
 			}
 		}
 

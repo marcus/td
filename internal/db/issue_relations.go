@@ -45,6 +45,9 @@ func (db *DB) getDescendants(parentID string) ([]string, error) {
 			descendants = append(descendants, childID)
 		}
 		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 
 		// Add children to queue for recursive processing
 		queue = append(queue, children...)
@@ -124,6 +127,9 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		children = append(children, &issue)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return children, nil
 }
 
@@ -243,7 +249,7 @@ func (db *DB) cascadeUpParentStatusLocked(issueID string, targetStatus models.St
 
 	// Add log entry
 	logMsg := fmt.Sprintf("Auto-cascaded to %s (all children complete)", targetStatus)
-	db.addLogEntry(parent.ID, sessionID, logMsg, models.LogTypeProgress)
+	_ = db.addLogEntry(parent.ID, sessionID, logMsg, models.LogTypeProgress)
 
 	cascadedIDs = append(cascadedIDs, parent.ID)
 	cascadedCount++
@@ -326,7 +332,7 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 			continue
 		}
 
-		db.addLogEntry(depID, sessionID, fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID), models.LogTypeProgress)
+		_ = db.addLogEntry(depID, sessionID, fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID), models.LogTypeProgress)
 
 		unblockedIDs = append(unblockedIDs, depID)
 	}
@@ -362,6 +368,29 @@ func (db *DB) RemoveDependency(issueID, dependsOnID string) error {
 	})
 }
 
+// GetIssueDependencyRelations returns all dependency relations for an issue,
+// including relation_type. Used by export for lossless round-trips.
+func (db *DB) GetIssueDependencyRelations(issueID string) ([]models.IssueDependency, error) {
+	rows, err := db.conn.Query(`
+		SELECT issue_id, depends_on_id, relation_type
+		FROM issue_dependencies WHERE issue_id = ?
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []models.IssueDependency
+	for rows.Next() {
+		var dep models.IssueDependency
+		if err := rows.Scan(&dep.IssueID, &dep.DependsOnID, &dep.RelationType); err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return deps, nil
+}
+
 // GetDependencies returns what an issue depends on
 func (db *DB) GetDependencies(issueID string) ([]string, error) {
 	rows, err := db.conn.Query(`
@@ -379,6 +408,9 @@ func (db *DB) GetDependencies(issueID string) ([]string, error) {
 			return nil, err
 		}
 		deps = append(deps, dep)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return deps, nil
 }
@@ -401,6 +433,9 @@ func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 		}
 		blocked = append(blocked, id)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return blocked, nil
 }
 
@@ -421,6 +456,9 @@ func (db *DB) GetAllDependencies() (map[string][]string, error) {
 			return nil, err
 		}
 		deps[issueID] = append(deps[issueID], depID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return deps, nil
 }
@@ -465,6 +503,9 @@ func (db *DB) GetIssuesWithOpenDeps() (map[string]bool, error) {
 		}
 		result[issueID] = true
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -507,6 +548,9 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 			return nil, err
 		}
 		statuses[id] = status
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return statuses, nil
 }
@@ -557,6 +601,9 @@ func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 			return nil, err
 		}
 		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return files, nil
 }
@@ -630,6 +677,9 @@ func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, e
 		history = append(history, h)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return history, nil
 }
 
@@ -650,6 +700,9 @@ func (db *DB) GetIssueSessionLog(sessionID string) ([]string, error) {
 			return nil, err
 		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

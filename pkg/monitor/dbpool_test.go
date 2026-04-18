@@ -136,8 +136,8 @@ func TestSharedDB_DifferentPaths(t *testing.T) {
 	}
 
 	// Clean up
-	releaseSharedDB(tmpDir1)
-	releaseSharedDB(tmpDir2)
+	_ = releaseSharedDB(tmpDir1)
+	_ = releaseSharedDB(tmpDir2)
 }
 
 // TestDebugLog_EnvGated verifies that TD_MONITOR_DBPOOL_DEBUG=1 emits

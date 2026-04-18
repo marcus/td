@@ -700,7 +700,7 @@ func TestReworkFunction(t *testing.T) {
 	createTestIssue(t, database, "td-rework4", "Rejected but closed", models.StatusClosed, models.TypeTask, models.PriorityP2)
 
 	// issue1: rejected, no subsequent review (should be detected by rework())
-	database.LogAction(&models.ActionLog{
+	_ = database.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
@@ -708,13 +708,13 @@ func TestReworkFunction(t *testing.T) {
 	})
 
 	// issue2: rejected, then re-submitted (should NOT be detected)
-	database.LogAction(&models.ActionLog{
+	_ = database.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
 		EntityID:   issue2.ID,
 	})
-	database.LogAction(&models.ActionLog{
+	_ = database.LogAction(&models.ActionLog{
 		SessionID:  "ses_implementer",
 		ActionType: models.ActionReview,
 		EntityType: "issue",
@@ -723,7 +723,7 @@ func TestReworkFunction(t *testing.T) {
 
 	// issue3: never rejected (should NOT be detected)
 	// issue4: rejected but closed status (should NOT be detected)
-	database.LogAction(&models.ActionLog{
+	_ = database.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",

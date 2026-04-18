@@ -52,7 +52,9 @@ func TestResumeWithInProgressIssue(t *testing.T) {
 	}
 	database.CreateIssue(issue)
 
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatalf("SetFocus failed: %v", err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusInProgress {
@@ -87,7 +89,9 @@ func TestResumePreservesIssueState(t *testing.T) {
 	originalStatus := issue.Status
 
 	// Resume (just sets focus)
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatalf("SetFocus failed: %v", err)
+	}
 
 	// Verify issue state is unchanged
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -320,7 +324,9 @@ func TestResumePreserveDependencies(t *testing.T) {
 	database.CreateIssue(dependent)
 
 	// Add dependency
-	database.AddDependency(dependent.ID, prerequisite.ID, "depends_on")
+	if err := database.AddDependency(dependent.ID, prerequisite.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// Resume dependent
 	config.SetFocus(dir, dependent.ID)

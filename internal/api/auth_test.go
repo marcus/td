@@ -24,7 +24,7 @@ func TestDeviceAuthFullFlow(t *testing.T) {
 	}
 
 	var startResp loginStartResponse
-	json.NewDecoder(w.Body).Decode(&startResp)
+	_ = json.NewDecoder(w.Body).Decode(&startResp)
 
 	if startResp.DeviceCode == "" || startResp.UserCode == "" {
 		t.Fatal("expected non-empty device_code and user_code")
@@ -48,7 +48,7 @@ func TestDeviceAuthFullFlow(t *testing.T) {
 	}
 
 	var pollResp loginPollResponse
-	json.NewDecoder(w.Body).Decode(&pollResp)
+	_ = json.NewDecoder(w.Body).Decode(&pollResp)
 	if pollResp.Status != "pending" {
 		t.Fatalf("expected pending, got %s", pollResp.Status)
 	}
@@ -76,7 +76,7 @@ func TestDeviceAuthFullFlow(t *testing.T) {
 	}
 
 	var completeResp loginPollResponse
-	json.NewDecoder(w.Body).Decode(&completeResp)
+	_ = json.NewDecoder(w.Body).Decode(&completeResp)
 	if completeResp.Status != "complete" {
 		t.Fatalf("expected complete, got %s", completeResp.Status)
 	}

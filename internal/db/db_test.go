@@ -517,8 +517,8 @@ func TestGetLogsByWorkSession(t *testing.T) {
 	if err := db.CreateIssue(issue2); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	db.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	db.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	_ = db.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
+	_ = db.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
 
 	// Add logs with work session ID
 	log1 := &models.Log{
@@ -694,8 +694,8 @@ func TestActionLogDifferentSessions(t *testing.T) {
 		EntityType: "issue",
 		EntityID:   "td-abc2",
 	}
-	db.LogAction(action1)
-	db.LogAction(action2)
+	_ = db.LogAction(action1)
+	_ = db.LogAction(action2)
 
 	// Each session should only see its own actions
 	session1Actions, _ := db.GetRecentActions("ses_session1", 10)
@@ -1097,14 +1097,14 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	issue4 := &models.Issue{Title: "Issue 4 (rejected, closed)", Status: models.StatusClosed}
 	issue5 := &models.Issue{Title: "Issue 5 (rejected, picked up)", Status: models.StatusInProgress}
 
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
-	db.CreateIssue(issue4)
-	db.CreateIssue(issue5)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue4)
+	_ = db.CreateIssue(issue5)
 
 	// issue1: rejected, now open, no subsequent review (should be detected)
-	db.LogAction(&models.ActionLog{
+	_ = db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
@@ -1112,13 +1112,13 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	})
 
 	// issue2: rejected, then re-submitted (should NOT be detected)
-	db.LogAction(&models.ActionLog{
+	_ = db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
 		EntityID:   issue2.ID,
 	})
-	db.LogAction(&models.ActionLog{
+	_ = db.LogAction(&models.ActionLog{
 		SessionID:  "ses_implementer",
 		ActionType: models.ActionReview,
 		EntityType: "issue",
@@ -1127,7 +1127,7 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 
 	// issue3: never rejected (should NOT be detected)
 	// issue4: rejected but closed status (should NOT be detected)
-	db.LogAction(&models.ActionLog{
+	_ = db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
@@ -1135,7 +1135,7 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	})
 
 	// issue5: rejected, then picked up again (in_progress), should be detected
-	db.LogAction(&models.ActionLog{
+	_ = db.LogAction(&models.ActionLog{
 		SessionID:  "ses_reviewer",
 		ActionType: models.ActionReject,
 		EntityType: "issue",
@@ -1248,7 +1248,7 @@ func TestBoardCRUD(t *testing.T) {
 	})
 
 	t.Run("resolve board ref by name", func(t *testing.T) {
-		db.CreateBoard("By Name", "")
+		_, _ = db.CreateBoard("By Name", "")
 		resolved, err := db.ResolveBoardRef("By Name")
 		if err != nil {
 			t.Fatalf("ResolveBoardRef by name failed: %v", err)
@@ -1378,9 +1378,9 @@ func TestBoardPositions(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	t.Run("set issue positions", func(t *testing.T) {
 		err := db.SetIssuePosition(board.ID, issue1.ID, 1)
@@ -1450,8 +1450,8 @@ func TestGetBoardIssues(t *testing.T) {
 	// Create issues
 	issue1 := &models.Issue{Title: "Open Issue", Type: models.TypeTask, Priority: models.PriorityP2, Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Closed Issue", Type: models.TypeTask, Priority: models.PriorityP2, Status: models.StatusClosed}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
 	t.Run("get all issues board (empty query)", func(t *testing.T) {
 		issues, err := db.GetBoardIssues("bd-all-issues", "test-session", nil)
@@ -1491,13 +1491,13 @@ func TestSetIssuePosition_NoShifting(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	// Set initial positions: issue1=PositionGap, issue2=2*PositionGap
-	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
-	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
 
 	// Set issue3 at position 1 — issue1 and issue2 must NOT shift
 	err = db.SetIssuePosition(board.ID, issue3.ID, 1)
@@ -1535,14 +1535,14 @@ func TestSetIssuePosition_Reposition(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	// Set initial sparse positions
-	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
-	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
-	db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
 
 	// Reposition issue3 to a new sort key — others must stay unchanged
 	newPos := PositionGap / 2
@@ -1582,14 +1582,14 @@ func TestApplyBoardPositions_Ordering(t *testing.T) {
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue4 := &models.Issue{Title: "Issue 4", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
-	db.CreateIssue(issue4)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue4)
 
 	// Only position issue2 at 1 and issue4 at 2
-	db.SetIssuePosition(board.ID, issue2.ID, 1)
-	db.SetIssuePosition(board.ID, issue4.ID, 2)
+	_ = db.SetIssuePosition(board.ID, issue2.ID, 1)
+	_ = db.SetIssuePosition(board.ID, issue4.ID, 2)
 
 	// Apply positions - positioned should come first, then unpositioned in original order
 	issues := []models.Issue{*issue1, *issue2, *issue3, *issue4}
@@ -1641,8 +1641,8 @@ func TestApplyBoardPositions_LegacyNonCanonicalPositionIDs(t *testing.T) {
 	board, _ := db.CreateBoard("Legacy Position IDs", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
 	legacyIssue2ID := issue2.ID
 	if len(issue2.ID) > 3 && issue2.ID[:3] == "td-" {
@@ -1694,11 +1694,11 @@ func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 	board, _ := db.CreateBoard("Swap Error Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
 	// Only position issue1
-	db.SetIssuePosition(board.ID, issue1.ID, 1)
+	_ = db.SetIssuePosition(board.ID, issue1.ID, 1)
 
 	// Try to swap with unpositioned issue2 - should fail
 	err = db.SwapIssuePositions(board.ID, issue1.ID, issue2.ID)
@@ -1714,7 +1714,7 @@ func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 
 	// Both unpositioned - should also fail
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue3)
 	err = db.SwapIssuePositions(board.ID, issue2.ID, issue3.ID)
 	if err == nil {
 		t.Error("SwapIssuePositions should fail when both issues are unpositioned")
@@ -1749,12 +1749,12 @@ func TestComputeInsertPosition(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
-	db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
-	db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
-	db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
+	_ = db.SetIssuePosition(board.ID, issue1.ID, PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue2.ID, 2*PositionGap)
+	_ = db.SetIssuePosition(board.ID, issue3.ID, 3*PositionGap)
 
 	t.Run("top slot 1", func(t *testing.T) {
 		pos, results, err := db.ComputeInsertPosition(board.ID, 1)
@@ -1826,10 +1826,10 @@ func TestComputeInsertPosition(t *testing.T) {
 		b2, _ := db.CreateBoard("Tight Board", "")
 		i1 := &models.Issue{Title: "Tight 1", Type: models.TypeTask, Priority: models.PriorityP2}
 		i2 := &models.Issue{Title: "Tight 2", Type: models.TypeTask, Priority: models.PriorityP2}
-		db.CreateIssue(i1)
-		db.CreateIssue(i2)
-		db.SetIssuePosition(b2.ID, i1.ID, 100)
-		db.SetIssuePosition(b2.ID, i2.ID, 101) // gap of 1, midpoint == lo
+		_ = db.CreateIssue(i1)
+		_ = db.CreateIssue(i2)
+		_ = db.SetIssuePosition(b2.ID, i1.ID, 100)
+		_ = db.SetIssuePosition(b2.ID, i2.ID, 101) // gap of 1, midpoint == lo
 
 		pos, results, err := db.ComputeInsertPosition(b2.ID, 2)
 		if err != nil {
@@ -1860,14 +1860,14 @@ func TestRespaceBoardPositions(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
 	issue3 := &models.Issue{Title: "Issue 3", Type: models.TypeTask, Priority: models.PriorityP2}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	// Set tight positions with small gaps
-	db.SetIssuePosition(board.ID, issue1.ID, 1)
-	db.SetIssuePosition(board.ID, issue2.ID, 2)
-	db.SetIssuePosition(board.ID, issue3.ID, 3)
+	_ = db.SetIssuePosition(board.ID, issue1.ID, 1)
+	_ = db.SetIssuePosition(board.ID, issue2.ID, 2)
+	_ = db.SetIssuePosition(board.ID, issue3.ID, 3)
 
 	results, err := db.RespaceBoardPositions(board.ID)
 	if err != nil {

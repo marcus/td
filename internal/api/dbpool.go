@@ -83,6 +83,21 @@ func (p *ProjectDBPool) Create(projectID string) (*sql.DB, error) {
 	return db, nil
 }
 
+// Delete closes the connection for a project (if open), removes it from the pool,
+// and removes the project database directory from disk.
+func (p *ProjectDBPool) Delete(projectID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if db, ok := p.dbs[projectID]; ok {
+		db.Close()
+		delete(p.dbs, projectID)
+	}
+
+	dir := filepath.Join(p.dataDir, projectID)
+	return os.RemoveAll(dir)
+}
+
 // CloseAll closes all open project database connections.
 // Uses PASSIVE (not TRUNCATE) so the shutdown checkpoint doesn't stall when
 // another process still holds the -shm. SQLite's autocheckpoint handles
@@ -92,7 +107,7 @@ func (p *ProjectDBPool) CloseAll() {
 	defer p.mu.Unlock()
 
 	for id, db := range p.dbs {
-		db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+		_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 		db.Close()
 		delete(p.dbs, id)
 	}

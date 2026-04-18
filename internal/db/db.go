@@ -63,6 +63,7 @@ func Open(baseDir string) (*DB, error) {
 
 	// Run any pending migrations
 	if _, err := db.RunMigrations(); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
@@ -87,6 +88,7 @@ func Initialize(baseDir string) (*DB, error) {
 
 	// Run schema
 	if _, err := conn.Exec(schema); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
@@ -94,6 +96,7 @@ func Initialize(baseDir string) (*DB, error) {
 
 	// Run migrations
 	if _, err := db.RunMigrations(); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
@@ -108,7 +111,7 @@ func Initialize(baseDir string) (*DB, error) {
 // aggressive variant is unnecessary on exit.
 func (db *DB) Close() error {
 	// Best-effort checkpoint — ignore errors (DB might already be in a bad state)
-	db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+	_, _ = db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 	return db.conn.Close()
 }
 
@@ -140,6 +143,6 @@ func (db *DB) withWriteLock(fn func() error) error {
 	if err := locker.acquire(defaultTimeout); err != nil {
 		return err
 	}
-	defer locker.release()
+	defer func() { _ = locker.release() }()
 	return fn()
 }

@@ -314,6 +314,61 @@ func TestRemoveIssuePositionLogged(t *testing.T) {
 	}
 }
 
+func TestDeleteBoardAtomicWithPositions(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create board and add an issue with a position
+	board, err := database.CreateBoard("atomic test", "")
+	if err != nil {
+		t.Fatalf("CreateBoard failed: %v", err)
+	}
+
+	issue := &models.Issue{Title: "test issue", Type: models.TypeTask, Priority: models.PriorityP2}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.SetIssuePosition(board.ID, issue.ID, 100); err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	// Verify position exists
+	var posCount int
+	if err := database.conn.QueryRow(
+		`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, board.ID,
+	).Scan(&posCount); err != nil {
+		t.Fatalf("QueryRow failed: %v", err)
+	}
+	if posCount != 1 {
+		t.Fatalf("expected 1 position before delete, got %d", posCount)
+	}
+
+	// Delete the board
+	if err := database.DeleteBoard(board.ID); err != nil {
+		t.Fatalf("DeleteBoard failed: %v", err)
+	}
+
+	// Verify board is gone
+	_, err = database.GetBoard(board.ID)
+	if err == nil {
+		t.Error("expected error for deleted board")
+	}
+
+	// Verify positions are soft-deleted
+	if err := database.conn.QueryRow(
+		`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, board.ID,
+	).Scan(&posCount); err != nil {
+		t.Fatalf("QueryRow failed: %v", err)
+	}
+	if posCount != 0 {
+		t.Errorf("expected 0 active positions after delete, got %d", posCount)
+	}
+}
+
 func TestUnloggedBoardVariants_NoActionLog(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)

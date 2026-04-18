@@ -18,7 +18,7 @@ func TestAdminSnapshotMeta_NoSnapshot(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push some events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -39,7 +39,7 @@ func TestAdminSnapshotMeta_NoSnapshot(t *testing.T) {
 	}
 
 	var resp snapshotMetaResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp.HeadSeq < 1 {
 		t.Fatalf("expected head_seq >= 1, got %d", resp.HeadSeq)
@@ -63,7 +63,7 @@ func TestAdminSnapshotMeta_WithSnapshot(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -92,7 +92,7 @@ func TestAdminSnapshotMeta_WithSnapshot(t *testing.T) {
 	}
 
 	var resp snapshotMetaResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp.SnapshotSeq < 2 {
 		t.Fatalf("expected snapshot_seq >= 2, got %d", resp.SnapshotSeq)
@@ -151,7 +151,7 @@ func TestAdminSnapshotQuery_Basic(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push issues with different statuses
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -176,7 +176,7 @@ func TestAdminSnapshotQuery_Basic(t *testing.T) {
 	}
 
 	var resp snapshotQueryResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 open issues, got %d", len(resp.Data))
@@ -203,14 +203,14 @@ func TestAdminSnapshotQuery_MissingQuery(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/admin/projects/%s/snapshot/query", project.ID), token, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != ErrCodeInvalidQuery {
 		t.Fatalf("expected code %q, got %q", ErrCodeInvalidQuery, resp.Error.Code)
 	}
@@ -227,7 +227,7 @@ func TestAdminSnapshotQuery_InvalidQuery(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
 		DeviceID: "dev1", SessionID: "sess1",
@@ -268,14 +268,14 @@ func TestAdminSnapshotQuery_NoEvents(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/admin/projects/%s/snapshot/query?q=status+%%3D+open", project.ID), adminToken, nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != ErrCodeSnapshotUnavailable {
 		t.Fatalf("expected code %q, got %q", ErrCodeSnapshotUnavailable, resp.Error.Code)
 	}
@@ -292,7 +292,7 @@ func TestAdminSnapshotQuery_Pagination(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push 5 issues
 	events := make([]EventInput, 5)
@@ -319,7 +319,7 @@ func TestAdminSnapshotQuery_Pagination(t *testing.T) {
 		t.Fatalf("page1: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var page1 snapshotQueryResponse
-	json.NewDecoder(w.Body).Decode(&page1)
+	_ = json.NewDecoder(w.Body).Decode(&page1)
 	if len(page1.Data) != 2 {
 		t.Fatalf("page1: expected 2 issues, got %d", len(page1.Data))
 	}
@@ -336,7 +336,7 @@ func TestAdminSnapshotQuery_Pagination(t *testing.T) {
 		t.Fatalf("page2: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var page2 snapshotQueryResponse
-	json.NewDecoder(w.Body).Decode(&page2)
+	_ = json.NewDecoder(w.Body).Decode(&page2)
 	if len(page2.Data) != 2 {
 		t.Fatalf("page2: expected 2 issues, got %d", len(page2.Data))
 	}
@@ -350,7 +350,7 @@ func TestAdminSnapshotQuery_Pagination(t *testing.T) {
 		t.Fatalf("page3: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var page3 snapshotQueryResponse
-	json.NewDecoder(w.Body).Decode(&page3)
+	_ = json.NewDecoder(w.Body).Decode(&page3)
 	if len(page3.Data) != 1 {
 		t.Fatalf("page3: expected 1 issue, got %d", len(page3.Data))
 	}
@@ -373,7 +373,7 @@ func TestAdminSnapshotQuery_LimitClamped(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
 		DeviceID: "dev1", SessionID: "sess1",

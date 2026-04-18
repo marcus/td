@@ -883,7 +883,7 @@ func TestApplyEvent_DeferFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply update: %v", err)
 	}
-	tx2.Commit()
+	_ = tx2.Commit()
 
 	// Verify updated fields
 	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test01").
@@ -924,7 +924,7 @@ func TestApplyEvent_DeferFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply clear: %v", err)
 	}
-	tx3.Commit()
+	_ = tx3.Commit()
 
 	// Verify defer_until is NULL after clear
 	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test01").
@@ -995,7 +995,7 @@ func TestApplyEvent_DeferFieldsPartialUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("partial update: %v", err)
 	}
-	tx2.Commit()
+	_ = tx2.Commit()
 
 	// Verify only the changed fields were updated
 	var title sql.NullString
@@ -1047,7 +1047,7 @@ func TestApplyEvent_DeferFieldsPartialUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("partial update clear: %v", err)
 	}
-	tx3.Commit()
+	_ = tx3.Commit()
 
 	err = db.QueryRow("SELECT defer_until, due_date, defer_count FROM issues WHERE id = ?", "td-test02").
 		Scan(&deferUntil, &dueDate, &deferCount)
@@ -1073,11 +1073,6 @@ const depSchema = `CREATE TABLE issue_dependencies (
 	relation_type TEXT NOT NULL DEFAULT 'depends_on',
 	created_at   DATETIME
 );`
-
-// depValidator allows issue_dependencies entity type
-var depValidator EntityValidator = func(t string) bool {
-	return t == "issues" || t == "issue_dependencies"
-}
 
 func setupDepDB(t *testing.T) *sql.DB {
 	t.Helper()

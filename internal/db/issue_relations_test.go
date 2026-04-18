@@ -611,7 +611,7 @@ func TestGetDescendantIssues_AllStatuses(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 	child2.Status = models.StatusClosed
-	db.UpdateIssue(child2)
+	_ = db.UpdateIssue(child2)
 
 	// Get all descendants (no status filter)
 	descendants, err := db.GetDescendantIssues(parent.ID, nil)
@@ -888,8 +888,8 @@ func TestAddDependency(t *testing.T) {
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
 	// issue2 depends on issue1
 	err = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
@@ -913,12 +913,12 @@ func TestAddDependency_ReplaceExisting(t *testing.T) {
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
 	// Add same dependency twice (should not create duplicate)
-	db.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	db.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
 
 	deps, _ := db.GetDependencies(issue2.ID)
 	if len(deps) != 1 {
@@ -936,10 +936,10 @@ func TestRemoveDependency(t *testing.T) {
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 
-	db.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
 	err = db.RemoveDependency(issue2.ID, issue1.ID)
 	if err != nil {
 		t.Fatalf("RemoveDependency failed: %v", err)
@@ -962,12 +962,12 @@ func TestGetBlockedBy(t *testing.T) {
 	blocker := &models.Issue{Title: "Blocker"}
 	blocked1 := &models.Issue{Title: "Blocked 1"}
 	blocked2 := &models.Issue{Title: "Blocked 2"}
-	db.CreateIssue(blocker)
-	db.CreateIssue(blocked1)
-	db.CreateIssue(blocked2)
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(blocked1)
+	_ = db.CreateIssue(blocked2)
 
-	db.AddDependency(blocked1.ID, blocker.ID, "depends_on")
-	db.AddDependency(blocked2.ID, blocker.ID, "depends_on")
+	_ = db.AddDependency(blocked1.ID, blocker.ID, "depends_on")
+	_ = db.AddDependency(blocked2.ID, blocker.ID, "depends_on")
 
 	blockedBy, err := db.GetBlockedBy(blocker.ID)
 	if err != nil {
@@ -998,13 +998,13 @@ func TestGetAllDependencies(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 	issue3 := &models.Issue{Title: "Issue 3"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
-	db.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	db.AddDependency(issue3.ID, issue1.ID, "depends_on")
-	db.AddDependency(issue3.ID, issue2.ID, "depends_on")
+	_ = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue3.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue3.ID, issue2.ID, "depends_on")
 
 	allDeps, err := db.GetAllDependencies()
 	if err != nil {
@@ -1035,15 +1035,15 @@ func TestGetIssuesWithOpenDeps(t *testing.T) {
 	dependentOpen := &models.Issue{Title: "Depends on Open", Status: models.StatusOpen}
 	dependentClosed := &models.Issue{Title: "Depends on Closed", Status: models.StatusOpen}
 
-	db.CreateIssue(openIssue)
-	db.CreateIssue(closedIssue)
+	_ = db.CreateIssue(openIssue)
+	_ = db.CreateIssue(closedIssue)
 	closedIssue.Status = models.StatusClosed
-	db.UpdateIssue(closedIssue)
-	db.CreateIssue(dependentOpen)
-	db.CreateIssue(dependentClosed)
+	_ = db.UpdateIssue(closedIssue)
+	_ = db.CreateIssue(dependentOpen)
+	_ = db.CreateIssue(dependentClosed)
 
-	db.AddDependency(dependentOpen.ID, openIssue.ID, "depends_on")
-	db.AddDependency(dependentClosed.ID, closedIssue.ID, "depends_on")
+	_ = db.AddDependency(dependentOpen.ID, openIssue.ID, "depends_on")
+	_ = db.AddDependency(dependentClosed.ID, closedIssue.ID, "depends_on")
 
 	openDeps, err := db.GetIssuesWithOpenDeps()
 	if err != nil {
@@ -1070,13 +1070,13 @@ func TestGetIssueStatuses(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
 	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusClosed}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
 	issue2.Status = models.StatusInProgress
-	db.UpdateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.UpdateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 	issue3.Status = models.StatusClosed
-	db.UpdateIssue(issue3)
+	_ = db.UpdateIssue(issue3)
 
 	statuses, err := db.GetIssueStatuses([]string{issue1.ID, issue2.ID, issue3.ID})
 	if err != nil {
@@ -1124,7 +1124,7 @@ func TestGetIssueStatuses_DeduplicatesIDs(t *testing.T) {
 	defer db.Close()
 
 	issue := &models.Issue{Title: "Issue", Status: models.StatusOpen}
-	db.CreateIssue(issue)
+	_ = db.CreateIssue(issue)
 
 	// Pass duplicate IDs
 	statuses, err := db.GetIssueStatuses([]string{issue.ID, issue.ID, issue.ID})
@@ -1150,7 +1150,7 @@ func TestLinkFile(t *testing.T) {
 	defer db.Close()
 
 	issue := &models.Issue{Title: "Issue"}
-	db.CreateIssue(issue)
+	_ = db.CreateIssue(issue)
 
 	err = db.LinkFile(issue.ID, "/path/to/file.go", models.FileRoleImplementation, "abc123")
 	if err != nil {
@@ -1181,9 +1181,9 @@ func TestUnlinkFile(t *testing.T) {
 	defer db.Close()
 
 	issue := &models.Issue{Title: "Issue"}
-	db.CreateIssue(issue)
+	_ = db.CreateIssue(issue)
 
-	db.LinkFile(issue.ID, "/path/to/file.go", models.FileRoleImplementation, "abc123")
+	_ = db.LinkFile(issue.ID, "/path/to/file.go", models.FileRoleImplementation, "abc123")
 	err = db.UnlinkFile(issue.ID, "/path/to/file.go")
 	if err != nil {
 		t.Fatalf("UnlinkFile failed: %v", err)
@@ -1204,11 +1204,11 @@ func TestGetLinkedFiles_SortedByRoleAndPath(t *testing.T) {
 	defer db.Close()
 
 	issue := &models.Issue{Title: "Issue"}
-	db.CreateIssue(issue)
+	_ = db.CreateIssue(issue)
 
-	db.LinkFile(issue.ID, "/z/test.go", models.FileRoleTest, "sha1")
-	db.LinkFile(issue.ID, "/a/impl.go", models.FileRoleImplementation, "sha2")
-	db.LinkFile(issue.ID, "/b/impl.go", models.FileRoleImplementation, "sha3")
+	_ = db.LinkFile(issue.ID, "/z/test.go", models.FileRoleTest, "sha1")
+	_ = db.LinkFile(issue.ID, "/a/impl.go", models.FileRoleImplementation, "sha2")
+	_ = db.LinkFile(issue.ID, "/b/impl.go", models.FileRoleImplementation, "sha3")
 
 	files, _ := db.GetLinkedFiles(issue.ID)
 	if len(files) != 3 {
@@ -1240,14 +1240,14 @@ func TestGetIssueSessionLog(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 	issue3 := &models.Issue{Title: "Issue 3 (no logs)"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	// Add logs for issue1 and issue2
-	db.AddLog(&models.Log{IssueID: issue1.ID, SessionID: sessionID, Message: "Log 1", Type: models.LogTypeProgress})
-	db.AddLog(&models.Log{IssueID: issue1.ID, SessionID: sessionID, Message: "Log 2", Type: models.LogTypeProgress})
-	db.AddLog(&models.Log{IssueID: issue2.ID, SessionID: sessionID, Message: "Log 3", Type: models.LogTypeProgress})
+	_ = db.AddLog(&models.Log{IssueID: issue1.ID, SessionID: sessionID, Message: "Log 1", Type: models.LogTypeProgress})
+	_ = db.AddLog(&models.Log{IssueID: issue1.ID, SessionID: sessionID, Message: "Log 2", Type: models.LogTypeProgress})
+	_ = db.AddLog(&models.Log{IssueID: issue2.ID, SessionID: sessionID, Message: "Log 3", Type: models.LogTypeProgress})
 
 	// Get issues touched by session
 	issueIDs, err := db.GetIssueSessionLog(sessionID)
@@ -1353,7 +1353,7 @@ func TestParentChildIntegrity(t *testing.T) {
 
 	// Update child's parent to a different issue
 	child3 := &models.Issue{Title: "Child 3"}
-	db.CreateIssue(child3)
+	_ = db.CreateIssue(child3)
 	child1.ParentID = child3.ID
 	if err := db.UpdateIssue(child1); err != nil {
 		t.Fatalf("UpdateIssue failed: %v", err)
@@ -1383,15 +1383,15 @@ func TestMultipleDependencyTypes(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 	issue3 := &models.Issue{Title: "Issue 3"}
-	db.CreateIssue(issue1)
-	db.CreateIssue(issue2)
-	db.CreateIssue(issue3)
+	_ = db.CreateIssue(issue1)
+	_ = db.CreateIssue(issue2)
+	_ = db.CreateIssue(issue3)
 
 	// Add depends_on relationship
-	db.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	_ = db.AddDependency(issue2.ID, issue1.ID, "depends_on")
 
 	// Add a different relationship (issue3 depends on issue2)
-	db.AddDependency(issue3.ID, issue2.ID, "depends_on")
+	_ = db.AddDependency(issue3.ID, issue2.ID, "depends_on")
 
 	// GetDependencies only returns depends_on for the specific issue
 	deps2, _ := db.GetDependencies(issue2.ID)
@@ -1431,9 +1431,9 @@ func TestCascadeUnblockDependents_SingleDep(t *testing.T) {
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
-	db.CreateIssue(blocker)
-	db.CreateIssue(dependent)
-	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
 
 	count, ids := db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1461,11 +1461,11 @@ func TestCascadeUnblockDependents_AllDepsClosed(t *testing.T) {
 	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
 	a2 := &models.Issue{Title: "A2", Status: models.StatusClosed}
 	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
-	db.CreateIssue(a1)
-	db.CreateIssue(a2)
-	db.CreateIssue(b)
-	db.AddDependency(b.ID, a1.ID, "depends_on")
-	db.AddDependency(b.ID, a2.ID, "depends_on")
+	_ = db.CreateIssue(a1)
+	_ = db.CreateIssue(a2)
+	_ = db.CreateIssue(b)
+	_ = db.AddDependency(b.ID, a1.ID, "depends_on")
+	_ = db.AddDependency(b.ID, a2.ID, "depends_on")
 
 	count, _ := db.CascadeUnblockDependents(a2.ID, "test-session")
 
@@ -1489,11 +1489,11 @@ func TestCascadeUnblockDependents_PartialResolution(t *testing.T) {
 	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
 	a2 := &models.Issue{Title: "A2", Status: models.StatusOpen} // not closed
 	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
-	db.CreateIssue(a1)
-	db.CreateIssue(a2)
-	db.CreateIssue(b)
-	db.AddDependency(b.ID, a1.ID, "depends_on")
-	db.AddDependency(b.ID, a2.ID, "depends_on")
+	_ = db.CreateIssue(a1)
+	_ = db.CreateIssue(a2)
+	_ = db.CreateIssue(b)
+	_ = db.AddDependency(b.ID, a1.ID, "depends_on")
+	_ = db.AddDependency(b.ID, a2.ID, "depends_on")
 
 	count, _ := db.CascadeUnblockDependents(a1.ID, "test-session")
 
@@ -1516,9 +1516,9 @@ func TestCascadeUnblockDependents_NonBlockedSkipped(t *testing.T) {
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusOpen} // not blocked
-	db.CreateIssue(blocker)
-	db.CreateIssue(dependent)
-	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
 
 	count, _ := db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1541,9 +1541,9 @@ func TestCascadeUnblockDependents_InProgressSkipped(t *testing.T) {
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusInProgress}
-	db.CreateIssue(blocker)
-	db.CreateIssue(dependent)
-	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
 
 	count, _ := db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1565,7 +1565,7 @@ func TestCascadeUnblockDependents_NoDependents(t *testing.T) {
 	defer db.Close()
 
 	issue := &models.Issue{Title: "Standalone", Status: models.StatusClosed}
-	db.CreateIssue(issue)
+	_ = db.CreateIssue(issue)
 
 	count, ids := db.CascadeUnblockDependents(issue.ID, "test-session")
 
@@ -1588,11 +1588,11 @@ func TestCascadeUnblockDependents_MultipleBlocked(t *testing.T) {
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	b1 := &models.Issue{Title: "B1", Status: models.StatusBlocked}
 	b2 := &models.Issue{Title: "B2", Status: models.StatusBlocked}
-	db.CreateIssue(blocker)
-	db.CreateIssue(b1)
-	db.CreateIssue(b2)
-	db.AddDependency(b1.ID, blocker.ID, "depends_on")
-	db.AddDependency(b2.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(b1)
+	_ = db.CreateIssue(b2)
+	_ = db.AddDependency(b1.ID, blocker.ID, "depends_on")
+	_ = db.AddDependency(b2.ID, blocker.ID, "depends_on")
 
 	count, ids := db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1622,11 +1622,11 @@ func TestCascadeUnblockDependents_ChainNoTransitive(t *testing.T) {
 	a := &models.Issue{Title: "A", Status: models.StatusClosed}
 	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
 	c := &models.Issue{Title: "C", Status: models.StatusBlocked}
-	db.CreateIssue(a)
-	db.CreateIssue(b)
-	db.CreateIssue(c)
-	db.AddDependency(b.ID, a.ID, "depends_on")
-	db.AddDependency(c.ID, b.ID, "depends_on")
+	_ = db.CreateIssue(a)
+	_ = db.CreateIssue(b)
+	_ = db.CreateIssue(c)
+	_ = db.AddDependency(b.ID, a.ID, "depends_on")
+	_ = db.AddDependency(c.ID, b.ID, "depends_on")
 
 	count, _ := db.CascadeUnblockDependents(a.ID, "test-session")
 
@@ -1655,9 +1655,9 @@ func TestCascadeUnblockDependents_LogsCreated(t *testing.T) {
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
-	db.CreateIssue(blocker)
-	db.CreateIssue(dependent)
-	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
 
 	db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1703,9 +1703,9 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
-	db.CreateIssue(blocker)
-	db.CreateIssue(dependent)
-	db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
 
 	db.CascadeUnblockDependents(blocker.ID, "test-session")
 
@@ -1728,5 +1728,62 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 	}
 	if !strings.Contains(action.NewData, string(models.StatusOpen)) {
 		t.Errorf("NewData should contain 'open', got: %s", action.NewData)
+	}
+}
+
+
+func TestGetIssueDependencyRelations(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{ID: "td-reltest", Title: "Rel test", Status: models.StatusOpen}
+	if err := database.UpsertIssueRaw(issue); err != nil {
+		t.Fatalf("UpsertIssueRaw: %v", err)
+	}
+	// FK targets required after td-4846e6 enabled foreign_keys=ON
+	for _, id := range []string{"td-dep1", "td-dep2"} {
+		if err := database.UpsertIssueRaw(&models.Issue{ID: id, Title: "Dep target", Status: models.StatusOpen, Type: models.TypeTask}); err != nil {
+			t.Fatalf("UpsertIssueRaw %s: %v", id, err)
+		}
+	}
+
+	// Add both relation types
+	if err := database.AddDependency("td-reltest", "td-dep1", "depends_on"); err != nil {
+		t.Fatalf("AddDependency depends_on: %v", err)
+	}
+	if err := database.AddDependency("td-reltest", "td-dep2", "blocks"); err != nil {
+		t.Fatalf("AddDependency blocks: %v", err)
+	}
+
+	rels, err := database.GetIssueDependencyRelations("td-reltest")
+	if err != nil {
+		t.Fatalf("GetIssueDependencyRelations: %v", err)
+	}
+	if len(rels) != 2 {
+		t.Fatalf("Expected 2 relations, got %d", len(rels))
+	}
+
+	typeMap := make(map[string]string)
+	for _, r := range rels {
+		typeMap[r.DependsOnID] = r.RelationType
+	}
+	if typeMap["td-dep1"] != "depends_on" {
+		t.Errorf("td-dep1: got %s, want depends_on", typeMap["td-dep1"])
+	}
+	if typeMap["td-dep2"] != "blocks" {
+		t.Errorf("td-dep2: got %s, want blocks", typeMap["td-dep2"])
+	}
+
+	// Non-existent issue returns empty
+	empty, err := database.GetIssueDependencyRelations("td-nonexistent")
+	if err != nil {
+		t.Fatalf("GetIssueDependencyRelations non-existent: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("Expected 0 relations, got %d", len(empty))
 	}
 }

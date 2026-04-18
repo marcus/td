@@ -93,6 +93,26 @@ td approve td-a1b2    # or: td reject td-a1b2 --reason "needs fix"
 
 Because each agent context gets a different session ID, the system prevents the same agent from both implementing and approving a change.
 
+### Balanced Review Policy
+
+By default, td uses a **balanced review policy** that makes lead/worker patterns smoother. If your orchestrator session *created* a task but a sub-agent *implemented* it, the orchestrator can approve with a reason:
+
+```bash
+# Orchestrator creates task
+td add "Refactor auth module"
+
+# Sub-agent implements (different session)
+td start td-c3d4
+td review td-c3d4
+
+# Orchestrator approves (creator, not implementer)
+td approve td-c3d4 --reason "Reviewed diff, tests pass"
+```
+
+Implementation self-approval remains blocked — you can't approve work you started or worked on. Creator-exception approvals are logged to the security audit trail (`td security`).
+
+To disable and revert to strict mode: `td feature set balanced_review_policy false`.
+
 ## Tips
 
 - **Always start with `td usage --new-session`** -- this is the single most important instruction for any agent.

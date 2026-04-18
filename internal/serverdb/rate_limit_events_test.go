@@ -59,9 +59,9 @@ func TestInsertRateLimitEvent_WithoutKeyID(t *testing.T) {
 
 func TestQueryRateLimitEvents_FilterByKeyID(t *testing.T) {
 	db := newTestDB(t)
-	db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
-	db.InsertRateLimitEvent("ak_2", "2.2.2.2", "pull")
-	db.InsertRateLimitEvent("ak_1", "3.3.3.3", "other")
+	_ = db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
+	_ = db.InsertRateLimitEvent("ak_2", "2.2.2.2", "pull")
+	_ = db.InsertRateLimitEvent("ak_1", "3.3.3.3", "other")
 
 	result, err := db.QueryRateLimitEvents("ak_1", "", "", "", 10, "")
 	if err != nil {
@@ -74,9 +74,9 @@ func TestQueryRateLimitEvents_FilterByKeyID(t *testing.T) {
 
 func TestQueryRateLimitEvents_FilterByIP(t *testing.T) {
 	db := newTestDB(t)
-	db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
-	db.InsertRateLimitEvent("ak_2", "2.2.2.2", "pull")
-	db.InsertRateLimitEvent("ak_3", "1.1.1.1", "other")
+	_ = db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
+	_ = db.InsertRateLimitEvent("ak_2", "2.2.2.2", "pull")
+	_ = db.InsertRateLimitEvent("ak_3", "1.1.1.1", "other")
 
 	result, err := db.QueryRateLimitEvents("", "1.1.1.1", "", "", 10, "")
 	if err != nil {
@@ -97,11 +97,11 @@ func TestQueryRateLimitEvents_FilterByDateRange(t *testing.T) {
 	recent := now.Add(-1 * time.Hour).Format(dtFmt)
 	nowStr := now.Format(dtFmt)
 
-	db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
 		"ak_1", "1.1.1.1", "push", old)
-	db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
 		"ak_2", "2.2.2.2", "pull", recent)
-	db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
 		"ak_3", "3.3.3.3", "other", nowStr)
 
 	// Query for events from 2 hours ago onwards
@@ -118,7 +118,7 @@ func TestQueryRateLimitEvents_FilterByDateRange(t *testing.T) {
 func TestQueryRateLimitEvents_Pagination(t *testing.T) {
 	db := newTestDB(t)
 	for i := 0; i < 5; i++ {
-		db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
+		_ = db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
 	}
 
 	// First page
@@ -170,13 +170,13 @@ func TestCleanupRateLimitEvents(t *testing.T) {
 	recent := now.Add(-1 * time.Hour).Format(dtFmt)
 
 	// Insert old event
-	db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
 		"ak_1", "1.1.1.1", "push", old)
 	// Insert recent event
-	db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class, created_at) VALUES (?, ?, ?, ?)`,
 		"ak_2", "2.2.2.2", "pull", recent)
 	// Insert current event
-	db.InsertRateLimitEvent("ak_3", "3.3.3.3", "other")
+	_ = db.InsertRateLimitEvent("ak_3", "3.3.3.3", "other")
 
 	// Cleanup events older than 24 hours
 	deleted, err := db.CleanupRateLimitEvents(24 * time.Hour)
@@ -199,7 +199,7 @@ func TestCleanupRateLimitEvents(t *testing.T) {
 
 func TestCleanupRateLimitEvents_NothingToDelete(t *testing.T) {
 	db := newTestDB(t)
-	db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
+	_ = db.InsertRateLimitEvent("ak_1", "1.1.1.1", "push")
 
 	deleted, err := db.CleanupRateLimitEvents(24 * time.Hour)
 	if err != nil {

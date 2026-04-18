@@ -15,6 +15,12 @@ type approveEligibility struct {
 	RejectionMessage string
 }
 
+type closeEligibility struct {
+	Allowed           bool
+	CreatorOpenBypass bool
+	RejectionMessage  string
+}
+
 func balancedReviewPolicyEnabled(baseDir string) bool {
 	return features.IsEnabled(baseDir, features.BalancedReviewPolicy.Name)
 }
@@ -79,4 +85,61 @@ func evaluateApproveEligibility(issue *models.Issue, sessionID string, wasInvolv
 	}
 
 	return approveEligibility{Allowed: true}
+}
+
+func evaluateCloseEligibility(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved, hasImplementationHistory bool) closeEligibility {
+	if issue == nil {
+		return closeEligibility{
+			Allowed:          false,
+			RejectionMessage: "cannot close: issue not found",
+		}
+	}
+
+	// Minor tasks intentionally bypass self-close restrictions.
+	if issue.Minor {
+		return closeEligibility{Allowed: true}
+	}
+
+	isCreator := issue.CreatorSession != "" && issue.CreatorSession == sessionID
+	isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
+
+	// Narrow bypass for self-created throwaway tasks:
+	// only creator-owned issues that are still open and have never entered
+	// implementation flow by any session.
+	if isCreator && issue.Status == models.StatusOpen && !hasImplementationHistory && !wasImplementationInvolved {
+		return closeEligibility{
+			Allowed:           true,
+			CreatorOpenBypass: true,
+		}
+	}
+
+	// Once the current session has any implementation history, direct close is blocked.
+	if isImplementer || wasImplementationInvolved {
+		return closeEligibility{
+			Allowed:          false,
+			RejectionMessage: fmt.Sprintf("cannot close own implementation: %s", issue.ID),
+		}
+	}
+
+	if isCreator {
+		if hasImplementationHistory {
+			return closeEligibility{
+				Allowed:          false,
+				RejectionMessage: fmt.Sprintf("cannot close: %s has implementation history and requires review", issue.ID),
+			}
+		}
+		return closeEligibility{
+			Allowed:          false,
+			RejectionMessage: fmt.Sprintf("cannot close: you created %s and it requires review", issue.ID),
+		}
+	}
+
+	if wasInvolved {
+		return closeEligibility{
+			Allowed:          false,
+			RejectionMessage: fmt.Sprintf("cannot close: you previously worked on %s", issue.ID),
+		}
+	}
+
+	return closeEligibility{Allowed: true}
 }

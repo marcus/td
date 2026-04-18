@@ -1,15 +1,19 @@
-// Package input provides helpers for reading flag values from stdin and files
-// (@file syntax).
+// Package input provides helpers for reading flag values from stdin and files.
 package input
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/marcus/td/internal/output"
 )
+
+// ErrStdinAlreadyUsed is returned when multiple flags try to consume stdin.
+var ErrStdinAlreadyUsed = errors.New("stdin already used")
 
 // ExpandFlagValues expands flag values that use - (stdin) or @file syntax.
 // Returns the expanded values and whether stdin was consumed.
@@ -52,4 +56,29 @@ func ReadLinesFromReader(r io.Reader) []string {
 		}
 	}
 	return lines
+}
+
+// ReadText preserves the full contents of a file or stdin as a single block.
+// The special source "-" reads from stdin exactly once.
+func ReadText(source string, stdin io.Reader, stdinUsed bool) (string, bool, error) {
+	if source == "" {
+		return "", stdinUsed, fmt.Errorf("input source is required")
+	}
+
+	if source == "-" {
+		if stdinUsed {
+			return "", stdinUsed, ErrStdinAlreadyUsed
+		}
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", true, fmt.Errorf("read stdin: %w", err)
+		}
+		return string(data), true, nil
+	}
+
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return "", stdinUsed, fmt.Errorf("read %s: %w", source, err)
+	}
+	return string(data), stdinUsed, nil
 }

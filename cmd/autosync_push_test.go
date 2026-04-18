@@ -35,7 +35,7 @@ func fakePushServer(t *testing.T, maxBatch int) (*httptest.Server, *pushRecorder
 
 		if maxBatch > 0 && len(req.Events) > maxBatch {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"code":    "bad_request",
 				"message": fmt.Sprintf("batch size %d exceeds max %d", len(req.Events), maxBatch),
 			})
@@ -61,7 +61,7 @@ func fakePushServer(t *testing.T, maxBatch int) (*httptest.Server, *pushRecorder
 			Acks:     acks,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	return httptest.NewServer(mux), rec
@@ -114,8 +114,10 @@ func setupAutoSyncTestDB(t *testing.T, n int) *db.DB {
 	// Mark built-in entities (e.g. "All Issues" board from migration) as already
 	// having action_log entries so the orphan backfill doesn't pick them up.
 	conn := database.Conn()
-	conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone, synced_at)
-		VALUES ('al-builtin-board', ?, 'board_create', 'boards', 'bd-all-issues', '{}', datetime('now'), 0, datetime('now'))`, sess.ID)
+	if _, err := conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone, synced_at)
+		VALUES ('al-builtin-board', ?, 'board_create', 'boards', 'bd-all-issues', '{}', datetime('now'), 0, datetime('now'))`, sess.ID); err != nil {
+		t.Fatalf("insert builtin board action: %v", err)
+	}
 
 	// Insert n unsynced action_log entries
 	tx, err := conn.Begin()

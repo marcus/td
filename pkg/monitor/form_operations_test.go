@@ -9,17 +9,6 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-// mockEditor is a test editor that replaces the real editor for testing
-// It writes a marker to the file instead of actually opening an editor
-type mockEditor struct {
-	content string
-	err     error
-	called  bool
-}
-
-// mockEditorLookPath is injected to return mock editor commands during tests
-var mockEditorLookPath func(string) (string, error)
-
 // TestOpenExternalEditorTempFileCreation tests that temp file is created
 func TestOpenExternalEditorTempFileCreation(t *testing.T) {
 	m := Model{

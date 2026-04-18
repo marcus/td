@@ -108,9 +108,8 @@ func (w *whenSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
 
 // customSection allows escape-hatch for complex custom content.
 type customSection struct {
-	renderFn   func(contentWidth int, focusID, hoverID string) RenderedSection
-	updateFn   func(msg tea.Msg, focusID string) (string, tea.Cmd)
-	focusables []FocusableInfo
+	renderFn func(contentWidth int, focusID, hoverID string) RenderedSection
+	updateFn func(msg tea.Msg, focusID string) (string, tea.Cmd)
 }
 
 // CustomRenderFunc is the signature for custom section render functions.

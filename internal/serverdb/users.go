@@ -30,20 +30,32 @@ func (db *ServerDB) CreateUser(email string) (*User, error) {
 		return nil, fmt.Errorf("generate user id: %w", err)
 	}
 
+	// Use a transaction to atomically check count and insert
+	// to prevent TOCTOU race where two concurrent requests both become admin
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// First user becomes admin
 	var count int
-	if err := db.conn.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+	if err := tx.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		return nil, fmt.Errorf("count users: %w", err)
 	}
 	isAdmin := count == 0
 
 	now := time.Now().UTC()
-	_, err = db.conn.Exec(
+	_, err = tx.Exec(
 		`INSERT INTO users (id, email, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
 		id, email, isAdmin, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert user: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
 	}
 
 	return &User{ID: id, Email: email, IsAdmin: isAdmin, CreatedAt: now, UpdatedAt: now}, nil

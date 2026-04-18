@@ -336,11 +336,6 @@ func TestModalCommentsLongTextWrapping(t *testing.T) {
 		Cursor: make(map[Panel]int),
 	}
 
-	contentWidth := m.modalContentWidth()
-	if contentWidth < 30 {
-		contentWidth = 30
-	}
-
 	issue := &models.Issue{
 		ID:    "td-long-comment",
 		Title: "Test with long comment",

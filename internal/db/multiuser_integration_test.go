@@ -495,8 +495,6 @@ func TestMultiUserWorkSession(t *testing.T) {
 	// Create multiple issues from different users
 	issueCount := 3
 	creatorIDs := []string{"ses_creator_a", "ses_creator_b", "ses_creator_c"}
-	var issueIDs []string
-
 	for i := 0; i < issueCount; i++ {
 		issue := &models.Issue{
 			Title:          "Feature part " + string(rune('A'+i)),
@@ -508,7 +506,6 @@ func TestMultiUserWorkSession(t *testing.T) {
 		if err := db.CreateIssue(issue); err != nil {
 			t.Fatalf("CreateIssue failed: %v", err)
 		}
-		issueIDs = append(issueIDs, issue.ID)
 
 		// Tag to work session
 		if err := db.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
@@ -674,19 +671,6 @@ func TestLogEntriesPerSession(t *testing.T) {
 				sessionID, sessionLogCount[sessionID], logCount)
 		}
 	}
-}
-
-// Helper function to check if string is filesystem-safe
-func isFilesystemSafe(s string) bool {
-	dangerousChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
-	for _, char := range s {
-		for _, danger := range dangerousChars {
-			if char == danger {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // TestConcurrentIssueCreation verifies multiple users can create issues concurrently
@@ -1118,7 +1102,7 @@ func TestIsolationBetweenUsers(t *testing.T) {
 			Priority:       models.PriorityP2,
 			CreatorSession: sessionA,
 		}
-		db.CreateIssue(issA)
+		_ = db.CreateIssue(issA)
 		issueA = append(issueA, issA)
 
 		issB := &models.Issue{
@@ -1128,7 +1112,7 @@ func TestIsolationBetweenUsers(t *testing.T) {
 			Priority:       models.PriorityP2,
 			CreatorSession: sessionB,
 		}
-		db.CreateIssue(issB)
+		_ = db.CreateIssue(issB)
 		issueB = append(issueB, issB)
 	}
 
@@ -1137,7 +1121,7 @@ func TestIsolationBetweenUsers(t *testing.T) {
 		issue, _ := db.GetIssue(issue.ID)
 		issue.Title = fmt.Sprintf("Updated by A-%d", i)
 		issue.Status = models.StatusInProgress
-		db.UpdateIssue(issue)
+		_ = db.UpdateIssue(issue)
 	}
 
 	// Verify User B's issues are unchanged

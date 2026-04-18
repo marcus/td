@@ -94,9 +94,6 @@ func (m Model) hitTestTaskListRow(relY int) int {
 		effectiveMaxLines--
 	}
 	hasBottomIndicator := needsScroll && offset+effectiveMaxLines < totalRows
-	if hasBottomIndicator {
-		effectiveMaxLines--
-	}
 
 	// Account for "▲ more above" indicator
 	linePos := 0
@@ -233,9 +230,6 @@ func (m Model) hitTestSwimlaneRow(relY int) int {
 		effectiveMaxLines--
 	}
 	hasBottomIndicator := needsScroll && offset+effectiveMaxLines < totalRows
-	if hasBottomIndicator {
-		effectiveMaxLines--
-	}
 
 	// Account for "▲ more above" indicator
 	linePos := 0

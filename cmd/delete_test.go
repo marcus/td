@@ -101,7 +101,9 @@ func TestDeleteLogsAction(t *testing.T) {
 	issueData := `{"id":"` + issue.ID + `","title":"Test Issue","status":"open"}`
 
 	// Delete issue
-	database.DeleteIssue(issue.ID)
+	if err := database.DeleteIssue(issue.ID); err != nil {
+		t.Fatalf("DeleteIssue failed: %v", err)
+	}
 
 	// Log delete action
 	action := &models.ActionLog{

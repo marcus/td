@@ -247,8 +247,8 @@ func Setup(t *testing.T, cfg Config) *Harness {
 // Teardown kills the server and cleans up temp dirs.
 func (h *Harness) Teardown() {
 	if h.serverCmd != nil && h.serverCmd.Process != nil {
-		h.serverCmd.Process.Kill()
-		h.serverCmd.Wait()
+		_ = h.serverCmd.Process.Kill()
+		_ = h.serverCmd.Wait()
 	}
 	if h.WorkDir != "" {
 		os.RemoveAll(h.WorkDir)
@@ -366,7 +366,7 @@ func (h *Harness) StopServer() error {
 		return fmt.Errorf("kill server: %w", err)
 	}
 	// Wait for process to fully exit (ignore error since Kill causes non-zero exit)
-	h.serverCmd.Wait()
+	_ = h.serverCmd.Wait()
 	h.serverCmd = nil
 	return nil
 }
@@ -523,7 +523,7 @@ func (h *Harness) authenticate(actor, email string) error {
 
 	// Generate device ID
 	deviceIDBytes := make([]byte, 16)
-	rand.Read(deviceIDBytes)
+	_, _ = rand.Read(deviceIDBytes)
 	deviceID := hex.EncodeToString(deviceIDBytes)
 
 	// Write auth.json

@@ -70,7 +70,7 @@ func TestSeedSyncStatusParity(t *testing.T) {
 	sessionID := fmt.Sprintf("test-session-%d", time.Now().Unix())
 	events, err := GetPendingEvents(bobTx, sessionID, "")
 	if err != nil {
-		bobTx.Rollback()
+		_ = bobTx.Rollback()
 		t.Fatalf("get pending events: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestSeedSyncStatusParity(t *testing.T) {
 
 	result, err := ApplyRemoteEvents(aliceTx, events, "alice-device", allowAll, nil)
 	if err != nil {
-		aliceTx.Rollback()
+		_ = aliceTx.Rollback()
 		t.Fatalf("apply events to alice: %v", err)
 	}
 

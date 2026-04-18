@@ -72,7 +72,7 @@ func TestAdminMiddleware_NonAdminReturns403(t *testing.T) {
 	}
 
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != "insufficient_admin_scope" {
 		t.Fatalf("expected error code insufficient_admin_scope, got %q", resp.Error.Code)
 	}
@@ -96,7 +96,7 @@ func TestAdminMiddleware_AdminWrongScope(t *testing.T) {
 	}
 
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != "insufficient_admin_scope" {
 		t.Fatalf("expected error code insufficient_admin_scope, got %q", resp.Error.Code)
 	}
@@ -159,7 +159,7 @@ func TestAdminMiddleware_MultipleScopesWrongFails(t *testing.T) {
 	}
 
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != "insufficient_admin_scope" {
 		t.Fatalf("expected error code insufficient_admin_scope, got %q", resp.Error.Code)
 	}

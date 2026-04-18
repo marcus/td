@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -26,10 +29,25 @@ type SubmitReviewResult struct {
 	Message string
 }
 
+const autoReviewHandoffMessage = "Auto-generated for review submission"
+
+func newAutoReviewHandoff(issueID, sessionID string) *models.Handoff {
+	return &models.Handoff{
+		IssueID:   issueID,
+		SessionID: sessionID,
+		Done:      []string{autoReviewHandoffMessage},
+		Remaining: []string{},
+		Decisions: []string{},
+		Uncertain: []string{},
+	}
+}
+
 // submitIssueForReview submits a single issue for review with proper validation,
 // logging, and undo support. This is the shared logic for both reviewCmd and
 // ws handoff --review.
 func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Session, baseDir string, logMsg string) SubmitReviewResult {
+	fromStatus := issue.Status
+
 	// Validate transition with state machine
 	sm := workflow.DefaultMachine()
 	ctx := &workflow.TransitionContext{
@@ -41,6 +59,12 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	}
 	_, err := sm.Validate(ctx)
 	if err != nil {
+		if issue.Status == models.StatusInReview {
+			return SubmitReviewResult{
+				Success: false,
+				Message: fmt.Sprintf("cannot review %s: already in review", issue.ID) + "\n" + reviewFollowupGuidance(issue),
+			}
+		}
 		return SubmitReviewResult{
 			Success: false,
 			Message: fmt.Sprintf("cannot review %s: %v", issue.ID, err),
@@ -59,10 +83,10 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 		issue.ImplementerSession = sess.ID
 	}
 
-	if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReview); err != nil {
+	if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionReview); err != nil {
 		return SubmitReviewResult{
 			Success: false,
-			Message: fmt.Sprintf("failed to update %s: %v", issue.ID, err),
+			Message: describeStaleTransitionUpdate(database, "review", issue.ID, err, reviewFollowupGuidance),
 		}
 	}
 
@@ -83,6 +107,79 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	clearFocusIfNeeded(baseDir, issue.ID)
 
 	return SubmitReviewResult{Success: true}
+}
+
+func shouldWarnAboutAutoHandoff(database *db.DB, issueID, sessionID string) bool {
+	logs, err := database.GetLogs(issueID, 10)
+	if err != nil {
+		return true
+	}
+
+	const substantiveContextChars = 16
+	totalChars := 0
+	for _, log := range logs {
+		if log.SessionID != sessionID {
+			continue
+		}
+
+		if !isSubstantiveReviewContextLog(log) {
+			continue
+		}
+
+		totalChars += len([]rune(strings.TrimSpace(log.Message)))
+		if log.Type != models.LogTypeProgress {
+			return false
+		}
+		if totalChars >= substantiveContextChars {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isSubstantiveReviewContextLog(log models.Log) bool {
+	message := strings.TrimSpace(log.Message)
+	if message == "" {
+		return false
+	}
+
+	switch log.Type {
+	case models.LogTypeDecision, models.LogTypeHypothesis, models.LogTypeTried, models.LogTypeResult, models.LogTypeBlocker, models.LogTypeSecurity:
+		return true
+	case models.LogTypeProgress, models.LogTypeOrchestration:
+		return !isRoutineWorkflowLogMessage(message)
+	default:
+		return true
+	}
+}
+
+func isRoutineWorkflowLogMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return true
+	}
+
+	switch normalized {
+	case "started work", "submitted for review", "approved", "rejected", "closed":
+		return true
+	}
+
+	prefixes := []string{
+		"submitted for review via ",
+		"approved: ",
+		"rejected: ",
+		"closed: ",
+		"cascaded review from ",
+		"auto-unblocked (",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 var reviewCmd = &cobra.Command{
@@ -142,14 +239,7 @@ Supports bulk operations:
 			handoff, err := database.GetLatestHandoff(issueID)
 			if err != nil || handoff == nil {
 				// Auto-create minimal handoff
-				autoHandoff := &models.Handoff{
-					IssueID:   issueID,
-					SessionID: sess.ID,
-					Done:      []string{"Auto-generated for review submission"},
-					Remaining: []string{},
-					Decisions: []string{},
-					Uncertain: []string{},
-				}
+				autoHandoff := newAutoReviewHandoff(issueID, sess.ID)
 				if err := database.AddHandoff(autoHandoff); err != nil {
 					if jsonOutput {
 						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to create handoff: %v", err))
@@ -159,8 +249,9 @@ Supports bulk operations:
 					skipped++
 					continue
 				}
-				output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
-				handoff = autoHandoff
+				if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) {
+					output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
+				}
 			}
 
 			// Handle --minor flag
@@ -241,6 +332,156 @@ func approvalReason(cmd *cobra.Command) string {
 	return ""
 }
 
+func describeStaleTransitionUpdate(database *db.DB, action, issueID string, err error, guidance func(*models.Issue) string) string {
+	var staleErr *db.StaleIssueStatusError
+	if !errors.As(err, &staleErr) {
+		return fmt.Sprintf("failed to update %s: %v", issueID, err)
+	}
+
+	current := &models.Issue{ID: issueID, Status: staleErr.Actual}
+	if database != nil {
+		if refreshed, refreshErr := database.GetIssue(issueID); refreshErr == nil {
+			current = refreshed
+		}
+	}
+
+	lines := []string{
+		fmt.Sprintf("cannot %s %s: status changed from %s to %s in another session", action, issueID, staleErr.Expected, current.Status),
+		fmt.Sprintf("  Current status: %s", current.Status),
+	}
+	if recent := recentWorkflowTransitionContext(database, issueID); recent != "" {
+		lines = append(lines, recent)
+	}
+	lines = append(lines, guidance(current))
+	return strings.Join(lines, "\n")
+}
+
+func recentWorkflowTransitionContext(database *db.DB, issueID string) string {
+	if database == nil {
+		return ""
+	}
+
+	logs, err := database.GetLogs(issueID, 5)
+	if err != nil {
+		return ""
+	}
+
+	for i := len(logs) - 1; i >= 0; i-- {
+		log := logs[i]
+		if summary, ok := summarizeWorkflowTransition(log.Message); ok {
+			return fmt.Sprintf("  Recent transition: %s by %s at %s", summary, log.SessionID, log.Timestamp.Format("2006-01-02 15:04"))
+		}
+	}
+
+	return ""
+}
+
+func summarizeWorkflowTransition(message string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	switch {
+	case normalized == "approved" || strings.HasPrefix(normalized, "approved:") || strings.Contains(normalized, "] approved "):
+		return "approved", true
+	case normalized == "rejected" || strings.HasPrefix(normalized, "rejected:"):
+		return "rejected", true
+	case normalized == "reopened" || strings.HasPrefix(normalized, "reopened:"):
+		return "reopened", true
+	case normalized == "closed" || strings.HasPrefix(normalized, "closed:") || strings.Contains(normalized, "] closed "):
+		return "closed", true
+	case normalized == "submitted for review" || strings.HasPrefix(normalized, "submitted for review:") || strings.HasPrefix(normalized, "cascaded review from "):
+		return "submitted for review", true
+	default:
+		return "", false
+	}
+}
+
+func describeReviewerNoop(database *db.DB, action string, issue *models.Issue) string {
+	if issue == nil {
+		return ""
+	}
+
+	header := ""
+	switch action {
+	case "approve":
+		header = fmt.Sprintf("already approved/closed %s", issue.ID)
+	case "reject":
+		header = fmt.Sprintf("already reopened %s", issue.ID)
+	default:
+		header = fmt.Sprintf("already handled %s", issue.ID)
+	}
+
+	lines := []string{
+		header,
+		fmt.Sprintf("  Current status: %s", issue.Status),
+	}
+	if recent := recentWorkflowTransitionContext(database, issue.ID); recent != "" {
+		lines = append(lines, recent)
+	}
+	if action == "approve" {
+		lines = append(lines, approveFollowupGuidance(issue))
+	} else {
+		lines = append(lines, rejectFollowupGuidance(issue))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func closeFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	switch issue.Status {
+	case models.StatusInReview:
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
+// reviewFollowupGuidance returns the next workflow command after a failed
+// review submission attempt.
+func reviewFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	switch issue.Status {
+	case models.StatusInReview:
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
+// approveFollowupGuidance returns the next workflow command after a failed
+// approval attempt.
+func approveFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review first: td review "
+	}
+	switch issue.Status {
+	case models.StatusInReview:
+		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already approved/closed: td show %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
+func rejectFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Already reopened: td show "
+	}
+	switch issue.Status {
+	case models.StatusOpen:
+		return fmt.Sprintf("  Already reopened: td show %s", issue.ID)
+	case models.StatusInReview:
+		return fmt.Sprintf("  Reject it: td reject %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues",
@@ -285,6 +526,28 @@ Supports bulk operations:
 			}
 		} else {
 			issueIDs = args
+			if len(issueIDs) == 0 {
+				issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+				if err != nil {
+					output.Error("failed to list reviewable issues: %v", err)
+					return err
+				}
+				switch len(issues) {
+				case 0:
+					output.Error("no issues to approve. Provide issue IDs or use --all")
+					return fmt.Errorf("no issues specified")
+				case 1:
+					issueIDs = []string{issues[0].ID}
+				default:
+					output.Error("no issue ID specified. Multiple issues awaiting your review:")
+					for _, issue := range issues {
+						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					}
+					fmt.Printf("\nUsage: td approve <issue-id>\n")
+					fmt.Printf("Or use: td approve --all\n")
+					return fmt.Errorf("issue ID required")
+				}
+			}
 		}
 
 		if len(issueIDs) == 0 {
@@ -308,12 +571,30 @@ Supports bulk operations:
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
+			if issue.Status == models.StatusClosed {
+				message := describeReviewerNoop(database, "approve", issue)
+				if jsonOutput {
+					if err := output.JSON(map[string]interface{}{
+						"id":      issueID,
+						"status":  string(issue.Status),
+						"action":  "already approved/closed",
+						"message": message,
+					}); err != nil {
+						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+					}
+				} else if !all {
+					output.Warning("%s", message)
+				}
+				skipped++
+				continue
+			}
 			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
 				if !all {
 					if jsonOutput {
 						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot approve %s: invalid transition from %s", issueID, issue.Status))
 					} else {
 						output.Warning("cannot approve %s: invalid transition from %s", issueID, issue.Status)
+						fmt.Println(approveFollowupGuidance(issue))
 					}
 				}
 				skipped++
@@ -354,13 +635,13 @@ Supports bulk operations:
 			}
 
 			if eligibility.RequiresReason && reason == "" {
-				if !all {
-					msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
-					if jsonOutput {
-						output.JSONError(output.ErrCodeInvalidInput, msg)
-					} else {
-						output.Error("%s", msg)
-					}
+				msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
+				if jsonOutput {
+					output.JSONError(output.ErrCodeInvalidInput, msg)
+				} else if !all {
+					output.Error("%s", msg)
+				} else {
+					output.Warning("skipping %s: creator approval exception requires --reason", issueID)
 				}
 				skipped++
 				continue
@@ -369,11 +650,11 @@ Supports bulk operations:
 			// Update issue (atomic update + action log)
 			issue.Status = models.StatusClosed
 			issue.ReviewerSession = sess.ID
-			now := issue.UpdatedAt
+			now := time.Now()
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionApprove); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionApprove); err != nil {
+				output.Warning("%s", describeStaleTransitionUpdate(database, "approve", issueID, err, approveFollowupGuidance))
 				skipped++
 				continue
 			}
@@ -387,7 +668,7 @@ Supports bulk operations:
 			logMsg := "Approved"
 			logType := models.LogTypeProgress
 			if reason != "" {
-				logMsg = reason
+				logMsg = "Approved: " + reason
 			}
 			if eligibility.CreatorException {
 				agentInfo := sess.AgentType
@@ -495,13 +776,29 @@ Supports bulk operations:
 				continue
 			}
 
-			// Validate transition with state machine
-			sm := workflow.DefaultMachine()
-			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+			// Reject is only valid from in_review (matches HTTP API behavior)
+			if issue.Status == models.StatusOpen {
+				message := describeReviewerNoop(database, "reject", issue)
 				if jsonOutput {
-					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: invalid transition from %s", issueID, issue.Status))
+					if err := output.JSON(map[string]interface{}{
+						"id":      issueID,
+						"status":  string(issue.Status),
+						"action":  "already reopened",
+						"message": message,
+					}); err != nil {
+						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+					}
 				} else {
-					output.Warning("cannot reject %s: invalid transition from %s", issueID, issue.Status)
+					output.Warning("%s", message)
+				}
+				skipped++
+				continue
+			}
+			if issue.Status != models.StatusInReview {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status))
+				} else {
+					output.Warning("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status)
 				}
 				skipped++
 				continue
@@ -511,11 +808,11 @@ Supports bulk operations:
 			issue.Status = models.StatusOpen
 			issue.ImplementerSession = ""
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReject); err != nil {
+			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, err.Error())
 				} else {
-					output.Warning("failed to update %s: %v", issueID, err)
+					output.Warning("%s", describeStaleTransitionUpdate(database, "reject", issueID, err, rejectFollowupGuidance))
 				}
 				skipped++
 				continue
@@ -625,46 +922,30 @@ Examples:
 				continue
 			}
 
-			// Check if self-closing (comprehensive check using session history)
-			// Handle DB errors conservatively - assume involvement on error
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
 			if err != nil {
 				output.Warning("failed to check session history for %s: %v", issueID, err)
 				wasInvolved = true // Conservative: assume involvement on error
 			}
 
-			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
-			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
-			hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-
-			// Was ever involved = in history OR creator OR implementer
-			wasEverInvolved := wasInvolved || isCreator || isImplementer
-
-			// Can close if:
-			// 1. Never involved at all, OR
-			// 2. Only created it AND someone else implemented (not self), OR
-			// 3. Minor task (allows self-close)
-			var canClose bool
-			if !wasEverInvolved {
-				canClose = true
-			} else if isCreator && hasOtherImplementer && !isImplementer {
-				canClose = true
-			} else if issue.Minor {
-				canClose = true
-			} else {
-				canClose = false
+			wasImplementationInvolved, err := database.WasSessionImplementationInvolved(issueID, sess.ID)
+			if err != nil {
+				output.Warning("failed to check implementation history for %s: %v", issueID, err)
+				wasImplementationInvolved = true // Conservative: assume implementation involvement on error
 			}
 
-			if !canClose {
+			hasImplementationHistory, err := database.HasImplementationHistory(issueID)
+			if err != nil {
+				output.Warning("failed to check issue implementation history for %s: %v", issueID, err)
+				hasImplementationHistory = true // Conservative: assume implementation history on error
+			}
+
+			eligibility := evaluateCloseEligibility(issue, sess.ID, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
+
+			if !eligibility.Allowed {
 				if selfCloseException == "" {
-					if isImplementer {
-						output.Error("cannot close own implementation: %s", issueID)
-					} else if isCreator && !hasOtherImplementer {
-						output.Error("cannot close: you created %s and no one else implemented it", issueID)
-					} else {
-						output.Error("cannot close: you previously worked on %s", issueID)
-					}
-					output.Error("  Submit for review: td review %s", issueID)
+					output.Error("%s", eligibility.RejectionMessage)
+					output.Error("%s", closeFollowupGuidance(issue))
 					skipped++
 					continue
 				}
@@ -673,12 +954,13 @@ Examples:
 			}
 
 			// Update issue (atomic update + action log)
+			fromStatus := issue.Status
 			issue.Status = models.StatusClosed
-			now := issue.UpdatedAt
+			now := time.Now()
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionClose); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+			if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionClose); err != nil {
+				output.Warning("%s", describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
 				skipped++
 				continue
 			}
@@ -688,7 +970,7 @@ Examples:
 			logMsg := "Closed"
 			logType := models.LogTypeProgress
 
-			if !canClose && selfCloseException != "" {
+			if !eligibility.Allowed && selfCloseException != "" {
 				agentInfo := sess.AgentType
 				if agentInfo == "" {
 					agentInfo = "Unknown Agent"
@@ -719,7 +1001,7 @@ Examples:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			if !canClose && selfCloseException != "" {
+			if !eligibility.Allowed && selfCloseException != "" {
 				fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
 			} else {
 				fmt.Printf("CLOSED %s\n", issueID)

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -111,11 +112,12 @@ func formatArgsJSON(args []string) string {
 }
 
 func escapeJSON(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	s = strings.ReplaceAll(s, "\t", `\t`)
-	return s
+	b, err := json.Marshal(s)
+	if err != nil {
+		return s
+	}
+	// json.Marshal wraps in quotes; strip them
+	return string(b[1 : len(b)-1])
 }
 
 func init() {

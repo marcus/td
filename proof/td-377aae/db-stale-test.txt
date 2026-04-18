@@ -1,0 +1,5 @@
+=== RUN   TestUpdateIssueLoggedIfStatusDetectsStaleTransition
+    issues_logged_test.go:204: issue td-4367a5 status changed from open to in_progress
+--- PASS: TestUpdateIssueLoggedIfStatusDetectsStaleTransition (0.06s)
+PASS
+ok  	github.com/marcus/td/internal/db	(cached)

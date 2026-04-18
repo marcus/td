@@ -55,7 +55,7 @@ func (db *ServerDB) Ping() error {
 // Uses PASSIVE (not TRUNCATE) to avoid stalling when another process still
 // holds the -shm; SQLite's autocheckpoint handles routine WAL maintenance.
 func (db *ServerDB) Close() error {
-	db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+	_, _ = db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 	return db.conn.Close()
 }
 
@@ -102,7 +102,7 @@ func (db *ServerDB) getSchemaVersion() int {
 		return 0
 	}
 	var v int
-	fmt.Sscanf(version, "%d", &v)
+	_, _ = fmt.Sscanf(version, "%d", &v)
 	return v
 }
 

@@ -176,6 +176,81 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 }
 
+// TestUndoIssueDeleteCreatesActionLog verifies that undoing a delete creates
+// an action_log entry (required for sync to propagate the restore).
+// Note: this test verifies correctness but cannot verify atomicity — the old
+// non-atomic code (RestoreIssue + LogAction) also passes this test.
+// Atomicity is a structural guarantee from RestoreIssueLogged using a single
+// withWriteLock call; crash-safety cannot be tested in a unit test.
+func TestUndoIssueDeleteCreatesActionLog(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create and delete an issue using logged methods (as real code does)
+	issue := &models.Issue{
+		Title:  "Test Issue",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.DeleteIssueLogged(issue.ID, "ses_test"); err != nil {
+		t.Fatalf("DeleteIssueLogged failed: %v", err)
+	}
+
+	// Count action_log entries before undo
+	actionsBefore, err := database.GetRecentActionsAll(100)
+	if err != nil {
+		t.Fatalf("GetRecentActionsAll failed: %v", err)
+	}
+	countBefore := len(actionsBefore)
+
+	// Undo the delete
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionDelete,
+		EntityType: "issue",
+		EntityID:   issue.ID,
+	}
+	if err := undoIssueAction(database, action, "ses_test"); err != nil {
+		t.Fatalf("undoIssueAction failed: %v", err)
+	}
+
+	// Verify issue is restored
+	retrieved, err := database.GetIssue(issue.ID)
+	if err != nil || retrieved == nil {
+		t.Fatal("Issue should be restored after undo delete")
+	}
+	if retrieved.DeletedAt != nil {
+		t.Fatal("Issue should not have deleted_at after restore")
+	}
+
+	// Verify action_log has a new restore entry (atomic with the restore)
+	actionsAfter, err := database.GetRecentActionsAll(100)
+	if err != nil {
+		t.Fatalf("GetRecentActionsAll failed: %v", err)
+	}
+	if len(actionsAfter) <= countBefore {
+		t.Fatal("Expected new action_log entry for restore, but count did not increase")
+	}
+
+	// Find the restore action
+	found := false
+	for _, a := range actionsAfter {
+		if a.ActionType == models.ActionRestore && a.EntityID == issue.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected action_log entry with action_type='restore' for the issue")
+	}
+}
+
 // TestUndoIssueUpdate tests undoing status changes (restores previous state)
 func TestUndoIssueUpdate(t *testing.T) {
 	dir := t.TempDir()

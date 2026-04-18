@@ -165,55 +165,9 @@ func (s *SnapshotQuerySource) ListIssues(opts db.ListIssuesOptions) ([]models.Is
 
 	// ReviewableBy filter
 	if opts.ReviewableBy != "" {
-		if opts.BalancedReviewPolicy {
-			q += ` AND status = ? AND implementer_session != '' AND (
-				minor = 1 OR (
-					implementer_session != ?
-					AND (
-						(
-							(creator_session = '' OR creator_session != ?)
-							AND NOT EXISTS (
-								SELECT 1 FROM issue_session_history
-								WHERE issue_id = issues.id AND session_id = ?
-							)
-						)
-						OR
-						(
-							creator_session = ?
-							AND implementer_session != ?
-							AND NOT EXISTS (
-								SELECT 1 FROM issue_session_history
-								WHERE issue_id = issues.id
-								  AND session_id = ?
-								  AND action IN ('started', 'unstarted')
-							)
-						)
-					)
-				)
-			)`
-			args = append(
-				args,
-				models.StatusInReview,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-			)
-		} else {
-			q += ` AND status = ? AND implementer_session != '' AND (
-				minor = 1 OR (
-					implementer_session != ?
-					AND (creator_session = '' OR creator_session != ?)
-					AND NOT EXISTS (
-						SELECT 1 FROM issue_session_history
-						WHERE issue_id = issues.id AND session_id = ?
-					)
-				)
-			)`
-			args = append(args, models.StatusInReview, opts.ReviewableBy, opts.ReviewableBy, opts.ReviewableBy)
-		}
+		fragment, fargs := db.ReviewableByFilter(opts.ReviewableBy, opts.BalancedReviewPolicy)
+		q += fragment
+		args = append(args, fargs...)
 	}
 
 	// Parent filter

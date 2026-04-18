@@ -110,7 +110,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		// Add dependencies
 		for _, depID := range deps {
 			if depID != "" {
-				m.DB.AddDependencyLogged(issue.ID, depID, "depends_on", m.SessionID)
+				_ = m.DB.AddDependencyLogged(issue.ID, depID, "depends_on", m.SessionID)
 			}
 		}
 
@@ -224,7 +224,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				sessionAction = models.ActionSessionReviewed
 			}
 			if sessionAction != "" {
-				m.DB.RecordSessionAction(existingIssue.ID, m.SessionID, sessionAction)
+				_ = m.DB.RecordSessionAction(existingIssue.ID, m.SessionID, sessionAction)
 			}
 		}
 

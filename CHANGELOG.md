@@ -2,15 +2,9 @@
 
 All notable changes to td are documented in this file.
 
-## [Unreleased]
-
-## [v0.40.0] - 2026-04-18
+## [v0.44.0] - 2026-04-18
 
 ### Features
-- Add `balanced_review_policy` feature flag (default on)
-  - Allows creator-only approvals when a different session implemented the issue
-  - Requires `--reason` for creator-exception approvals and logs them to security audit
-  - Keeps implementer/self-approval blocked for non-minor issues
 - `td doctor fk`: hidden diagnostic that reports orphan-row counts across every declared foreign-key relation (gated behind `TD_FEATURE_SYNC_CLI=1`)
 - Monitor DB-pool diagnostics: set `TD_MONITOR_DBPOOL_DEBUG=1` to trace `getSharedDB`/`releaseSharedDB` with refcounts and caller — helps detect connection leaks in embedded monitors
 
@@ -22,8 +16,83 @@ All notable changes to td are documented in this file.
 - Manual cascade emulation in `internal/sync/events.go` removed where schema cascades now handle it; runtime `parent_id` cleanup retained (no FK on `issues.parent_id` due to `''` sentinel semantics)
 
 ### Improvements
-- Align `reviewable`/`in-review`/`status` reviewability hints with actual policy checks
 - `withWriteLock` scope documented explicitly in source (serializes CLI writes only; does not coordinate with the API server's separate DBs)
+- `td import` tolerates forward-referencing dependencies (issue A depending on issue B that appears later in the JSON) by disabling FK enforcement inside the import transaction; run `td doctor fk` after a large import to surface any remaining orphans
+
+## [v0.43.0] - 2026-03-24
+
+### Bug Fixes
+- **Atomic lossless import** — `td import --json` now imports all associated data (logs, handoffs, dependencies, files) in a single transaction; backward-compat `UnmarshalJSON` handles old `handoff` singular / `[]string` deps format; `GetHandoffs` and `GetIssueDependencyRelations` added to DB layer (#65)
+- **`UpdateIssue` missing fields** — `creator_session`, `minor`, and `created_branch` were not updated by `UpdateIssue` / `updateIssueAndLog`; patches silently dropped these fields (#70)
+- **Timezone-aware defer/due filtering** — temporal queries used `date('now')` (UTC) instead of `date('now','localtime')`; deferred/overdue/due-soon filters returned wrong results in non-UTC zones (#70)
+- **`RemoveDependencyLogged` wrong depID** — hardcoded `"depends_on"` in `DependencyID` call even for `"blocks"` relations; undo data was corrupted for non-`depends_on` relations (#70)
+- **`DeleteBoardLogged` not atomic** — position updates, action_log inserts, and board delete ran outside a transaction; partial failure left inconsistent state (#70)
+- **RateLimiter goroutine leak** — background cleanup goroutine used `time.Sleep` loop with no cancellation; `Stop()` added, called in `Server.Shutdown()` (#70)
+- **CORS missing methods** — PATCH, PUT, DELETE not in `Access-Control-Allow-Methods`; browser pre-flight checks failed for mutating requests (#70)
+- **Snapshot stat error ignored** — `f.Stat()` error swallowed; now returns 500 with proper error message (#70)
+- **DB connection leak on init failure** — `Open` and `Initialize` did not close `conn` on migration or schema errors (#70)
+- **Form scroll over-run** — `FormScrollOffset` could exceed content height; now clamped to `formScrollToBottom()` on wheel-down (#70)
+- **Modal click detection** — section line bounds (`BlockedBy*`, `Blocks*`) computed during render (wrong: built incrementally); extracted to `computeModalSectionLines()`, called before click handling (#70)
+- **In-progress panel header count** — used `len(m.InProgress)` including focused duplicate; now counts `inProgressVisible` to avoid spurious header when all items are hidden (#70)
+- **RFC3339Nano timestamp parsing** — sync pull events with sub-second precision failed with strict `RFC3339`; now tries `RFC3339Nano` first with `RFC3339` fallback in both `autoSyncPull` and `runPull` (#69)
+- **`sess != nil` guard in delete/restore** — `DeleteIssueLogged` / `RestoreIssueLogged` called with `sess.ID` without nil check; now uses empty string fallback (#69)
+- **`escapeJSON` incomplete escaping** — manual string replacement missed `\r`, `\b`, `\f`, NUL, and other control characters; replaced with `json.Marshal` (#69)
+- **Stdin pipe read without size check** — `stat.Size() > 0` guard on piped stdin in `log` and `handoff` commands silently dropped content from pipes that report 0 size; guard removed (#69)
+- **Trusted proxy XFF spoofing** — `clientIP` trusted `X-Forwarded-For` unconditionally; attackers could spoof client IP for rate limit bypass; now only trusts XFF from configured `TrustedProxies` (#69)
+- **CreateUser admin TOCTOU race** — `SELECT COUNT(*)` + `INSERT` without transaction allowed concurrent requests to both become admin; wrapped in a transaction (#69)
+- **Backfill `anyEventSetsStatus` false positive** — LIKE pre-filter on `"status":"open"` matched nested fields and similar-named statuses (`"reopened"`); added `statusMatches` post-filter; extracted `checkCreateEventStatus` so `rows.Close()` fires before next query (#69)
+- **Autosync pull transaction leak** — `defer tx.Rollback()` accumulated across loop iterations; extracted to `autoSyncApplyPullBatch` so defer fires per batch (#69)
+- **Singleflight snapshot dedup** — concurrent snapshot requests for same project triggered redundant builds; now deduplicated with `singleflight.Group` (#69)
+
+## [v0.42.2] - 2026-03-21
+
+### Bug Fixes
+- **SSE nil-validator panic** — `ApplyRemoteEvents` was called with `nil` validator, causing guaranteed panic on any non-empty SSE event batch; now passes an allow-all validator (#68)
+- **`work_session_issues` never synced** — missing from `baseSyncableEntities`, silently dropping events on push/pull; added to sync entity map (#68)
+- **Non-atomic undo of delete** — `RestoreIssue` + `LogAction` as separate locked operations had a crash window; replaced with atomic `RestoreIssueLogged` (#68)
+- **Timestamp parse mismatch** — `GetRecentConflicts` used rigid format that failed on Go `time.Time.String()` output, breaking `td sync conflicts`; now uses flexible `parseTimestamp` with monotonic clock stripping (#68)
+- **`rows.Err()` unchecked** — ~30 query functions returned silent partial results on driver errors; all now check and propagate `rows.Err()` (#68)
+- **Non-transactional migration** — `migrateFilePathsToRelative` crash left partial data; now runs inside a transaction with proper rollback (#68)
+- **Snapshot serve race** — only copy of snapshot was deleted on cache rename failure; `servePath` now updated immediately before second rename (#68)
+- **StatusFilter data race** — map reference captured in goroutine shared underlying data; now deep-copied before capture (#68)
+- **Board editor data race** — `BoardEditorBoard` pointer mutated from save goroutine while Update loop may read it; now copies struct before mutation (#68)
+- **Stale syncState** — push updates `last_sync_at` in DB but in-memory struct was stale; pull now reloads syncState after push for correct conflict detection (#68)
+- **CLI reject from wrong states** — rejected issues in `in_progress`/`blocked`/`closed`; now restricted to `in_review` only, matching HTTP API behavior (#68)
+- **HelpFilter backspace UTF-8** — byte slicing split multi-byte runes; now uses `[]rune` conversion (#68)
+- **Board editor preview count** — showed capped "6" instead of "5+"; uses sentinel `-1` to signal overflow (#68)
+- **`copyFile` sync durability** — backup file not flushed to disk; now calls `out.Sync()` after copy (#68)
+
+## [v0.42.1] - 2026-03-20
+
+### Bug Fixes
+- fix: `td import` now restores all issue fields and associated data (logs, handoffs, dependencies, files) — lossless round-trip (#64)
+
+## [v0.42.0] - 2026-03-09
+
+### Bug Fixes
+- Fix closed_at timestamp to use current time on approve/close (#55)
+- Fix mobile navbar sidebar hidden behind secondary panel (#54)
+
+## [v0.41.0] - 2026-03-01
+
+### Bug Fixes
+- Fix premature title truncation in task list panel: overhead calculation in `formatIssueShort` was overestimating by 3 chars due to phantom leading spaces in tag width and a hardcoded type icon width. Task titles now display 3 more characters before truncating, giving more readable output in both `td monitor` and sidecar's embedded td view (sidecar#215)
+
+## [v0.40.0] - 2026-02-27
+
+### Features
+- Add search/filter to help modal (press `/` to filter) (#25)
+- Add scroll support to form modal
+- Add `balanced_review_policy` feature flag (default on)
+  - Allows creator-only approvals when a different session implemented the issue
+  - Requires `--reason` for creator-exception approvals and logs them to security audit
+  - Keeps implementer/self-approval blocked for non-minor issues
+
+### Improvements
+- Align `reviewable`/`in-review`/`status` reviewability hints with actual policy check
+
+### Documentation
+- Document balanced review policy in core workflow and references
 
 ## [v0.39.0] - 2026-02-26
 

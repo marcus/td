@@ -129,9 +129,7 @@ Or use flags with values, stdin (-), or file (@path):
 		if !stdinUsed {
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
-				if stat.Size() > 0 {
-					parseHandoffInput(handoff)
-				}
+				parseHandoffInput(handoff)
 			}
 		}
 

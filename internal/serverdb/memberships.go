@@ -124,7 +124,7 @@ func (db *ServerDB) RemoveMember(projectID, userID string) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Check current membership within tx
 	var role string

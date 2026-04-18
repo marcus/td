@@ -726,8 +726,8 @@ func TestConstants(t *testing.T) {
 		if DefaultTitleMinLength != 15 {
 			t.Errorf("DefaultTitleMinLength: got %d, want 15", DefaultTitleMinLength)
 		}
-		if DefaultTitleMaxLength != 100 {
-			t.Errorf("DefaultTitleMaxLength: got %d, want 100", DefaultTitleMaxLength)
+		if DefaultTitleMaxLength != 200 {
+			t.Errorf("DefaultTitleMaxLength: got %d, want 200", DefaultTitleMaxLength)
 		}
 	})
 }
@@ -855,7 +855,7 @@ func TestPermissionErrors(t *testing.T) {
 		if err := os.Chmod(configPath, 0000); err != nil {
 			t.Fatalf("chmod failed: %v", err)
 		}
-		defer os.Chmod(configPath, 0644) // Restore for cleanup
+		defer func() { _ = os.Chmod(configPath, 0644) }() // Restore for cleanup
 
 		_, err := Load(dir)
 		if err == nil {
@@ -874,7 +874,7 @@ func TestPermissionErrors(t *testing.T) {
 		if err := os.Chmod(todosDir, 0555); err != nil {
 			t.Fatalf("chmod failed: %v", err)
 		}
-		defer os.Chmod(todosDir, 0755) // Restore for cleanup
+		defer func() { _ = os.Chmod(todosDir, 0755) }() // Restore for cleanup
 
 		err := Save(dir, &models.Config{FocusedIssueID: "test"})
 		if err == nil {

@@ -101,7 +101,7 @@ func TestBackfillOrphanEntities_DetectsOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	n, err := BackfillOrphanEntities(tx, "ses-test")
 	if err != nil {
@@ -113,7 +113,7 @@ func TestBackfillOrphanEntities_DetectsOrphans(t *testing.T) {
 
 	// Verify action_log entries
 	var count int
-	tx.QueryRow(`SELECT COUNT(*) FROM action_log WHERE action_type='create' AND entity_type='issue'`).Scan(&count)
+	_ = tx.QueryRow(`SELECT COUNT(*) FROM action_log WHERE action_type='create' AND entity_type='issue'`).Scan(&count)
 	if count != 3 {
 		t.Fatalf("expected 3 action_log rows, got %d", count)
 	}
@@ -123,7 +123,7 @@ func TestBackfillOrphanEntities_DetectsOrphans(t *testing.T) {
 	defer rows.Close()
 	for rows.Next() {
 		var eid, nd string
-		rows.Scan(&eid, &nd)
+		_ = rows.Scan(&eid, &nd)
 		var fields map[string]any
 		if err := json.Unmarshal([]byte(nd), &fields); err != nil {
 			t.Fatalf("invalid JSON for %s: %v", eid, err)
@@ -152,7 +152,7 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	_ = tx.Commit()
 
 	if n1 != 2 {
 		t.Fatalf("first backfill: expected 2, got %d", n1)
@@ -164,7 +164,7 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	_ = tx.Commit()
 
 	if n2 != 0 {
 		t.Fatalf("second backfill: expected 0, got %d", n2)
@@ -172,7 +172,7 @@ func TestBackfillOrphanEntities_Idempotent(t *testing.T) {
 
 	// Verify still only 2 entries total
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_type='issue'`).Scan(&count)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_type='issue'`).Scan(&count)
 	if count != 2 {
 		t.Fatalf("expected 2 total action_log rows, got %d", count)
 	}
@@ -194,7 +194,7 @@ func TestBackfillOrphanEntities_SkipsEntitiesWithEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	_ = tx.Commit()
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (the orphan), got %d", n)
@@ -202,7 +202,7 @@ func TestBackfillOrphanEntities_SkipsEntitiesWithEvents(t *testing.T) {
 
 	// Verify td-200 still has exactly 1 action_log entry (not duplicated)
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-200'`).Scan(&count)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-200'`).Scan(&count)
 	if count != 1 {
 		t.Fatalf("expected 1 entry for td-200, got %d", count)
 	}
@@ -221,7 +221,7 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx.Commit()
+	_ = tx.Commit()
 
 	if n != 1 {
 		t.Fatalf("expected 1 backfilled (missing create), got %d", n)
@@ -229,7 +229,7 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 
 	// Verify a create action_log entry was added
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-210' AND action_type='create'`).Scan(&count)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-210' AND action_type='create'`).Scan(&count)
 	if count != 1 {
 		t.Fatalf("expected 1 create entry for td-210, got %d", count)
 	}
@@ -326,7 +326,7 @@ func TestBackfillOrphanEntities_MultipleEntityTypes(t *testing.T) {
 	defer rows.Close()
 	for rows.Next() {
 		var et string
-		rows.Scan(&et)
+		_ = rows.Scan(&et)
 		types[et]++
 	}
 	if types["issue"] != 1 {
@@ -350,7 +350,7 @@ func TestBackfillOrphanEntities_FullRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPendingEvents: %v", err)
 	}
-	tx.Rollback()
+	_ = tx.Rollback()
 
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
@@ -408,9 +408,9 @@ func TestBackfillOrphanEntities_IncludesSoftDeleted(t *testing.T) {
 
 	// Verify the new_data includes deleted_at
 	var nd string
-	db.QueryRow(`SELECT new_data FROM action_log WHERE entity_id='td-500'`).Scan(&nd)
+	_ = db.QueryRow(`SELECT new_data FROM action_log WHERE entity_id='td-500'`).Scan(&nd)
 	var fields map[string]any
-	json.Unmarshal([]byte(nd), &fields)
+	_ = json.Unmarshal([]byte(nd), &fields)
 	if fields["deleted_at"] == nil {
 		t.Error("expected deleted_at in new_data for soft-deleted entity")
 	}
@@ -441,5 +441,60 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
 	if count != 0 {
 		t.Fatalf("expected 0 action_log rows, got %d", count)
+	}
+}
+
+func TestAnyEventSetsStatusFalsePositive(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// Test 1: Nested object containing "status":"open" but top-level status is "closed".
+	// The LIKE pattern %"status":"open"% WILL match this row, but the actual
+	// top-level status is "closed". Without statusMatches post-filter, this is a false positive.
+	_, err := db.Exec(`INSERT INTO issues (id, title, status) VALUES ('td-fp1', 'FP Test', 'closed')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nestedData := `{"title":"FP Test","metadata":{"status":"open"},"status":"closed","type":"task"}`
+	_, err = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data)
+		VALUES ('al-fp1', 'sess1', 'create', 'issue', 'td-fp1', ?)`, nestedData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 2: Similar-looking status "reopened" should not match "open"
+	_, err = db.Exec(`INSERT INTO issues (id, title, status) VALUES ('td-fp2', 'FP Test 2', 'reopened')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newData, _ := json.Marshal(map[string]any{
+		"title":  "FP Test 2",
+		"status": "reopened",
+		"type":   "task",
+	})
+	_, err = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data)
+		VALUES ('al-fp2', 'sess1', 'create', 'issue', 'td-fp2', ?)`, string(newData))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// All inserts done before opening the transaction (in-memory SQLite has one connection)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Test 1: The LIKE pre-filter matches (nested "status":"open" is a substring),
+	// but statusMatches should correctly identify the top-level status as "closed"
+	if anyEventSetsStatus(tx, "td-fp1", "open") {
+		t.Error("anyEventSetsStatus returned true for 'open' when top-level status is 'closed' — false positive from nested field")
+	}
+	if !anyEventSetsStatus(tx, "td-fp1", "closed") {
+		t.Error("anyEventSetsStatus returned false for 'closed' when it is the top-level status")
+	}
+
+	// Test 2: "reopened" should not match "open"
+	if anyEventSetsStatus(tx, "td-fp2", "open") {
+		t.Error("anyEventSetsStatus returned true for 'open' when only 'reopened' exists")
 	}
 }

@@ -126,6 +126,12 @@ td init
 # Create your first issue
 td create "Add user auth" --type feature --priority P1
 
+# Agent-safe rich text input for markdown-heavy fields
+td create "Document sync failure modes" \
+  --description-file docs/issue-description.md \
+  --acceptance-file docs/issue-acceptance.md
+cat docs/issue-description.md | td update td-a1b2 --append --description-file -
+
 # Start work
 td start <issue-id>
 ```
@@ -182,6 +188,9 @@ make install-dev
 
 # Format code
 make fmt
+
+# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+make install-hooks
 ```
 
 ## Tests & Quality Checks

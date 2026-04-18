@@ -198,6 +198,69 @@ func TestWasSessionImplementationInvolved(t *testing.T) {
 	}
 }
 
+func testCloseAllowed(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved, hasImplementationHistory bool) bool {
+	if issue.Minor {
+		return true
+	}
+
+	isCreator := issue.CreatorSession == sessionID && issue.CreatorSession != ""
+	isImplementer := issue.ImplementerSession == sessionID && issue.ImplementerSession != ""
+
+	if isCreator && issue.Status == models.StatusOpen && !hasImplementationHistory && !wasImplementationInvolved {
+		return true
+	}
+
+	if isImplementer || wasImplementationInvolved || isCreator || wasInvolved {
+		return false
+	}
+
+	return true
+}
+
+func TestHasImplementationHistory(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	issue := &models.Issue{Title: "Test Issue"}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	hasHistory, err := db.HasImplementationHistory(issue.ID)
+	if err != nil {
+		t.Fatalf("HasImplementationHistory failed: %v", err)
+	}
+	if hasHistory {
+		t.Fatal("new issue should not have implementation history")
+	}
+
+	if err := db.RecordSessionAction(issue.ID, "ses_test", models.ActionSessionCreated); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+	hasHistory, err = db.HasImplementationHistory(issue.ID)
+	if err != nil {
+		t.Fatalf("HasImplementationHistory failed: %v", err)
+	}
+	if hasHistory {
+		t.Fatal("created action should not count as implementation history")
+	}
+
+	if err := db.RecordSessionAction(issue.ID, "ses_test", models.ActionSessionStarted); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+	hasHistory, err = db.HasImplementationHistory(issue.ID)
+	if err != nil {
+		t.Fatalf("HasImplementationHistory failed: %v", err)
+	}
+	if !hasHistory {
+		t.Fatal("started action should count as implementation history")
+	}
+}
+
 // TestGetSessionHistory verifies history retrieval and ordering
 func TestGetSessionHistory(t *testing.T) {
 	dir := t.TempDir()
@@ -401,8 +464,8 @@ func TestEmptyHistoryForNewIssue(t *testing.T) {
 	}
 }
 
-// TestBypassScenario_CreateClose verifies create->close bypass is prevented
-// Scenario: Session creates issue, then tries to close without anyone implementing
+// TestBypassScenario_CreateClose verifies creator can close an open throwaway issue
+// before any implementation history exists.
 func TestBypassScenario_CreateClose(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)
@@ -414,6 +477,7 @@ func TestBypassScenario_CreateClose(t *testing.T) {
 	// Session A creates issue
 	issue := &models.Issue{
 		Title:          "Test Issue",
+		Status:         models.StatusOpen,
 		CreatorSession: "ses_A",
 	}
 	if err := db.CreateIssue(issue); err != nil {
@@ -423,24 +487,19 @@ func TestBypassScenario_CreateClose(t *testing.T) {
 		t.Fatalf("RecordSessionAction failed: %v", err)
 	}
 
-	// Session A tries to close - should be blocked because:
-	// 1. wasInvolved = true (recorded 'created' action)
-	// 2. isCreator = true
-	// 3. hasOtherImplementer = false (no one implemented)
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, "ses_A")
-	isCreator := issue.CreatorSession == "ses_A"
-	hasOtherImplementer := issue.ImplementerSession != "" && issue.ImplementerSession != "ses_A"
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, "ses_A")
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
 
-	// Apply the same logic as close command
-	wasEverInvolved := wasInvolved || isCreator
-	canClose := !wasEverInvolved || (isCreator && hasOtherImplementer)
+	canClose := testCloseAllowed(issue, "ses_A", wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
-	if canClose {
-		t.Error("Session A should NOT be able to close their own creation without another implementer")
+	if !canClose {
+		t.Error("Session A should be able to close their own open throwaway issue")
 	}
 }
 
-// TestBypassScenario_CreateCloseWithOtherImplementer verifies creator CAN close if other implemented
+// TestBypassScenario_CreateCloseWithOtherImplementer verifies creator cannot close
+// once the issue has entered implementation flow.
 func TestBypassScenario_CreateCloseWithOtherImplementer(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)
@@ -452,6 +511,7 @@ func TestBypassScenario_CreateCloseWithOtherImplementer(t *testing.T) {
 	// Session A creates issue
 	issue := &models.Issue{
 		Title:          "Test Issue",
+		Status:         models.StatusOpen,
 		CreatorSession: "ses_A",
 	}
 	if err := db.CreateIssue(issue); err != nil {
@@ -470,25 +530,14 @@ func TestBypassScenario_CreateCloseWithOtherImplementer(t *testing.T) {
 		t.Fatalf("RecordSessionAction failed: %v", err)
 	}
 
-	// Session A tries to close - should be ALLOWED because:
-	// 1. isCreator = true
-	// 2. hasOtherImplementer = true (ses_B implemented)
-	// 3. isImplementer = false (ses_A is not the implementer)
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, "ses_A")
-	isCreator := issue.CreatorSession == "ses_A"
-	isImplementer := issue.ImplementerSession == "ses_A"
-	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, "ses_A")
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
 
-	wasEverInvolved := wasInvolved || isCreator || isImplementer
-	var canClose bool
-	if !wasEverInvolved {
-		canClose = true
-	} else if isCreator && hasOtherImplementer && !isImplementer {
-		canClose = true
-	}
+	canClose := testCloseAllowed(issue, "ses_A", wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
-	if !canClose {
-		t.Error("Creator should be able to close when someone else implemented")
+	if canClose {
+		t.Error("Creator should not be able to close once implementation history exists")
 	}
 }
 
@@ -699,10 +748,10 @@ func TestIntegration_SkipReviewNotAllowed(t *testing.T) {
 
 			// Record relevant session actions
 			if tt.creatorSession != "" {
-				db.RecordSessionAction(issue.ID, tt.creatorSession, models.ActionSessionCreated)
+				_ = db.RecordSessionAction(issue.ID, tt.creatorSession, models.ActionSessionCreated)
 			}
 			if tt.implementerSession != "" {
-				db.RecordSessionAction(issue.ID, tt.implementerSession, models.ActionSessionStarted)
+				_ = db.RecordSessionAction(issue.ID, tt.implementerSession, models.ActionSessionStarted)
 			}
 
 			// Check if bypass is being attempted
@@ -738,7 +787,7 @@ func TestIntegration_ReviewWorkflowEnforced(t *testing.T) {
 	if err := db.CreateIssue(issue); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
 
 	// Verify no one has been involved yet except creator
 	creatorInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
@@ -752,7 +801,7 @@ func TestIntegration_ReviewWorkflowEnforced(t *testing.T) {
 	if err := db.UpdateIssue(issue); err != nil {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	implInvolved, _ := db.WasSessionInvolved(issue.ID, implSess)
 	if !implInvolved {
@@ -764,7 +813,7 @@ func TestIntegration_ReviewWorkflowEnforced(t *testing.T) {
 	if err := db.UpdateIssue(issue); err != nil {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionReviewed)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionReviewed)
 
 	// Step 4: Reviewer (not implementer, not creator) approves
 	wasReviewerInvolved, _ := db.WasSessionInvolved(issue.ID, reviewerSess)
@@ -779,7 +828,7 @@ func TestIntegration_ReviewWorkflowEnforced(t *testing.T) {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
 	// Record reviewer action (use reviewed action to track approval)
-	db.RecordSessionAction(issue.ID, reviewerSess, models.ActionSessionReviewed)
+	_ = db.RecordSessionAction(issue.ID, reviewerSess, models.ActionSessionReviewed)
 
 	// Verify final state
 	finalIssue, _ := db.GetIssue(issue.ID)
@@ -813,11 +862,11 @@ func TestIntegration_ImplementerCannotApprove(t *testing.T) {
 	}
 
 	// Implementer starts the task
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Mark as in review
 	issue.Status = models.StatusInReview
-	db.UpdateIssue(issue)
+	_ = db.UpdateIssue(issue)
 
 	// Check if implementer can approve
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, implSess)
@@ -899,7 +948,7 @@ func TestIntegration_HandoffValidatesWorkflow(t *testing.T) {
 				t.Fatalf("GetLatestHandoff failed: %v", err)
 			}
 			if retrieved == nil {
-				t.Error("Expected handoff to be recorded")
+				t.Fatal("Expected handoff to be recorded")
 			}
 			if len(retrieved.Done) != 1 || retrieved.Done[0] != "part 1" {
 				t.Errorf("Handoff done items not preserved: %v", retrieved.Done)
@@ -928,17 +977,17 @@ func TestIntegration_CreatorCannotImplementAndApprove(t *testing.T) {
 	if err := db.CreateIssue(issue); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
 
 	// Creator also implements (should not be allowed to approve)
 	issue.ImplementerSession = creatorSess
 	issue.Status = models.StatusInProgress
-	db.UpdateIssue(issue)
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionStarted)
+	_ = db.UpdateIssue(issue)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionStarted)
 
 	// Mark as in review
 	issue.Status = models.StatusInReview
-	db.UpdateIssue(issue)
+	_ = db.UpdateIssue(issue)
 
 	// Creator should not be able to approve
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
@@ -978,12 +1027,12 @@ func TestIntegration_DifferentSessionCanApprove(t *testing.T) {
 	}
 
 	// Record interactions
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Move to review
 	issue.Status = models.StatusInReview
-	db.UpdateIssue(issue)
+	_ = db.UpdateIssue(issue)
 
 	// Reviewer (uninvolved) should be able to approve
 	wasReviewerInvolved, _ := db.WasSessionInvolved(issue.ID, reviewerSess)
@@ -1020,22 +1069,22 @@ func TestIntegration_UnstartDoesNotBypass(t *testing.T) {
 	}
 
 	// A starts
-	db.RecordSessionAction(issue.ID, sessA, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, sessA, models.ActionSessionStarted)
 
 	// A unstarts (clears implementer but history remains)
 	issue.ImplementerSession = ""
-	db.UpdateIssue(issue)
-	db.RecordSessionAction(issue.ID, sessA, models.ActionSessionUnstarted)
+	_ = db.UpdateIssue(issue)
+	_ = db.RecordSessionAction(issue.ID, sessA, models.ActionSessionUnstarted)
 
 	// B starts (becomes new implementer)
 	issue.ImplementerSession = sessB
 	issue.Status = models.StatusInProgress
-	db.UpdateIssue(issue)
-	db.RecordSessionAction(issue.ID, sessB, models.ActionSessionStarted)
+	_ = db.UpdateIssue(issue)
+	_ = db.RecordSessionAction(issue.ID, sessB, models.ActionSessionStarted)
 
 	// Now move to review
 	issue.Status = models.StatusInReview
-	db.UpdateIssue(issue)
+	_ = db.UpdateIssue(issue)
 
 	// A should NOT be able to approve even though they're not current implementer
 	wasAInvolved, _ := db.WasSessionInvolved(issue.ID, sessA)
@@ -1109,10 +1158,10 @@ func TestIntegration_BypassAttemptErrors(t *testing.T) {
 
 			// Record session involvement
 			if tt.creatorSession != "" {
-				db.RecordSessionAction(issue.ID, tt.creatorSession, models.ActionSessionCreated)
+				_ = db.RecordSessionAction(issue.ID, tt.creatorSession, models.ActionSessionCreated)
 			}
 			if tt.implementerSession != "" {
-				db.RecordSessionAction(issue.ID, tt.implementerSession, models.ActionSessionStarted)
+				_ = db.RecordSessionAction(issue.ID, tt.implementerSession, models.ActionSessionStarted)
 			}
 
 			// Check if approval would be allowed
@@ -1162,8 +1211,8 @@ func TestCommand_CreatorAsImplementerCannotClose(t *testing.T) {
 	}
 
 	// Record both creation and implementation
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionStarted)
 
 	// Simulate close command logic from cmd/review.go closeCmd
 	wasInvolved, err := db.WasSessionInvolved(issue.ID, creatorSess)
@@ -1171,20 +1220,9 @@ func TestCommand_CreatorAsImplementerCannotClose(t *testing.T) {
 		t.Fatalf("WasSessionInvolved failed: %v", err)
 	}
 
-	isCreator := issue.CreatorSession == creatorSess
-	isImplementer := issue.ImplementerSession == creatorSess
-	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-	wasEverInvolved := wasInvolved || isCreator || isImplementer
-
-	// Apply close command logic
-	var canClose bool
-	if !wasEverInvolved {
-		canClose = true
-	} else if isCreator && hasOtherImplementer && !isImplementer {
-		canClose = true
-	} else if issue.Minor {
-		canClose = true
-	}
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, creatorSess)
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
+	canClose := testCloseAllowed(issue, creatorSess, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
 	if canClose {
 		t.Error("Creator who is also implementer should NOT be able to close without self-close-exception")
@@ -1216,8 +1254,8 @@ func TestCommand_UninvolvedSessionCanClose(t *testing.T) {
 	}
 
 	// Record actions for creator and implementer
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Simulate close command logic for uninvolved session
 	wasInvolved, err := db.WasSessionInvolved(issue.ID, closerSess)
@@ -1225,20 +1263,9 @@ func TestCommand_UninvolvedSessionCanClose(t *testing.T) {
 		t.Fatalf("WasSessionInvolved failed: %v", err)
 	}
 
-	isCreator := issue.CreatorSession == closerSess
-	isImplementer := issue.ImplementerSession == closerSess
-	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-	wasEverInvolved := wasInvolved || isCreator || isImplementer
-
-	// Apply close command logic
-	var canClose bool
-	if !wasEverInvolved {
-		canClose = true
-	} else if isCreator && hasOtherImplementer && !isImplementer {
-		canClose = true
-	} else if issue.Minor {
-		canClose = true
-	}
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, closerSess)
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
+	canClose := testCloseAllowed(issue, closerSess, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
 	if !canClose {
 		t.Error("Uninvolved session should be able to close issues")
@@ -1336,54 +1363,66 @@ func TestCommand_DBErrorHandlingClose(t *testing.T) {
 	tests := []struct {
 		name           string
 		dbError        bool
+		status         models.Status
 		isCreator      bool
 		isImplementer  bool
-		hasOtherImpl   bool
+		wasImpl        bool
+		hasImplHistory bool
 		isMinor        bool
 		expectCanClose bool
 	}{
 		{
 			name:           "DB error assumes involvement - blocks close",
 			dbError:        true,
+			status:         models.StatusInReview,
 			isCreator:      false,
 			isImplementer:  false,
-			hasOtherImpl:   false,
+			wasImpl:        false,
+			hasImplHistory: false,
 			isMinor:        false,
 			expectCanClose: false,
 		},
 		{
 			name:           "DB error but minor task - allows close",
 			dbError:        true,
+			status:         models.StatusInReview,
 			isCreator:      false,
 			isImplementer:  false,
-			hasOtherImpl:   false,
+			wasImpl:        false,
+			hasImplHistory: false,
 			isMinor:        true,
 			expectCanClose: true,
 		},
 		{
 			name:           "No error, uninvolved - allows close",
 			dbError:        false,
+			status:         models.StatusInReview,
 			isCreator:      false,
 			isImplementer:  false,
-			hasOtherImpl:   false,
+			wasImpl:        false,
+			hasImplHistory: true,
 			isMinor:        false,
 			expectCanClose: true,
 		},
 		{
-			name:           "No error, creator with other implementer - allows close",
+			name:           "No error, creator open issue with no implementation history - allows close",
 			dbError:        false,
+			status:         models.StatusOpen,
 			isCreator:      true,
 			isImplementer:  false,
-			hasOtherImpl:   true,
+			wasImpl:        false,
+			hasImplHistory: false,
 			isMinor:        false,
 			expectCanClose: true,
 		},
 		{
-			name:           "No error, creator without other implementer - blocks close",
+			name:           "No error, creator issue with implementation history - blocks close",
 			dbError:        false,
+			status:         models.StatusOpen,
 			isCreator:      true,
 			isImplementer:  false,
-			hasOtherImpl:   false,
+			wasImpl:        false,
+			hasImplHistory: true,
 			isMinor:        false,
 			expectCanClose: false,
 		},
@@ -1397,16 +1436,20 @@ func TestCommand_DBErrorHandlingClose(t *testing.T) {
 				wasInvolved = true // Conservative
 			}
 
-			wasEverInvolved := wasInvolved || tt.isCreator || tt.isImplementer
+			issue := &models.Issue{
+				Status: models.Status(tt.status),
+				Minor:  tt.isMinor,
+			}
+			if tt.isCreator {
+				issue.CreatorSession = "ses_creator"
+			}
+			if tt.isImplementer {
+				issue.ImplementerSession = "ses_impl"
+			}
 
-			// Apply close command logic
-			var canClose bool
-			if !wasEverInvolved {
-				canClose = true
-			} else if tt.isCreator && tt.hasOtherImpl && !tt.isImplementer {
-				canClose = true
-			} else if tt.isMinor {
-				canClose = true
+			canClose := testCloseAllowed(issue, issue.CreatorSession, wasInvolved, tt.wasImpl, tt.hasImplHistory)
+			if !tt.isCreator {
+				canClose = testCloseAllowed(issue, "ses_other", wasInvolved, tt.wasImpl, tt.hasImplHistory)
 			}
 
 			if canClose != tt.expectCanClose {
@@ -1440,8 +1483,8 @@ func TestCommand_CreatorOnlyCannotApprove(t *testing.T) {
 	}
 
 	// Record creator action
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Creator tries to approve
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
@@ -1479,8 +1522,8 @@ func TestCommand_ImplementerOnlyCannotApprove(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Implementer tries to approve
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, implSess)
@@ -1558,9 +1601,9 @@ func TestCommand_StatusValidationBeforeApprove(t *testing.T) {
 				t.Fatalf("CreateIssue failed: %v", err)
 			}
 
-			db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+			_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
 			if tt.status != models.StatusOpen {
-				db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+				_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 			}
 
 			// Verify reviewer is not involved
@@ -1585,8 +1628,9 @@ func TestCommand_StatusValidationBeforeApprove(t *testing.T) {
 	}
 }
 
-// TestCommand_CreatorCanCloseIfOtherImplemented verifies creator CAN close when other implemented
-func TestCommand_CreatorCanCloseIfOtherImplemented(t *testing.T) {
+// TestCommand_CreatorCannotCloseIfOtherImplemented verifies creator cannot bypass
+// review once another session has implemented the issue.
+func TestCommand_CreatorCannotCloseIfOtherImplemented(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)
 	if err != nil {
@@ -1608,28 +1652,17 @@ func TestCommand_CreatorCanCloseIfOtherImplemented(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
 
 	// Creator tries to close
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
-	isCreator := issue.CreatorSession == creatorSess
-	isImplementer := issue.ImplementerSession == creatorSess
-	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-	wasEverInvolved := wasInvolved || isCreator || isImplementer
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, creatorSess)
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
+	canClose := testCloseAllowed(issue, creatorSess, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
-	// Apply close command logic
-	var canClose bool
-	if !wasEverInvolved {
-		canClose = true
-	} else if isCreator && hasOtherImplementer && !isImplementer {
-		canClose = true
-	} else if issue.Minor {
-		canClose = true
-	}
-
-	if !canClose {
-		t.Error("Creator should be able to close when someone else implemented")
+	if canClose {
+		t.Error("Creator should not be able to close when someone else implemented")
 	}
 }
 
@@ -1656,8 +1689,8 @@ func TestCommand_MinorTaskBypassesAllChecks(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	db.RecordSessionAction(issue.ID, sess, models.ActionSessionCreated)
-	db.RecordSessionAction(issue.ID, sess, models.ActionSessionStarted)
+	_ = db.RecordSessionAction(issue.ID, sess, models.ActionSessionCreated)
+	_ = db.RecordSessionAction(issue.ID, sess, models.ActionSessionStarted)
 
 	// Check approve
 	wasInvolved, _ := db.WasSessionInvolved(issue.ID, sess)
@@ -1671,15 +1704,9 @@ func TestCommand_MinorTaskBypassesAllChecks(t *testing.T) {
 	}
 
 	// Check close
-	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-	var canClose bool
-	if !wasEverInvolved {
-		canClose = true
-	} else if isCreator && hasOtherImplementer && !isImplementer {
-		canClose = true
-	} else if issue.Minor {
-		canClose = true
-	}
+	wasImplementationInvolved, _ := db.WasSessionImplementationInvolved(issue.ID, sess)
+	hasImplementationHistory, _ := db.HasImplementationHistory(issue.ID)
+	canClose := testCloseAllowed(issue, sess, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
 	if !canClose {
 		t.Error("Minor task should allow self-close")
@@ -1741,7 +1768,7 @@ func TestCommand_PreviousInvolvementPreventsApprove(t *testing.T) {
 
 			// Record all actions
 			for _, action := range tt.actions {
-				db.RecordSessionAction(issue.ID, sess, action)
+				_ = db.RecordSessionAction(issue.ID, sess, action)
 			}
 
 			// Check involvement

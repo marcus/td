@@ -25,9 +25,13 @@ var deleteCmd = &cobra.Command{
 		defer database.Close()
 
 		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
 
 		for _, issueID := range args {
-			if err := database.DeleteIssueLogged(issueID, sess.ID); err != nil {
+			if err := database.DeleteIssueLogged(issueID, sessionID); err != nil {
 				output.Error("failed to delete %s: %v", issueID, err)
 				continue
 			}
@@ -55,9 +59,13 @@ var restoreCmd = &cobra.Command{
 		defer database.Close()
 
 		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
 
 		for _, issueID := range args {
-			if err := database.RestoreIssueLogged(issueID, sess.ID); err != nil {
+			if err := database.RestoreIssueLogged(issueID, sessionID); err != nil {
 				output.Error("failed to restore %s: %v", issueID, err)
 				continue
 			}

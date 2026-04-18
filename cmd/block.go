@@ -61,7 +61,7 @@ var blockCmd = &cobra.Command{
 				logMsg = "Blocked: " + reason
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
@@ -143,7 +143,7 @@ Examples:
 				logMsg = "Reopened: " + reason
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
@@ -227,7 +227,7 @@ Examples:
 				logMsg = "Unblocked: " + reason
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,

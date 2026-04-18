@@ -10,6 +10,18 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
+// StaleIssueStatusError indicates the issue status changed after the caller
+// loaded the issue but before the logged transition was persisted.
+type StaleIssueStatusError struct {
+	IssueID  string
+	Expected models.Status
+	Actual   models.Status
+}
+
+func (e *StaleIssueStatusError) Error() string {
+	return fmt.Sprintf("issue %s status changed from %s to %s", e.IssueID, e.Expected, e.Actual)
+}
+
 // marshalIssue returns a JSON representation of an issue for action_log storage.
 func marshalIssue(issue *models.Issue) string {
 	data, _ := json.Marshal(issue)
@@ -151,6 +163,10 @@ func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionTyp
 	if err != nil {
 		return err
 	}
+	return db.updateIssueAndLogFromPrevious(issue, prev, sessionID, actionType)
+}
+
+func (db *DB) updateIssueAndLogFromPrevious(issue, prev *models.Issue, sessionID string, actionType models.ActionType) error {
 	previousData := marshalIssue(prev)
 
 	// Apply update
@@ -166,18 +182,20 @@ func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionTyp
 		dueDate = sql.NullString{String: *issue.DueDate, Valid: true}
 	}
 
-	_, err = db.conn.Exec(`
+	_, err := db.conn.Exec(`
 		UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
 		                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 		                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
 		                  closed_at = ?, deleted_at = ?,
-		                  defer_until = ?, due_date = ?, defer_count = ?
+		                  defer_until = ?, due_date = ?, defer_count = ?,
+		                  creator_session = ?, minor = ?, created_branch = ?
 		WHERE id = ?
 	`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
 		issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 		issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
 		issue.ClosedAt, issue.DeletedAt,
-		deferUntil, dueDate, issue.DeferCount, issue.ID)
+		deferUntil, dueDate, issue.DeferCount,
+		issue.CreatorSession, issue.Minor, issue.CreatedBranch, issue.ID)
 	if err != nil {
 		return err
 	}
@@ -218,6 +236,25 @@ func (db *DB) addLogEntry(issueID, sessionID, message string, logType models.Log
 func (db *DB) UpdateIssueLogged(issue *models.Issue, sessionID string, actionType models.ActionType) error {
 	return db.withWriteLock(func() error {
 		return db.updateIssueAndLog(issue, sessionID, actionType)
+	})
+}
+
+// UpdateIssueLoggedIfStatus updates an issue and logs the action atomically,
+// but only if the current persisted status still matches expectedStatus.
+func (db *DB) UpdateIssueLoggedIfStatus(issue *models.Issue, expectedStatus models.Status, sessionID string, actionType models.ActionType) error {
+	return db.withWriteLock(func() error {
+		prev, err := db.scanIssueRow(issue.ID)
+		if err != nil {
+			return err
+		}
+		if prev.Status != expectedStatus {
+			return &StaleIssueStatusError{
+				IssueID:  issue.ID,
+				Expected: expectedStatus,
+				Actual:   prev.Status,
+			}
+		}
+		return db.updateIssueAndLogFromPrevious(issue, prev, sessionID, actionType)
 	})
 }
 

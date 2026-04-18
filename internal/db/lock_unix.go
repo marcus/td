@@ -16,7 +16,7 @@ func (l *writeLocker) tryLock() error {
 // unlock releases the exclusive lock.
 func (l *writeLocker) unlock() {
 	if l.lockFile != nil {
-		syscall.Flock(int(l.lockFile.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(l.lockFile.Fd()), syscall.LOCK_UN)
 	}
 }
 

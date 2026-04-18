@@ -238,7 +238,7 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Read previous data
 	prevData := readEntity(tx, entityType, entityID)
@@ -401,12 +401,12 @@ func (h *Harness) Push(clientID, projectID string) (tdsync.PushResult, error) {
 
 	events, err := tdsync.GetPendingEvents(clientTx, c.DeviceID, c.SessionID)
 	if err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("get pending: %w", err)
 	}
 
 	if len(events) == 0 {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, nil
 	}
 
@@ -415,28 +415,28 @@ func (h *Harness) Push(clientID, projectID string) (tdsync.PushResult, error) {
 	serverTx, err := serverDB.Begin()
 	if err != nil {
 		h.serverMu.Unlock()
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("begin server tx: %w", err)
 	}
 
 	result, err := tdsync.InsertServerEvents(serverTx, events)
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		h.serverMu.Unlock()
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("insert server events: %w", err)
 	}
 
 	if err := serverTx.Commit(); err != nil {
 		h.serverMu.Unlock()
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("commit server tx: %w", err)
 	}
 	h.serverMu.Unlock()
 
 	// Mark synced on client
 	if err := tdsync.MarkEventsSynced(clientTx, result.Acks); err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("mark synced: %w", err)
 	}
 
@@ -471,7 +471,7 @@ func (h *Harness) Pull(clientID, projectID string) (tdsync.PullResult, error) {
 
 	pullResult, err := tdsync.GetEventsSince(serverTx, c.LastPulledSeq, 10000, c.DeviceID)
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("get events since: %w", err)
 	}
 
@@ -491,7 +491,7 @@ func (h *Harness) Pull(clientID, projectID string) (tdsync.PullResult, error) {
 
 	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator, nil)
 	if err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("apply remote events: %w", err)
 	}
 
@@ -654,7 +654,7 @@ func (h *Harness) QueryEntity(clientID, entityType, entityID string) map[string]
 	if err != nil {
 		h.t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	return readEntityFiltered(tx, entityType, entityID, softDeleteTables[entityType])
 }
@@ -672,7 +672,7 @@ func (h *Harness) QueryEntityRaw(clientID, entityType, entityID string) map[stri
 	if err != nil {
 		h.t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	return readEntityFiltered(tx, entityType, entityID, false)
 }
@@ -712,10 +712,10 @@ func (h *Harness) PushWithoutMark(clientID, projectID string) (tdsync.PushResult
 
 	events, err := tdsync.GetPendingEvents(clientTx, c.DeviceID, c.SessionID)
 	if err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PushResult{}, fmt.Errorf("get pending: %w", err)
 	}
-	clientTx.Rollback() // read-only, don't mark anything
+	_ = clientTx.Rollback() // read-only, don't mark anything
 
 	if len(events) == 0 {
 		return tdsync.PushResult{}, nil
@@ -730,7 +730,7 @@ func (h *Harness) PushWithoutMark(clientID, projectID string) (tdsync.PushResult
 
 	result, err := tdsync.InsertServerEvents(serverTx, events)
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		h.serverMu.Unlock()
 		return tdsync.PushResult{}, fmt.Errorf("insert server events: %w", err)
 	}
@@ -764,7 +764,7 @@ func (h *Harness) PullAll(clientID, projectID string) (tdsync.PullResult, error)
 	// Empty excludeDevice = get all events including own
 	pullResult, err := tdsync.GetEventsSince(serverTx, c.LastPulledSeq, 10000, "")
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("get events since: %w", err)
 	}
 
@@ -783,7 +783,7 @@ func (h *Harness) PullAll(clientID, projectID string) (tdsync.PullResult, error)
 
 	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, c.DeviceID, h.Validator, nil)
 	if err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		return tdsync.PullResult{}, fmt.Errorf("apply remote events: %w", err)
 	}
 
@@ -818,7 +818,7 @@ func (h *Harness) UndoLastAction(clientID string) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Find the last non-undone action (excluding backfill-generated entries)
 	// Harness uses IDs like "al-00000001" (8 decimal digits)

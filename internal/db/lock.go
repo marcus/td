@@ -78,7 +78,7 @@ func (l *writeLocker) release() error {
 	}
 
 	// Clear holder info
-	l.lockFile.Truncate(0)
+	_ = l.lockFile.Truncate(0)
 
 	// Release lock (platform-specific)
 	l.unlock()
@@ -94,10 +94,10 @@ func (l *writeLocker) writeHolder() {
 	if l.lockFile == nil {
 		return
 	}
-	l.lockFile.Truncate(0)
-	l.lockFile.Seek(0, 0)
+	_ = l.lockFile.Truncate(0)
+	_, _ = l.lockFile.Seek(0, 0)
 	fmt.Fprintf(l.lockFile, "pid:%d\ntime:%s\n", os.Getpid(), time.Now().Format(time.RFC3339))
-	l.lockFile.Sync()
+	_ = l.lockFile.Sync()
 }
 
 // readHolder reads the current holder info from the lock file.

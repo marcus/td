@@ -476,7 +476,10 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 
 		events := make([]tdsync.Event, len(pullResp.Events))
 		for i, pe := range pullResp.Events {
-			clientTS, _ := time.Parse(time.RFC3339, pe.ClientTimestamp)
+			clientTS, err := time.Parse(time.RFC3339Nano, pe.ClientTimestamp)
+			if err != nil {
+				clientTS, _ = time.Parse(time.RFC3339, pe.ClientTimestamp)
+			}
 			events[i] = tdsync.Event{
 				ServerSeq:       pe.ServerSeq,
 				DeviceID:        pe.DeviceID,
@@ -496,7 +499,9 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 			return fmt.Errorf("begin tx: %w", err)
 		}
 
-		if _, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, nil, state.LastSyncAt); err != nil {
+		// Accept all entity types in SSE path (no feature gating for live sync)
+		allowAll := func(string) bool { return true }
+		if _, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, allowAll, state.LastSyncAt); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("apply events: %w", err)
 		}

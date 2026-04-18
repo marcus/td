@@ -56,7 +56,7 @@ func runAdminGrant(args []string) {
 	fs := flag.NewFlagSet("admin grant", flag.ExitOnError)
 	email := fs.String("email", "", "user email address")
 	dbPath := fs.String("db", "", "path to server.db (default: from SYNC_SERVER_DB_PATH or ./data/server.db)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *email == "" {
 		fmt.Fprintln(os.Stderr, "error: --email is required")
@@ -79,7 +79,7 @@ func runAdminRevoke(args []string) {
 	fs := flag.NewFlagSet("admin revoke", flag.ExitOnError)
 	email := fs.String("email", "", "user email address")
 	dbPath := fs.String("db", "", "path to server.db (default: from SYNC_SERVER_DB_PATH or ./data/server.db)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *email == "" {
 		fmt.Fprintln(os.Stderr, "error: --email is required")
@@ -126,7 +126,7 @@ func runAdminCreateKey(args []string) {
 	scopes := fs.String("scopes", "", "comma-separated scopes (e.g. admin:read:server,sync)")
 	name := fs.String("name", "", "key name (e.g. td-watch)")
 	dbPath := fs.String("db", "", "path to server.db (default: from SYNC_SERVER_DB_PATH or ./data/server.db)")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *email == "" {
 		fmt.Fprintln(os.Stderr, "error: --email is required")

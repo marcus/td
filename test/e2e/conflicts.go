@@ -135,17 +135,6 @@ func verifyIssueField(h *Harness, issueID, field, expected string) []VerifyResul
 	return results
 }
 
-// issueCount returns the number of non-deleted issues for an actor.
-func issueCount(h *Harness, actor string) (int, error) {
-	val, err := queryDB(h, actor, "SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL")
-	if err != nil {
-		return 0, err
-	}
-	var count int
-	fmt.Sscanf(val, "%d", &count)
-	return count, nil
-}
-
 // ScenarioPartitionRecovery: both actors perform 50+ mutations without syncing,
 // then sync and verify convergence.
 func ScenarioPartitionRecovery(h *Harness, rng *rand.Rand) []VerifyResult {
@@ -335,7 +324,7 @@ func ScenarioRapidCreateDelete(h *Harness) []VerifyResult {
 
 	// Delete all 10
 	for _, id := range issueIDs {
-		h.TdA("delete", id)
+		_, _ = h.TdA("delete", id)
 	}
 
 	// Sync after deletes
@@ -346,7 +335,7 @@ func ScenarioRapidCreateDelete(h *Harness) []VerifyResult {
 
 	// Restore 5
 	for i := 0; i < 5; i++ {
-		h.TdA("restore", issueIDs[i])
+		_, _ = h.TdA("restore", issueIDs[i])
 	}
 
 	// Sync after restores
@@ -357,7 +346,7 @@ func ScenarioRapidCreateDelete(h *Harness) []VerifyResult {
 
 	// Delete 3 of the restored
 	for i := 0; i < 3; i++ {
-		h.TdA("delete", issueIDs[i])
+		_, _ = h.TdA("delete", issueIDs[i])
 	}
 
 	// Final sync
@@ -400,9 +389,9 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	}
 
 	// Move all to in_progress
-	h.TdA("start", parentID, "--reason", "cascade test")
+	_, _ = h.TdA("start", parentID, "--reason", "cascade test")
 	for _, cid := range childIDs {
-		h.TdA("start", cid, "--reason", "cascade test")
+		_, _ = h.TdA("start", cid, "--reason", "cascade test")
 	}
 
 	// Sync so both sides have same state
@@ -411,11 +400,11 @@ func ScenarioCascadeConflict(h *Harness) []VerifyResult {
 	}
 
 	// Actor A: moves parent to in_review (should cascade children)
-	h.TdA("review", parentID, "--reason", "cascade review test")
+	_, _ = h.TdA("review", parentID, "--reason", "cascade review test")
 
 	// Actor B: independently closes one child
 	if len(childIDs) > 0 {
-		h.TdB("close", childIDs[0], "--reason", "cascade close test")
+		_, _ = h.TdB("close", childIDs[0], "--reason", "cascade close test")
 	}
 
 	// Sync for convergence
@@ -510,8 +499,8 @@ func ScenarioThunderingHerd(h *Harness) []VerifyResult {
 
 	// Both actors create issues
 	for i := 0; i < 5; i++ {
-		h.TdA("create", fmt.Sprintf("thundering-herd-alice-%d", i), "--type", "task", "--priority", "P1")
-		h.TdB("create", fmt.Sprintf("thundering-herd-bob-%d", i), "--type", "task", "--priority", "P2")
+		_, _ = h.TdA("create", fmt.Sprintf("thundering-herd-alice-%d", i), "--type", "task", "--priority", "P1")
+		_, _ = h.TdB("create", fmt.Sprintf("thundering-herd-bob-%d", i), "--type", "task", "--priority", "P2")
 	}
 
 	// Both sync SIMULTANEOUSLY
@@ -578,26 +567,26 @@ func ScenarioBurstNoSync(h *Harness, rng *rand.Rand) []VerifyResult {
 	finalPoints := "8"
 
 	// Mutations: various updates, comments, status changes, logs
-	h.TdA("update", issueID, "--title", "burst-title-1")
-	h.TdA("update", issueID, "--priority", "P3")
-	h.TdA("comments", "add", issueID, "burst comment 1")
-	h.TdA("update", issueID, "--labels", "burst-label")
-	h.TdA("update", issueID, "--description", "burst description update 1")
-	h.TdA("start", issueID, "--reason", "burst start")
-	h.TdA("comments", "add", issueID, "burst comment 2")
-	h.TdA("update", issueID, "--title", "burst-title-2")
-	h.TdA("update", issueID, "--points", "5")
-	h.TdA("log", "--issue", issueID, "burst log 1")
-	h.TdA("update", issueID, "--sprint", "sprint-1")
-	h.TdA("update", issueID, "--priority", "P2")
-	h.TdA("comments", "add", issueID, "burst comment 3")
-	h.TdA("update", issueID, "--description", "burst description final")
-	h.TdA("update", issueID, "--title", "burst-title-3")
-	h.TdA("log", "--issue", issueID, "burst log 2")
-	h.TdA("update", issueID, "--labels", finalLabels)
-	h.TdA("update", issueID, "--title", finalTitle)
-	h.TdA("update", issueID, "--priority", finalPriority)
-	h.TdA("update", issueID, "--points", finalPoints, "--sprint", finalSprint)
+	_, _ = h.TdA("update", issueID, "--title", "burst-title-1")
+	_, _ = h.TdA("update", issueID, "--priority", "P3")
+	_, _ = h.TdA("comments", "add", issueID, "burst comment 1")
+	_, _ = h.TdA("update", issueID, "--labels", "burst-label")
+	_, _ = h.TdA("update", issueID, "--description", "burst description update 1")
+	_, _ = h.TdA("start", issueID, "--reason", "burst start")
+	_, _ = h.TdA("comments", "add", issueID, "burst comment 2")
+	_, _ = h.TdA("update", issueID, "--title", "burst-title-2")
+	_, _ = h.TdA("update", issueID, "--points", "5")
+	_, _ = h.TdA("log", "--issue", issueID, "burst log 1")
+	_, _ = h.TdA("update", issueID, "--sprint", "sprint-1")
+	_, _ = h.TdA("update", issueID, "--priority", "P2")
+	_, _ = h.TdA("comments", "add", issueID, "burst comment 3")
+	_, _ = h.TdA("update", issueID, "--description", "burst description final")
+	_, _ = h.TdA("update", issueID, "--title", "burst-title-3")
+	_, _ = h.TdA("log", "--issue", issueID, "burst log 2")
+	_, _ = h.TdA("update", issueID, "--labels", finalLabels)
+	_, _ = h.TdA("update", issueID, "--title", finalTitle)
+	_, _ = h.TdA("update", issueID, "--priority", finalPriority)
+	_, _ = h.TdA("update", issueID, "--points", finalPoints, "--sprint", finalSprint)
 
 	// Now sync
 	if err := h.SyncAll(); err != nil {

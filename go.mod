@@ -11,8 +11,11 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.3
 	github.com/charmbracelet/x/cellbuf v0.0.14
 	github.com/mattn/go-sqlite3 v1.14.33
+	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	golang.org/x/crypto v0.47.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.40.0
 	golang.org/x/term v0.39.0
 	modernc.org/sqlite v1.41.0
@@ -50,11 +53,9 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

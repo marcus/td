@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>td-377aae proof</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f3ea;
+  --card: #fffdf8;
+  --ink: #1e2725;
+  --muted: #55605c;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.10);
+  --border: #d9e3de;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 32px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.14), transparent 28%),
+    linear-gradient(180deg, #faf8f2 0%, var(--bg) 100%);
+}
+h1, h2 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-weight: 700;
+}
+h1 {
+  font-size: 40px;
+  margin-bottom: 10px;
+}
+p {
+  max-width: 960px;
+  line-height: 1.55;
+}
+.lede {
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 22px;
+  margin-top: 22px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 20px 44px rgba(25, 42, 38, 0.08);
+  padding: 22px;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.pill {
+  background: var(--accent-soft);
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 999px;
+  padding: 12px 16px;
+  font-weight: 600;
+}
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.55 "SFMono-Regular", Menlo, monospace;
+}
+code {
+  font-family: "SFMono-Regular", Menlo, monospace;
+}
+</style>
+</head>
+<body>
+<h1>td-377aae proof</h1>
+<p class="lede">This proof combines two things: the happy-path CLI flow still works end to end for <code>td-c5932a</code>, and the new stale-transition protection is exercised by deterministic tests that capture the exact messages users now see when a concurrent status change makes their local transition stale.</p>
+
+<section class="summary">
+  <div class="pill">Happy path: create → start → handoff → review → approve</div>
+  <div class="pill">DB guard: refuses stale status write and preserves the newer state</div>
+  <div class="pill">CLI wording: explains the concurrent status change and the next command</div>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <div class="eyebrow">Happy Path</div>
+    <h2>Review command still works normally</h2>
+    <pre>REVIEW REQUESTED td-c5932a (session: ses_3bce40)
+</pre>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Happy Path</div>
+    <h2>Approve still closes the reviewed issue</h2>
+    <pre>APPROVED td-c5932a (reviewer: ses_543a53)
+</pre>
+  </section>
+</div>
+
+<div class="grid" id="stale">
+  <section class="card">
+    <div class="eyebrow">Stale Guard</div>
+    <h2>DB rejects a stale concurrent transition</h2>
+    <pre>=== RUN   TestUpdateIssueLoggedIfStatusDetectsStaleTransition
+    issues_logged_test.go:204: issue td-4367a5 status changed from open to in_progress
+--- PASS: TestUpdateIssueLoggedIfStatusDetectsStaleTransition (0.06s)
+PASS
+ok  	github.com/marcus/td/internal/db	(cached)
+</pre>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">User Message</div>
+    <h2>CLI guidance names the new status and next step</h2>
+    <pre>=== RUN   TestDescribeStaleTransitionUpdate
+    review_policy_test.go:408: cannot approve td-764f76: status changed from in_review to closed in another session
+          Already closed: td show td-764f76
+--- PASS: TestDescribeStaleTransitionUpdate (0.04s)
+PASS
+ok  	github.com/marcus/td/cmd	(cached)
+</pre>
+  </section>
+</div>
+
+<div class="grid">
+  <section class="card">
+    <div class="eyebrow">Follow-up Guidance</div>
+    <h2>Closed-state guidance stays explicit</h2>
+    <pre>=== RUN   TestCloseFollowupGuidance
+=== RUN   TestCloseFollowupGuidance/open_issue_points_to_review
+=== RUN   TestCloseFollowupGuidance/in_progress_issue_points_to_review
+=== RUN   TestCloseFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestCloseFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestCloseFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestCloseFollowupGuidance (0.00s)
+    --- PASS: TestCloseFollowupGuidance/open_issue_points_to_review (0.00s)
+    --- PASS: TestCloseFollowupGuidance/in_progress_issue_points_to_review (0.00s)
+    --- PASS: TestCloseFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestCloseFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestCloseFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+=== RUN   TestReviewFollowupGuidance
+=== RUN   TestReviewFollowupGuidance/open_issue_points_to_review
+=== RUN   TestReviewFollowupGuidance/in_progress_issue_points_to_review
+=== RUN   TestReviewFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestReviewFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestReviewFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestReviewFollowupGuidance (0.00s)
+    --- PASS: TestReviewFollowupGuidance/open_issue_points_to_review (0.00s)
+    --- PASS: TestReviewFollowupGuidance/in_progress_issue_points_to_review (0.00s)
+    --- PASS: TestReviewFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestReviewFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestReviewFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+=== RUN   TestApproveFollowupGuidance
+=== RUN   TestApproveFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestApproveFollowupGuidance/open_issue_points_to_review_first
+=== RUN   TestApproveFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestApproveFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestApproveFollowupGuidance (0.00s)
+    --- PASS: TestApproveFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestApproveFollowupGuidance/open_issue_points_to_review_first (0.00s)
+    --- PASS: TestApproveFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestApproveFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+PASS
+ok  	github.com/marcus/td/cmd	(cached)
+</pre>
+  </section>
+
+  <section class="card">
+    <div class="eyebrow">Final State</div>
+    <h2>Happy-path issue ends closed with history intact</h2>
+    <pre>td-c5932a: Proof stale transition workflow
+Status: [closed]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_3bce40, just now):
+  Done:
+    - Captured reviewer handoff context
+
+SESSION LOG:
+  [18:02] Started work
+  [18:02] Submitted for review
+  [18:02] Approved
+
+GIT STATE:
+  Started: 53f499a (dispatch/td-377aae-0004) just now
+  Current: 53f499a (dispatch/td-377aae-0004) +0 commits
+
+SESSIONS INVOLVED:
+  ses_3bce40 (implementer)
+  ses_543a53 (reviewer)
+</pre>
+  </section>
+</div>
+</body>
+</html>

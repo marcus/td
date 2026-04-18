@@ -313,10 +313,10 @@ func TestGetTransitiveBlockedDiamond(t *testing.T) {
 	issueC := createTestIssue(t, database, "Issue C")
 	issueD := createTestIssue(t, database, "Issue D")
 
-	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueD.ID, issueB.ID, "depends_on")
-	database.AddDependency(issueD.ID, issueC.ID, "depends_on")
+	_ = database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueD.ID, issueB.ID, "depends_on")
+	_ = database.AddDependency(issueD.ID, issueC.ID, "depends_on")
 
 	// A blocks B, C, D - each counted exactly once
 	blocked := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
@@ -339,12 +339,12 @@ func TestGetTransitiveBlockedMultiPath(t *testing.T) {
 	issueD := createTestIssue(t, database, "Issue D")
 	issueE := createTestIssue(t, database, "Issue E")
 
-	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueD.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueE.ID, issueB.ID, "depends_on")
-	database.AddDependency(issueE.ID, issueC.ID, "depends_on")
-	database.AddDependency(issueE.ID, issueD.ID, "depends_on")
+	_ = database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueD.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueE.ID, issueB.ID, "depends_on")
+	_ = database.AddDependency(issueE.ID, issueC.ID, "depends_on")
+	_ = database.AddDependency(issueE.ID, issueD.ID, "depends_on")
 
 	// A blocks B, C, D, E - E counted exactly once despite 3 paths
 	blocked := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
@@ -362,12 +362,12 @@ func TestGetTransitiveBlockedOpenExcludesClosed(t *testing.T) {
 	issueB := createTestIssue(t, database, "Issue B")
 	issueC := createTestIssue(t, database, "Issue C")
 
-	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueC.ID, issueB.ID, "depends_on")
+	_ = database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueC.ID, issueB.ID, "depends_on")
 
 	// Close B
 	issueB.Status = models.StatusClosed
-	database.UpdateIssue(issueB)
+	_ = database.UpdateIssue(issueB)
 
 	// GetTransitiveBlocked includes closed issues
 	all := GetTransitiveBlocked(database, issueA.ID, make(map[string]bool))
@@ -393,13 +393,13 @@ func TestGetTransitiveBlockedOpenPartialClosed(t *testing.T) {
 	issueC := createTestIssue(t, database, "Issue C")
 	issueD := createTestIssue(t, database, "Issue D")
 
-	database.AddDependency(issueB.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueC.ID, issueA.ID, "depends_on")
-	database.AddDependency(issueD.ID, issueB.ID, "depends_on")
+	_ = database.AddDependency(issueB.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueC.ID, issueA.ID, "depends_on")
+	_ = database.AddDependency(issueD.ID, issueB.ID, "depends_on")
 
 	// Close C
 	issueC.Status = models.StatusClosed
-	database.UpdateIssue(issueC)
+	_ = database.UpdateIssue(issueC)
 
 	open := GetTransitiveBlockedOpen(database, issueA.ID, make(map[string]bool))
 	if len(open) != 2 {

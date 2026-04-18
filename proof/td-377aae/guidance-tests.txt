@@ -1,0 +1,36 @@
+=== RUN   TestCloseFollowupGuidance
+=== RUN   TestCloseFollowupGuidance/open_issue_points_to_review
+=== RUN   TestCloseFollowupGuidance/in_progress_issue_points_to_review
+=== RUN   TestCloseFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestCloseFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestCloseFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestCloseFollowupGuidance (0.00s)
+    --- PASS: TestCloseFollowupGuidance/open_issue_points_to_review (0.00s)
+    --- PASS: TestCloseFollowupGuidance/in_progress_issue_points_to_review (0.00s)
+    --- PASS: TestCloseFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestCloseFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestCloseFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+=== RUN   TestReviewFollowupGuidance
+=== RUN   TestReviewFollowupGuidance/open_issue_points_to_review
+=== RUN   TestReviewFollowupGuidance/in_progress_issue_points_to_review
+=== RUN   TestReviewFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestReviewFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestReviewFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestReviewFollowupGuidance (0.00s)
+    --- PASS: TestReviewFollowupGuidance/open_issue_points_to_review (0.00s)
+    --- PASS: TestReviewFollowupGuidance/in_progress_issue_points_to_review (0.00s)
+    --- PASS: TestReviewFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestReviewFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestReviewFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+=== RUN   TestApproveFollowupGuidance
+=== RUN   TestApproveFollowupGuidance/in_review_issue_points_to_approve
+=== RUN   TestApproveFollowupGuidance/open_issue_points_to_review_first
+=== RUN   TestApproveFollowupGuidance/closed_issue_points_to_show
+=== RUN   TestApproveFollowupGuidance/nil_issue_falls_back_to_review_wording
+--- PASS: TestApproveFollowupGuidance (0.00s)
+    --- PASS: TestApproveFollowupGuidance/in_review_issue_points_to_approve (0.00s)
+    --- PASS: TestApproveFollowupGuidance/open_issue_points_to_review_first (0.00s)
+    --- PASS: TestApproveFollowupGuidance/closed_issue_points_to_show (0.00s)
+    --- PASS: TestApproveFollowupGuidance/nil_issue_falls_back_to_review_wording (0.00s)
+PASS
+ok  	github.com/marcus/td/cmd	(cached)

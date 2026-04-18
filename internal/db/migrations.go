@@ -61,7 +61,7 @@ func (db *DB) GetSchemaVersion() (int, error) {
 		return 0, nil
 	}
 	var v int
-	fmt.Sscanf(version, "%d", &v)
+	_, _ = fmt.Sscanf(version, "%d", &v)
 	return v, nil
 }
 
@@ -359,7 +359,7 @@ func (db *DB) migrateToTextIDs() error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback() // no-op after commit
+	defer func() { _ = tx.Rollback() }() // no-op after commit
 
 	if err := db.migrateToTextIDsTx(tx); err != nil {
 		return err
@@ -598,22 +598,6 @@ CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, a
 	return nil
 }
 
-// tableHasIntegerPK checks if the given table's primary key is INTEGER type
-func (db *DB) tableHasIntegerPK(table string) (bool, error) {
-	exists, err := db.tableExists(table)
-	if err != nil || !exists {
-		return false, err
-	}
-
-	rows, err := db.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	return scanForIntegerPK(rows)
-}
-
 // tableHasIntegerPKTx is like tableHasIntegerPK but runs within a transaction
 func (db *DB) tableHasIntegerPKTx(tx *sql.Tx, table string) (bool, error) {
 	// Check table exists via tx
@@ -695,7 +679,7 @@ func (db *DB) migrateDeterministicIDs() error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// --- board_issue_positions: add id TEXT PRIMARY KEY ---
 	exists, err := db.tableExistsTx(tx, "board_issue_positions")
@@ -910,7 +894,13 @@ func (db *DB) migrateFilePathsToRelative() error {
 		return err
 	}
 
-	rows, err := db.conn.Query(`SELECT id, issue_id, file_path FROM issue_files`)
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.Query(`SELECT id, issue_id, file_path FROM issue_files`)
 	if err != nil {
 		return fmt.Errorf("read issue_files: %w", err)
 	}
@@ -945,18 +935,18 @@ func (db *DB) migrateFilePathsToRelative() error {
 
 		// Check if a row with the new relative path already exists (avoid UNIQUE conflict)
 		var existingCount int
-		db.conn.QueryRow(`SELECT COUNT(*) FROM issue_files WHERE issue_id = ? AND file_path = ?`,
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM issue_files WHERE issue_id = ? AND file_path = ?`,
 			r.issueID, relPath).Scan(&existingCount)
 		if existingCount > 0 {
 			// Duplicate — delete the old absolute-path row
-			if _, err := db.conn.Exec(`DELETE FROM issue_files WHERE id = ?`, r.id); err != nil {
+			if _, err := tx.Exec(`DELETE FROM issue_files WHERE id = ?`, r.id); err != nil {
 				return fmt.Errorf("delete dup file row: %w", err)
 			}
 			continue
 		}
 
 		// Update path and recompute deterministic ID
-		if _, err := db.conn.Exec(
+		if _, err := tx.Exec(
 			`UPDATE issue_files SET file_path = ?, id = ? WHERE id = ?`,
 			relPath, newID, r.id,
 		); err != nil {
@@ -964,7 +954,7 @@ func (db *DB) migrateFilePathsToRelative() error {
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // migrateLegacyActionLogCompositeIDs normalizes unsynced action_log entries for
@@ -981,7 +971,7 @@ func (db *DB) migrateLegacyActionLogCompositeIDs() error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.Query(`
 		SELECT id, action_type, entity_type, entity_id, new_data
@@ -1255,7 +1245,7 @@ func (db *DB) migrateWorkSessionIssueIDs() error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	exists, err := db.tableExistsTx(tx, "work_session_issues")
 	if err != nil {
@@ -1349,7 +1339,7 @@ func (db *DB) migrateActionLogNotNullID() error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// First fix any NULL or empty ids
 	if _, err := tx.Exec(`UPDATE action_log SET id = 'al-' || lower(hex(randomblob(4))) WHERE id IS NULL OR id = ''`); err != nil {

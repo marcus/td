@@ -33,10 +33,10 @@ func TestUpdateProjectEventCount_Accumulates(t *testing.T) {
 	p, _ := db.CreateProject("proj", "", u.ID)
 
 	t1 := time.Now().UTC()
-	db.UpdateProjectEventCount(p.ID, 3, t1)
+	_ = db.UpdateProjectEventCount(p.ID, 3, t1)
 
 	t2 := t1.Add(time.Minute)
-	db.UpdateProjectEventCount(p.ID, 7, t2)
+	_ = db.UpdateProjectEventCount(p.ID, 7, t2)
 
 	count, lastAt, err := db.GetProjectEventCount(p.ID)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestGetProject_IncludesEventCount(t *testing.T) {
 	p, _ := db.CreateProject("proj", "", u.ID)
 
 	now := time.Now().UTC()
-	db.UpdateProjectEventCount(p.ID, 12, now)
+	_ = db.UpdateProjectEventCount(p.ID, 12, now)
 
 	got, err := db.GetProject(p.ID, false)
 	if err != nil {
@@ -106,8 +106,8 @@ func TestListProjectsForUser_IncludesEventCount(t *testing.T) {
 	p2, _ := db.CreateProject("p2", "", u.ID)
 
 	now := time.Now().UTC()
-	db.UpdateProjectEventCount(p1.ID, 5, now)
-	db.UpdateProjectEventCount(p2.ID, 20, now)
+	_ = db.UpdateProjectEventCount(p1.ID, 5, now)
+	_ = db.UpdateProjectEventCount(p2.ID, 20, now)
 
 	projects, err := db.ListProjectsForUser(u.ID)
 	if err != nil {

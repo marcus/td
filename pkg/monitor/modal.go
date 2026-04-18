@@ -194,15 +194,13 @@ func (m Model) estimateModalContentLines(modal *ModalEntry) int {
 	lines := 0
 	issue := modal.Issue
 
-	// Header + status section
-	lines += 5 // ID, title, blank, status, blank
-
-	// Parent epic
-	if modal.ParentEpic != nil {
-		lines += 2
-	}
+	// Header + metadata section
+	lines += 5 // status, title, blank, metadata, blank
 
 	// Labels, implementer, reviewer
+	if modal.ParentEpic != nil {
+		lines++
+	}
 	if len(issue.Labels) > 0 {
 		lines++
 	}
@@ -808,8 +806,8 @@ func (m *Model) createCloseConfirmModal() *modal.Modal {
 
 	md := modal.New(title,
 		modal.WithWidth(width),
-		modal.WithVariant(modal.VariantDanger),  // Red border for destructive action
-		modal.WithHints(false),                  // We use custom hint text
+		modal.WithVariant(modal.VariantDanger), // Red border for destructive action
+		modal.WithHints(false),                 // We use custom hint text
 		modal.WithPrimaryAction("confirm"),     // Enter on input submits confirm
 	)
 
@@ -895,12 +893,118 @@ func (m Model) pushModalWithScope(issueID string, sourcePanel Panel, scope []mod
 	return m, m.fetchIssueDetails(issueID)
 }
 
+// computeModalSectionLines counts lines through the modal content to determine
+// where the blocked-by and blocks sections start/end. This mirrors the line
+// layout in renderModal so that mouse click detection works correctly.
+func computeModalSectionLines(modal *ModalEntry) {
+	if modal == nil || modal.Issue == nil {
+		return
+	}
+	issue := modal.Issue
+	lineCount := 0
+
+	// Header: status, title, blank line, metadata
+	lineCount += 4
+
+	// Labels
+	if modal.ParentEpic != nil {
+		lineCount++
+	}
+	if len(issue.Labels) > 0 {
+		lineCount++
+	}
+
+	// Implementer/Reviewer
+	if issue.ImplementerSession != "" {
+		lineCount++
+	}
+	if issue.ReviewerSession != "" {
+		lineCount++
+	}
+
+	// Defer/Due fields
+	if issue.DeferUntil != nil {
+		lineCount++
+	}
+	if issue.DueDate != nil {
+		lineCount++
+	}
+	if issue.DeferCount > 0 {
+		lineCount++
+	}
+
+	// Blank line after metadata
+	lineCount++
+
+	// Epic tasks section
+	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+		lineCount += 1 + len(modal.EpicTasks) + 1 // header + items + blank
+	}
+
+	// Description
+	if issue.Description != "" {
+		rendered := modal.DescRender
+		if rendered == "" {
+			rendered = issue.Description
+		}
+		descLines := strings.Count(rendered, "\n") + 1
+		lineCount += 1 + descLines + 1 // header + lines + blank
+	}
+
+	// Acceptance criteria
+	if issue.Acceptance != "" {
+		rendered := modal.AcceptRender
+		if rendered == "" {
+			rendered = issue.Acceptance
+		}
+		acceptLines := strings.Count(rendered, "\n") + 1
+		lineCount += 1 + acceptLines + 1 // header + lines + blank
+	}
+
+	// Blocked-by section
+	activeBlockers := filterActiveBlockers(modal.BlockedBy)
+	var resolvedDeps []models.Issue
+	for _, dep := range modal.BlockedBy {
+		if dep.Status == models.StatusClosed {
+			resolvedDeps = append(resolvedDeps, dep)
+		}
+	}
+
+	if len(activeBlockers) > 0 {
+		modal.BlockedByStartLine = lineCount
+		lineCount += 1 + len(activeBlockers) // header + items
+		modal.BlockedByEndLine = lineCount
+		lineCount++ // blank line
+	} else {
+		modal.BlockedByStartLine = 0
+		modal.BlockedByEndLine = 0
+	}
+
+	// Resolved deps
+	if len(resolvedDeps) > 0 {
+		lineCount += 1 + len(resolvedDeps) + 1 // header + items + blank
+	}
+
+	// Blocks section
+	if len(modal.Blocks) > 0 {
+		modal.BlocksStartLine = lineCount
+		lineCount += 1 + len(modal.Blocks) // header + items
+		modal.BlocksEndLine = lineCount
+	} else {
+		modal.BlocksStartLine = 0
+		modal.BlocksEndLine = 0
+	}
+}
+
 // handleModalClick handles left-click events within a modal
 func (m Model) handleModalClick(x, y int) (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()
 	if modal == nil {
 		return m, nil
 	}
+
+	// Compute section line bounds before click detection
+	computeModalSectionLines(modal)
 
 	// Calculate modal bounds (centered, 80% width, capped)
 	modalWidth := m.Width * 80 / 100
@@ -1212,10 +1316,10 @@ func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 
 	var prev, next map[string]interface{}
 	if item.PreviousData != "" {
-		json.Unmarshal([]byte(item.PreviousData), &prev)
+		_ = json.Unmarshal([]byte(item.PreviousData), &prev)
 	}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &next)
+		_ = json.Unmarshal([]byte(item.NewData), &next)
 	}
 
 	// Show changed fields
@@ -1248,7 +1352,7 @@ func renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if issueID, ok := data["issue_id"].(string); ok {
@@ -1268,7 +1372,7 @@ func renderFileDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if path, ok := data["file_path"].(string); ok {
@@ -1284,7 +1388,7 @@ func renderFileDetail(b *strings.Builder, item *ActivityItem) {
 func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &data)
+		_ = json.Unmarshal([]byte(item.NewData), &data)
 	}
 	if data != nil {
 		if name, ok := data["name"].(string); ok {
@@ -1300,7 +1404,7 @@ func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
 func renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &data)
+		_ = json.Unmarshal([]byte(item.NewData), &data)
 	}
 	if data == nil {
 		return
@@ -1327,7 +1431,7 @@ func renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, 
 	var items []string
 	switch v := raw.(type) {
 	case string:
-		json.Unmarshal([]byte(v), &items)
+		_ = json.Unmarshal([]byte(v), &items)
 	case []interface{}:
 		for _, i := range v {
 			if s, ok := i.(string); ok {
@@ -1354,7 +1458,7 @@ func renderNoteDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if title, ok := data["title"].(string); ok {

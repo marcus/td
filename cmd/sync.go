@@ -31,6 +31,7 @@ var baseSyncableEntities = map[string]bool{
 	"board_issue_positions": true,
 	"issue_dependencies":    true,
 	"issue_files":           true,
+	"work_session_issues":   true,
 }
 
 const syncNotesEntity = "notes"
@@ -277,8 +278,10 @@ func copyFile(src, dst string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 const pushBatchSize = 500
@@ -443,6 +446,9 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	var allConflicts []tdsync.ConflictRecord
 
 	for {
+		// NOTE: intentionally pass empty exclude_client for batch pull.
+		// Unlike autoSyncPull (incremental), batch pull needs all events
+		// including own to maintain convergence via server_seq ordering.
 		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, "")
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
@@ -460,7 +466,10 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		// Convert pull events to sync events
 		events := make([]tdsync.Event, len(pullResp.Events))
 		for i, pe := range pullResp.Events {
-			clientTS, _ := time.Parse(time.RFC3339, pe.ClientTimestamp)
+			clientTS, err := time.Parse(time.RFC3339Nano, pe.ClientTimestamp)
+			if err != nil {
+				clientTS, _ = time.Parse(time.RFC3339, pe.ClientTimestamp)
+			}
 			events[i] = tdsync.Event{
 				ServerSeq:       pe.ServerSeq,
 				DeviceID:        pe.DeviceID,

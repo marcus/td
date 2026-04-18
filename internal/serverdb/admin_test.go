@@ -205,7 +205,7 @@ func TestCountAdminsMultiple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.SetUserAdmin(u2.Email, true)
+	_ = db.SetUserAdmin(u2.Email, true)
 	count, err = db.CountAdmins()
 	if err != nil {
 		t.Fatal(err)

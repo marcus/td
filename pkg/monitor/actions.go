@@ -71,8 +71,8 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionReview)
-				m.DB.AddLog(&models.Log{
+				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionReview)
+				_ = m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
 					Message:   "Cascaded review from " + issueID,
@@ -241,7 +241,7 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	if reason != "" {
 		logMsg = "Closed: " + reason
 	}
-	m.DB.AddLog(&models.Log{
+	_ = m.DB.AddLog(&models.Log{
 		IssueID:   issueID,
 		SessionID: m.SessionID,
 		Message:   logMsg,
@@ -263,8 +263,8 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionClose)
-				m.DB.AddLog(&models.Log{
+				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionClose)
+				_ = m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
 					Message:   "Cascaded close from " + issueID,
@@ -338,7 +338,7 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	}
 
 	// Record session action for bypass prevention
-	m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
+	_ = m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
 	if hasChildren, _ := m.DB.HasChildren(issue.ID); hasChildren {
@@ -356,8 +356,8 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionApprove)
-				m.DB.AddLog(&models.Log{
+				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionApprove)
+				_ = m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
 					Message:   "Cascaded approval from " + issue.ID,

@@ -108,7 +108,7 @@ func createTestUser(t *testing.T, store *serverdb.ServerDB, email string) (strin
 func doRequest(srv *Server, method, path, token string, body any) *httptest.ResponseRecorder {
 	var buf bytes.Buffer
 	if body != nil {
-		json.NewEncoder(&buf).Encode(body)
+		_ = json.NewEncoder(&buf).Encode(body)
 	}
 
 	req := httptest.NewRequest(method, path, &buf)
@@ -133,7 +133,7 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "ok" {
 		t.Fatalf("expected status ok, got %s", resp["status"])
 	}
@@ -161,7 +161,7 @@ func TestPushSuccess(t *testing.T) {
 	}
 
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 	_ = userID
 
 	// Push events
@@ -194,7 +194,7 @@ func TestPushSuccess(t *testing.T) {
 	}
 
 	var pushResp PushResponse
-	json.NewDecoder(w.Body).Decode(&pushResp)
+	_ = json.NewDecoder(w.Body).Decode(&pushResp)
 
 	if pushResp.Accepted != 2 {
 		t.Fatalf("expected 2 accepted, got %d", pushResp.Accepted)
@@ -217,7 +217,7 @@ func TestPushRetryDuplicatesReturnServerSeq(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	pushBody := PushRequest{
 		DeviceID:  "dev1",
@@ -234,7 +234,7 @@ func TestPushRetryDuplicatesReturnServerSeq(t *testing.T) {
 		t.Fatalf("first push: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var firstResp PushResponse
-	json.NewDecoder(w.Body).Decode(&firstResp)
+	_ = json.NewDecoder(w.Body).Decode(&firstResp)
 	if firstResp.Accepted != 2 {
 		t.Fatalf("first push: expected 2 accepted, got %d", firstResp.Accepted)
 	}
@@ -245,7 +245,7 @@ func TestPushRetryDuplicatesReturnServerSeq(t *testing.T) {
 		t.Fatalf("retry push: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var retryResp PushResponse
-	json.NewDecoder(w.Body).Decode(&retryResp)
+	_ = json.NewDecoder(w.Body).Decode(&retryResp)
 
 	if retryResp.Accepted != 0 {
 		t.Fatalf("retry: expected 0 accepted, got %d", retryResp.Accepted)
@@ -279,7 +279,7 @@ func TestPullSuccess(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events
 	pushBody := PushRequest{
@@ -308,7 +308,7 @@ func TestPullSuccess(t *testing.T) {
 	}
 
 	var pullResp PullResponse
-	json.NewDecoder(w.Body).Decode(&pullResp)
+	_ = json.NewDecoder(w.Body).Decode(&pullResp)
 
 	if len(pullResp.Events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(pullResp.Events))
@@ -331,7 +331,7 @@ func TestPullPagination(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push 5 events
 	events := make([]EventInput, 5)
@@ -360,7 +360,7 @@ func TestPullPagination(t *testing.T) {
 	}
 
 	var pullResp PullResponse
-	json.NewDecoder(w.Body).Decode(&pullResp)
+	_ = json.NewDecoder(w.Body).Decode(&pullResp)
 
 	if len(pullResp.Events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(pullResp.Events))
@@ -376,7 +376,7 @@ func TestPullPagination(t *testing.T) {
 	}
 
 	var pullResp2 PullResponse
-	json.NewDecoder(w.Body).Decode(&pullResp2)
+	_ = json.NewDecoder(w.Body).Decode(&pullResp2)
 
 	if len(pullResp2.Events) != 2 {
 		t.Fatalf("expected 2 events on page 2, got %d", len(pullResp2.Events))
@@ -399,7 +399,7 @@ func TestCreateProject(t *testing.T) {
 	}
 
 	var resp ProjectResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if resp.Name != "my-project" {
 		t.Fatalf("expected name my-project, got %s", resp.Name)
@@ -430,7 +430,7 @@ func TestListProjects(t *testing.T) {
 		t.Fatalf("list: expected 200, got %d", w.Code)
 	}
 	var projects1 []ProjectResponse
-	json.NewDecoder(w.Body).Decode(&projects1)
+	_ = json.NewDecoder(w.Body).Decode(&projects1)
 	if len(projects1) != 1 {
 		t.Fatalf("expected 1 project for user1, got %d", len(projects1))
 	}
@@ -441,7 +441,7 @@ func TestListProjects(t *testing.T) {
 		t.Fatalf("list: expected 200, got %d", w.Code)
 	}
 	var projects2 []ProjectResponse
-	json.NewDecoder(w.Body).Decode(&projects2)
+	_ = json.NewDecoder(w.Body).Decode(&projects2)
 	if len(projects2) != 0 {
 		t.Fatalf("expected 0 projects for user2, got %d", len(projects2))
 	}
@@ -458,7 +458,7 @@ func TestAddMember(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add member
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
@@ -470,7 +470,7 @@ func TestAddMember(t *testing.T) {
 	}
 
 	var memberResp MemberResponse
-	json.NewDecoder(w.Body).Decode(&memberResp)
+	_ = json.NewDecoder(w.Body).Decode(&memberResp)
 	if memberResp.Role != "writer" {
 		t.Fatalf("expected role writer, got %s", memberResp.Role)
 	}
@@ -488,7 +488,7 @@ func TestMemberRoleEnforcement(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add user2 as writer
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
@@ -518,7 +518,7 @@ func TestListMembers(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add member
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
@@ -535,7 +535,7 @@ func TestListMembers(t *testing.T) {
 	}
 
 	var members []MemberResponse
-	json.NewDecoder(w.Body).Decode(&members)
+	_ = json.NewDecoder(w.Body).Decode(&members)
 	if len(members) != 2 {
 		t.Fatalf("expected 2 members, got %d", len(members))
 	}
@@ -561,7 +561,7 @@ func TestUpdateMemberRole(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
 		UserID: user2ID, Role: "reader",
@@ -581,7 +581,7 @@ func TestUpdateMemberRole(t *testing.T) {
 	// Verify by listing
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, nil)
 	var members []MemberResponse
-	json.NewDecoder(w.Body).Decode(&members)
+	_ = json.NewDecoder(w.Body).Decode(&members)
 
 	for _, m := range members {
 		if m.UserID == user2ID && m.Role != "writer" {
@@ -601,7 +601,7 @@ func TestRemoveMember(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
 		UserID: user2ID, Role: "writer",
@@ -619,7 +619,7 @@ func TestRemoveMember(t *testing.T) {
 	// Verify removed by listing
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, nil)
 	var members []MemberResponse
-	json.NewDecoder(w.Body).Decode(&members)
+	_ = json.NewDecoder(w.Body).Decode(&members)
 	if len(members) != 1 {
 		t.Fatalf("expected 1 member after removal, got %d", len(members))
 	}
@@ -637,7 +637,7 @@ func TestPushWithWriterSucceeds(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add user2 as writer
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
@@ -668,7 +668,7 @@ func TestPushWithWriterSucceeds(t *testing.T) {
 	}
 
 	var pushResp PushResponse
-	json.NewDecoder(w.Body).Decode(&pushResp)
+	_ = json.NewDecoder(w.Body).Decode(&pushResp)
 	if pushResp.Accepted != 1 {
 		t.Fatalf("expected 1 accepted, got %d", pushResp.Accepted)
 	}
@@ -686,7 +686,7 @@ func TestPushRateLimit(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
 
@@ -731,7 +731,7 @@ func TestLongSessionPagination(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
 	pullURL := fmt.Sprintf("/v1/projects/%s/sync/pull", project.ID)
@@ -762,7 +762,7 @@ func TestLongSessionPagination(t *testing.T) {
 			t.Fatalf("push batch %d: expected 200, got %d: %s", batch, w.Code, w.Body.String())
 		}
 		var pushResp PushResponse
-		json.NewDecoder(w.Body).Decode(&pushResp)
+		_ = json.NewDecoder(w.Body).Decode(&pushResp)
 		if pushResp.Accepted != batchSize {
 			t.Fatalf("push batch %d: expected %d accepted, got %d", batch, batchSize, pushResp.Accepted)
 		}
@@ -782,7 +782,7 @@ func TestLongSessionPagination(t *testing.T) {
 		}
 
 		var pullResp PullResponse
-		json.NewDecoder(w.Body).Decode(&pullResp)
+		_ = json.NewDecoder(w.Body).Decode(&pullResp)
 
 		if len(pullResp.Events) == 0 {
 			break
@@ -835,7 +835,7 @@ func TestPushWithReaderFails403(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add user2 as reader
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
@@ -877,7 +877,7 @@ func TestPullExcludeClient(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Add user B as writer
 	userB, _ := store.GetUserByEmail("userB@test.com")
@@ -922,7 +922,7 @@ func TestPullExcludeClient(t *testing.T) {
 		t.Fatalf("pull exclude A: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var pullExcl PullResponse
-	json.NewDecoder(w.Body).Decode(&pullExcl)
+	_ = json.NewDecoder(w.Body).Decode(&pullExcl)
 
 	if len(pullExcl.Events) != 2 {
 		t.Fatalf("pull exclude A: expected 2 events (B's only), got %d", len(pullExcl.Events))
@@ -942,7 +942,7 @@ func TestPullExcludeClient(t *testing.T) {
 		t.Fatalf("pull all: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var pullAll PullResponse
-	json.NewDecoder(w.Body).Decode(&pullAll)
+	_ = json.NewDecoder(w.Body).Decode(&pullAll)
 
 	if len(pullAll.Events) != 5 {
 		t.Fatalf("pull all: expected 5 events, got %d", len(pullAll.Events))
@@ -971,7 +971,7 @@ func TestSnapshotEndpoint(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Snapshot with no events should 404
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
@@ -1036,7 +1036,7 @@ func TestSnapshotEmpty404(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Snapshot with no events should return 404
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
@@ -1045,7 +1045,7 @@ func TestSnapshotEmpty404(t *testing.T) {
 	}
 
 	var errResp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&errResp)
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
 	if errResp.Error.Code != "no_events" {
 		t.Fatalf("expected error code 'no_events', got %q", errResp.Error.Code)
 	}
@@ -1061,7 +1061,7 @@ func TestSnapshotValidSQLiteWithTables(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events covering multiple entity types
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
@@ -1124,7 +1124,7 @@ func TestSnapshotBoardPositionReplay(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push board + position events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
@@ -1190,7 +1190,7 @@ func TestSnapshotXSnapshotEventIdHeader(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push 5 events
 	events := make([]EventInput, 5)
@@ -1212,7 +1212,7 @@ func TestSnapshotXSnapshotEventIdHeader(t *testing.T) {
 		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var pushResp PushResponse
-	json.NewDecoder(w.Body).Decode(&pushResp)
+	_ = json.NewDecoder(w.Body).Decode(&pushResp)
 
 	// Get the max server_seq from push acks
 	maxSeq := pushResp.Acks[len(pushResp.Acks)-1].ServerSeq
@@ -1247,7 +1247,7 @@ func TestSnapshotCaching(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
@@ -1314,7 +1314,7 @@ func TestSyncStatus(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Check status before any events
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/status", project.ID), token, nil)
@@ -1322,7 +1322,7 @@ func TestSyncStatus(t *testing.T) {
 		t.Fatalf("status: expected 200, got %d", w.Code)
 	}
 	var status SyncStatusResponse
-	json.NewDecoder(w.Body).Decode(&status)
+	_ = json.NewDecoder(w.Body).Decode(&status)
 	if status.EventCount != 0 {
 		t.Fatalf("expected 0 events, got %d", status.EventCount)
 	}
@@ -1345,7 +1345,7 @@ func TestSyncStatus(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: expected 200, got %d", w.Code)
 	}
-	json.NewDecoder(w.Body).Decode(&status)
+	_ = json.NewDecoder(w.Body).Decode(&status)
 	if status.EventCount != 3 {
 		t.Fatalf("expected 3 events, got %d", status.EventCount)
 	}
@@ -1363,7 +1363,7 @@ func TestPushRejectsOversizedBatch(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
 
@@ -1412,7 +1412,7 @@ func TestPushBatchedClientSimulation(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
 	pullURL := fmt.Sprintf("/v1/projects/%s/sync/pull", project.ID)
@@ -1455,7 +1455,7 @@ func TestPushBatchedClientSimulation(t *testing.T) {
 		}
 
 		var pushResp PushResponse
-		json.NewDecoder(w.Body).Decode(&pushResp)
+		_ = json.NewDecoder(w.Body).Decode(&pushResp)
 		totalAccepted += pushResp.Accepted
 		allAcks = append(allAcks, pushResp.Acks...)
 		batchCount++
@@ -1495,7 +1495,7 @@ func TestPushBatchedClientSimulation(t *testing.T) {
 			t.Fatalf("pull: expected 200, got %d: %s", w.Code, w.Body.String())
 		}
 		var pullResp PullResponse
-		json.NewDecoder(w.Body).Decode(&pullResp)
+		_ = json.NewDecoder(w.Body).Decode(&pullResp)
 		if len(pullResp.Events) == 0 {
 			break
 		}

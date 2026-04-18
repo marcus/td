@@ -1,6 +1,7 @@
 package input
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -212,8 +213,8 @@ func TestExpandFlagValuesMultipleFiles(t *testing.T) {
 
 	file1 := filepath.Join(dir, "file1.txt")
 	file2 := filepath.Join(dir, "file2.txt")
-	os.WriteFile(file1, []byte("from_file1"), 0644)
-	os.WriteFile(file2, []byte("from_file2"), 0644)
+	_ = os.WriteFile(file1, []byte("from_file1"), 0644)
+	_ = os.WriteFile(file2, []byte("from_file2"), 0644)
 
 	values := []string{"@" + file1, "@" + file2}
 	result, _ := ExpandFlagValues(values, false)
@@ -260,7 +261,51 @@ func TestExpandFlagValuesNilSlice(t *testing.T) {
 	if stdinUsed {
 		t.Error("stdinUsed should be false")
 	}
-	if result != nil && len(result) != 0 {
+	if len(result) != 0 {
 		t.Errorf("Expected nil or empty result, got %v", result)
+	}
+}
+
+func TestReadTextFromFilePreservesExactContent(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "body.md")
+	want := "Intro\n\n```go\nfmt.Println(\"hi\")\n```\n  indented\n"
+	if err := os.WriteFile(filePath, []byte(want), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	got, stdinUsed, err := ReadText(filePath, strings.NewReader("unused"), false)
+	if err != nil {
+		t.Fatalf("ReadText failed: %v", err)
+	}
+	if stdinUsed {
+		t.Fatal("stdinUsed should be false for file input")
+	}
+	if got != want {
+		t.Fatalf("content mismatch\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestReadTextFromStdinPreservesExactContent(t *testing.T) {
+	want := "# Title\n\n- item\n\n> quote\n"
+	got, stdinUsed, err := ReadText("-", strings.NewReader(want), false)
+	if err != nil {
+		t.Fatalf("ReadText failed: %v", err)
+	}
+	if !stdinUsed {
+		t.Fatal("stdinUsed should be true for stdin input")
+	}
+	if got != want {
+		t.Fatalf("content mismatch\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestReadTextRejectsSecondStdinRead(t *testing.T) {
+	_, stdinUsed, err := ReadText("-", strings.NewReader("ignored"), true)
+	if !stdinUsed {
+		t.Fatal("stdinUsed should remain true")
+	}
+	if !errors.Is(err, ErrStdinAlreadyUsed) {
+		t.Fatalf("expected ErrStdinAlreadyUsed, got %v", err)
 	}
 }

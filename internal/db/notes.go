@@ -204,6 +204,9 @@ func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 		notes = append(notes, note)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return notes, nil
 }
 

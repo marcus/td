@@ -206,7 +206,7 @@ func TestLoadCacheErrors(t *testing.T) {
 	t.Run("load corrupted cache file", func(t *testing.T) {
 		path := cachePath()
 		dir := filepath.Dir(path)
-		os.MkdirAll(dir, 0755)
+		_ = os.MkdirAll(dir, 0755)
 
 		// Write corrupted JSON
 		if err := os.WriteFile(path, []byte(`{invalid json}`), 0644); err != nil {

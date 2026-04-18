@@ -176,7 +176,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tdsync.InsertServerEvents(tx, events)
 	if err != nil {
@@ -259,7 +259,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	excludeClient := r.URL.Query().Get("exclude_client")
 	result, err := tdsync.GetEventsSince(tx, afterSeq, limit, excludeClient)
@@ -269,7 +269,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx.Rollback() // read-only, just release
+	_ = tx.Rollback() // read-only, just release
 
 	resp := PullResponse{
 		LastServerSeq: result.LastServerSeq,
@@ -366,46 +366,67 @@ func (s *Server) handleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cache miss — build snapshot
-	tmpFile, err := os.CreateTemp("", "td-snapshot-*.db")
-	if err != nil {
-		logFor(r.Context()).Error("create temp file", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create snapshot")
-		return
-	}
-	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
+	// Cache miss — use singleflight to deduplicate concurrent builds for the same snapshot.
+	// Without this, two concurrent requests race on file renames and one gets a 500.
+	sfKey := fmt.Sprintf("%s:%d", projectID, lastSeq)
+	result, err, _ := s.snapshotGroup.Do(sfKey, func() (any, error) {
+		// Double-check cache inside singleflight (another request may have just cached it)
+		if _, err := os.Stat(cachePath); err == nil {
+			return cachePath, nil
+		}
 
-	if err := buildSnapshot(eventsDB, tmpPath, lastSeq); err != nil {
+		tmpFile, err := os.CreateTemp("", "td-snapshot-*.db")
+		if err != nil {
+			return "", fmt.Errorf("create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+
+		if err := buildSnapshot(eventsDB, tmpPath, lastSeq); err != nil {
+			os.Remove(tmpPath)
+			return "", fmt.Errorf("build snapshot: %w", err)
+		}
+
+		// Cache the built snapshot using atomic write-and-rename.
+		// Clean up tmpPath if it's not the final serve path (copyFile may rename it away).
+		servePath := tmpPath
+		defer func() {
+			if servePath != tmpPath {
+				os.Remove(tmpPath) // no-op if already renamed away
+			}
+		}()
+		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+			slog.Warn("snapshot cache mkdir failed", "dir", cacheDir, "err", err)
+		} else {
+			tmpCachePath := cachePath + fmt.Sprintf(".tmp.%d", os.Getpid())
+			if err := copyFile(tmpPath, tmpCachePath); err == nil {
+				// copyFile may have used os.Rename (fast path), which moves
+				// tmpPath away. Update servePath immediately so we can still
+				// serve the data even if the next rename fails.
+				servePath = tmpCachePath
+				if err := os.Rename(tmpCachePath, cachePath); err != nil {
+					slog.Warn("snapshot cache rename failed", "err", err)
+				} else {
+					cleanSnapshotCache(cacheDir, lastSeq)
+					slog.Info("snapshot cached", "project", projectID, "seq", lastSeq)
+					servePath = cachePath
+				}
+			} else {
+				slog.Warn("snapshot cache write failed", "err", err)
+			}
+		}
+		return servePath, nil
+	})
+	if err != nil {
 		logFor(r.Context()).Error("build snapshot", "project", projectID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to build snapshot")
 		return
 	}
 
-	// Cache the built snapshot using atomic write-and-rename to avoid races.
-	// Track the serve path — if caching succeeds (and moves the temp file),
-	// serve from the cache path instead.
-	servePath := tmpPath
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		slog.Warn("snapshot cache mkdir failed", "dir", cacheDir, "err", err)
-	} else {
-		tmpCachePath := cachePath + fmt.Sprintf(".tmp.%d", os.Getpid())
-		if err := copyFile(tmpPath, tmpCachePath); err == nil {
-			if err := os.Rename(tmpCachePath, cachePath); err != nil {
-				os.Remove(tmpCachePath)
-				slog.Warn("snapshot cache rename failed", "err", err)
-			} else {
-				cleanSnapshotCache(cacheDir, lastSeq)
-				slog.Info("snapshot cached", "project", projectID, "seq", lastSeq)
-				servePath = cachePath
-			}
-		} else {
-			slog.Warn("snapshot cache write failed", "err", err)
-		}
-	}
-
-	serveSnapshotFile(w, r, servePath, lastSeq)
+	// Note: if caching failed entirely, servePath points to a temp file that won't
+	// be cleaned up here. With singleflight, multiple callers share the same path,
+	// so no single caller can safely delete it. The OS temp directory handles cleanup.
+	serveSnapshotFile(w, r, result.(string), lastSeq)
 }
 
 // serveSnapshotFile streams a snapshot .db file as an HTTP response.
@@ -418,12 +439,17 @@ func serveSnapshotFile(w http.ResponseWriter, r *http.Request, path string, seq 
 	}
 	defer f.Close()
 
-	stat, _ := f.Stat()
+	stat, err := f.Stat()
+	if err != nil {
+		logFor(r.Context()).Error("stat snapshot", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to stat snapshot")
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-sqlite3")
 	w.Header().Set("X-Snapshot-Seq", strconv.FormatInt(seq, 10))
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, f)
+	_, _ = io.Copy(w, f)
 }
 
 // cleanSnapshotCache removes cached .db files that don't match the current seq.
@@ -521,7 +547,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 		}
 
 		result, err := tdsync.GetEventsSince(tx, afterSeq, batchSize, "")
-		tx.Rollback() // read-only
+		_ = tx.Rollback() // read-only
 
 		if err != nil {
 			return fmt.Errorf("get events after %d: %w", afterSeq, err)
@@ -545,7 +571,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 			}
 
 			if _, err := tdsync.ApplyRemoteEvents(snapTx, batch, "", validator, nil); err != nil {
-				snapTx.Rollback()
+				_ = snapTx.Rollback()
 				return fmt.Errorf("apply events: %w", err)
 			}
 
@@ -566,7 +592,9 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	// write merged in — leaving data in the -wal/-shm sidecars would
 	// produce a truncated snapshot. This is the one site that keeps
 	// TRUNCATE; Close() paths (db.go, serverdb.go, dbpool.go) use PASSIVE.
-	snapDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	if _, err := snapDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		slog.Warn("snapshot WAL checkpoint failed", "err", err)
+	}
 	snapDB.Close() // explicit close before copy; defer will no-op
 
 	// Copy final DB to snapshot path

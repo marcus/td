@@ -750,16 +750,9 @@ func TestHandleMouseMsg_WheelScroll(t *testing.T) {
 			updated, _ := m.handleMouse(msg)
 			m2 := updated.(Model)
 
-			expectedOffset := tt.expectedScrollDelta
-			if expectedOffset < 0 {
-				expectedOffset = 0
-			}
-
-			// Verify scroll direction was applied (or clamped at boundaries)
-			if m2.ScrollOffset[PanelTaskList] != expectedOffset && m2.ScrollOffset[PanelTaskList] == 0 {
-				// Allow clamping at 0
-			} else if tt.expectedScrollDelta > 0 && m2.ScrollOffset[PanelTaskList] <= 0 {
-				// Allow positive scroll
+			// Verify scroll offset is non-negative (clamped at 0 boundary)
+			if m2.ScrollOffset[PanelTaskList] < 0 {
+				t.Errorf("scroll offset should not be negative, got %d", m2.ScrollOffset[PanelTaskList])
 			}
 		})
 	}

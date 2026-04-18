@@ -291,14 +291,20 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	}
 
 	// In-progress issues (skip focused if it's duplicated)
-	if len(m.InProgress) > 0 && linesWritten < effectiveMaxLines {
+	inProgressVisible := 0
+	for _, issue := range m.InProgress {
+		if m.FocusedIssue == nil || issue.ID != m.FocusedIssue.ID {
+			inProgressVisible++
+		}
+	}
+	if inProgressVisible > 0 && linesWritten < effectiveMaxLines {
 		// Only show header if in visible range
 		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
 			if linesWritten < effectiveMaxLines {
 				content.WriteString("\n")
 				content.WriteString(sectionHeader.Render("IN PROGRESS:"))
 				content.WriteString("\n")
-				linesWritten += 2
+				linesWritten += 3 // explicit \n + MarginTop(1) from sectionHeader + header text
 			}
 		}
 
@@ -822,17 +828,6 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	// because swimlane headers/separators consume display space.
 	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalRows)
 	needsScroll := totalDisplayLines > maxLines
-	showUpIndicator := needsScroll && offset > 0
-
-	// Calculate effective maxLines with indicators
-	effectiveMaxLines := maxLines
-	if showUpIndicator {
-		effectiveMaxLines--
-	}
-	// Reserve space for down indicator if display lines from offset exceed visible area
-	if needsScroll && m.swimlaneLinesFromOffset(offset, totalRows) > effectiveMaxLines {
-		effectiveMaxLines--
-	}
 
 	// Clamp offset using swimlaneMaxScroll (accounts for headers/separators)
 	if needsScroll {
@@ -846,8 +841,8 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	}
 
 	// Recalculate indicators after clamping
-	showUpIndicator = needsScroll && offset > 0
-	effectiveMaxLines = maxLines
+	showUpIndicator := needsScroll && offset > 0
+	effectiveMaxLines := maxLines
 	if showUpIndicator {
 		effectiveMaxLines--
 	}
@@ -1066,9 +1061,25 @@ func (m Model) renderModal() string {
 	// Build all content lines for scrolling
 	var lines []string
 
-	// Header: ID and Title
+	// Status first for quicker scanning in the issue detail modal.
+	lines = append(lines, formatIssueDetailStatus(issue.Status))
 	lines = append(lines, titleStyle.Render(issue.ID)+" "+issue.Title)
 	lines = append(lines, "")
+
+	// Metadata line: type, priority, points, timestamps
+	metadataLine := fmt.Sprintf("%s  %s",
+		formatTypeIcon(issue.Type),
+		formatPriority(issue.Priority))
+	if issue.Points > 0 {
+		metadataLine += fmt.Sprintf("  %dpts", issue.Points)
+	}
+	// Add created timestamp in subtle style
+	metadataLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
+	// Add closed timestamp if closed
+	if issue.ClosedAt != nil {
+		metadataLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
+	}
+	lines = append(lines, metadataLine)
 
 	// Parent epic (if exists) - selectable row
 	if modal.ParentEpic != nil {
@@ -1079,24 +1090,7 @@ func (m Model) renderModal() string {
 		} else {
 			lines = append(lines, parentEpicStyle.Render("  "+epicText))
 		}
-		lines = append(lines, "")
 	}
-
-	// Status line: status, type, priority, points, created date
-	statusLine := fmt.Sprintf("%s  %s  %s",
-		formatStatus(issue.Status),
-		formatTypeIcon(issue.Type),
-		formatPriority(issue.Priority))
-	if issue.Points > 0 {
-		statusLine += fmt.Sprintf("  %dpts", issue.Points)
-	}
-	// Add created timestamp in subtle style
-	statusLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
-	// Add closed timestamp if closed
-	if issue.ClosedAt != nil {
-		statusLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
-	}
-	lines = append(lines, statusLine)
 
 	// Labels
 	if len(issue.Labels) > 0 {
@@ -1164,9 +1158,7 @@ func (m Model) renderModal() string {
 		if rendered == "" {
 			rendered = issue.Description // fallback if not rendered yet
 		}
-		for _, line := range strings.Split(rendered, "\n") {
-			lines = append(lines, line)
-		}
+		lines = append(lines, strings.Split(rendered, "\n")...)
 		lines = append(lines, "")
 	}
 
@@ -1177,9 +1169,7 @@ func (m Model) renderModal() string {
 		if rendered == "" {
 			rendered = issue.Acceptance // fallback if not rendered yet
 		}
-		for _, line := range strings.Split(rendered, "\n") {
-			lines = append(lines, line)
-		}
+		lines = append(lines, strings.Split(rendered, "\n")...)
 		lines = append(lines, "")
 	}
 
@@ -1196,7 +1186,6 @@ func (m Model) renderModal() string {
 
 		// Show active blockers prominently
 		if len(activeBlockers) > 0 {
-			modal.BlockedByStartLine = len(lines) // Track section start for mouse clicks
 			header := fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))
 			if modal.BlockedBySectionFocused {
 				header = blockedBySectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
@@ -1218,7 +1207,6 @@ func (m Model) renderModal() string {
 				}
 				lines = append(lines, depLine)
 			}
-			modal.BlockedByEndLine = len(lines) // Track section end for mouse clicks
 			lines = append(lines, "")
 		}
 
@@ -1237,7 +1225,6 @@ func (m Model) renderModal() string {
 
 	// Blocks (dependents)
 	if len(modal.Blocks) > 0 {
-		modal.BlocksStartLine = len(lines) // Track section start for mouse clicks
 		header := fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))
 		if modal.BlocksSectionFocused {
 			header = blocksSectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
@@ -1259,7 +1246,6 @@ func (m Model) renderModal() string {
 			}
 			lines = append(lines, depLine)
 		}
-		modal.BlocksEndLine = len(lines) // Track section end for mouse clicks
 		lines = append(lines, "")
 	}
 
@@ -1918,11 +1904,6 @@ func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
 	return statsTableLabel.Render("  ") + strings.Join(parts, "  ")
 }
 
-// wrapModal wraps content in a modal box with border (deprecated, use wrapModalWithDepth)
-func (m Model) wrapModal(content string, width, height int) string {
-	return m.wrapModalWithDepth(content, width, height)
-}
-
 // wrapModalWithDepth wraps content in a modal box with depth-aware styling
 func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	depth := m.ModalDepth()
@@ -2081,33 +2062,6 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 }
 
 // Legacy renderCloseConfirmation removed - close confirmation now uses declarative modal
-
-// wrapText wraps text to fit within maxWidth
-func wrapText(text string, maxWidth int) []string {
-	if maxWidth <= 0 {
-		return []string{text}
-	}
-
-	var lines []string
-	words := strings.Fields(text)
-	var currentLine string
-
-	for _, word := range words {
-		if currentLine == "" {
-			currentLine = word
-		} else if len(currentLine)+1+len(word) <= maxWidth {
-			currentLine += " " + word
-		} else {
-			lines = append(lines, currentLine)
-			currentLine = word
-		}
-	}
-	if currentLine != "" {
-		lines = append(lines, currentLine)
-	}
-
-	return lines
-}
 
 func renderLogLines(log models.Log, contentWidth int) []string {
 	prefix := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
@@ -2555,9 +2509,18 @@ func (m Model) formatIssueShort(issue *models.Issue) string {
 	idStr := subtleStyle.Render(issue.ID)
 	priorityStr := formatPriority(issue.Priority)
 
-	// Calculate available width for title:
-	// m.Width - 4 (panel border) - 8 (row prefix "  [TAG] ") - typeIcon - ID - priority - 3 spaces
-	overhead := 4 + 8 + 2 + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
+	// Calculate available width for title.
+	// Line format (in callers): fmt.Sprintf("%s %s", tag, issueStr)
+	//   where issueStr = fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, title)
+	// Overhead:
+	//   4             = panel border + padding (wrapPanel uses m.Width - 4 for content)
+	//   5             = category tag visual width (all tags are 5 chars: [RDY], [BLK], etc.)
+	//   1             = space between tag and issueStr (outer format "%s %s")
+	//   typeIconWidth = actual width of the type icon character (varies by terminal)
+	//   idWidth       = visual width of styled issue ID
+	//   priorityWidth = visual width of styled priority
+	//   3             = three spaces in issueStr format (after typeIcon, after id, after priority)
+	overhead := 4 + 5 + 1 + lipgloss.Width(typeIcon) + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
 	titleWidth := m.Width - overhead
 	if titleWidth < 20 {
 		titleWidth = 20 // minimum reasonable width

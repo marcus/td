@@ -28,6 +28,8 @@
 
 ### Issue Management
 - `td create "title" --type feature --priority P1` - Create issue
+- `td create "title" --description-file body.md --acceptance-file acceptance.md` - Create with rich markdown safely
+- `cat body.md | td update <id> --append --description-file -` - Append rich markdown from stdin
 - `td list` - List all issues
 - `td list --status in_progress` - Filter by status
 - `td show <id>` - View issue details

@@ -14,8 +14,8 @@ func TestAdminListUsers(t *testing.T) {
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:server,sync")
 
 	// Create additional users
-	store.CreateUser("alice@test.com")
-	store.CreateUser("bob@test.com")
+	_, _ = store.CreateUser("alice@test.com")
+	_, _ = store.CreateUser("bob@test.com")
 
 	w := doRequest(srv, "GET", "/v1/admin/users", token, nil)
 	if w.Code != http.StatusOK {
@@ -49,8 +49,8 @@ func TestAdminListUsers_Search(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:server,sync")
 
-	store.CreateUser("alice@example.com")
-	store.CreateUser("bob@example.com")
+	_, _ = store.CreateUser("alice@example.com")
+	_, _ = store.CreateUser("bob@example.com")
 
 	// Search for alice
 	w := doRequest(srv, "GET", "/v1/admin/users?q=alice", token, nil)
@@ -77,7 +77,7 @@ func TestAdminListUsers_Pagination(t *testing.T) {
 
 	// Create enough users to paginate (admin + 5 more = 6 total)
 	for i := 0; i < 5; i++ {
-		store.CreateUser(fmt.Sprintf("user%d@test.com", i))
+		_, _ = store.CreateUser(fmt.Sprintf("user%d@test.com", i))
 	}
 
 	// Page 1 with limit=3
@@ -181,8 +181,8 @@ func TestAdminUserKeys(t *testing.T) {
 
 	// Create user with API keys
 	user, _ := store.CreateUser("keys@test.com")
-	store.GenerateAPIKey(user.ID, "key-one", "sync", nil)
-	store.GenerateAPIKey(user.ID, "key-two", "sync", nil)
+	_, _, _ = store.GenerateAPIKey(user.ID, "key-one", "sync", nil)
+	_, _, _ = store.GenerateAPIKey(user.ID, "key-two", "sync", nil)
 
 	w := doRequest(srv, "GET", fmt.Sprintf("/v1/admin/users/%s/keys", user.ID), token, nil)
 	if w.Code != http.StatusOK {
@@ -225,10 +225,10 @@ func TestAdminAuthEvents(t *testing.T) {
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:server,sync")
 
 	// Insert auth events
-	store.InsertAuthEvent("req_1", "user1@test.com", "started", `{}`)
-	store.InsertAuthEvent("req_1", "user1@test.com", "code_verified", `{}`)
-	store.InsertAuthEvent("req_2", "user2@test.com", "started", `{}`)
-	store.InsertAuthEvent("req_2", "user2@test.com", "failed", `{}`)
+	_ = store.InsertAuthEvent("req_1", "user1@test.com", "started", `{}`)
+	_ = store.InsertAuthEvent("req_1", "user1@test.com", "code_verified", `{}`)
+	_ = store.InsertAuthEvent("req_2", "user2@test.com", "started", `{}`)
+	_ = store.InsertAuthEvent("req_2", "user2@test.com", "failed", `{}`)
 
 	// List all events
 	w := doRequest(srv, "GET", "/v1/admin/auth/events", token, nil)
@@ -251,7 +251,7 @@ func TestAdminAuthEvents(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 'started' events, got %d", len(resp.Data))
 	}
@@ -267,7 +267,7 @@ func TestAdminAuthEvents(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 events for user1, got %d", len(resp.Data))
 	}
@@ -300,16 +300,16 @@ func TestAdminListUsers_ProjectCount(t *testing.T) {
 
 	// Create user who owns 2 projects
 	user, _ := store.CreateUser("multi@test.com")
-	store.CreateProject("proj1", "", user.ID)
-	store.CreateProject("proj2", "", user.ID)
+	_, _ = store.CreateProject("proj1", "", user.ID)
+	_, _ = store.CreateProject("proj2", "", user.ID)
 
-	w := doRequest(srv, "GET", fmt.Sprintf("/v1/admin/users?q=multi"), token, nil)
+	w := doRequest(srv, "GET", "/v1/admin/users?q=multi", token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var resp serverdb.PaginatedResult[serverdb.AdminUser]
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected 1 user, got %d", len(resp.Data))

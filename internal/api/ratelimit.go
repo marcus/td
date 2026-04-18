@@ -14,8 +14,10 @@ import (
 
 // RateLimiter implements per-key fixed-window rate limiting.
 type RateLimiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
+	mu       sync.Mutex
+	buckets  map[string]*bucket
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 type bucket struct {
@@ -25,14 +27,28 @@ type bucket struct {
 
 // NewRateLimiter creates a RateLimiter and starts background cleanup.
 func NewRateLimiter() *RateLimiter {
-	rl := &RateLimiter{buckets: make(map[string]*bucket)}
+	rl := &RateLimiter{
+		buckets: make(map[string]*bucket),
+		done:    make(chan struct{}),
+	}
 	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
 		for {
-			time.Sleep(5 * time.Minute)
-			rl.cleanup()
+			select {
+			case <-ticker.C:
+				rl.cleanup()
+			case <-rl.done:
+				return
+			}
 		}
 	}()
 	return rl
+}
+
+// Stop terminates the background cleanup goroutine.
+func (rl *RateLimiter) Stop() {
+	rl.stopOnce.Do(func() { close(rl.done) })
 }
 
 // Allow checks if the key is within the rate limit (limit per 1-minute window).
@@ -110,7 +126,7 @@ func (s *Server) withRateLimit(handler http.HandlerFunc, limit int) http.Handler
 		}
 		key := fmt.Sprintf("key:%s:%d", user.KeyID, limit)
 		if !s.rateLimiter.Allow(key, limit) {
-			ip := clientIP(r)
+			ip := clientIP(r, s.config.TrustedProxies)
 			endpointClass := classifyEndpoint(r.URL.Path)
 			if err := s.store.InsertRateLimitEvent(user.KeyID, ip, endpointClass); err != nil {
 				slog.Error("log rate limit event", "err", err)
@@ -136,18 +152,33 @@ func classifyEndpoint(path string) string {
 	return "other"
 }
 
-// clientIP extracts the client IP from the request, checking X-Forwarded-For first.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// First IP in the chain is the original client
-		if idx := strings.IndexByte(xff, ','); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// clientIP extracts the client IP from the request.
+// X-Forwarded-For is only trusted when the request comes from a configured trusted proxy.
+// When trustedProxies is empty, XFF is ignored entirely and RemoteAddr is used.
+func clientIP(r *http.Request, trustedProxies []string) string {
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		remoteHost = r.RemoteAddr
 	}
-	return host
+
+	if len(trustedProxies) > 0 {
+		isTrusted := false
+		for _, tp := range trustedProxies {
+			if tp == remoteHost {
+				isTrusted = true
+				break
+			}
+		}
+		if isTrusted {
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				// Use the first (leftmost) IP — the original client
+				if idx := strings.IndexByte(xff, ','); idx != -1 {
+					return strings.TrimSpace(xff[:idx])
+				}
+				return strings.TrimSpace(xff)
+			}
+		}
+	}
+
+	return remoteHost
 }

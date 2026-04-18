@@ -434,14 +434,14 @@ var exportCmd = &cobra.Command{
 			exportData := make([]map[string]interface{}, 0)
 			for _, issue := range issues {
 				logs, _ := database.GetLogs(issue.ID, 0)
-				handoff, _ := database.GetLatestHandoff(issue.ID)
-				deps, _ := database.GetDependencies(issue.ID)
+				handoffs, _ := database.GetHandoffs(issue.ID)
+				deps, _ := database.GetIssueDependencyRelations(issue.ID)
 				files, _ := database.GetLinkedFiles(issue.ID)
 
 				item := map[string]interface{}{
 					"issue":        issue,
 					"logs":         logs,
-					"handoff":      handoff,
+					"handoffs":     handoffs,
 					"dependencies": deps,
 					"files":        files,
 				}
@@ -530,23 +530,23 @@ var importCmd = &cobra.Command{
 			return err
 		}
 
-		sess, err := session.GetOrCreate(database)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
 		var imported int
+		var importErr error
 
 		if format == "md" {
-			imported, err = importMarkdown(database, string(data), dryRun, force, sess.ID)
+			sess, err := session.GetOrCreate(database)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			imported, importErr = importMarkdown(database, string(data), dryRun, force, sess.ID)
 		} else {
-			imported, err = importJSON(database, data, dryRun, force, sess.ID)
+			imported, importErr = importJSON(database, data, dryRun, force)
 		}
 
-		if err != nil {
-			output.Error("%v", err)
-			return err
+		if importErr != nil {
+			output.Error("%v", importErr)
+			return importErr
 		}
 
 		fmt.Printf("\nImported %d issues\n", imported)
@@ -555,88 +555,131 @@ var importCmd = &cobra.Command{
 	},
 }
 
+// exportedItem matches the JSON structure produced by the export command.
+type exportedItem struct {
+	Issue        models.Issue              `json:"issue"`
+	Logs         []models.Log              `json:"logs"`
+	Handoffs     []models.Handoff          `json:"handoffs"`
+	Dependencies []models.IssueDependency  `json:"dependencies"`
+	Files        []models.IssueFile        `json:"files"`
+}
+
+// UnmarshalJSON supports backward-compatible deserialization:
+//   - old "handoff" (singular object) → new "handoffs" (array)
+//   - old "dependencies" ([]string) → new "dependencies" ([]IssueDependency)
+func (e *exportedItem) UnmarshalJSON(data []byte) error {
+	// Use raw messages for fields that changed format.
+	var aux struct {
+		Issue    models.Issue       `json:"issue"`
+		Logs     []models.Log       `json:"logs"`
+		Handoffs []models.Handoff   `json:"handoffs"`
+		Handoff  *models.Handoff    `json:"handoff"`
+		Files    []models.IssueFile `json:"files"`
+		RawDeps  json.RawMessage    `json:"dependencies"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	e.Issue = aux.Issue
+	e.Logs = aux.Logs
+	e.Handoffs = aux.Handoffs
+	e.Files = aux.Files
+
+	// Backward compat: singular handoff → array
+	if len(e.Handoffs) == 0 && aux.Handoff != nil {
+		e.Handoffs = []models.Handoff{*aux.Handoff}
+	}
+
+	// Backward compat: []string → []IssueDependency
+	if len(aux.RawDeps) > 0 && string(aux.RawDeps) != "null" {
+		// Try structured format first
+		var deps []models.IssueDependency
+		if err := json.Unmarshal(aux.RawDeps, &deps); err != nil {
+			// Fall back to old []string format
+			var oldDeps []string
+			if err2 := json.Unmarshal(aux.RawDeps, &oldDeps); err2 != nil {
+				return err2
+			}
+			for _, depID := range oldDeps {
+				deps = append(deps, models.IssueDependency{
+					DependsOnID:  depID,
+					RelationType: "depends_on",
+				})
+			}
+		}
+		e.Dependencies = deps
+	}
+
+	return nil
+}
+
 // importJSON imports issues from JSON format
-func importJSON(database *db.DB, data []byte, dryRun, force bool, sessionID string) (int, error) {
-	var importData []map[string]interface{}
-	if err := json.Unmarshal(data, &importData); err != nil {
+func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
+	var items []exportedItem
+	if err := json.Unmarshal(data, &items); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
 	imported := 0
-	for _, item := range importData {
-		issueData, ok := item["issue"].(map[string]interface{})
-		if !ok {
+	importedIDs := make(map[string]string) // id -> parent_id
+	for _, item := range items {
+		issue := &item.Issue
+		if issue.Title == "" {
 			continue
 		}
 
-		title, _ := issueData["title"].(string)
-		if title == "" {
+		if issue.ID == "" {
+			output.Warning("skipping '%s' - no issue ID in export data", issue.Title)
 			continue
 		}
 
 		// Check if issue with same ID exists
-		existingID, _ := issueData["id"].(string)
-		var existing *models.Issue
-		if existingID != "" {
-			existing, _ = database.GetIssue(existingID)
-		}
+		existing, _ := database.GetIssue(issue.ID)
 
 		if existing != nil && !force {
-			output.Warning("skipping '%s' - already exists (use --force to overwrite)", existingID)
+			output.Warning("skipping '%s' - already exists (use --force to overwrite)", issue.ID)
 			continue
 		}
 
 		if dryRun {
 			if existing != nil {
-				fmt.Printf("[dry-run] Would overwrite: %s\n", existingID)
+				fmt.Printf("[dry-run] Would overwrite: %s\n", issue.ID)
 			} else {
-				fmt.Printf("[dry-run] Would import: %s\n", title)
+				fmt.Printf("[dry-run] Would import: %s\n", issue.Title)
 			}
 			imported++
 			continue
 		}
 
-		issue := &models.Issue{
-			Title: title,
-		}
-
-		if desc, ok := issueData["description"].(string); ok {
-			issue.Description = desc
-		}
-		if t, ok := issueData["type"].(string); ok {
-			issue.Type = models.Type(t)
-		}
-		if p, ok := issueData["priority"].(string); ok {
-			issue.Priority = models.Priority(p)
-		}
-		if pts, ok := issueData["points"].(float64); ok {
-			issue.Points = int(pts)
-		}
-		if labels, ok := issueData["labels"].([]interface{}); ok {
-			for _, l := range labels {
-				if label, ok := l.(string); ok {
-					issue.Labels = append(issue.Labels, label)
-				}
+		replace := existing != nil
+		if err := database.ImportItemRaw(issue, item.Logs, item.Handoffs, item.Dependencies, item.Files, replace); err != nil {
+			if replace {
+				output.Warning("failed to overwrite '%s': %v", issue.Title, err)
+			} else {
+				output.Warning("failed to import '%s': %v", issue.Title, err)
 			}
+			continue
 		}
-
-		if existing != nil && force {
-			// Update existing issue
-			issue.ID = existingID
-			issue.CreatedAt = existing.CreatedAt
-			if err := database.UpdateIssueLogged(issue, sessionID, models.ActionUpdate); err != nil {
-				output.Warning("failed to overwrite '%s': %v", existingID, err)
-				continue
-			}
-			fmt.Printf("OVERWRITTEN %s: %s\n", existingID, title)
-			imported++
+		if replace {
+			fmt.Printf("OVERWRITTEN %s: %s\n", issue.ID, issue.Title)
 		} else {
-			if err := database.CreateIssueLogged(issue, sessionID); err != nil {
-				output.Warning("failed to import '%s': %v", title, err)
+			fmt.Printf("IMPORTED %s: %s\n", issue.ID, issue.Title)
+		}
+
+		importedIDs[issue.ID] = issue.ParentID
+		imported++
+	}
+
+	// Warn about dangling parent_id references
+	if !dryRun {
+		for id, parentID := range importedIDs {
+			if parentID == "" {
 				continue
 			}
-			fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
-			imported++
+			if _, err := database.GetIssue(parentID); err != nil {
+				output.Warning("issue '%s' references parent '%s' which does not exist", id, parentID)
+			}
 		}
 	}
 
@@ -755,7 +798,7 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID 
 
 		// Parse metadata lines
 		if matches := statusRegex.FindStringSubmatch(line); matches != nil {
-			// Status is set on creation, ignore
+			currentIssue.Status = models.Status(strings.TrimSpace(matches[1]))
 			inDescription = false
 			continue
 		}

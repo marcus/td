@@ -29,7 +29,7 @@ func TestRecordSyncHistoryTx_Basic(t *testing.T) {
 	}
 
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx failed: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -65,11 +65,11 @@ func TestRecordSyncHistoryTx_EmptySlice(t *testing.T) {
 
 	// Empty entries should return nil without error
 	if err := RecordSyncHistoryTx(tx, nil); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx with nil should not error: %v", err)
 	}
 	if err := RecordSyncHistoryTx(tx, []SyncHistoryEntry{}); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx with empty slice should not error: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -108,10 +108,12 @@ func TestGetSyncHistoryTail_OrderAndLimit(t *testing.T) {
 		})
 	}
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("tx.Commit: %v", err)
+	}
 
 	// Get tail with limit 3
 	tail, err := db.GetSyncHistoryTail(3)
@@ -191,10 +193,12 @@ func TestGetSyncHistory_AfterID(t *testing.T) {
 		})
 	}
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("tx.Commit: %v", err)
+	}
 
 	// Get all entries first to find IDs
 	all, err := db.GetSyncHistoryTail(10)
@@ -254,10 +258,12 @@ func TestGetSyncHistory_WithLimit(t *testing.T) {
 		})
 	}
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("tx.Commit: %v", err)
+	}
 
 	// afterID=0 gets all, but limit to 3
 	result, err := db.GetSyncHistory(0, 3)
@@ -300,10 +306,12 @@ func TestPruneSyncHistory_KeepsNewest(t *testing.T) {
 		})
 	}
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("tx.Commit: %v", err)
+	}
 
 	// Prune to keep only 3
 	tx2, err := db.Conn().Begin()
@@ -311,10 +319,12 @@ func TestPruneSyncHistory_KeepsNewest(t *testing.T) {
 		t.Fatalf("Begin tx2: %v", err)
 	}
 	if err := PruneSyncHistory(tx2, 3); err != nil {
-		tx2.Rollback()
+		_ = tx2.Rollback()
 		t.Fatalf("PruneSyncHistory: %v", err)
 	}
-	tx2.Commit()
+	if err := tx2.Commit(); err != nil {
+		t.Fatalf("tx2.Commit: %v", err)
+	}
 
 	// Should have 3 left
 	var count int
@@ -373,10 +383,12 @@ func TestPruneSyncHistory_NoOpWhenUnderLimit(t *testing.T) {
 		})
 	}
 	if err := RecordSyncHistoryTx(tx, entries); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		t.Fatalf("RecordSyncHistoryTx: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("tx.Commit: %v", err)
+	}
 
 	// Prune with maxRows=10 (more than we have)
 	tx2, err := db.Conn().Begin()
@@ -384,10 +396,12 @@ func TestPruneSyncHistory_NoOpWhenUnderLimit(t *testing.T) {
 		t.Fatalf("Begin tx2: %v", err)
 	}
 	if err := PruneSyncHistory(tx2, 10); err != nil {
-		tx2.Rollback()
+		_ = tx2.Rollback()
 		t.Fatalf("PruneSyncHistory: %v", err)
 	}
-	tx2.Commit()
+	if err := tx2.Commit(); err != nil {
+		t.Fatalf("tx2.Commit: %v", err)
+	}
 
 	// All 3 should remain
 	var count int

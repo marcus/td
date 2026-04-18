@@ -1,0 +1,5 @@
+WORK SESSION STARTED: ws-f87b
+Name: proof-loop
+
+Tag issues with: td ws tag <issue-ids>
+Log progress with: td ws log "message"

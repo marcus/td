@@ -60,11 +60,7 @@ func BuildReport(seed int64, eng *ChaosEngine, v *Verifier, elapsed time.Duratio
 	// Map verifications
 	var verifications []ReportVerification
 	for _, r := range v.Results() {
-		verifications = append(verifications, ReportVerification{
-			Name:    r.Name,
-			Passed:  r.Passed,
-			Details: r.Details,
-		})
+		verifications = append(verifications, ReportVerification(r))
 	}
 
 	return ChaosReport{

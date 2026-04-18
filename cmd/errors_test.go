@@ -336,6 +336,31 @@ func TestEscapeJSON(t *testing.T) {
 			str:  "",
 			want: "",
 		},
+		{
+			name: "carriage return",
+			str:  "line1\rline2",
+			want: `line1\rline2`,
+		},
+		{
+			name: "backspace",
+			str:  "text\bmore",
+			want: `text\bmore`,
+		},
+		{
+			name: "form feed",
+			str:  "page1\fpage2",
+			want: `page1\fpage2`,
+		},
+		{
+			name: "null byte",
+			str:  "before\x00after",
+			want: `before\u0000after`,
+		},
+		{
+			name: "mixed control chars",
+			str:  "a\r\n\tb\x01c",
+			want: `a\r\n\tb\u0001c`,
+		},
 	}
 
 	for _, tt := range tests {

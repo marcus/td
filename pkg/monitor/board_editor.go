@@ -232,7 +232,11 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 	}
 
 	// Show results
-	sb.WriteString(fmt.Sprintf("Matches: %d issue(s)", preview.Count))
+	if preview.Count < 0 {
+		sb.WriteString("Matches: 5+ issue(s)")
+	} else {
+		sb.WriteString(fmt.Sprintf("Matches: %d issue(s)", preview.Count))
+	}
 	if len(preview.Titles) > 0 {
 		for _, t := range preview.Titles {
 			title := t
@@ -242,7 +246,9 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 			}
 			sb.WriteString("\n  " + subtleStyle.Render("• "+title))
 		}
-		if preview.Count > len(preview.Titles) {
+		if preview.Count < 0 {
+			sb.WriteString("\n  " + subtleStyle.Render("... and more"))
+		} else if preview.Count > len(preview.Titles) {
 			sb.WriteString(fmt.Sprintf("\n  "+subtleStyle.Render("... and %d more"), preview.Count-len(preview.Titles)))
 		}
 	}
@@ -341,18 +347,19 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 	}
 
 	isNew := m.BoardEditorMode == "create"
-	board := m.BoardEditorBoard
 
 	return m, func() tea.Msg {
 		if isNew {
 			newBoard, err := m.DB.CreateBoardLogged(name, queryStr, m.SessionID)
 			return BoardEditorSaveResultMsg{Board: newBoard, IsNew: true, Error: err}
 		}
-		// Update existing
-		board.Name = name
-		board.Query = queryStr
-		err := m.DB.UpdateBoardLogged(board, m.SessionID)
-		return BoardEditorSaveResultMsg{Board: board, IsNew: false, Error: err}
+		// Copy the board struct to avoid mutating a shared pointer from
+		// this goroutine while the BubbleTea Update loop may read it.
+		boardCopy := *m.BoardEditorBoard
+		boardCopy.Name = name
+		boardCopy.Query = queryStr
+		err := m.DB.UpdateBoardLogged(&boardCopy, m.SessionID)
+		return BoardEditorSaveResultMsg{Board: &boardCopy, IsNew: false, Error: err}
 	}
 }
 
@@ -398,9 +405,15 @@ func (m Model) boardEditorQueryPreview(queryStr string) tea.Cmd {
 			titles = append(titles, issue.Title)
 		}
 
+		count := len(issues)
+		hasMore := count > 5
+		if hasMore {
+			count = -1 // signal "more than 5" to the renderer
+		}
+
 		return BoardEditorQueryPreviewMsg{
 			Query:  queryStr,
-			Count:  len(issues),
+			Count:  count,
 			Titles: titles,
 		}
 	}

@@ -98,7 +98,7 @@ func TestWriteLocker_Timeout(t *testing.T) {
 	if err := locker1.acquire(500 * time.Millisecond); err != nil {
 		t.Fatalf("locker1 acquire failed: %v", err)
 	}
-	defer locker1.release()
+	defer func() { _ = locker1.release() }()
 
 	// Second locker should timeout
 	locker2 := newWriteLocker(dir)
@@ -107,7 +107,7 @@ func TestWriteLocker_Timeout(t *testing.T) {
 	elapsed := time.Since(start)
 
 	if err == nil {
-		locker2.release()
+		_ = locker2.release()
 		t.Fatal("expected timeout error, got nil")
 	}
 
@@ -139,7 +139,7 @@ func TestWriteLocker_ReleaseUnlocksForOthers(t *testing.T) {
 	}
 
 	// Release first lock
-	locker1.release()
+	_ = locker1.release()
 
 	// Second locker should now acquire immediately
 	locker2 := newWriteLocker(dir)
@@ -148,7 +148,7 @@ func TestWriteLocker_ReleaseUnlocksForOthers(t *testing.T) {
 		t.Fatalf("locker2 acquire failed after release: %v", err)
 	}
 	elapsed := time.Since(start)
-	locker2.release()
+	_ = locker2.release()
 
 	// Should acquire very quickly (not waiting for timeout)
 	if elapsed > 50*time.Millisecond {
@@ -176,7 +176,7 @@ func TestWriteLocker_HolderInfo(t *testing.T) {
 		t.Errorf("holder should contain timestamp: %s", holder)
 	}
 
-	locker.release()
+	_ = locker.release()
 }
 
 func contains(s, substr string) bool {

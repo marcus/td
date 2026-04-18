@@ -1,0 +1,62 @@
+{
+  "blocked": [],
+  "in_review": {
+    "implemented_by_you": [
+      {
+        "id": "td-fe5f4f",
+        "title": "Review phase child task",
+        "status": "in_review",
+        "type": "task",
+        "priority": "P1",
+        "points": 0,
+        "parent_id": "td-e16c23",
+        "implementer_session": "ses_a9fc51",
+        "creator_session": "ses_a9fc51",
+        "reviewer_session": "",
+        "created_at": "2026-03-27T18:31:04.633958-07:00",
+        "updated_at": "2026-03-27T18:31:05.106096-07:00",
+        "minor": false,
+        "created_branch": "main",
+        "defer_count": 0
+      }
+    ],
+    "reviewable_by_you": [],
+    "total": 1
+  },
+  "ready_to_start": [
+    {
+      "id": "td-e16c23",
+      "title": "Review phase epic root",
+      "status": "open",
+      "type": "epic",
+      "priority": "P1",
+      "points": 0,
+      "implementer_session": "",
+      "creator_session": "ses_a9fc51",
+      "reviewer_session": "",
+      "created_at": "2026-03-27T18:31:04.468854-07:00",
+      "updated_at": "2026-03-27T18:31:04.468854-07:00",
+      "minor": false,
+      "created_branch": "main",
+      "defer_count": 0
+    },
+    {
+      "id": "td-f91d8a",
+      "title": "Review phase open sibling task",
+      "status": "open",
+      "type": "task",
+      "priority": "P1",
+      "points": 0,
+      "parent_id": "td-e16c23",
+      "implementer_session": "",
+      "creator_session": "ses_a9fc51",
+      "reviewer_session": "",
+      "created_at": "2026-03-27T18:31:04.794918-07:00",
+      "updated_at": "2026-03-27T18:31:04.794918-07:00",
+      "minor": false,
+      "created_branch": "main",
+      "defer_count": 0
+    }
+  ],
+  "session": "ses_a9fc51"
+}

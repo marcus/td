@@ -14,11 +14,18 @@ Create issues with a title, type, and optional priority:
 td create "Add user authentication" --type feature --priority P1
 td create "Login button misaligned" --type bug
 td create "Refactor auth module" --type task --priority P2
+td create "Capture sync edge cases" --description-file docs/issue-description.md
 ```
 
 **Types:** `bug`, `feature`, `task`, `epic`, `chore`
 
 **Priorities:** `P0` (critical) through `P4` (lowest). Defaults to P2 if omitted.
+
+For markdown-heavy descriptions or acceptance criteria, prefer `--description-file` and `--acceptance-file`. They preserve blank lines, indentation, and fenced code blocks exactly, and `-` reads the whole field from stdin:
+
+```bash
+cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
+```
 
 ## Starting Work
 
@@ -78,7 +85,34 @@ td approve td-a1b2         # Close the issue
 td reject td-a1b2 --reason "Missing error handling"  # Back to in_progress
 ```
 
-The session that implemented an issue **cannot** approve it. A different session must review. This forces actual handoffs and catches "works on my context" bugs that a fresh session would notice.
+The session that implemented an issue **cannot** approve it — but the review policy is smarter than a blanket block.
+
+### Balanced Review Policy (default)
+
+td uses a **balanced review policy** that distinguishes between creating a task and implementing it:
+
+- **Implementer self-approval is always blocked** — if you started or worked on a task, you can't approve it.
+- **Creator-approval is allowed** when a *different* session did the implementation, as long as you provide a reason: `td approve td-a1b2 --reason "Reviewed agent output, tests pass"`.
+- **All other previously-involved sessions remain blocked**.
+
+This unlocks the common lead/worker pattern:
+
+```bash
+# Lead creates and assigns work
+td add "Build feature X"
+
+# Agent implements (different session)
+td start td-a1b2
+td log "implemented feature X"
+td review td-a1b2
+
+# Lead reviews and approves (same session that created)
+td approve td-a1b2 --reason "Reviewed output, looks good"
+```
+
+Creator-exception approvals are audited in the security log (`td security`).
+
+To revert to strict mode (no creator-exception): `td feature set balanced_review_policy false`.
 
 ## Issue Lifecycle
 
@@ -106,3 +140,5 @@ Why this matters:
 - A fresh session reading the code with new eyes catches issues the implementer missed
 - Prevents a single long-lived session from both writing and rubber-stamping code
 - Mirrors real code review, where a different person checks the work
+
+The balanced review policy relaxes this for task *creators* who didn't implement the work — see [Review Workflow](#review-workflow) above.

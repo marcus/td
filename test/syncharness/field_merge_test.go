@@ -205,7 +205,7 @@ func TestUpdateWithNoPreviousDataFallback(t *testing.T) {
 	}
 	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{ev})
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		h.serverMu.Unlock()
 		t.Fatalf("insert server events: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestUpdateNonExistentRowFallback(t *testing.T) {
 	}
 	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{ev})
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		h.serverMu.Unlock()
 		t.Fatalf("insert server events: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestEmptyDiffNoOp(t *testing.T) {
 	}
 	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{ev})
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		h.serverMu.Unlock()
 		t.Fatalf("insert server events: %v", err)
 	}

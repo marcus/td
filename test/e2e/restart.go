@@ -23,19 +23,16 @@ func ScenarioServerRestart(h *Harness) []VerifyResult {
 	}
 
 	// Step 1: Alice creates 5 issues
-	aliceIDs := make([]string, 0, 5)
 	for i := 0; i < 5; i++ {
 		out, err := h.TdA("create", fmt.Sprintf("Alice restart resilience issue %d", i), "--type", "task", "--priority", "P1")
 		if err != nil {
 			fail("alice_create_pre", fmt.Sprintf("create %d failed: %v\n%s", i, err, out))
 			return results
 		}
-		id := extractIssueID(out)
-		if id == "" {
+		if extractIssueID(out) == "" {
 			fail("alice_create_pre", fmt.Sprintf("no ID from create %d: %s", i, out))
 			return results
 		}
-		aliceIDs = append(aliceIDs, id)
 	}
 
 	// Bob creates 5 issues

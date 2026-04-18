@@ -1,8 +1,15 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -88,7 +95,7 @@ func TestApprovalReasonWithNoteFlags(t *testing.T) {
 	}
 
 	// Reset and test --notes
-	cmd.Flags().Set("note", "")
+	_ = cmd.Flags().Set("note", "")
 	if err := cmd.Flags().Set("notes", "my notes"); err != nil {
 		t.Fatalf("set notes: %v", err)
 	}
@@ -97,10 +104,219 @@ func TestApprovalReasonWithNoteFlags(t *testing.T) {
 	}
 
 	// --comment has lower priority than --note
-	cmd.Flags().Set("notes", "")
-	cmd.Flags().Set("comment", "c")
-	cmd.Flags().Set("note", "n")
+	_ = cmd.Flags().Set("notes", "")
+	_ = cmd.Flags().Set("comment", "c")
+	_ = cmd.Flags().Set("note", "n")
 	if got := approvalReason(cmd); got != "n" {
 		t.Fatalf("note vs comment: got %q, want %q", got, "n")
+	}
+}
+
+func TestApproveNoArgsUsesSingleReviewableIssue(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+
+	issue := &models.Issue{
+		Title:              "Single reviewable issue",
+		Status:             models.StatusInReview,
+		Minor:              true,
+		ImplementerSession: sess.ID,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := approveCmd.RunE(approveCmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&output, r)
+
+	if runErr != nil {
+		t.Fatalf("approveCmd.RunE returned error: %v", runErr)
+	}
+
+	got := output.String()
+	if !strings.Contains(got, "APPROVED "+issue.ID) {
+		t.Fatalf("expected approval output for %q, got %s", issue.ID, got)
+	}
+
+	updated, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if updated.Status != models.StatusClosed {
+		t.Fatalf("status = %s, want %s", updated.Status, models.StatusClosed)
+	}
+	if updated.ReviewerSession != sess.ID {
+		t.Fatalf("reviewer session = %q, want %q", updated.ReviewerSession, sess.ID)
+	}
+}
+
+func TestApproveClosedIssueIsIdempotent(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:              "Already closed review target",
+		Status:             models.StatusClosed,
+		ReviewerSession:    "ses_original_reviewer",
+		ImplementerSession: "ses_impl",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&output, r)
+
+	if runErr != nil {
+		t.Fatalf("approveCmd.RunE returned error: %v", runErr)
+	}
+
+	got := output.String()
+	if !strings.Contains(got, "already approved/closed") {
+		t.Fatalf("expected idempotent approval output, got %s", got)
+	}
+
+	updated, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if updated.Status != models.StatusClosed {
+		t.Fatalf("status = %s, want %s", updated.Status, models.StatusClosed)
+	}
+	if updated.ReviewerSession != "ses_original_reviewer" {
+		t.Fatalf("reviewer session = %q, want %q", updated.ReviewerSession, "ses_original_reviewer")
+	}
+}
+
+func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:              "Recently approved issue",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses_impl",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_impl",
+		Message:   "Submitted for review",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	if err := approveCmd.Flags().Set("reason", "ship it"); err != nil {
+		t.Fatalf("set reason: %v", err)
+	}
+
+	var first bytes.Buffer
+	oldStdout := os.Stdout
+	r1, w1, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w1
+	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
+	_ = w1.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&first, r1)
+	if runErr != nil {
+		t.Fatalf("first approveCmd.RunE returned error: %v", runErr)
+	}
+
+	if err := approveCmd.Flags().Set("reason", ""); err != nil {
+		t.Fatalf("clear reason: %v", err)
+	}
+
+	var second bytes.Buffer
+	r2, w2, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w2
+	runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
+	_ = w2.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&second, r2)
+	if runErr != nil {
+		t.Fatalf("second approveCmd.RunE returned error: %v", runErr)
+	}
+
+	got := second.String()
+	if !strings.Contains(got, "Recent transition: approved") {
+		t.Fatalf("expected latest approval transition in %s", got)
+	}
+	if strings.Contains(got, "Recent transition: submitted for review") {
+		t.Fatalf("expected stale submitted-for-review context to be skipped in %s", got)
 	}
 }

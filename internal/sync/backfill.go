@@ -410,14 +410,9 @@ func anyEventSetsStatus(tx *sql.Tx, entityID, status string) bool {
 	pattern := fmt.Sprintf(`%%"status":"%s"%%`, status)
 
 	// Check if any create event has the target status
-	var createCount int
-	_ = tx.QueryRow(`
-		SELECT COUNT(*) FROM action_log
-		WHERE entity_id = ? AND entity_type IN ('issue', 'issues')
-		AND undone = 0 AND action_type = 'create' AND new_data LIKE ?`,
-		entityID, pattern,
-	).Scan(&createCount)
-	if createCount > 0 {
+	// Use LIKE as a pre-filter, then verify with statusMatches to avoid false positives
+	// (e.g., LIKE pattern for "open" matching "reopened")
+	if found := checkCreateEventStatus(tx, entityID, pattern, status); found {
 		return true
 	}
 
@@ -445,6 +440,33 @@ func anyEventSetsStatus(tx *sql.Tx, entityID, status string) bool {
 		}
 		// If previous_data has a different status, the diff will include status
 		if !statusMatches(prevData.String, status) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkCreateEventStatus checks if any create event sets the target status.
+// Uses LIKE as a pre-filter, then verifies with statusMatches to avoid false positives.
+// Extracted to its own function so rows.Close() runs before the caller's next query.
+func checkCreateEventStatus(tx *sql.Tx, entityID, pattern, status string) bool {
+	rows, err := tx.Query(`
+		SELECT new_data FROM action_log
+		WHERE entity_id = ? AND entity_type IN ('issue', 'issues')
+		AND undone = 0 AND action_type = 'create' AND new_data LIKE ?`,
+		entityID, pattern,
+	)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var newData sql.NullString
+		if err := rows.Scan(&newData); err != nil {
+			continue
+		}
+		if newData.Valid && statusMatches(newData.String, status) {
 			return true
 		}
 	}

@@ -50,7 +50,7 @@ func (db *DB) GetRecentConflicts(limit int, since *time.Time) ([]SyncConflict, e
 		if err := rows.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.ServerSeq, &c.LocalData, &c.RemoteData, &ts); err != nil {
 			return nil, err
 		}
-		parsed, parseErr := time.Parse("2006-01-02 15:04:05", ts)
+		parsed, parseErr := parseTimestamp(ts)
 		if parseErr != nil {
 			return nil, parseErr
 		}

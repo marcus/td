@@ -17,7 +17,7 @@ const lockFile = ".todos/config.json.lock"
 // Title validation defaults
 const (
 	DefaultTitleMinLength = 15
-	DefaultTitleMaxLength = 100
+	DefaultTitleMaxLength = 200
 )
 
 // Load reads the config from disk
@@ -92,7 +92,7 @@ func withConfigLock(baseDir string, fn func() error) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	return fn()
 }

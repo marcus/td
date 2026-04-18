@@ -52,13 +52,17 @@ func TestBlockMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatalf("CreateIssue failed: %v", err)
+		}
 	}
 
 	// Block all issues
 	for _, issue := range issues {
 		issue.Status = models.StatusBlocked
-		database.UpdateIssue(issue)
+		if err := database.UpdateIssue(issue); err != nil {
+			t.Fatalf("UpdateIssue failed: %v", err)
+		}
 	}
 
 	// Verify all blocked
@@ -97,11 +101,15 @@ func TestBlockFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			if err := database.CreateIssue(issue); err != nil {
+				t.Fatalf("CreateIssue failed: %v", err)
+			}
 
 			if tc.shouldTransition {
 				issue.Status = models.StatusBlocked
-				database.UpdateIssue(issue)
+				if err := database.UpdateIssue(issue); err != nil {
+					t.Fatalf("UpdateIssue failed: %v", err)
+				}
 
 				retrieved, _ := database.GetIssue(issue.ID)
 				if retrieved.Status != models.StatusBlocked {
@@ -129,7 +137,9 @@ func TestBlockLogsAction(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	sessionID := "ses_test123"
 	previousStatus := issue.Status
@@ -177,7 +187,9 @@ func TestBlockWithReason(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	reason := "Waiting for dependency: td-abc123"
 
@@ -239,7 +251,9 @@ func TestBlockAlreadyBlockedIssue(t *testing.T) {
 		Title:  "Already Blocked",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	// Block again (idempotent)
 	issue.Status = models.StatusBlocked
@@ -266,15 +280,23 @@ func TestBlockWithDependentIssues(t *testing.T) {
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusOpen}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusOpen}
 
-	database.CreateIssue(blocker)
-	database.CreateIssue(dependent)
+	if err := database.CreateIssue(blocker); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.CreateIssue(dependent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	// Add dependency
-	database.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	if err := database.AddDependency(dependent.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// Block the blocker
 	blocker.Status = models.StatusBlocked
-	database.UpdateIssue(blocker)
+	if err := database.UpdateIssue(blocker); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
 
 	// Verify blocker is blocked
 	retrieved, _ := database.GetIssue(blocker.ID)
@@ -318,10 +340,14 @@ func TestBlockMixedStatuses(t *testing.T) {
 			Title:  title,
 			Status: tc.status,
 		}
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatalf("CreateIssue failed: %v", err)
+		}
 
 		issue.Status = models.StatusBlocked
-		database.UpdateIssue(issue)
+		if err := database.UpdateIssue(issue); err != nil {
+			t.Fatalf("UpdateIssue failed: %v", err)
+		}
 
 		retrieved, _ := database.GetIssue(issue.ID)
 		if retrieved.Status != models.StatusBlocked {
@@ -343,13 +369,17 @@ func TestBlockUpdatesTimestamp(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	originalTime := issue.UpdatedAt
 
 	// Simulate time passage and block
 	issue.Status = models.StatusBlocked
-	database.UpdateIssue(issue)
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.UpdatedAt.Equal(originalTime) {

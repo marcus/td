@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>td-79fac9 issue detail modal proof</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: #111827;
+  --panel-border: #334155;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --open: #00d7ff;
+  --in-progress: #ffaf00;
+  --blocked: #ff0000;
+  --in-review: #af87ff;
+  --closed: #00d787;
+}
+body {
+  margin: 0;
+  padding: 32px;
+  background: radial-gradient(circle at top, #172554 0%, var(--bg) 55%);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+p.lead {
+  margin: 0 0 24px;
+  color: var(--muted);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+}
+.card {
+  background: rgba(17, 24, 39, 0.92);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+.card h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+pre {
+  margin: 0;
+  padding: 16px;
+  overflow: hidden;
+  background: #020617;
+  border-radius: 12px;
+  border: 1px solid #1e293b;
+  line-height: 1.22;
+  font-size: 13px;
+}
+.status {
+  font-weight: 700;
+}
+.status.open { color: var(--open); }
+.status.in-progress { color: var(--in-progress); }
+.status.blocked { color: var(--blocked); }
+.status.in-review { color: var(--in-review); }
+.status.closed { color: var(--closed); }
+</style>
+</head>
+<body>
+  <h1>td-79fac9 proof</h1>
+  <p class="lead">Issue detail modal content with the new first-line status treatment rendered from the real monitor modal path.</p>
+  <div class="grid"><section class="card"><h2>open</h2><p>open uses the shared blue/cyan start accent</p><pre>╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│  <span class="status open">open</span>                                                                      │
+│  td-79fac9 Show colored status line at top of td issue detail modal        │
+│                                                                            │
+│  ■  P3  created 2026-03-29 10:30                                           │
+│                                                                            │
+│                                                                            │
+│  ↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh                     │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯</pre></section><section class="card"><h2>in_progress</h2><p>in_progress falls back to the existing warning accent</p><pre>╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│  <span class="status in-progress">in_progress</span>                                                               │
+│  td-79fac9 Show colored status line at top of td issue detail modal        │
+│                                                                            │
+│  ■  P3  created 2026-03-29 10:30                                           │
+│                                                                            │
+│                                                                            │
+│  ↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh                     │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯</pre></section><section class="card"><h2>blocked</h2><p>blocked uses the destructive red accent</p><pre>╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│  <span class="status blocked">blocked</span>                                                                   │
+│  td-79fac9 Show colored status line at top of td issue detail modal        │
+│                                                                            │
+│  ■  P3  created 2026-03-29 10:30                                           │
+│                                                                            │
+│                                                                            │
+│  ↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh                     │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯</pre></section><section class="card"><h2>in_review</h2><p>in_review uses the shared review purple accent</p><pre>╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│  <span class="status in-review">in_review</span>                                                                 │
+│  td-79fac9 Show colored status line at top of td issue detail modal        │
+│                                                                            │
+│  ■  P3  created 2026-03-29 10:30                                           │
+│                                                                            │
+│                                                                            │
+│  ↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh                     │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯</pre></section><section class="card"><h2>closed</h2><p>closed uses the shared completed green accent</p><pre>╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│  <span class="status closed">closed</span>                                                                    │
+│  td-79fac9 Show colored status line at top of td issue detail modal        │
+│                                                                            │
+│  ■  P3  created 2026-03-29 10:30                                           │
+│                                                                            │
+│                                                                            │
+│  ↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh                     │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯</pre></section></div>
+</body>
+</html>

@@ -91,6 +91,14 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	statuses := parseStatusParams(q["status"])
 	types := parseTypeParams(q["type"])
 	priorities := q["priority"]
+	labels := parseStringParams(q["labels"])
+	if len(labels) == 0 {
+		labels = parseStringParams(q["label"])
+	}
+	epicID := strings.TrimSpace(q.Get("epic"))
+	if epicID == "" {
+		epicID = strings.TrimSpace(q.Get("epic_id"))
+	}
 	search := q.Get("search")
 	searchMode := q.Get("search_mode") // auto, text, tdq
 	includeClosed := q.Get("include_closed") == "true"
@@ -122,6 +130,19 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			// TDQ succeeded - apply type, priority filters and pagination manually
 			filtered := filterIssues(issues, types, priorities)
+			filtered = filterByLabels(filtered, labels)
+			if epicID != "" {
+				epicIssues, epicErr := s.db.ListIssues(db.ListIssuesOptions{EpicID: epicID})
+				if epicErr != nil {
+					WriteError(w, ErrInternal, "failed to list epic issues: "+epicErr.Error(), http.StatusInternalServerError)
+					return
+				}
+				allowed := make(map[string]bool, len(epicIssues))
+				for _, issue := range epicIssues {
+					allowed[issue.ID] = true
+				}
+				filtered = filterByIssueIDs(filtered, allowed)
+			}
 			total := len(filtered)
 			paged := applyPagination(filtered, offset, limit)
 
@@ -148,6 +169,8 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		Status:   statuses,
 		Type:     types,
 		Priority: priorityFilter,
+		Labels:   labels,
+		EpicID:   epicID,
 		Search:   search,
 		SortBy:   sortCol,
 		SortDesc: sortDesc,
@@ -439,6 +462,20 @@ func parseTypeParams(values []string) []models.Type {
 	return types
 }
 
+// parseStringParams converts repeated query params into trimmed string values.
+func parseStringParams(values []string) []string {
+	var result []string
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				result = append(result, part)
+			}
+		}
+	}
+	return result
+}
+
 // resolveSortOptions converts sort/order query params to DB options.
 func resolveSortOptions(sortBy, order string) (string, bool) {
 	// Map API sort names to DB column names
@@ -533,6 +570,54 @@ func filterIssues(issues []models.Issue, types []models.Type, priorities []strin
 		result = append(result, issue)
 	}
 	return result
+}
+
+// filterByLabels filters issues that contain all requested labels.
+func filterByLabels(issues []models.Issue, labels []string) []models.Issue {
+	if len(labels) == 0 {
+		return issues
+	}
+
+	var result []models.Issue
+	for _, issue := range issues {
+		if issueHasAllLabels(issue.Labels, labels) {
+			result = append(result, issue)
+		}
+	}
+	return result
+}
+
+// filterByIssueIDs keeps only issues whose IDs appear in the allowed set.
+func filterByIssueIDs(issues []models.Issue, allowed map[string]bool) []models.Issue {
+	if len(allowed) == 0 {
+		return []models.Issue{}
+	}
+
+	var result []models.Issue
+	for _, issue := range issues {
+		if allowed[issue.ID] {
+			result = append(result, issue)
+		}
+	}
+	return result
+}
+
+// issueHasAllLabels checks whether issueLabels contains every label in requiredLabels.
+func issueHasAllLabels(issueLabels, requiredLabels []string) bool {
+	if len(requiredLabels) == 0 {
+		return true
+	}
+
+	labelSet := make(map[string]bool, len(issueLabels))
+	for _, label := range issueLabels {
+		labelSet[label] = true
+	}
+	for _, required := range requiredLabels {
+		if !labelSet[required] {
+			return false
+		}
+	}
+	return true
 }
 
 // filterByPriorities filters issues by multiple priority values.

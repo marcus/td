@@ -48,6 +48,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	project, err := s.store.CreateProjectWithID(projectID, req.Name, req.Description, user.UserID)
 	if err != nil {
+		// Clean up the already-created event DB to avoid orphaned directory
+		if delErr := s.dbPool.Delete(projectID); delErr != nil {
+			logFor(r.Context()).Error("cleanup project db after failed create", "project", projectID, "err", delErr)
+		}
 		logFor(r.Context()).Error("create project", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create project")
 		return

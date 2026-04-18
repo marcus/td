@@ -1,0 +1,3 @@
+STARTED td-c5932a (session: ses_3bce40)
+Git: 53f499a (dispatch/td-377aae-0004) 5 modified, 1 untracked
+Warning: Starting with uncommitted changes

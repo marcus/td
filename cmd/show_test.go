@@ -1,7 +1,14 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
 )
 
 // TestShowFormatFlagParsing tests that --format flag is defined and works
@@ -83,5 +90,53 @@ func TestShowRenderMarkdownFlagExists(t *testing.T) {
 	}
 	if showCmd.Flags().ShorthandLookup("m") == nil {
 		t.Error("Expected -m shorthand to be defined for --render-markdown")
+	}
+}
+
+func TestShowNoArgsUsesSingleInReviewIssue(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Reviewable single issue",
+		Status: models.StatusInReview,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := showCmd.RunE(showCmd, []string{})
+
+	w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&output, r)
+
+	if runErr != nil {
+		t.Fatalf("showCmd.RunE returned error: %v", runErr)
+	}
+
+	got := output.String()
+	if !strings.Contains(got, issue.ID) {
+		t.Fatalf("expected output to contain issue ID %q, got %s", issue.ID, got)
+	}
+	if !strings.Contains(got, issue.Title) {
+		t.Fatalf("expected output to contain issue title %q, got %s", issue.Title, got)
 	}
 }

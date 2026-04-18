@@ -67,12 +67,12 @@ func execCreate(e *ChaosEngine, actor string) ActionResult {
 	}
 
 	// Set description and acceptance separately
-	e.Harness.Td(actor, "update", id, "--description", desc)
-	e.Harness.Td(actor, "update", id, "--acceptance", acceptance)
+	_, _ = e.Harness.Td(actor, "update", id, "--description", desc)
+	_, _ = e.Harness.Td(actor, "update", id, "--acceptance", acceptance)
 
 	// 30% chance of minor
 	if e.Rng.Intn(10) < 3 {
-		e.Harness.Td(actor, "update", id, "--minor")
+		_, _ = e.Harness.Td(actor, "update", id, "--minor")
 		e.Issues[id].Minor = true
 	}
 
@@ -927,8 +927,8 @@ func execLink(e *ChaosEngine, actor string) ActionResult {
 	// Create the file so td link can find it
 	clientDir := e.Harness.ClientDir(actor)
 	absPath := filepath.Join(clientDir, filePath)
-	os.MkdirAll(filepath.Dir(absPath), 0755)
-	os.WriteFile(absPath, []byte("chaos-generated\n"), 0644)
+	_ = os.MkdirAll(filepath.Dir(absPath), 0755)
+	_ = os.WriteFile(absPath, []byte("chaos-generated\n"), 0644)
 
 	out, err := e.Harness.Td(actor, "link", id, filePath, "--role", role)
 	if err != nil {

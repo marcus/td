@@ -14,7 +14,7 @@ func (db *DB) GetStats() (map[string]int, error) {
 
 	// Total issues
 	var total int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL`).Scan(&total)
+	_ = db.conn.QueryRow(`SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL`).Scan(&total)
 	stats["total"] = total
 
 	// By status

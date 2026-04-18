@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/marcus/td/internal/models"
@@ -149,6 +150,73 @@ func TestUpdateIssueLogged(t *testing.T) {
 	}
 	if newIssue.Priority != models.PriorityP0 {
 		t.Errorf("new_data priority: got %s, want P0", newIssue.Priority)
+	}
+}
+
+func TestUpdateIssueLoggedIfStatusDetectsStaleTransition(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:    "Concurrent review target",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	staleCopy, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue current failed: %v", err)
+	}
+	current.Status = models.StatusInProgress
+	if err := database.UpdateIssue(current); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	staleCopy.Status = models.StatusInReview
+	err = database.UpdateIssueLoggedIfStatus(staleCopy, models.StatusOpen, "sess-reviewer", models.ActionReview)
+	if err == nil {
+		t.Fatal("expected stale status error")
+	}
+
+	var staleErr *StaleIssueStatusError
+	if !errors.As(err, &staleErr) {
+		t.Fatalf("expected StaleIssueStatusError, got %T", err)
+	}
+	if staleErr.Expected != models.StatusOpen {
+		t.Fatalf("expected stale error expected=%s, got %s", models.StatusOpen, staleErr.Expected)
+	}
+	if staleErr.Actual != models.StatusInProgress {
+		t.Fatalf("expected stale error actual=%s, got %s", models.StatusInProgress, staleErr.Actual)
+	}
+	t.Log(staleErr.Error())
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue after stale update failed: %v", err)
+	}
+	if got.Status != models.StatusInProgress {
+		t.Fatalf("status = %s, want %s", got.Status, models.StatusInProgress)
+	}
+
+	var actions int
+	if err := database.conn.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id = ?`, issue.ID).Scan(&actions); err != nil {
+		t.Fatalf("count action_log failed: %v", err)
+	}
+	if actions != 0 {
+		t.Fatalf("expected no action log entry for stale transition, got %d", actions)
 	}
 }
 

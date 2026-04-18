@@ -86,10 +86,10 @@ func TestInsertAuthEventMetadataJSON(t *testing.T) {
 func TestQueryAuthEventsFilterByEventType(t *testing.T) {
 	db := newTestDB(t)
 
-	db.InsertAuthEvent("ar_1", "a@test.com", AuthEventStarted, "{}")
-	db.InsertAuthEvent("ar_2", "b@test.com", AuthEventCodeVerified, "{}")
-	db.InsertAuthEvent("ar_3", "c@test.com", AuthEventFailed, "{}")
-	db.InsertAuthEvent("ar_4", "d@test.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_1", "a@test.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_2", "b@test.com", AuthEventCodeVerified, "{}")
+	_ = db.InsertAuthEvent("ar_3", "c@test.com", AuthEventFailed, "{}")
+	_ = db.InsertAuthEvent("ar_4", "d@test.com", AuthEventStarted, "{}")
 
 	result, err := db.QueryAuthEvents(AuthEventStarted, "", "", "", 10, "")
 	if err != nil {
@@ -108,9 +108,9 @@ func TestQueryAuthEventsFilterByEventType(t *testing.T) {
 func TestQueryAuthEventsFilterByEmail(t *testing.T) {
 	db := newTestDB(t)
 
-	db.InsertAuthEvent("ar_1", "alice@example.com", AuthEventStarted, "{}")
-	db.InsertAuthEvent("ar_2", "bob@example.com", AuthEventStarted, "{}")
-	db.InsertAuthEvent("ar_3", "alice@other.com", AuthEventCodeVerified, "{}")
+	_ = db.InsertAuthEvent("ar_1", "alice@example.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_2", "bob@example.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_3", "alice@other.com", AuthEventCodeVerified, "{}")
 
 	result, err := db.QueryAuthEvents("", "alice", "", "", 10, "")
 	if err != nil {
@@ -125,11 +125,11 @@ func TestQueryAuthEventsFilterByDateRange(t *testing.T) {
 	db := newTestDB(t)
 
 	// Insert events with forced timestamps
-	db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
 		"ar_old", "old@test.com", AuthEventStarted, "{}", "2024-01-01 00:00:00")
-	db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
 		"ar_mid", "mid@test.com", AuthEventStarted, "{}", "2024-06-15 12:00:00")
-	db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
 		"ar_new", "new@test.com", AuthEventStarted, "{}", "2024-12-31 23:59:59")
 
 	// Query from June onward
@@ -164,7 +164,7 @@ func TestQueryAuthEventsPagination(t *testing.T) {
 	db := newTestDB(t)
 
 	for i := 0; i < 5; i++ {
-		db.InsertAuthEvent("ar_pg", "pg@test.com", AuthEventStarted, "{}")
+		_ = db.InsertAuthEvent("ar_pg", "pg@test.com", AuthEventStarted, "{}")
 	}
 
 	// First page
@@ -211,11 +211,11 @@ func TestCleanupAuthEvents(t *testing.T) {
 	db := newTestDB(t)
 
 	// Insert old event
-	db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
+	_, _ = db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type, metadata, created_at) VALUES (?, ?, ?, ?, ?)`,
 		"ar_old", "old@test.com", AuthEventStarted, "{}", time.Now().UTC().Add(-100*24*time.Hour).Format("2006-01-02 15:04:05"))
 
 	// Insert recent event
-	db.InsertAuthEvent("ar_new", "new@test.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_new", "new@test.com", AuthEventStarted, "{}")
 
 	// Cleanup events older than 90 days
 	n, err := db.CleanupAuthEvents(90 * 24 * time.Hour)
@@ -243,8 +243,8 @@ func TestCleanupAuthEventsKeepsRecent(t *testing.T) {
 	db := newTestDB(t)
 
 	// Insert only recent events
-	db.InsertAuthEvent("ar_1", "a@test.com", AuthEventStarted, "{}")
-	db.InsertAuthEvent("ar_2", "b@test.com", AuthEventCodeVerified, "{}")
+	_ = db.InsertAuthEvent("ar_1", "a@test.com", AuthEventStarted, "{}")
+	_ = db.InsertAuthEvent("ar_2", "b@test.com", AuthEventCodeVerified, "{}")
 
 	n, err := db.CleanupAuthEvents(90 * 24 * time.Hour)
 	if err != nil {
@@ -267,10 +267,10 @@ func TestGetPendingExpiredAuthRequests(t *testing.T) {
 	db := newTestDB(t)
 
 	ar1, _ := db.CreateAuthRequest("expired@test.com")
-	db.CreateAuthRequest("fresh@test.com")
+	_, _ = db.CreateAuthRequest("fresh@test.com")
 
 	// Force ar1 to be expired
-	db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
+	_, _ = db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
 		time.Now().UTC().Add(-1*time.Hour), ar1.ID)
 
 	expired, err := db.GetPendingExpiredAuthRequests()

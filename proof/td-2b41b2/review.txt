@@ -1,0 +1,3 @@
+Warning: auto-created minimal handoff for td-7f3c03 - consider using 'td handoff' for better documentation
+REVIEW REQUESTED td-7f3c03 (session: ses_fd015e)
+  ↑ Parent td-33e909 auto-cascaded to in_review

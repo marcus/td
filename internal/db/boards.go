@@ -166,6 +166,9 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 		boards = append(boards, board)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return boards, nil
 }
 
@@ -219,15 +222,24 @@ func (db *DB) DeleteBoard(id string) error {
 			return fmt.Errorf("cannot delete builtin board")
 		}
 
-		// Soft-delete positions first
-		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id)
+		// Use a transaction to atomically soft-delete positions and delete board
+		tx, err := db.conn.Begin()
 		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		// Soft-delete positions first
+		if _, err := tx.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id); err != nil {
 			return err
 		}
 
 		// Delete board
-		_, err = db.conn.Exec(`DELETE FROM boards WHERE id = ?`, id)
-		return err
+		if _, err := tx.Exec(`DELETE FROM boards WHERE id = ?`, id); err != nil {
+			return err
+		}
+
+		return tx.Commit()
 	})
 }
 
@@ -334,7 +346,7 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Check if a (possibly soft-deleted) row exists
 		var existing int
@@ -438,6 +450,9 @@ func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, e
 		}
 		positions = append(positions, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return positions, nil
 }
 
@@ -449,7 +464,7 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		rows, err := tx.Query(`
 			SELECT issue_id, position
@@ -549,6 +564,9 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 		positions = append(positions, p)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return positions, nil
 }
 
@@ -576,7 +594,7 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Get positions
 		var pos1, pos2 int

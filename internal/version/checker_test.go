@@ -187,7 +187,7 @@ func TestCheckAsyncWithInvalidCache(t *testing.T) {
 
 	path := cachePath()
 	dir := filepath.Dir(path)
-	os.MkdirAll(dir, 0755)
+	_ = os.MkdirAll(dir, 0755)
 
 	// Write corrupted JSON to cache
 	if err := os.WriteFile(path, []byte(`{corrupted}`), 0644); err != nil {

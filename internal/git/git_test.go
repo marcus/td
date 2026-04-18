@@ -18,15 +18,23 @@ func initTestRepo(t *testing.T) string {
 	}
 
 	// Configure git for commits
-	runCmd(dir, "git", "config", "user.email", "test@test.com")
-	runCmd(dir, "git", "config", "user.name", "Test User")
+	if err := runCmd(dir, "git", "config", "user.email", "test@test.com"); err != nil {
+		t.Fatalf("Failed to configure git email: %v", err)
+	}
+	if err := runCmd(dir, "git", "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("Failed to configure git name: %v", err)
+	}
 
 	// Create initial file and commit
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Test"), 0644); err != nil {
 		t.Fatalf("Failed to write file: %v", err)
 	}
-	runCmd(dir, "git", "add", ".")
-	runCmd(dir, "git", "commit", "-m", "Initial commit")
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
 
 	return dir
 }
@@ -118,8 +126,10 @@ func TestParseStatOutputDeletionsOnly(t *testing.T) {
 func TestGetStateInRepo(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	state, err := GetState()
 	if err != nil {
@@ -144,11 +154,15 @@ func TestGetStateInRepo(t *testing.T) {
 func TestGetStateWithModifiedFiles(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Modify a file
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Modified"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Modified"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
 
 	state, err := GetState()
 	if err != nil {
@@ -167,11 +181,15 @@ func TestGetStateWithModifiedFiles(t *testing.T) {
 func TestGetStateWithUntrackedFiles(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Create untracked file
-	os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
 
 	state, err := GetState()
 	if err != nil {
@@ -193,12 +211,18 @@ func TestGetStateWithUntrackedFiles(t *testing.T) {
 func TestGetStateWithMixedChanges(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Modify existing and create new
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Modified"), 0644)
-	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Modified"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
 
 	state, err := GetState()
 	if err != nil {
@@ -220,8 +244,10 @@ func TestGetStateWithMixedChanges(t *testing.T) {
 func TestIsRepoTrue(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	if !IsRepo() {
 		t.Error("IsRepo should return true in git repo")
@@ -232,8 +258,10 @@ func TestIsRepoTrue(t *testing.T) {
 func TestIsRepoFalse(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	if IsRepo() {
 		t.Error("IsRepo should return false outside git repo")
@@ -244,8 +272,10 @@ func TestIsRepoFalse(t *testing.T) {
 func TestGetRootDir(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	root, err := GetRootDir()
 	if err != nil {
@@ -262,21 +292,35 @@ func TestGetRootDir(t *testing.T) {
 func TestGetCommitsSince(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Get initial commit SHA
 	initialState, _ := GetState()
 	initialSHA := initialState.CommitSHA
 
 	// Create additional commits
-	os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("1"), 0644)
-	runCmd(dir, "git", "add", ".")
-	runCmd(dir, "git", "commit", "-m", "Second commit")
+	if err := os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("1"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "Second commit"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
 
-	os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("2"), 0644)
-	runCmd(dir, "git", "add", ".")
-	runCmd(dir, "git", "commit", "-m", "Third commit")
+	if err := os.WriteFile(filepath.Join(dir, "file2.txt"), []byte("2"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "Third commit"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
 
 	count, err := GetCommitsSince(initialSHA)
 	if err != nil {
@@ -292,8 +336,10 @@ func TestGetCommitsSince(t *testing.T) {
 func TestGetCommitsSinceSameCommit(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	state, _ := GetState()
 	count, err := GetCommitsSince(state.CommitSHA)
@@ -310,16 +356,24 @@ func TestGetCommitsSinceSameCommit(t *testing.T) {
 func TestGetDiffStatsSince(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	initialState, _ := GetState()
 	initialSHA := initialState.CommitSHA
 
 	// Create commit with changes
-	os.WriteFile(filepath.Join(dir, "newfile.txt"), []byte("line1\nline2\nline3\n"), 0644)
-	runCmd(dir, "git", "add", ".")
-	runCmd(dir, "git", "commit", "-m", "Add new file")
+	if err := os.WriteFile(filepath.Join(dir, "newfile.txt"), []byte("line1\nline2\nline3\n"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "Add new file"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
 
 	stats, err := GetDiffStatsSince(initialSHA)
 	if err != nil {
@@ -338,8 +392,10 @@ func TestGetDiffStatsSince(t *testing.T) {
 func TestGetDiffStatsSinceNoChanges(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	state, _ := GetState()
 	stats, err := GetDiffStatsSince(state.CommitSHA)
@@ -362,16 +418,24 @@ func TestGetDiffStatsSinceNoChanges(t *testing.T) {
 func TestGetChangedFilesSince(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	initialState, _ := GetState()
 	initialSHA := initialState.CommitSHA
 
 	// Create commit with new file
-	os.WriteFile(filepath.Join(dir, "newfile.go"), []byte("package main\n"), 0644)
-	runCmd(dir, "git", "add", ".")
-	runCmd(dir, "git", "commit", "-m", "Add go file")
+	if err := os.WriteFile(filepath.Join(dir, "newfile.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "Add go file"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
 
 	files, err := GetChangedFilesSince(initialSHA)
 	if err != nil {
@@ -390,8 +454,10 @@ func TestGetChangedFilesSince(t *testing.T) {
 func TestStateBranchName(t *testing.T) {
 	dir := initTestRepo(t)
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Default branch could be main or master
 	state, _ := GetState()

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>td-db1f2a proof</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4efe7;
+  --card: #fffdf9;
+  --ink: #1f2328;
+  --muted: #5b6470;
+  --accent: #9f4f2c;
+  --border: #e7d6c9;
+}
+body {
+  margin: 32px;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  background:
+    radial-gradient(circle at top left, rgba(159, 79, 44, 0.12), transparent 32%),
+    linear-gradient(180deg, #f7f2eb 0%, var(--bg) 100%);
+  color: var(--ink);
+}
+h1, h2 {
+  font-family: "Avenir Next Condensed", "Franklin Gothic Medium", sans-serif;
+  letter-spacing: 0.02em;
+}
+h1 {
+  margin: 0 0 8px;
+  font-size: 34px;
+}
+p {
+  max-width: 860px;
+  line-height: 1.5;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(49, 36, 30, 0.08);
+  padding: 20px;
+}
+.eyebrow {
+  color: var(--accent);
+  font: 600 12px/1.2 "Avenir Next", sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.artifact {
+  margin-top: 24px;
+}
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.5 "SFMono-Regular", Menlo, monospace;
+  color: #18212a;
+}
+.muted {
+  color: var(--muted);
+}
+</style>
+</head>
+<body>
+<h1>td-db1f2a proof</h1>
+<p>Fresh CLI proof project showing both paths after the `td review` change: the minimal auto-handoff is still created when missing, but the warning only appears when existing context is not substantive.</p>
+
+<div class="card">
+  <div class="eyebrow">Setup</div>
+  <h2>Fresh proof project</h2>
+  <pre>INITIALIZED /tmp/td-db1f2a-proof.kmsmIp/.todos
+Session: ses_b6551d</pre>
+</div>
+
+<div class="grid">
+  <section class="card artifact" id="warning-retained">
+    <div class="eyebrow">Warning Retained</div>
+    <h2>Routine context only</h2>
+    <p class="muted">This issue only had the routine <code>Started work</code> log before review, so the warning still fires.</p>
+    <pre>Warning: auto-created minimal handoff for td-3bdf46 - consider using 'td handoff' for better documentation
+REVIEW REQUESTED td-3bdf46 (session: ses_b6551d)</pre>
+  </section>
+
+  <section class="card artifact" id="warning-suppressed">
+    <div class="eyebrow">Warning Suppressed</div>
+    <h2>Substantive session context already exists</h2>
+    <p class="muted">This issue had a meaningful progress log before review, so review stays quiet while still creating the handoff.</p>
+    <pre>REVIEW REQUESTED td-a95255 (session: ses_b6551d)</pre>
+  </section>
+</div>
+
+<div class="grid">
+  <section class="card artifact">
+    <div class="eyebrow">Auto-Handoff Proof</div>
+    <h2>Warning case still gets a minimal handoff</h2>
+    <pre>td-3bdf46: Warning case review task
+Status: [in_review]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_b6551d, just now):
+  Done:
+    - Auto-generated for review submission
+
+SESSION LOG:
+  [17:34] Started work
+  [17:34] Submitted for review</pre>
+  </section>
+
+  <section class="card artifact">
+    <div class="eyebrow">Auto-Handoff Proof</div>
+    <h2>Suppressed-warning case still gets a minimal handoff</h2>
+    <pre>td-a95255: Suppressed warning review task
+Status: [in_review]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_b6551d, just now):
+  Done:
+    - Auto-generated for review submission
+
+SESSION LOG:
+  [17:34] Started work
+  [17:34] Validated review context and captured remaining edge cases for the reviewer.
+  [17:34] Submitted for review</pre>
+  </section>
+</div>
+</body>
+</html>

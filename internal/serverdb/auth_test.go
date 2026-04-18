@@ -13,8 +13,8 @@ func setupAuthTest(t *testing.T) (*ServerDB, *User, *User, *User, *User, *Projec
 	outsider, _ := db.CreateUser("outsider@test.com")
 
 	p, _ := db.CreateProject("proj", "", owner.ID)
-	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
-	db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
+	_, _ = db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	_, _ = db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
 
 	return db, owner, writer, reader, outsider, p
 }

@@ -1563,7 +1563,7 @@ func TestGetRecentActions_SessionIsolation(t *testing.T) {
 			EntityType: "issue",
 			EntityID:   "td-a",
 		}
-		db.LogAction(action)
+		_ = db.LogAction(action)
 	}
 
 	// Actions from session B
@@ -1574,7 +1574,7 @@ func TestGetRecentActions_SessionIsolation(t *testing.T) {
 			EntityType: "issue",
 			EntityID:   "td-b",
 		}
-		db.LogAction(action)
+		_ = db.LogAction(action)
 	}
 
 	actionsA, _ := db.GetRecentActions("ses_a", 10)
@@ -1603,8 +1603,8 @@ func TestGetRecentActionsAll_Basic(t *testing.T) {
 	// Actions from multiple sessions
 	action1 := &models.ActionLog{SessionID: "ses_a", ActionType: models.ActionCreate, EntityType: "issue", EntityID: "td-a"}
 	action2 := &models.ActionLog{SessionID: "ses_b", ActionType: models.ActionUpdate, EntityType: "issue", EntityID: "td-b"}
-	db.LogAction(action1)
-	db.LogAction(action2)
+	_ = db.LogAction(action1)
+	_ = db.LogAction(action2)
 
 	actions, err := db.GetRecentActionsAll(10)
 	if err != nil {
@@ -1708,9 +1708,9 @@ func TestGetStartSnapshot_ReturnsLatest(t *testing.T) {
 	// Add multiple start snapshots
 	snap1 := &models.GitSnapshot{IssueID: issue.ID, Event: "start", CommitSHA: "first"}
 	snap2 := &models.GitSnapshot{IssueID: issue.ID, Event: "start", CommitSHA: "second"}
-	db.AddGitSnapshot(snap1)
+	_ = db.AddGitSnapshot(snap1)
 	time.Sleep(10 * time.Millisecond)
-	db.AddGitSnapshot(snap2)
+	_ = db.AddGitSnapshot(snap2)
 
 	retrieved, err := db.GetStartSnapshot(issue.ID)
 	if err != nil {

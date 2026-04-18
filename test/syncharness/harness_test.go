@@ -812,7 +812,7 @@ func TestSchemaVersionMismatch(t *testing.T) {
 	}
 	_, err = tdsync.InsertServerEvents(serverTx, []tdsync.Event{ev})
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		t.Fatalf("insert server events: %v", err)
 	}
 	if err := serverTx.Commit(); err != nil {
@@ -898,7 +898,7 @@ func TestPartialBatchFailure(t *testing.T) {
 	}
 	_, err = tdsync.InsertServerEvents(serverTx, events)
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		t.Fatalf("insert: %v", err)
 	}
 	if err := serverTx.Commit(); err != nil {

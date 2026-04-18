@@ -178,7 +178,7 @@ func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) 
 		// If events.db doesn't exist, head is 0
 		headSeq = 0
 	} else {
-		db.QueryRow(`SELECT COALESCE(MAX(server_seq), 0) FROM events`).Scan(&headSeq)
+		_ = db.QueryRow(`SELECT COALESCE(MAX(server_seq), 0) FROM events`).Scan(&headSeq)
 	}
 
 	// Get cursors from server.db

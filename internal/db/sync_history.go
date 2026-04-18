@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -19,10 +20,19 @@ type SyncHistoryEntry struct {
 
 // parseTimestamp tries common SQLite timestamp formats.
 func parseTimestamp(s string) (time.Time, error) {
+	// Strip monotonic clock suffix (e.g. " m=+0.000123") that Go's
+	// time.Time.String() includes — the modernc/sqlite driver stores
+	// t.String() as-is when no _time_format DSN param is set.
+	if idx := strings.Index(s, " m="); idx > 0 {
+		s = s[:idx]
+	}
+
 	for _, layout := range []string{
 		"2006-01-02 15:04:05",
 		time.RFC3339,
+		time.RFC3339Nano,
 		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05.999999999 -0700 MST", // Go time.Time.String() via modernc/sqlite driver
 	} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, nil

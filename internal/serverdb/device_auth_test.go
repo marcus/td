@@ -82,7 +82,7 @@ func TestGetAuthRequestByUserCodeExpired(t *testing.T) {
 	ar, _ := db.CreateAuthRequest("test@example.com")
 
 	// Force expiry to the past
-	db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
+	_, _ = db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
 		time.Now().UTC().Add(-1*time.Hour), ar.ID)
 
 	found, err := db.GetAuthRequestByUserCode(ar.UserCode)
@@ -120,7 +120,7 @@ func TestVerifyAuthRequestAlreadyVerified(t *testing.T) {
 	ar, _ := db.CreateAuthRequest("test@example.com")
 	u, _ := db.CreateUser("test@example.com")
 
-	db.VerifyAuthRequest(ar.UserCode, u.ID)
+	_ = db.VerifyAuthRequest(ar.UserCode, u.ID)
 
 	// Second verify should fail
 	err := db.VerifyAuthRequest(ar.UserCode, u.ID)
@@ -135,7 +135,7 @@ func TestVerifyAuthRequestExpired(t *testing.T) {
 	u, _ := db.CreateUser("test@example.com")
 
 	// Force expiry
-	db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
+	_, _ = db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
 		time.Now().UTC().Add(-1*time.Hour), ar.ID)
 
 	err := db.VerifyAuthRequest(ar.UserCode, u.ID)
@@ -149,7 +149,7 @@ func TestCompleteAuthRequestVerified(t *testing.T) {
 	ar, _ := db.CreateAuthRequest("test@example.com")
 	u, _ := db.CreateUser("test@example.com")
 
-	db.VerifyAuthRequest(ar.UserCode, u.ID)
+	_ = db.VerifyAuthRequest(ar.UserCode, u.ID)
 
 	completed, err := db.CompleteAuthRequest(ar.DeviceCode)
 	if err != nil {
@@ -179,10 +179,10 @@ func TestCompleteAuthRequestPendingReturnsNil(t *testing.T) {
 func TestCleanupExpiredAuthRequests(t *testing.T) {
 	db := newTestDB(t)
 	ar1, _ := db.CreateAuthRequest("expired1@example.com")
-	db.CreateAuthRequest("fresh@example.com")
+	_, _ = db.CreateAuthRequest("fresh@example.com")
 
 	// Force ar1 to be expired
-	db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
+	_, _ = db.conn.Exec(`UPDATE auth_requests SET expires_at = ? WHERE id = ?`,
 		time.Now().UTC().Add(-1*time.Hour), ar1.ID)
 
 	n, err := db.CleanupExpiredAuthRequests()

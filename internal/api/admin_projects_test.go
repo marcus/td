@@ -18,8 +18,8 @@ func TestAdminListProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.CreateProjectWithID("p_001", "alpha-project", "desc1", u.ID)
-	store.CreateProjectWithID("p_002", "beta-project", "desc2", u.ID)
+	_, _ = store.CreateProjectWithID("p_001", "alpha-project", "desc1", u.ID)
+	_, _ = store.CreateProjectWithID("p_002", "beta-project", "desc2", u.ID)
 
 	w := doRequest(srv, "GET", "/v1/admin/projects", token, nil)
 	if w.Code != http.StatusOK {
@@ -30,7 +30,7 @@ func TestAdminListProjects(t *testing.T) {
 		Data    []serverdb.AdminProject `json:"data"`
 		HasMore bool                    `json:"has_more"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) < 2 {
 		t.Fatalf("expected >= 2 projects, got %d", len(resp.Data))
 	}
@@ -41,9 +41,9 @@ func TestAdminListProjects_Search(t *testing.T) {
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
 
 	u, _ := store.CreateUser("search-owner@test.com")
-	store.CreateProjectWithID("p_s1", "search-alpha", "desc", u.ID)
-	store.CreateProjectWithID("p_s2", "search-beta", "desc", u.ID)
-	store.CreateProjectWithID("p_s3", "other-project", "desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_s1", "search-alpha", "desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_s2", "search-beta", "desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_s3", "other-project", "desc", u.ID)
 
 	w := doRequest(srv, "GET", "/v1/admin/projects?q=search", token, nil)
 	if w.Code != http.StatusOK {
@@ -53,7 +53,7 @@ func TestAdminListProjects_Search(t *testing.T) {
 	var resp struct {
 		Data []serverdb.AdminProject `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 matching projects, got %d", len(resp.Data))
 	}
@@ -64,9 +64,9 @@ func TestAdminListProjects_IncludeDeleted(t *testing.T) {
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
 
 	u, _ := store.CreateUser("del-owner@test.com")
-	store.CreateProjectWithID("p_d1", "active-proj", "desc", u.ID)
-	store.CreateProjectWithID("p_d2", "deleted-proj", "desc", u.ID)
-	store.SoftDeleteProject("p_d2")
+	_, _ = store.CreateProjectWithID("p_d1", "active-proj", "desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_d2", "deleted-proj", "desc", u.ID)
+	_ = store.SoftDeleteProject("p_d2")
 
 	// Without include_deleted
 	w := doRequest(srv, "GET", "/v1/admin/projects", token, nil)
@@ -76,7 +76,7 @@ func TestAdminListProjects_IncludeDeleted(t *testing.T) {
 	var resp1 struct {
 		Data []serverdb.AdminProject `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp1)
+	_ = json.NewDecoder(w.Body).Decode(&resp1)
 	for _, p := range resp1.Data {
 		if p.ID == "p_d2" {
 			t.Fatal("deleted project should not appear without include_deleted")
@@ -91,7 +91,7 @@ func TestAdminListProjects_IncludeDeleted(t *testing.T) {
 	var resp2 struct {
 		Data []serverdb.AdminProject `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp2)
+	_ = json.NewDecoder(w.Body).Decode(&resp2)
 	found := false
 	for _, p := range resp2.Data {
 		if p.ID == "p_d2" {
@@ -111,7 +111,7 @@ func TestAdminGetProject(t *testing.T) {
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
 
 	u, _ := store.CreateUser("get-owner@test.com")
-	store.CreateProjectWithID("p_get1", "detail-project", "detailed desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_get1", "detail-project", "detailed desc", u.ID)
 
 	w := doRequest(srv, "GET", "/v1/admin/projects/p_get1", token, nil)
 	if w.Code != http.StatusOK {
@@ -119,7 +119,7 @@ func TestAdminGetProject(t *testing.T) {
 	}
 
 	var resp serverdb.AdminProject
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.ID != "p_get1" {
 		t.Fatalf("expected id p_get1, got %s", resp.ID)
 	}
@@ -150,8 +150,8 @@ func TestAdminProjectMembers(t *testing.T) {
 
 	u1, _ := store.CreateUser("member-owner@test.com")
 	u2, _ := store.CreateUser("member-writer@test.com")
-	store.CreateProjectWithID("p_mem1", "member-project", "desc", u1.ID)
-	store.AddMember("p_mem1", u2.ID, "writer", u1.ID)
+	_, _ = store.CreateProjectWithID("p_mem1", "member-project", "desc", u1.ID)
+	_, _ = store.AddMember("p_mem1", u2.ID, "writer", u1.ID)
 
 	w := doRequest(srv, "GET", "/v1/admin/projects/p_mem1/members", token, nil)
 	if w.Code != http.StatusOK {
@@ -161,7 +161,7 @@ func TestAdminProjectMembers(t *testing.T) {
 	var resp struct {
 		Data []serverdb.AdminProjectMember `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 members, got %d", len(resp.Data))
 	}
@@ -190,7 +190,7 @@ func TestAdminSyncStatus(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push some events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -213,7 +213,7 @@ func TestAdminSyncStatus(t *testing.T) {
 	}
 
 	var resp adminSyncStatusResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.EventCount != 2 {
 		t.Fatalf("expected 2 events, got %d", resp.EventCount)
 	}
@@ -233,7 +233,7 @@ func TestAdminSyncCursors(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -252,8 +252,8 @@ func TestAdminSyncCursors(t *testing.T) {
 	}
 
 	// Upsert some cursors
-	store.UpsertSyncCursor(project.ID, "client-A", 3)
-	store.UpsertSyncCursor(project.ID, "client-B", 1)
+	_ = store.UpsertSyncCursor(project.ID, "client-A", 3)
+	_ = store.UpsertSyncCursor(project.ID, "client-B", 1)
 
 	// Admin checks cursors
 	w = doRequest(srv, "GET", fmt.Sprintf("/v1/admin/projects/%s/sync/cursors", project.ID), adminToken, nil)
@@ -264,7 +264,7 @@ func TestAdminSyncCursors(t *testing.T) {
 	var resp struct {
 		Data []adminCursorEntry `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 cursors, got %d", len(resp.Data))
 	}
@@ -311,9 +311,9 @@ func TestAdminListProjects_MemberCount(t *testing.T) {
 	u1, _ := store.CreateUser("mc-owner@test.com")
 	u2, _ := store.CreateUser("mc-writer@test.com")
 	u3, _ := store.CreateUser("mc-reader@test.com")
-	store.CreateProjectWithID("p_mc1", "mc-project", "desc", u1.ID)
-	store.AddMember("p_mc1", u2.ID, "writer", u1.ID)
-	store.AddMember("p_mc1", u3.ID, "reader", u1.ID)
+	_, _ = store.CreateProjectWithID("p_mc1", "mc-project", "desc", u1.ID)
+	_, _ = store.AddMember("p_mc1", u2.ID, "writer", u1.ID)
+	_, _ = store.AddMember("p_mc1", u3.ID, "reader", u1.ID)
 
 	w := doRequest(srv, "GET", "/v1/admin/projects?q=mc-project", token, nil)
 	if w.Code != http.StatusOK {
@@ -323,7 +323,7 @@ func TestAdminListProjects_MemberCount(t *testing.T) {
 	var resp struct {
 		Data []serverdb.AdminProject `json:"data"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected 1 project, got %d", len(resp.Data))
 	}

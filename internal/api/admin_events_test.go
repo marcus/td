@@ -18,7 +18,7 @@ func TestAdminProjectEvents_Basic(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push events
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -43,7 +43,7 @@ func TestAdminProjectEvents_Basic(t *testing.T) {
 	}
 
 	var resp adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 3 {
 		t.Fatalf("expected 3 events, got %d", len(resp.Data))
 	}
@@ -62,7 +62,7 @@ func TestAdminProjectEvents_FilterByEntityType(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
 		DeviceID: "dev1", SessionID: "sess1",
@@ -86,7 +86,7 @@ func TestAdminProjectEvents_FilterByEntityType(t *testing.T) {
 	}
 
 	var resp adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 issues events, got %d", len(resp.Data))
 	}
@@ -107,7 +107,7 @@ func TestAdminProjectEvents_FilterByActionType(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
 		DeviceID: "dev1", SessionID: "sess1",
@@ -131,7 +131,7 @@ func TestAdminProjectEvents_FilterByActionType(t *testing.T) {
 	}
 
 	var resp adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected 1 update event, got %d", len(resp.Data))
 	}
@@ -147,7 +147,7 @@ func TestAdminProjectEvents_Pagination(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push 5 events
 	events := make([]EventInput, 5)
@@ -171,7 +171,7 @@ func TestAdminProjectEvents_Pagination(t *testing.T) {
 		t.Fatalf("page 1: expected 200, got %d", w.Code)
 	}
 	var page1 adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&page1)
+	_ = json.NewDecoder(w.Body).Decode(&page1)
 	if len(page1.Data) != 2 {
 		t.Fatalf("page 1: expected 2 events, got %d", len(page1.Data))
 	}
@@ -186,7 +186,7 @@ func TestAdminProjectEvents_Pagination(t *testing.T) {
 		t.Fatalf("page 2: expected 200, got %d", w.Code)
 	}
 	var page2 adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&page2)
+	_ = json.NewDecoder(w.Body).Decode(&page2)
 	if len(page2.Data) != 2 {
 		t.Fatalf("page 2: expected 2 events, got %d", len(page2.Data))
 	}
@@ -201,7 +201,7 @@ func TestAdminProjectEvents_Pagination(t *testing.T) {
 		t.Fatalf("page 3: expected 200, got %d", w.Code)
 	}
 	var page3 adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&page3)
+	_ = json.NewDecoder(w.Body).Decode(&page3)
 	if len(page3.Data) != 1 {
 		t.Fatalf("page 3: expected 1 event, got %d", len(page3.Data))
 	}
@@ -220,7 +220,7 @@ func TestAdminProjectEvent_Single(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
 		DeviceID: "dev1", SessionID: "sess1",
@@ -240,7 +240,7 @@ func TestAdminProjectEvent_Single(t *testing.T) {
 	}
 
 	var ev adminEvent
-	json.NewDecoder(w.Body).Decode(&ev)
+	_ = json.NewDecoder(w.Body).Decode(&ev)
 	if ev.ServerSeq != 1 {
 		t.Fatalf("expected server_seq 1, got %d", ev.ServerSeq)
 	}
@@ -262,7 +262,7 @@ func TestAdminProjectEvent_NotFound(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push one event
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -295,7 +295,7 @@ func TestAdminEntityTypes(t *testing.T) {
 	var resp struct {
 		EntityTypes []string `json:"entity_types"`
 	}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.EntityTypes) == 0 {
 		t.Fatal("expected non-empty entity_types")
 	}
@@ -322,7 +322,7 @@ func TestAdminProjectEvents_InvalidEntityType(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push one event to create the events.db
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -364,7 +364,7 @@ func TestAdminProjectEvents_FilterByDeviceID(t *testing.T) {
 		t.Fatalf("create: expected 201, got %d", w.Code)
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push from device A
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{
@@ -399,7 +399,7 @@ func TestAdminProjectEvents_FilterByDeviceID(t *testing.T) {
 	}
 
 	var resp adminEventsResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 events from devB, got %d", len(resp.Data))
 	}

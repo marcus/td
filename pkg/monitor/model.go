@@ -121,6 +121,12 @@ type Model struct {
 	ActivityDetailModal        *modal.Modal   // Declarative modal instance
 	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
 
+	// Notes modal state
+	NotesOpen         bool
+	NotesState        *NotesState    // All notes modal state
+	NotesModal        *modal.Modal   // Declarative modal instance
+	NotesMouseHandler *mouse.Handler // Mouse handler for notes modal
+
 	// Form modal state
 	FormOpen        bool
 	FormState       *FormState
@@ -278,7 +284,7 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
-		releaseSharedDB(resolvedBaseDir)
+		_ = releaseSharedDB(resolvedBaseDir)
 		return nil, err
 	}
 
@@ -316,7 +322,7 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
-		releaseSharedDB(resolvedBaseDir)
+		_ = releaseSharedDB(resolvedBaseDir)
 		return nil, err
 	}
 

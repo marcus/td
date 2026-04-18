@@ -72,7 +72,7 @@ func TestAdminServerOverview_RequiresScope(t *testing.T) {
 	}
 
 	var resp ErrorResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Error.Code != "insufficient_admin_scope" {
 		t.Fatalf("expected insufficient_admin_scope, got %q", resp.Error.Code)
 	}
@@ -176,9 +176,9 @@ func TestAdminRateLimitViolations_WithFilters(t *testing.T) {
 	}
 
 	var resp map[string]json.RawMessage
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	var data []map[string]any
-	json.Unmarshal(resp["data"], &data)
+	_ = json.Unmarshal(resp["data"], &data)
 	if len(data) != 3 {
 		t.Fatalf("expected 3 events for ip 10.0.0.1, got %d", len(data))
 	}
@@ -189,8 +189,8 @@ func TestAdminRateLimitViolations_WithFilters(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	json.NewDecoder(w.Body).Decode(&resp)
-	json.Unmarshal(resp["data"], &data)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.Unmarshal(resp["data"], &data)
 	if len(data) != 2 {
 		t.Fatalf("expected 2 events for key_b, got %d", len(data))
 	}

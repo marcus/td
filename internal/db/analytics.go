@@ -78,7 +78,7 @@ func LogCommandUsage(baseDir string, event CommandUsageEvent) error {
 	if err := locker.acquire(defaultTimeout); err != nil {
 		return err
 	}
-	defer locker.release()
+	defer func() { _ = locker.release() }()
 
 	f, err := os.OpenFile(usagePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -93,7 +93,7 @@ func LogCommandUsage(baseDir string, event CommandUsageEvent) error {
 // LogCommandUsageAsync logs without blocking the caller
 func LogCommandUsageAsync(baseDir string, event CommandUsageEvent) {
 	go func() {
-		defer func() { recover() }() // don't crash on panic
+		defer func() { _ = recover() }() // don't crash on panic
 		_ = LogCommandUsage(baseDir, event)
 	}()
 }
@@ -221,7 +221,7 @@ func ClearCommandUsage(baseDir string) error {
 	if err := locker.acquire(defaultTimeout); err != nil {
 		return err
 	}
-	defer locker.release()
+	defer func() { _ = locker.release() }()
 
 	err := os.Remove(usagePath)
 	if os.IsNotExist(err) {

@@ -166,9 +166,9 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 
 	// One-time migration from filesystem (no-op after first run)
 	// Migrate from the resolved root dir and also from cwd (for worktrees)
-	database.MigrateFileSystemSessions(database.BaseDir())
+	_ = database.MigrateFileSystemSessions(database.BaseDir())
 	if cwd, err := os.Getwd(); err == nil && cwd != database.BaseDir() {
-		database.MigrateFileSystemSessions(cwd)
+		_ = database.MigrateFileSystemSessions(cwd)
 	}
 
 	// Look up existing session for this branch + agent fingerprint
@@ -180,7 +180,7 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 	if row != nil {
 		// Found existing session - update heartbeat
 		now := time.Now()
-		database.UpdateSessionActivity(row.ID, now)
+		_ = database.UpdateSessionActivity(row.ID, now)
 		sess := sessionFromRow(row)
 		sess.LastActivity = now
 		sess.IsNew = false

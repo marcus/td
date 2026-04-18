@@ -493,10 +493,10 @@ func TestBoardPosition_ConflictRecording(t *testing.T) {
 	}
 	pullResult, err := tdsync.GetEventsSince(serverTx, clientB.LastPulledSeq, 10000, clientB.DeviceID)
 	if err != nil {
-		serverTx.Rollback()
+		_ = serverTx.Rollback()
 		t.Fatalf("get events: %v", err)
 	}
-	serverTx.Commit()
+	_ = serverTx.Commit()
 
 	if len(pullResult.Events) == 0 {
 		t.Fatal("expected events from A's push")
@@ -509,10 +509,10 @@ func TestBoardPosition_ConflictRecording(t *testing.T) {
 	farPast := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	applyResult, err := tdsync.ApplyRemoteEvents(clientTx, pullResult.Events, clientB.DeviceID, h.Validator, &farPast)
 	if err != nil {
-		clientTx.Rollback()
+		_ = clientTx.Rollback()
 		t.Fatalf("apply: %v", err)
 	}
-	clientTx.Commit()
+	_ = clientTx.Commit()
 
 	// Update cursor
 	if applyResult.LastAppliedSeq > clientB.LastPulledSeq {
