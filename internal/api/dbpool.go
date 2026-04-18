@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	tddb "github.com/marcus/td/internal/db"
 	tdsync "github.com/marcus/td/internal/sync"
-	_ "modernc.org/sqlite"
 )
 
 // ProjectDBPool manages per-project SQLite connections for event logs.
@@ -84,12 +84,15 @@ func (p *ProjectDBPool) Create(projectID string) (*sql.DB, error) {
 }
 
 // CloseAll closes all open project database connections.
+// Uses PASSIVE (not TRUNCATE) so the shutdown checkpoint doesn't stall when
+// another process still holds the -shm. SQLite's autocheckpoint handles
+// routine WAL maintenance; aggressive TRUNCATE on exit is unnecessary.
 func (p *ProjectDBPool) CloseAll() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	for id, db := range p.dbs {
-		db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 		db.Close()
 		delete(p.dbs, id)
 	}
@@ -97,23 +100,10 @@ func (p *ProjectDBPool) CloseAll() {
 
 // openProjectDB opens a SQLite connection for a project event log with standard pragmas.
 func openProjectDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := tddb.OpenSQLite(dbPath, tddb.OpenOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open project db: %w", err)
 	}
-
-	db.SetMaxOpenConns(1)
-
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-	db.Exec("PRAGMA synchronous=NORMAL")
-	db.Exec("PRAGMA foreign_keys=ON")
 
 	if err := tdsync.InitServerEventLog(db); err != nil {
 		db.Close()

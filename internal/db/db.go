@@ -35,33 +35,13 @@ func ResolveBaseDir(baseDir string) string {
 }
 
 // openConn opens a SQLite connection with safe defaults for multi-process access.
+//
+// Note: DisableForeignKeys is set because the CLI issues.db has historically
+// shipped with FK enforcement OFF. Flipping it on is scoped to td-4846e6,
+// which also lands the orphan-cleanup migration. Drop this flag (and rely on
+// OpenSQLite's default FK=ON) once td-4846e6 is in.
 func openConn(dbPath string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-
-	// Pin to a single connection — SQLite only supports one writer,
-	// and this prevents the pool from opening extra connections that
-	// could corrupt the WAL/SHM files under concurrent multi-process access.
-	conn.SetMaxOpenConns(1)
-
-	// Enable WAL mode for concurrent reads while writes are serialized
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable WAL mode: %w", err)
-	}
-
-	// Set busy timeout for multi-process contention
-	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-
-	// Slightly faster writes, still safe with WAL
-	conn.Exec("PRAGMA synchronous=NORMAL")
-
-	return conn, nil
+	return OpenSQLite(dbPath, OpenOptions{DisableForeignKeys: true})
 }
 
 // Open opens the database and runs any pending migrations
@@ -122,12 +102,14 @@ func Initialize(baseDir string) (*DB, error) {
 }
 
 // Close closes the database connection.
-// It performs a TRUNCATE checkpoint first to flush the WAL back into the main
-// DB file and remove the -wal/-shm files. This prevents stale shared-memory
-// files from corrupting the database when another process opens it later.
+// It performs a PASSIVE checkpoint first to flush the WAL into the main DB
+// file where possible without blocking readers/writers in other processes.
+// TRUNCATE was avoided here because it can fail or stall when another td
+// process still holds the -shm; SQLite autocheckpoints at 1000 pages so the
+// aggressive variant is unnecessary on exit.
 func (db *DB) Close() error {
 	// Best-effort checkpoint — ignore errors (DB might already be in a bad state)
-	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 	return db.conn.Close()
 }
 
@@ -143,8 +125,17 @@ func (db *DB) BaseDir() string {
 	return db.baseDir
 }
 
-// withWriteLock executes fn while holding an exclusive write lock.
-// This prevents concurrent writes from multiple processes.
+// withWriteLock serializes writes across concurrent td CLI processes on
+// .todos/issues.db using a file lock at .todos/db.lock.
+//
+// Scope: this lock ONLY coordinates writers to the CLI's issues.db. It does
+// NOT coordinate with the API server (internal/api/dbpool.go and
+// internal/serverdb), which writes to separate databases —
+// {dataDir}/server.db and {dataDir}/{projectID}/events.db — and relies on
+// SQLite's internal locking. If you add a new writer to .todos/issues.db
+// from outside the CLI, you must also go through this lock (or an
+// equivalent flock on .todos/db.lock); otherwise cross-process writes can
+// race despite SQLite's own locking, which is optimistic under WAL.
 func (db *DB) withWriteLock(fn func() error) error {
 	locker := newWriteLocker(db.baseDir)
 	if err := locker.acquire(defaultTimeout); err != nil {
