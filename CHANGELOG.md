@@ -4,14 +4,26 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.40.0] - 2026-04-18
+
 ### Features
 - Add `balanced_review_policy` feature flag (default on)
   - Allows creator-only approvals when a different session implemented the issue
   - Requires `--reason` for creator-exception approvals and logs them to security audit
   - Keeps implementer/self-approval blocked for non-minor issues
+- `td doctor fk`: hidden diagnostic that reports orphan-row counts across every declared foreign-key relation (gated behind `TD_FEATURE_SYNC_CLI=1`)
+- Monitor DB-pool diagnostics: set `TD_MONITOR_DBPOOL_DEBUG=1` to trace `getSharedDB`/`releaseSharedDB` with refcounts and caller — helps detect connection leaks in embedded monitors
+
+### Database
+- **Foreign-key enforcement enabled** on the CLI `issues.db` (previously off despite the schema declaring ~12 FK relationships)
+- Migration 30 cleans up pre-existing orphan rows and adds schema-level `ON DELETE CASCADE` to child relations (handoffs, git_snapshots, issue_dependencies, issue_files, work_session_issues, comments, issue_session_history, board_issue_positions)
+- Centralized SQLite connection opener (`internal/db/conn.go` — `OpenSQLite`) applies uniform pragmas (WAL, `busy_timeout=5000`, `synchronous=NORMAL`, `foreign_keys=ON`, `MaxOpenConns=1`) across the CLI, API server, per-project event DB, and snapshot DB paths
+- WAL checkpoint on `Close` switched from `TRUNCATE` to `PASSIVE` to avoid blocking concurrent readers (the snapshot-build path still uses `TRUNCATE` before file copy, as intended)
+- Manual cascade emulation in `internal/sync/events.go` removed where schema cascades now handle it; runtime `parent_id` cleanup retained (no FK on `issues.parent_id` due to `''` sentinel semantics)
 
 ### Improvements
 - Align `reviewable`/`in-review`/`status` reviewability hints with actual policy checks
+- `withWriteLock` scope documented explicitly in source (serializes CLI writes only; does not coordinate with the API server's separate DBs)
 
 ## [v0.39.0] - 2026-02-26
 
