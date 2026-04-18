@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 29
+const SchemaVersion = 30
 
 const schema = `
 -- Issues table
@@ -479,5 +479,11 @@ ALTER TABLE issues ADD COLUMN defer_count INTEGER DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_issues_defer_until ON issues(defer_until);
 CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 `,
+	},
+	{
+		Version:     30,
+		Description: "FK orphan cleanup + ON DELETE CASCADE for FK enforcement (td-4846e6)",
+		// Handled by custom Go code in migration_fk_enforcement.go (migrateEnableFKEnforcement)
+		SQL: "",
 	},
 }

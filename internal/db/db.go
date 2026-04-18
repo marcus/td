@@ -36,12 +36,11 @@ func ResolveBaseDir(baseDir string) string {
 
 // openConn opens a SQLite connection with safe defaults for multi-process access.
 //
-// Note: DisableForeignKeys is set because the CLI issues.db has historically
-// shipped with FK enforcement OFF. Flipping it on is scoped to td-4846e6,
-// which also lands the orphan-cleanup migration. Drop this flag (and rely on
-// OpenSQLite's default FK=ON) once td-4846e6 is in.
+// FK enforcement (PRAGMA foreign_keys=ON) is the default from OpenSQLite.
+// Migration 30 (td-4846e6) cleans up pre-existing orphans and adds
+// ON DELETE CASCADE to child tables before this was flipped on.
 func openConn(dbPath string) (*sql.DB, error) {
-	return OpenSQLite(dbPath, OpenOptions{DisableForeignKeys: true})
+	return OpenSQLite(dbPath, OpenOptions{})
 }
 
 // Open opens the database and runs any pending migrations

@@ -229,6 +229,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 30 {
+				if err := db.migrateEnableFKEnforcement(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 30 (fk enforcement): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 29 {
 				exists, err := db.columnExists("issues", "defer_until")
 				if err != nil {
