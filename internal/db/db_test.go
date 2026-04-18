@@ -1650,11 +1650,19 @@ func TestApplyBoardPositions_LegacyNonCanonicalPositionIDs(t *testing.T) {
 	}
 
 	legacyPosID := BoardIssuePosID(board.ID, legacyIssue2ID)
+	// Disable FK enforcement for this seed: legacyIssue2ID is intentionally
+	// not a real issue id (prefix stripped) to simulate pre-migration data.
+	if _, err := db.conn.Exec("PRAGMA foreign_keys=OFF"); err != nil {
+		t.Fatalf("disable FK: %v", err)
+	}
 	if _, err := db.conn.Exec(`
 		INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, legacyPosID, board.ID, legacyIssue2ID, 1); err != nil {
 		t.Fatalf("insert legacy board position failed: %v", err)
+	}
+	if _, err := db.conn.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		t.Fatalf("re-enable FK: %v", err)
 	}
 
 	issues := []models.Issue{*issue1, *issue2}

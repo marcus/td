@@ -419,8 +419,8 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 }
 
 // deleteEntity hard-deletes a row. No-op if the row does not exist.
-// For boards, also cascade soft-delete all board_issue_positions since
-// PRAGMA foreign_keys is not enabled and ON DELETE CASCADE is inert.
+// Snapshot/event-replay DBs keep foreign_keys disabled, so runtime cleanup
+// must handle relationships that would otherwise be enforced by the schema.
 func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
 	if entityType == "boards" {
 		if _, err := tx.Exec(
@@ -428,6 +428,11 @@ func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
 			entityID,
 		); err != nil {
 			return fmt.Errorf("cascade soft-delete positions for board %s: %w", entityID, err)
+		}
+	}
+	if entityType == "issues" {
+		if _, err := tx.Exec(`UPDATE issues SET parent_id = '' WHERE parent_id = ?`, entityID); err != nil {
+			return fmt.Errorf("clear child parent links for issue %s: %w", entityID, err)
 		}
 	}
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = ?", entityType)

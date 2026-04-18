@@ -496,9 +496,13 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	}
 	tdb.Close()
 
-	// Re-open the initialized DB for event replay. Route through the central
-	// opener so the snapshot DB gets the same pragma policy as the CLI DB it
-	// will replace (DisableForeignKeys matches openConn; td-4846e6 flips both).
+	// Re-open the initialized DB for event replay. FK enforcement is kept
+	// OFF here because replay walks the event log in server_seq order and
+	// may legitimately encounter child rows (e.g. board_issue_positions)
+	// before their parents — events can arrive from multiple devices out of
+	// causal order. The final CLI issues.db (opened via openConn) enforces
+	// FKs on writes; this snapshot DB is a transient mirror we stream to
+	// clients. (td-4846e6)
 	tmpDBPath := filepath.Join(tmpDir, ".todos", "issues.db")
 	snapDB, err := tddb.OpenSQLite(tmpDBPath, tddb.OpenOptions{DisableForeignKeys: true})
 	if err != nil {

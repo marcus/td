@@ -42,8 +42,15 @@ func TestAuditForeignKeys_DetectsOrphans(t *testing.T) {
 
 	conn := database.Conn()
 
+	// FK enforcement is ON by default (td-4846e6); disable temporarily so
+	// we can intentionally seed orphan rows for the audit to detect.
+	if _, err := conn.Exec("PRAGMA foreign_keys=OFF"); err != nil {
+		t.Fatalf("disable foreign_keys: %v", err)
+	}
+	defer conn.Exec("PRAGMA foreign_keys=ON")
+
 	// Seed direct INSERTs that bypass model layer so we can intentionally
-	// create orphans. PRAGMA foreign_keys is off (default), so these succeed.
+	// create orphans.
 	seed := []struct {
 		desc string
 		sql  string
