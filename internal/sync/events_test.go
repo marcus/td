@@ -15,6 +15,7 @@ const testSchema = `CREATE TABLE issues (
 	status     TEXT,
 	priority   TEXT,
 	labels     TEXT DEFAULT '',
+	parent_id  TEXT DEFAULT '',
 	created_at DATETIME,
 	updated_at DATETIME,
 	deleted_at DATETIME
@@ -311,6 +312,69 @@ func TestDeleteEntity(t *testing.T) {
 	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
 	if count != 0 {
 		t.Fatalf("expected 0 rows, got %d", count)
+	}
+}
+
+func TestApplyEvent_DeleteIssueClearsChildParentID(t *testing.T) {
+	db := setupDB(t)
+
+	tx := beginTx(t, db)
+	_, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "parent",
+		Payload:    []byte(`{"title":"parent"}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	_, err = ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "child",
+		Payload:    []byte(`{"title":"child","parent_id":"parent"}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit create: %v", err)
+	}
+
+	tx = beginTx(t, db)
+	_, err = ApplyEvent(tx, Event{
+		ActionType: "delete",
+		EntityType: "issues",
+		EntityID:   "parent",
+		Payload:    []byte(`{}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("delete parent: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit delete: %v", err)
+	}
+
+	var parentCount, staleRefs int
+	if err := db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "parent").Scan(&parentCount); err != nil {
+		t.Fatalf("query deleted parent: %v", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM issues WHERE parent_id = ?", "parent").Scan(&staleRefs); err != nil {
+		t.Fatalf("query stale refs: %v", err)
+	}
+	if parentCount != 0 {
+		t.Fatalf("expected deleted parent row, got %d", parentCount)
+	}
+	if staleRefs != 0 {
+		t.Fatalf("expected no stale parent refs, got %d", staleRefs)
+	}
+
+	var childParentID string
+	if err := db.QueryRow("SELECT parent_id FROM issues WHERE id = ?", "child").Scan(&childParentID); err != nil {
+		t.Fatalf("query child parent_id: %v", err)
+	}
+	if childParentID != "" {
+		t.Fatalf("expected child parent_id reset to empty sentinel, got %q", childParentID)
 	}
 }
 

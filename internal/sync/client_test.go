@@ -20,6 +20,7 @@ CREATE TABLE issues (
     title TEXT,
     status TEXT,
     priority TEXT,
+    parent_id TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME
