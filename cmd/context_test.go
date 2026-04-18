@@ -21,7 +21,7 @@ func TestResumeSetsFocus(t *testing.T) {
 		Title:  "Issue to resume",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Set focus via config (simulating resume command)
 	if err := config.SetFocus(dir, issue.ID); err != nil {
@@ -50,7 +50,7 @@ func TestResumeWithInProgressIssue(t *testing.T) {
 		Title:  "In Progress Work",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	if err := config.SetFocus(dir, issue.ID); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
@@ -84,7 +84,7 @@ func TestResumePreservesIssueState(t *testing.T) {
 		Priority:    models.PriorityP1,
 		Points:      8,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	originalStatus := issue.Status
 
@@ -119,24 +119,24 @@ func TestResumeMultipleIssuesSequence(t *testing.T) {
 	issue2 := &models.Issue{Title: "Second Issue", Status: models.StatusInProgress}
 	issue3 := &models.Issue{Title: "Third Issue", Status: models.StatusInReview}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
+	must(t, database.CreateIssue(issue3))
 
 	// Resume each in sequence
-	config.SetFocus(dir, issue1.ID)
+	must(t, config.SetFocus(dir, issue1.ID))
 	focused1, _ := config.GetFocus(dir)
 	if focused1 != issue1.ID {
 		t.Error("Focus should be issue1")
 	}
 
-	config.SetFocus(dir, issue2.ID)
+	must(t, config.SetFocus(dir, issue2.ID))
 	focused2, _ := config.GetFocus(dir)
 	if focused2 != issue2.ID {
 		t.Error("Focus should be issue2")
 	}
 
-	config.SetFocus(dir, issue3.ID)
+	must(t, config.SetFocus(dir, issue3.ID))
 	focused3, _ := config.GetFocus(dir)
 	if focused3 != issue3.ID {
 		t.Error("Focus should be issue3")
@@ -161,10 +161,10 @@ func TestResumeAllowsContextInformation(t *testing.T) {
 		Points:      21,
 		Labels:      []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Resume and retrieve context
-	config.SetFocus(dir, issue.ID)
+	must(t, config.SetFocus(dir, issue.ID))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.ID != issue.ID {
@@ -191,9 +191,9 @@ func TestResumeWithBlockedIssue(t *testing.T) {
 		Title:  "Blocked Work",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
-	config.SetFocus(dir, issue.ID)
+	must(t, config.SetFocus(dir, issue.ID))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusBlocked {
@@ -214,10 +214,10 @@ func TestResumeWithClosedIssue(t *testing.T) {
 		Title:  "Completed Work",
 		Status: models.StatusClosed,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Can still resume closed issue for context
-	config.SetFocus(dir, issue.ID)
+	must(t, config.SetFocus(dir, issue.ID))
 
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
@@ -254,7 +254,7 @@ func TestResumeWithLogs(t *testing.T) {
 		Title:  "Issue with History",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Add some logs
 	for i := 0; i < 3; i++ {
@@ -264,11 +264,11 @@ func TestResumeWithLogs(t *testing.T) {
 			Message:   "Progress update",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		must(t, database.AddLog(log))
 	}
 
 	// Resume and verify logs are accessible
-	config.SetFocus(dir, issue.ID)
+	must(t, config.SetFocus(dir, issue.ID))
 
 	logs, _ := database.GetLogs(issue.ID, 10)
 	if len(logs) != 3 {
@@ -289,17 +289,17 @@ func TestResumePreservesParentChild(t *testing.T) {
 		Title: "Parent Epic",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	must(t, database.CreateIssue(parent))
 
 	child := &models.Issue{
 		Title:    "Child Task",
 		ParentID: parent.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	must(t, database.CreateIssue(child))
 
 	// Resume child
-	config.SetFocus(dir, child.ID)
+	must(t, config.SetFocus(dir, child.ID))
 
 	// Verify relationship preserved
 	retrieved, _ := database.GetIssue(child.ID)
@@ -320,8 +320,8 @@ func TestResumePreserveDependencies(t *testing.T) {
 	prerequisite := &models.Issue{Title: "Prerequisite"}
 	dependent := &models.Issue{Title: "Dependent"}
 
-	database.CreateIssue(prerequisite)
-	database.CreateIssue(dependent)
+	must(t, database.CreateIssue(prerequisite))
+	must(t, database.CreateIssue(dependent))
 
 	// Add dependency
 	if err := database.AddDependency(dependent.ID, prerequisite.ID, "depends_on"); err != nil {
@@ -329,7 +329,7 @@ func TestResumePreserveDependencies(t *testing.T) {
 	}
 
 	// Resume dependent
-	config.SetFocus(dir, dependent.ID)
+	must(t, config.SetFocus(dir, dependent.ID))
 
 	// Verify dependency preserved
 	deps, _ := database.GetDependencies(dependent.ID)

@@ -209,7 +209,7 @@ Examples:
 
 			if info.IsDir() {
 				if recursive {
-					filepath.Walk(match, func(path string, info os.FileInfo, err error) error {
+					if err := filepath.Walk(match, func(path string, info os.FileInfo, err error) error {
 						if err != nil {
 							return nil
 						}
@@ -217,7 +217,9 @@ Examples:
 							allFiles = append(allFiles, path)
 						}
 						return nil
-					})
+					}); err != nil {
+						output.Warning("failed to walk %s: %v", match, err)
+					}
 				} else {
 					// Just files in the directory
 					entries, _ := os.ReadDir(match)

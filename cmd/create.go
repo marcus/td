@@ -33,7 +33,10 @@ var createCmd = &cobra.Command{
 			if models.IsValidType(normalized) {
 				typeFlag, _ := cmd.Flags().GetString("type")
 				if typeFlag == "" {
-					cmd.Flags().Set("type", string(normalized))
+					if err := cmd.Flags().Set("type", string(normalized)); err != nil {
+						output.Error("failed to set type flag: %v", err)
+						return err
+					}
 				}
 				args = args[1:]
 			}
