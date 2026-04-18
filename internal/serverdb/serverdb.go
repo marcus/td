@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
+	tddb "github.com/marcus/td/internal/db"
 )
 
 // ServerDB wraps the server database connection
@@ -25,23 +25,10 @@ func Open(dbPath string) (*ServerDB, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	conn, err := sql.Open("sqlite", dbPath)
+	conn, err := tddb.OpenSQLite(dbPath, tddb.OpenOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-
-	conn.SetMaxOpenConns(1)
-
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable WAL mode: %w", err)
-	}
-	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-	conn.Exec("PRAGMA synchronous=NORMAL")
-	conn.Exec("PRAGMA foreign_keys=ON")
 
 	// Run schema
 	if _, err := conn.Exec(serverSchema); err != nil {
@@ -65,8 +52,10 @@ func (db *ServerDB) Ping() error {
 }
 
 // Close checkpoints the WAL and closes the database connection.
+// Uses PASSIVE (not TRUNCATE) to avoid stalling when another process still
+// holds the -shm; SQLite's autocheckpoint handles routine WAL maintenance.
 func (db *ServerDB) Close() error {
-	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	db.conn.Exec("PRAGMA wal_checkpoint(PASSIVE)")
 	return db.conn.Close()
 }
 

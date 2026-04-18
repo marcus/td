@@ -496,9 +496,11 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	}
 	tdb.Close()
 
-	// Re-open the initialized DB for event replay
+	// Re-open the initialized DB for event replay. Route through the central
+	// opener so the snapshot DB gets the same pragma policy as the CLI DB it
+	// will replace (DisableForeignKeys matches openConn; td-4846e6 flips both).
 	tmpDBPath := filepath.Join(tmpDir, ".todos", "issues.db")
-	snapDB, err := sql.Open("sqlite", tmpDBPath)
+	snapDB, err := tddb.OpenSQLite(tmpDBPath, tddb.OpenOptions{DisableForeignKeys: true})
 	if err != nil {
 		return fmt.Errorf("open snapshot db: %w", err)
 	}
@@ -554,7 +556,12 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 		}
 	}
 
-	// Checkpoint WAL to flush into main DB file before copy
+	// Checkpoint WAL to flush into main DB file before copy.
+	// TRUNCATE (not PASSIVE) is intentional here: this path immediately
+	// copies the main DB file to snapshotPath, and we want every pending
+	// write merged in — leaving data in the -wal/-shm sidecars would
+	// produce a truncated snapshot. This is the one site that keeps
+	// TRUNCATE; Close() paths (db.go, serverdb.go, dbpool.go) use PASSIVE.
 	snapDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	snapDB.Close() // explicit close before copy; defer will no-op
 
