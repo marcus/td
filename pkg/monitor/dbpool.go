@@ -1,6 +1,10 @@
 package monitor
 
 import (
+	"fmt"
+	"io"
+	"os"
+	"runtime"
 	"sync"
 
 	"github.com/marcus/td/internal/db"
@@ -30,6 +34,29 @@ type sharedDBEntry struct {
 
 var dbPool = &sharedDB{conns: make(map[string]*sharedDBEntry)}
 
+// debugWriter is where dbpool diagnostics are written when
+// TD_MONITOR_DBPOOL_DEBUG=1. Exposed as a package var so tests can redirect.
+var debugWriter io.Writer = os.Stderr
+
+// dbpoolDebugEnv is the env var that enables ref-count diagnostics.
+const dbpoolDebugEnv = "TD_MONITOR_DBPOOL_DEBUG"
+
+// debugLog emits a diagnostic line for dbpool operations when the
+// TD_MONITOR_DBPOOL_DEBUG env var is set to "1". Silent otherwise.
+// Uses runtime.Caller(2) to capture the caller of getSharedDB/releaseSharedDB
+// (skipping debugLog itself + the pool function).
+func debugLog(op string, path string, refsAfter int) {
+	if os.Getenv(dbpoolDebugEnv) != "1" {
+		return
+	}
+	_, file, line, ok := runtime.Caller(2)
+	caller := "unknown:0"
+	if ok {
+		caller = fmt.Sprintf("%s:%d", file, line)
+	}
+	fmt.Fprintf(debugWriter, "[dbpool] op=%s path=%s refs=%d caller=%s\n", op, path, refsAfter, caller)
+}
+
 // getSharedDB returns a shared database connection for the given base directory.
 // The connection is cached and reused across all Model instances for this path.
 // Callers should call releaseSharedDB when done (though for embedded monitors,
@@ -43,6 +70,7 @@ func getSharedDB(baseDir string) (*db.DB, error) {
 
 	if entry, ok := dbPool.conns[resolvedDir]; ok {
 		entry.refs++
+		debugLog("get", resolvedDir, entry.refs)
 		return entry.db, nil
 	}
 
@@ -60,6 +88,7 @@ func getSharedDB(baseDir string) (*db.DB, error) {
 		db:   database,
 		refs: 1,
 	}
+	debugLog("get", resolvedDir, 1)
 
 	return database, nil
 }
@@ -75,16 +104,20 @@ func releaseSharedDB(baseDir string) error {
 
 	entry, ok := dbPool.conns[resolvedDir]
 	if !ok {
+		debugLog("release-miss", resolvedDir, 0)
 		return nil
 	}
 
 	entry.refs--
+	refsAfter := entry.refs
 	if entry.refs <= 0 {
 		err := entry.db.Close()
 		delete(dbPool.conns, resolvedDir)
+		debugLog("release", resolvedDir, refsAfter)
 		return err
 	}
 
+	debugLog("release", resolvedDir, refsAfter)
 	return nil
 }
 
