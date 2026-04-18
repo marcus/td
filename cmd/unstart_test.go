@@ -40,5 +40,5 @@ func TestUnstartReasonFlag(t *testing.T) {
 	}
 
 	// Reset
-	unstartCmd.Flags().Set("reason", "")
+	must(t, unstartCmd.Flags().Set("reason", ""))
 }

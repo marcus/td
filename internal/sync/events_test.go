@@ -66,7 +66,7 @@ func TestUpsertEntity_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title, status string
 	err = db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
@@ -87,7 +87,7 @@ func TestUpsertEntity_Update(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Upsert with new title
 	tx = beginTx(t, db)
@@ -95,10 +95,10 @@ func TestUpsertEntity_Update(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title, status string
-	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	must(t, db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status))
 	if title != "new" || status != "closed" {
 		t.Fatalf("got title=%q status=%q", title, status)
 	}
@@ -113,7 +113,7 @@ func TestUpsertExistingEntity(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Upsert with completely different data
 	tx = beginTx(t, db)
@@ -121,12 +121,12 @@ func TestUpsertExistingEntity(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title string
 	var priority sql.NullString
 	var status sql.NullString
-	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	must(t, db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority))
 	if title != "replaced" {
 		t.Fatalf("title should be replaced, got %q", title)
 	}
@@ -148,7 +148,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Upsert with only title
 	tx = beginTx(t, db)
@@ -156,11 +156,11 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title string
 	var status, priority sql.NullString
-	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	must(t, db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority))
 	if title != "partial" {
 		t.Fatalf("title should be partial, got %q", title)
 	}
@@ -175,7 +175,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 func TestNilPayload(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -191,7 +191,7 @@ func TestNilPayload(t *testing.T) {
 func TestEmptyEntityID(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -207,7 +207,7 @@ func TestEmptyEntityID(t *testing.T) {
 func TestMalformedJSON(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -234,7 +234,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Delete
 	tx = beginTx(t, db)
@@ -247,7 +247,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Update after delete should be ignored
 	tx = beginTx(t, db)
@@ -260,10 +260,10 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	must(t, db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count))
 	if count != 0 {
 		t.Fatalf("expected issue to remain deleted, got count=%d", count)
 	}
@@ -272,7 +272,7 @@ func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
 func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Injection column name is not a valid table column, so it gets silently dropped.
 	// With no known fields remaining, the upsert returns an error — no injection occurs.
@@ -288,7 +288,7 @@ func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 
 	// Verify the table wasn't dropped
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count)
+	must(t, tx.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count))
 	if count != 0 {
 		t.Fatalf("expected 0 rows, got %d", count)
 	}
@@ -299,16 +299,16 @@ func TestDeleteEntity(t *testing.T) {
 	tx := beginTx(t, db)
 	p, _ := json.Marshal(map[string]any{"title": "bye"})
 	_, _ = upsertEntity(tx, "issues", "i1", p)
-	tx.Commit()
+	must(t, tx.Commit())
 
 	tx = beginTx(t, db)
 	if err := deleteEntity(tx, "issues", "i1"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	must(t, db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count))
 	if count != 0 {
 		t.Fatalf("expected 0 rows, got %d", count)
 	}
@@ -320,7 +320,7 @@ func TestDeleteEntity_Missing(t *testing.T) {
 	if err := deleteEntity(tx, "issues", "nonexistent"); err != nil {
 		t.Fatalf("delete missing should not error: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 }
 
 func TestSoftDeleteEntity(t *testing.T) {
@@ -328,17 +328,17 @@ func TestSoftDeleteEntity(t *testing.T) {
 	tx := beginTx(t, db)
 	p, _ := json.Marshal(map[string]any{"title": "soft"})
 	_, _ = upsertEntity(tx, "issues", "i1", p)
-	tx.Commit()
+	must(t, tx.Commit())
 
 	now := time.Now().UTC()
 	tx = beginTx(t, db)
 	if err := softDeleteEntity(tx, "issues", "i1", now); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var deletedAt sql.NullTime
-	db.QueryRow("SELECT deleted_at FROM issues WHERE id = ?", "i1").Scan(&deletedAt)
+	must(t, db.QueryRow("SELECT deleted_at FROM issues WHERE id = ?", "i1").Scan(&deletedAt))
 	if !deletedAt.Valid {
 		t.Fatal("deleted_at should be set")
 	}
@@ -350,13 +350,13 @@ func TestSoftDeleteEntity_Missing(t *testing.T) {
 	if err := softDeleteEntity(tx, "issues", "nonexistent", time.Now()); err != nil {
 		t.Fatalf("soft delete missing should not error: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 }
 
 func TestApplyEvent_UnknownAction(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "bogus",
@@ -371,7 +371,7 @@ func TestApplyEvent_UnknownAction(t *testing.T) {
 func TestApplyEvent_InvalidEntityType(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
@@ -398,10 +398,10 @@ func TestApplyEvent_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title string
-	db.QueryRow("SELECT title FROM issues WHERE id = ?", "i1").Scan(&title)
+	must(t, db.QueryRow("SELECT title FROM issues WHERE id = ?", "i1").Scan(&title))
 	if title != "via apply" {
 		t.Fatalf("got title=%q", title)
 	}
@@ -414,7 +414,7 @@ func TestApplyEvent_Update(t *testing.T) {
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
 	_, _ = ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Update
 	tx = beginTx(t, db)
@@ -423,10 +423,10 @@ func TestApplyEvent_Update(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply update: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title, status string
-	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	must(t, db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status))
 	if title != "updated" || status != "closed" {
 		t.Fatalf("got title=%q status=%q", title, status)
 	}
@@ -448,7 +448,7 @@ func TestUpsertEntity_OverwriteDetection(t *testing.T) {
 	if res.OldData != nil {
 		t.Fatal("first insert should have nil OldData")
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Second insert to same ID should be an overwrite
 	tx = beginTx(t, db)
@@ -471,7 +471,7 @@ func TestUpsertEntity_OverwriteDetection(t *testing.T) {
 	if old["title"] != "first" {
 		t.Fatalf("OldData title=%v, want 'first'", old["title"])
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Insert to different ID should not be an overwrite
 	tx = beginTx(t, db)
@@ -483,7 +483,7 @@ func TestUpsertEntity_OverwriteDetection(t *testing.T) {
 	if res.Overwritten {
 		t.Fatal("insert to new ID should not be an overwrite")
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 }
 
 func TestApplyEvent_OverwriteTracking(t *testing.T) {
@@ -499,7 +499,7 @@ func TestApplyEvent_OverwriteTracking(t *testing.T) {
 	if overwritten {
 		t.Fatal("create should not report overwrite")
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Update same entity
 	tx = beginTx(t, db)
@@ -511,7 +511,7 @@ func TestApplyEvent_OverwriteTracking(t *testing.T) {
 	if !overwritten {
 		t.Fatal("update to existing entity should report overwrite")
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 }
 
 func TestUpsertEntity_LabelsArrayNormalized(t *testing.T) {
@@ -524,10 +524,10 @@ func TestUpsertEntity_LabelsArrayNormalized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert with labels array: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var labels string
-	db.QueryRow("SELECT labels FROM issues WHERE id = ?", "i1").Scan(&labels)
+	must(t, db.QueryRow("SELECT labels FROM issues WHERE id = ?", "i1").Scan(&labels))
 	if labels != "bug,urgent" {
 		t.Fatalf("labels: got %q, want 'bug,urgent'", labels)
 	}
@@ -542,11 +542,11 @@ func TestUpsertEntity_HandoffArraysNormalized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert handoff with arrays: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var done, remaining, decisions, uncertain string
-	db.QueryRow("SELECT done, remaining, decisions, uncertain FROM handoffs WHERE id = ?", "h1").
-		Scan(&done, &remaining, &decisions, &uncertain)
+	must(t, db.QueryRow("SELECT done, remaining, decisions, uncertain FROM handoffs WHERE id = ?", "h1").
+		Scan(&done, &remaining, &decisions, &uncertain))
 
 	if done != `["task A"]` {
 		t.Fatalf("done: got %q, want '[\"task A\"]'", done)
@@ -572,10 +572,10 @@ func TestUpsertEntity_NestedObjectNormalized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert with nested object: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var priority string
-	db.QueryRow("SELECT priority FROM issues WHERE id = ?", "i1").Scan(&priority)
+	must(t, db.QueryRow("SELECT priority FROM issues WHERE id = ?", "i1").Scan(&priority))
 	if priority != `{"level":"high","score":5}` {
 		t.Fatalf("priority: got %q", priority)
 	}
@@ -584,7 +584,7 @@ func TestUpsertEntity_NestedObjectNormalized(t *testing.T) {
 func TestGetTableColumns(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	cols, err := getTableColumns(tx, "issues")
 	if err != nil {
@@ -611,7 +611,7 @@ func TestUpsertEntity_UnknownFieldsIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert with unknown fields: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	var title, status string
 	err = db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
@@ -626,7 +626,7 @@ func TestUpsertEntity_UnknownFieldsIgnored(t *testing.T) {
 func TestUpsertEntity_AllFieldsUnknown(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	payload := []byte(`{"custom_xyz":"ignored","another_fake":"also ignored"}`)
 	_, err := upsertEntity(tx, "issues", "i1", payload)
@@ -688,7 +688,7 @@ func TestApplyEvent_DeferFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Verify all fields persisted
 	var title, deferUntil, dueDate sql.NullString
@@ -816,7 +816,7 @@ func TestApplyEvent_DeferFieldsPartialUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	tx.Commit()
+	must(t, tx.Commit())
 
 	// Partial update: change only defer_until via applyEventWithPrevious
 	previousData, _ := json.Marshal(map[string]any{
@@ -941,7 +941,7 @@ func setupDepDB(t *testing.T) *sql.DB {
 func TestWouldCreateCycleTx_NoCycle(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Add A->B
 	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
@@ -958,7 +958,7 @@ func TestWouldCreateCycleTx_NoCycle(t *testing.T) {
 func TestWouldCreateCycleTx_DirectCycle(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Add A->B
 	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
@@ -975,7 +975,7 @@ func TestWouldCreateCycleTx_DirectCycle(t *testing.T) {
 func TestWouldCreateCycleTx_TransitiveCycle(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Add A->B, B->C
 	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
@@ -996,7 +996,7 @@ func TestWouldCreateCycleTx_TransitiveCycle(t *testing.T) {
 func TestCheckAndResolveCyclicDependency_NoConflict(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	event := Event{
 		EntityType: "issue_dependencies",
@@ -1012,7 +1012,7 @@ func TestCheckAndResolveCyclicDependency_NoConflict(t *testing.T) {
 func TestCheckAndResolveCyclicDependency_SkipsLargerKey(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Add B->A first (larger key)
 	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'B', 'A', 'depends_on')`)
@@ -1034,7 +1034,7 @@ func TestCheckAndResolveCyclicDependency_SkipsLargerKey(t *testing.T) {
 
 	// Verify B->A was removed
 	var count int
-	tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='B' AND depends_on_id='A'").Scan(&count)
+	must(t, tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='B' AND depends_on_id='A'").Scan(&count))
 	if count != 0 {
 		t.Fatalf("B->A should have been removed, got count=%d", count)
 	}
@@ -1043,7 +1043,7 @@ func TestCheckAndResolveCyclicDependency_SkipsLargerKey(t *testing.T) {
 func TestCheckAndResolveCyclicDependency_KeepsSmallerKey(t *testing.T) {
 	db := setupDepDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Add A->B first (smaller key)
 	_, err := tx.Exec(`INSERT INTO issue_dependencies (id, issue_id, depends_on_id, relation_type) VALUES ('d1', 'A', 'B', 'depends_on')`)
@@ -1065,7 +1065,7 @@ func TestCheckAndResolveCyclicDependency_KeepsSmallerKey(t *testing.T) {
 
 	// Verify A->B still exists
 	var count int
-	tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='A' AND depends_on_id='B'").Scan(&count)
+	must(t, tx.QueryRow("SELECT COUNT(*) FROM issue_dependencies WHERE issue_id='A' AND depends_on_id='B'").Scan(&count))
 	if count != 1 {
 		t.Fatalf("A->B should still exist, got count=%d", count)
 	}

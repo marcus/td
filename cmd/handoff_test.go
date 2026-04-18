@@ -31,7 +31,7 @@ func TestHandoffRecordsData(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	handoff := &models.Handoff{
 		IssueID:   issue.ID,
@@ -61,7 +61,7 @@ func TestHandoffRecordsGitSnapshot(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Add handoff
 	handoff := &models.Handoff{
@@ -69,7 +69,7 @@ func TestHandoffRecordsGitSnapshot(t *testing.T) {
 		SessionID: "ses_test",
 		Done:      []string{"Work done"},
 	}
-	database.AddHandoff(handoff)
+	must(t, database.AddHandoff(handoff))
 
 	// Record git snapshot
 	snapshot := &models.GitSnapshot{
@@ -133,11 +133,11 @@ func TestHandoffUpdatesIssueTimestamp(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 	originalUpdatedAt := issue.UpdatedAt
 
 	// Update issue (as handoff command would)
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.UpdatedAt.Before(originalUpdatedAt) {
@@ -296,7 +296,7 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// First handoff
 	handoff1 := &models.Handoff{
@@ -304,7 +304,7 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 		SessionID: "ses_1",
 		Done:      []string{"First work"},
 	}
-	database.AddHandoff(handoff1)
+	must(t, database.AddHandoff(handoff1))
 
 	// Second handoff
 	handoff2 := &models.Handoff{
@@ -312,7 +312,7 @@ func TestMultipleHandoffsForSameIssue(t *testing.T) {
 		SessionID: "ses_2",
 		Done:      []string{"Second work"},
 	}
-	database.AddHandoff(handoff2)
+	must(t, database.AddHandoff(handoff2))
 
 	if handoff1.ID == handoff2.ID {
 		t.Error("Handoffs should have different IDs")
@@ -345,7 +345,7 @@ func TestHandoffNoteFlag(t *testing.T) {
 	}
 
 	// Reset
-	handoffCmd.Flags().Set("note", "")
+	must(t, handoffCmd.Flags().Set("note", ""))
 }
 
 // TestGetLatestHandoff tests retrieving the most recent handoff
@@ -358,20 +358,20 @@ func TestGetLatestHandoff(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Add handoffs
-	database.AddHandoff(&models.Handoff{
+	must(t, database.AddHandoff(&models.Handoff{
 		IssueID:   issue.ID,
 		SessionID: "ses_old",
 		Done:      []string{"Old work"},
-	})
+	}))
 
-	database.AddHandoff(&models.Handoff{
+	must(t, database.AddHandoff(&models.Handoff{
 		IssueID:   issue.ID,
 		SessionID: "ses_new",
 		Done:      []string{"New work"},
-	})
+	}))
 
 	// Get latest
 	latest, err := database.GetLatestHandoff(issue.ID)
@@ -441,7 +441,7 @@ func TestHandoffMessageFlag(t *testing.T) {
 	}
 
 	// Reset
-	handoffCmd.Flags().Set("message", "")
+	must(t, handoffCmd.Flags().Set("message", ""))
 }
 
 // TestCascadeHandoffBasic tests that handoff cascades to children

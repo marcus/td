@@ -127,7 +127,7 @@ func TestEnvelopeJSONShape(t *testing.T) {
 		WriteSuccess(w, "hello", http.StatusOK)
 
 		var raw map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &raw)
+		must(t, json.Unmarshal(w.Body.Bytes(), &raw))
 
 		if _, exists := raw["error"]; exists {
 			t.Error("success response should not have 'error' key")
@@ -145,7 +145,7 @@ func TestEnvelopeJSONShape(t *testing.T) {
 		WriteError(w, ErrInternal, "fail", http.StatusInternalServerError)
 
 		var raw map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &raw)
+		must(t, json.Unmarshal(w.Body.Bytes(), &raw))
 
 		if _, exists := raw["data"]; exists {
 			t.Error("error response should not have 'data' key")
@@ -329,7 +329,7 @@ func TestIssueToDTO_LabelsNeverNull(t *testing.T) {
 	}
 
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	must(t, json.Unmarshal(data, &raw))
 	labels, ok := raw["labels"].([]interface{})
 	if !ok {
 		t.Fatalf("labels should be array, got %T (%v)", raw["labels"], raw["labels"])
@@ -357,7 +357,7 @@ func TestIssueToDTO_NullableFieldsSerializeAsNull(t *testing.T) {
 	}
 
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	must(t, json.Unmarshal(data, &raw))
 
 	nullFields := []string{"parent_id", "implementer_session", "creator_session", "reviewer_session",
 		"created_branch", "defer_until", "due_date", "closed_at", "deleted_at"}
@@ -472,7 +472,7 @@ func TestHandoffToDTO_EmptySlicesNotNull(t *testing.T) {
 	// Verify JSON
 	data, _ := json.Marshal(dto)
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	must(t, json.Unmarshal(data, &raw))
 
 	for _, field := range []string{"done", "remaining", "decisions", "uncertain"} {
 		arr, ok := raw[field].([]interface{})

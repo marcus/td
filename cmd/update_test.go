@@ -20,7 +20,7 @@ func TestUpdateIssueTitle(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Original Title"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Title = "Updated Title"
 	if err := database.UpdateIssue(issue); err != nil {
@@ -43,10 +43,10 @@ func TestUpdateIssueDescription(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Description: "Original desc"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Description = "New description"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Description != "New description" {
@@ -64,10 +64,10 @@ func TestUpdateIssueType(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Type: models.TypeTask}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Type = models.TypeBug
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Type != models.TypeBug {
@@ -85,10 +85,10 @@ func TestUpdateIssuePriority(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Priority: models.PriorityP2}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Priority = models.PriorityP0
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Priority != models.PriorityP0 {
@@ -106,10 +106,10 @@ func TestUpdateIssuePoints(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Points: 3}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Points = 8
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Points != 8 {
@@ -127,10 +127,10 @@ func TestUpdateIssueLabels(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Labels: []string{"old"}}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Labels = []string{"new1", "new2"}
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if len(retrieved.Labels) != 2 {
@@ -148,10 +148,10 @@ func TestUpdateIssueClearLabels(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Labels: []string{"tag1", "tag2"}}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Labels = nil
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if len(retrieved.Labels) != 0 {
@@ -169,11 +169,11 @@ func TestUpdateIssueStatus(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Open -> In Progress
 	issue.Status = models.StatusInProgress
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusInProgress {
@@ -182,7 +182,7 @@ func TestUpdateIssueStatus(t *testing.T) {
 
 	// In Progress -> In Review
 	issue.Status = models.StatusInReview
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ = database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusInReview {
@@ -203,12 +203,12 @@ func TestUpdateReplaceDependencies(t *testing.T) {
 	issue := &models.Issue{Title: "Main Issue"}
 	dep1 := &models.Issue{Title: "Old Dep"}
 	dep2 := &models.Issue{Title: "New Dep"}
-	database.CreateIssue(issue)
-	database.CreateIssue(dep1)
-	database.CreateIssue(dep2)
+	must(t, database.CreateIssue(issue))
+	must(t, database.CreateIssue(dep1))
+	must(t, database.CreateIssue(dep2))
 
 	// Add original dependency
-	database.AddDependency(issue.ID, dep1.ID, "depends_on")
+	must(t, database.AddDependency(issue.ID, dep1.ID, "depends_on"))
 
 	// Verify original
 	deps, _ := database.GetDependencies(issue.ID)
@@ -217,8 +217,8 @@ func TestUpdateReplaceDependencies(t *testing.T) {
 	}
 
 	// Replace with new dependency
-	database.RemoveDependency(issue.ID, dep1.ID)
-	database.AddDependency(issue.ID, dep2.ID, "depends_on")
+	must(t, database.RemoveDependency(issue.ID, dep1.ID))
+	must(t, database.AddDependency(issue.ID, dep2.ID, "depends_on"))
 
 	// Verify replacement
 	deps, _ = database.GetDependencies(issue.ID)
@@ -239,17 +239,17 @@ func TestUpdateClearDependencies(t *testing.T) {
 	issue := &models.Issue{Title: "Main Issue"}
 	dep1 := &models.Issue{Title: "Dep 1"}
 	dep2 := &models.Issue{Title: "Dep 2"}
-	database.CreateIssue(issue)
-	database.CreateIssue(dep1)
-	database.CreateIssue(dep2)
+	must(t, database.CreateIssue(issue))
+	must(t, database.CreateIssue(dep1))
+	must(t, database.CreateIssue(dep2))
 
-	database.AddDependency(issue.ID, dep1.ID, "depends_on")
-	database.AddDependency(issue.ID, dep2.ID, "depends_on")
+	must(t, database.AddDependency(issue.ID, dep1.ID, "depends_on"))
+	must(t, database.AddDependency(issue.ID, dep2.ID, "depends_on"))
 
 	// Clear all dependencies
 	deps, _ := database.GetDependencies(issue.ID)
 	for _, dep := range deps {
-		database.RemoveDependency(issue.ID, dep)
+		must(t, database.RemoveDependency(issue.ID, dep))
 	}
 
 	// Verify cleared
@@ -271,16 +271,16 @@ func TestUpdateReplaceBlocks(t *testing.T) {
 	blocker := &models.Issue{Title: "Blocker"}
 	blocked1 := &models.Issue{Title: "Blocked 1"}
 	blocked2 := &models.Issue{Title: "Blocked 2"}
-	database.CreateIssue(blocker)
-	database.CreateIssue(blocked1)
-	database.CreateIssue(blocked2)
+	must(t, database.CreateIssue(blocker))
+	must(t, database.CreateIssue(blocked1))
+	must(t, database.CreateIssue(blocked2))
 
 	// blocked1 depends on blocker
-	database.AddDependency(blocked1.ID, blocker.ID, "depends_on")
+	must(t, database.AddDependency(blocked1.ID, blocker.ID, "depends_on"))
 
 	// Replace: remove blocked1, add blocked2
-	database.RemoveDependency(blocked1.ID, blocker.ID)
-	database.AddDependency(blocked2.ID, blocker.ID, "depends_on")
+	must(t, database.RemoveDependency(blocked1.ID, blocker.ID))
+	must(t, database.AddDependency(blocked2.ID, blocker.ID, "depends_on"))
 
 	// Verify
 	blockedBy, _ := database.GetBlockedBy(blocker.ID)
@@ -301,14 +301,14 @@ func TestUpdateBatchMultipleIssues(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Priority: models.PriorityP3}
 	issue2 := &models.Issue{Title: "Issue 2", Priority: models.PriorityP3}
 	issue3 := &models.Issue{Title: "Issue 3", Priority: models.PriorityP3}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
+	must(t, database.CreateIssue(issue3))
 
 	// Batch update priorities
 	for _, issue := range []*models.Issue{issue1, issue2, issue3} {
 		issue.Priority = models.PriorityP1
-		database.UpdateIssue(issue)
+		must(t, database.UpdateIssue(issue))
 	}
 
 	// Verify all updated
@@ -336,11 +336,11 @@ func TestUpdatePartialFields(t *testing.T) {
 		Priority:    models.PriorityP2,
 		Points:      5,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Only update title
 	issue.Title = "Updated Title"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Title != "Updated Title" {
@@ -372,13 +372,13 @@ func TestUpdateParentID(t *testing.T) {
 	parent1 := &models.Issue{Title: "Parent 1", Type: models.TypeEpic}
 	parent2 := &models.Issue{Title: "Parent 2", Type: models.TypeEpic}
 	child := &models.Issue{Title: "Child", ParentID: ""}
-	database.CreateIssue(parent1)
-	database.CreateIssue(parent2)
-	database.CreateIssue(child)
+	must(t, database.CreateIssue(parent1))
+	must(t, database.CreateIssue(parent2))
+	must(t, database.CreateIssue(child))
 
 	// Set initial parent
 	child.ParentID = parent1.ID
-	database.UpdateIssue(child)
+	must(t, database.UpdateIssue(child))
 
 	retrieved, _ := database.GetIssue(child.ID)
 	if retrieved.ParentID != parent1.ID {
@@ -387,7 +387,7 @@ func TestUpdateParentID(t *testing.T) {
 
 	// Change parent
 	child.ParentID = parent2.ID
-	database.UpdateIssue(child)
+	must(t, database.UpdateIssue(child))
 
 	retrieved, _ = database.GetIssue(child.ID)
 	if retrieved.ParentID != parent2.ID {
@@ -396,7 +396,7 @@ func TestUpdateParentID(t *testing.T) {
 
 	// Clear parent
 	child.ParentID = ""
-	database.UpdateIssue(child)
+	must(t, database.UpdateIssue(child))
 
 	retrieved, _ = database.GetIssue(child.ID)
 	if retrieved.ParentID != "" {
@@ -414,13 +414,13 @@ func TestUpdateUpdatedAtTimestamp(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	originalUpdatedAt := issue.UpdatedAt
 
 	// Update issue
 	issue.Title = "Updated"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if !retrieved.UpdatedAt.After(originalUpdatedAt) && !retrieved.UpdatedAt.Equal(originalUpdatedAt) {
@@ -438,10 +438,10 @@ func TestUpdateAcceptanceCriteria(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Acceptance: "Original AC"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	issue.Acceptance = "New acceptance criteria"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Acceptance != "New acceptance criteria" {
@@ -459,12 +459,12 @@ func TestAppendDescription(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Description: "Initial description"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Simulate append mode: concat with double newline
 	newDesc := "Appended text"
 	issue.Description = issue.Description + "\n\n" + newDesc
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	expected := "Initial description\n\nAppended text"
@@ -483,11 +483,11 @@ func TestAppendToEmptyDescription(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Description: ""}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// With empty existing description, just set the value (no leading separator)
 	issue.Description = "New description"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Description != "New description" {
@@ -505,12 +505,12 @@ func TestAppendAcceptance(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Acceptance: "Initial criteria"}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Simulate append mode
 	newAC := "Additional criteria"
 	issue.Acceptance = issue.Acceptance + "\n\n" + newAC
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	expected := "Initial criteria\n\nAdditional criteria"
@@ -529,11 +529,11 @@ func TestAppendToEmptyAcceptance(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test", Acceptance: ""}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// With empty existing acceptance, just set the value
 	issue.Acceptance = "New criteria"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Acceptance != "New criteria" {
@@ -562,7 +562,7 @@ func TestUpdateCmdHasStatusFlag(t *testing.T) {
 	}
 
 	// Reset
-	updateCmd.Flags().Set("status", "")
+	must(t, updateCmd.Flags().Set("status", ""))
 }
 
 func TestUpdateRichTextAppendFromFileAndStdin(t *testing.T) {

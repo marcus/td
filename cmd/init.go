@@ -43,7 +43,9 @@ var initCmd = &cobra.Command{
 		// Add to .gitignore if in a git repo
 		if git.IsRepo() {
 			gitignorePath := filepath.Join(baseDir, ".gitignore")
-			addToGitignore(gitignorePath)
+			if err := addToGitignore(gitignorePath); err != nil {
+				output.Warning("failed to update .gitignore: %v", err)
+			}
 		}
 
 		// Create session
@@ -62,30 +64,38 @@ var initCmd = &cobra.Command{
 	},
 }
 
-func addToGitignore(path string) {
+func addToGitignore(path string) error {
 	// Read existing content
-	content, _ := os.ReadFile(path)
+	content, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	contentStr := string(content)
 
 	// Check if already present
 	if strings.Contains(contentStr, ".todos/") {
-		return
+		return nil
 	}
 
 	// Append to file
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 
 	// Add newline if file doesn't end with one
 	if len(contentStr) > 0 && !strings.HasSuffix(contentStr, "\n") {
-		f.WriteString("\n")
+		if _, err := f.WriteString("\n"); err != nil {
+			return err
+		}
 	}
 
-	f.WriteString(".todos/\n")
+	if _, err := f.WriteString(".todos/\n"); err != nil {
+		return err
+	}
 	fmt.Println("Added .todos/ to .gitignore")
+	return nil
 }
 
 func suggestAgentFileAddition(baseDir string) {

@@ -56,8 +56,8 @@ func TestWsStartWithActiveSessionErrors(t *testing.T) {
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "first-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// Check active session is set
 	activeWS, err := config.GetActiveWorkSession(dir)
@@ -83,11 +83,11 @@ func TestWsStopEndsSession(t *testing.T) {
 
 	// Create active session
 	ws := &models.WorkSession{Name: "active-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// End session
-	config.ClearActiveWorkSession(dir)
+	must(t, config.ClearActiveWorkSession(dir))
 
 	// Verify session is no longer active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -123,12 +123,12 @@ func TestWsTagAddsIssueToSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "tagging-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Tag issue to work session
 	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
@@ -159,7 +159,7 @@ func TestWsTagMultipleIssues(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "multi-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create issues
 	issues := []*models.Issue{
@@ -169,8 +169,8 @@ func TestWsTagMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
-		database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+		must(t, database.CreateIssue(issue))
+		must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 	}
 
 	// Verify all issues are tagged
@@ -207,7 +207,7 @@ func TestWsTagInvalidIssueErrors(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "invalid-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Try to get non-existent issue
 	_, err = database.GetIssue("td-nonexistent")
@@ -227,12 +227,12 @@ func TestWsUntagRemovesIssueFromSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "untag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.CreateIssue(issue))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Verify issue is tagged
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -263,18 +263,18 @@ func TestWsUntagPartialRemoval(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "partial-untag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create and tag issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session"))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session"))
 
 	// Untag only issue1
-	database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session")
+	must(t, database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session"))
 
 	// Verify only issue2 remains
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -297,12 +297,12 @@ func TestWsLogAddsLogEntry(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "log-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.CreateIssue(issue))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Add log to work session (log attached to work session, not specific issue)
 	log := &models.Log{
@@ -340,7 +340,7 @@ func TestWsLogWithDifferentTypes(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "typed-log-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	testCases := []struct {
 		logType models.LogType
@@ -398,15 +398,15 @@ func TestWsHandoffCreatesHandoffs(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "handoff-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create and tag issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusInProgress}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session"))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session"))
 
 	// Create handoffs for each issue
 	handoff1 := &models.Handoff{
@@ -467,8 +467,8 @@ func TestWsHandoffEndsSession(t *testing.T) {
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "ending-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// Verify session is active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -477,7 +477,7 @@ func TestWsHandoffEndsSession(t *testing.T) {
 	}
 
 	// Clear active session (simulates handoff ending session)
-	config.ClearActiveWorkSession(dir)
+	must(t, config.ClearActiveWorkSession(dir))
 
 	// Verify session is ended
 	activeWS, _ = config.GetActiveWorkSession(dir)
@@ -497,13 +497,13 @@ func TestWsCurrentShowsActiveSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "current-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// Tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.CreateIssue(issue))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Get current session
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -551,7 +551,7 @@ func TestWsListShowsSessions(t *testing.T) {
 	sessions := []string{"session-1", "session-2", "session-3"}
 	for _, name := range sessions {
 		ws := &models.WorkSession{Name: name, SessionID: "ses_test"}
-		database.CreateWorkSession(ws)
+		must(t, database.CreateWorkSession(ws))
 	}
 
 	// List work sessions
@@ -597,7 +597,7 @@ func TestWsListWithLimit(t *testing.T) {
 	// Create 10 sessions
 	for i := 0; i < 10; i++ {
 		ws := &models.WorkSession{Name: "session", SessionID: "ses_test"}
-		database.CreateWorkSession(ws)
+		must(t, database.CreateWorkSession(ws))
 	}
 
 	// List with limit 5
@@ -622,11 +622,11 @@ func TestWsEndWithoutHandoff(t *testing.T) {
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "no-handoff-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	must(t, database.CreateWorkSession(ws))
+	must(t, config.SetActiveWorkSession(dir, ws.ID))
 
 	// End without handoff
-	config.ClearActiveWorkSession(dir)
+	must(t, config.ClearActiveWorkSession(dir))
 
 	// Verify session ended
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -646,19 +646,19 @@ func TestWsTagAutoStartsOpenIssues(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "auto-start-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create open issue
 	issue := &models.Issue{Title: "Open Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Tag issue (simulating auto-start behavior)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Simulate starting the issue
 	issue.Status = models.StatusInProgress
 	issue.ImplementerSession = "ses_test"
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	// Verify issue is started
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -678,14 +678,14 @@ func TestWsTagNoStartFlag(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "no-start-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Create open issue
 	issue := &models.Issue{Title: "Open Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Tag issue without starting (simulating --no-start)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Issue should remain open (with --no-start)
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -705,12 +705,12 @@ func TestWsShowDisplaysPastSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "past-session", SessionID: "ses_test", StartSHA: "abc123"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	must(t, database.CreateIssue(issue))
+	must(t, database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"))
 
 	// Get session details
 	retrieved, err := database.GetWorkSession(ws.ID)
@@ -759,7 +759,7 @@ func TestWsHandoffAutoPopulatesFromLogs(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "auto-populate-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Add various log types
 	logs := []models.Log{
@@ -770,7 +770,7 @@ func TestWsHandoffAutoPopulatesFromLogs(t *testing.T) {
 	}
 
 	for _, log := range logs {
-		database.AddLog(&log)
+		must(t, database.AddLog(&log))
 	}
 
 	// Get logs for session
@@ -807,7 +807,7 @@ func TestWsUpdateSession(t *testing.T) {
 
 	// Create work session
 	ws := &models.WorkSession{Name: "update-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	must(t, database.CreateWorkSession(ws))
 
 	// Update session with end SHA
 	ws.EndSHA = "def456"

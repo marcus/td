@@ -56,14 +56,14 @@ func TestStartMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		must(t, database.CreateIssue(issue))
 	}
 
 	// Start all issues
 	for _, issue := range issues {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		must(t, database.UpdateIssue(issue))
 	}
 
 	// Verify all started
@@ -88,7 +88,7 @@ func TestStartBlockedIssueWithoutForce(t *testing.T) {
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Without force, blocked issues should remain blocked
 	// In the actual command this would skip, here we test the state check
@@ -113,14 +113,14 @@ func TestStartBlockedIssueWithForce(t *testing.T) {
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// With force, even blocked issues can be started
 	force := true
 	if issue.Status == models.StatusBlocked && force {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		must(t, database.UpdateIssue(issue))
 	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -142,12 +142,12 @@ func TestStartSetsImplementerSession(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	sessionID := "ses_abc123"
 	issue.Status = models.StatusInProgress
 	issue.ImplementerSession = sessionID
-	database.UpdateIssue(issue)
+	must(t, database.UpdateIssue(issue))
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.ImplementerSession != sessionID {
@@ -181,11 +181,11 @@ func TestStartFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			must(t, database.CreateIssue(issue))
 
 			if tc.canStart || tc.initialStatus != models.StatusBlocked {
 				issue.Status = models.StatusInProgress
-				database.UpdateIssue(issue)
+				must(t, database.UpdateIssue(issue))
 
 				retrieved, _ := database.GetIssue(issue.ID)
 				if retrieved.Status != models.StatusInProgress {
@@ -221,7 +221,7 @@ func TestStartRecordsGitSnapshot(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Record a git snapshot
 	snapshot := &models.GitSnapshot{
@@ -265,7 +265,7 @@ func TestStartLogsAction(t *testing.T) {
 	}
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	sessionID := "ses_test123"
 
@@ -305,7 +305,7 @@ func TestStartAddsProgressLog(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Add progress log as start command would
 	log := &models.Log{
@@ -341,7 +341,7 @@ func TestStartWithReason(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	reason := "Picking up from previous session"
 	log := &models.Log{
@@ -350,7 +350,7 @@ func TestStartWithReason(t *testing.T) {
 		Message:   reason,
 		Type:      models.LogTypeProgress,
 	}
-	database.AddLog(log)
+	must(t, database.AddLog(log))
 
 	logs, _ := database.GetLogs(issue.ID, 10)
 	if len(logs) != 1 || logs[0].Message != reason {
@@ -368,7 +368,7 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 	defer database.Close()
 
 	validIssue := &models.Issue{Title: "Valid", Status: models.StatusOpen}
-	database.CreateIssue(validIssue)
+	must(t, database.CreateIssue(validIssue))
 
 	// Try to get a non-existent issue
 	_, err = database.GetIssue("td-invalid")
@@ -378,7 +378,7 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 
 	// Valid issue can still be started
 	validIssue.Status = models.StatusInProgress
-	database.UpdateIssue(validIssue)
+	must(t, database.UpdateIssue(validIssue))
 
 	retrieved, _ := database.GetIssue(validIssue.ID)
 	if retrieved.Status != models.StatusInProgress {

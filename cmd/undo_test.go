@@ -356,8 +356,8 @@ func TestUndoDependencyAdd(t *testing.T) {
 	// Create two issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
 
 	// Add dependency
 	if err := database.AddDependency(issue1.ID, issue2.ID, "depends_on"); err != nil {
@@ -406,8 +406,8 @@ func TestUndoDependencyRemove(t *testing.T) {
 	// Create two issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	must(t, database.CreateIssue(issue1))
+	must(t, database.CreateIssue(issue2))
 
 	// Create action log for remove dependency (dependency was removed)
 	depInfo := struct {
@@ -450,7 +450,7 @@ func TestUndoFileLinkAdd(t *testing.T) {
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Link a file
 	if err := database.LinkFile(issue.ID, "test.go", models.FileRoleImplementation, "abc123"); err != nil {
@@ -502,7 +502,7 @@ func TestUndoFileLinkRemove(t *testing.T) {
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	// Create action log for unlink
 	linkInfo := struct {
@@ -549,7 +549,7 @@ func TestPerformUndoDispatch(t *testing.T) {
 
 	// Create an issue for testing
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	tests := []struct {
 		name       string
@@ -591,7 +591,7 @@ func TestUndoUpdateWithoutPreviousData(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	action := &models.ActionLog{
 		SessionID:    "ses_test",
@@ -617,7 +617,7 @@ func TestUndoWithInvalidPreviousData(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	must(t, database.CreateIssue(issue))
 
 	action := &models.ActionLog{
 		SessionID:    "ses_test",
