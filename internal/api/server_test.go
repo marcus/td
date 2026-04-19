@@ -207,6 +207,80 @@ func TestPushSuccess(t *testing.T) {
 	}
 }
 
+// TestPushAndPullUpsertSyncCursor verifies that the push and pull endpoints
+// write per-device sync cursors to server.db so the admin "Sync Clients" tab
+// is populated. Regression test for the bug where active devices never
+// appeared in the cursor listing.
+func TestPushAndPullUpsertSyncCursor(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "cursor-sync@test.com")
+
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "cursor-sync"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	_ = json.NewDecoder(w.Body).Decode(&project)
+
+	// Push from device-A — should upsert a cursor at the highest server_seq.
+	pushBody := PushRequest{
+		DeviceID:  "device-A",
+		SessionID: "sess-A",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_001",
+				Payload: json.RawMessage(`{"title":"t1"}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "i_002",
+				Payload: json.RawMessage(`{"title":"t2"}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		},
+	}
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	cur, err := store.GetSyncCursor(project.ID, "device-A")
+	if err != nil {
+		t.Fatalf("get cursor device-A: %v", err)
+	}
+	if cur == nil {
+		t.Fatalf("expected cursor for device-A after push, got nil")
+	}
+	if cur.LastEventID != 2 {
+		t.Fatalf("device-A cursor: expected last_event_id=2, got %d", cur.LastEventID)
+	}
+	if cur.LastSyncAt == nil {
+		t.Fatalf("device-A cursor: expected last_sync_at to be populated")
+	}
+
+	// Pull as device-B (uses exclude_client to identify caller) — should
+	// upsert a cursor at the project's head seq.
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/pull?exclude_client=device-B", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pull: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	cur, err = store.GetSyncCursor(project.ID, "device-B")
+	if err != nil {
+		t.Fatalf("get cursor device-B: %v", err)
+	}
+	if cur == nil {
+		t.Fatalf("expected cursor for device-B after pull, got nil")
+	}
+	if cur.LastEventID != 2 {
+		t.Fatalf("device-B cursor: expected last_event_id=2 (head), got %d", cur.LastEventID)
+	}
+
+	// A re-push with already-acked events must not regress the cursor.
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("retry push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	cur, _ = store.GetSyncCursor(project.ID, "device-A")
+	if cur == nil || cur.LastEventID != 2 {
+		t.Fatalf("device-A cursor after retry: expected last_event_id=2, got %+v", cur)
+	}
+}
+
 func TestPushRetryDuplicatesReturnServerSeq(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestUser(t, store, "retry@test.com")

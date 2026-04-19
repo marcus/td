@@ -198,6 +198,27 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Upsert sync cursor for this device. Tracks the device as a "sync client"
+	// for the admin UI and records its last-known server_seq position.
+	// Use max server_seq from acks (or duplicate rejections) so the cursor
+	// never moves backwards even if the client retries already-acked batches.
+	var maxSeq int64
+	for _, a := range result.Acks {
+		if a.ServerSeq > maxSeq {
+			maxSeq = a.ServerSeq
+		}
+	}
+	for _, rj := range result.Rejected {
+		if rj.ServerSeq > maxSeq {
+			maxSeq = rj.ServerSeq
+		}
+	}
+	if maxSeq > 0 {
+		if err := s.store.UpsertSyncCursor(projectID, req.DeviceID, maxSeq); err != nil {
+			logFor(r.Context()).Warn("upsert sync cursor on push", "project", projectID, "device", req.DeviceID, "err", err)
+		}
+	}
+
 	s.metrics.RecordPushEvents(int64(result.Accepted))
 
 	resp := PushResponse{Accepted: result.Accepted}
@@ -270,6 +291,18 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = tx.Rollback() // read-only, just release
+
+	// Upsert sync cursor for the pulling device so it shows up in the admin
+	// "Sync Clients" tab. The pull endpoint uses `exclude_client` to carry
+	// the caller's device_id; we treat that as the client_id for the cursor.
+	// Only advance when we know the head — result.LastServerSeq is the
+	// highest server_seq observed by the pull (may be > returned events if
+	// we excluded the caller's own writes).
+	if excludeClient != "" && result.LastServerSeq > 0 {
+		if err := s.store.UpsertSyncCursor(projectID, excludeClient, result.LastServerSeq); err != nil {
+			logFor(r.Context()).Warn("upsert sync cursor on pull", "project", projectID, "device", excludeClient, "err", err)
+		}
+	}
 
 	resp := PullResponse{
 		LastServerSeq: result.LastServerSeq,

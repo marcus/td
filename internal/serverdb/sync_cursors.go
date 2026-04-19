@@ -29,6 +29,16 @@ func (db *ServerDB) UpsertSyncCursor(projectID, clientID string, lastEventID int
 	return nil
 }
 
+// DeleteSyncCursor removes the cursor for a project/client pair. Used by
+// tests and diagnostic tooling. Safe to call when no row exists.
+func (db *ServerDB) DeleteSyncCursor(projectID, clientID string) error {
+	_, err := db.conn.Exec(`DELETE FROM sync_cursors WHERE project_id = ? AND client_id = ?`, projectID, clientID)
+	if err != nil {
+		return fmt.Errorf("delete sync cursor: %w", err)
+	}
+	return nil
+}
+
 // GetSyncCursor returns the sync cursor for a project/client pair, or nil if not found.
 func (db *ServerDB) GetSyncCursor(projectID, clientID string) (*SyncCursor, error) {
 	c := &SyncCursor{}

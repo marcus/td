@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -189,6 +190,23 @@ func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Lazy backfill: if this project has events but no cursors yet, derive
+	// cursors from the event log's (device_id, MAX(server_seq)) pairs and
+	// upsert them. Runs once per project — subsequent pushes/pulls keep the
+	// table fresh via handleSyncPush/handleSyncPull. This heals existing
+	// projects whose events pre-date cursor tracking.
+	if len(cursors) == 0 && headSeq > 0 && db != nil {
+		if backfilled := backfillCursorsFromEvents(db, s.store, projectID); backfilled > 0 {
+			cursors, err = s.store.ListSyncCursorsForProject(projectID)
+			if err != nil {
+				slog.Error("admin sync cursors: re-list after backfill", "err", err)
+				writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to list cursors")
+				return
+			}
+			slog.Info("backfilled sync cursors from event log", "project", projectID, "count", backfilled)
+		}
+	}
+
 	entries := make([]adminCursorEntry, len(cursors))
 	for i, c := range cursors {
 		entry := adminCursorEntry{
@@ -204,4 +222,37 @@ func (s *Server) handleAdminSyncCursors(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+}
+
+// backfillCursorsFromEvents derives one sync cursor per distinct device_id in
+// the project's event log (at each device's highest observed server_seq) and
+// upserts them into server.db. Returns the number of cursors written.
+// Used to heal projects whose events were pushed before cursor tracking was
+// added to handleSyncPush / handleSyncPull.
+func backfillCursorsFromEvents(eventsDB *sql.DB, store *serverdb.ServerDB, projectID string) int {
+	rows, err := eventsDB.Query(`SELECT device_id, MAX(server_seq) FROM events WHERE device_id != '' GROUP BY device_id`)
+	if err != nil {
+		slog.Warn("cursor backfill: query events", "project", projectID, "err", err)
+		return 0
+	}
+	defer rows.Close()
+
+	n := 0
+	for rows.Next() {
+		var deviceID string
+		var maxSeq int64
+		if err := rows.Scan(&deviceID, &maxSeq); err != nil {
+			slog.Warn("cursor backfill: scan", "project", projectID, "err", err)
+			continue
+		}
+		if deviceID == "" || maxSeq <= 0 {
+			continue
+		}
+		if err := store.UpsertSyncCursor(projectID, deviceID, maxSeq); err != nil {
+			slog.Warn("cursor backfill: upsert", "project", projectID, "device", deviceID, "err", err)
+			continue
+		}
+		n++
+	}
+	return n
 }
