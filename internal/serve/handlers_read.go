@@ -13,25 +13,40 @@ import (
 	"github.com/marcus/td/pkg/monitor"
 )
 
+// This file contains the read-side HTTP handlers (GET endpoints). Each handler
+// is exported as a pure function that takes a HandlerContext, so the same code
+// can be mounted from td-serve (`*Server`) and from td-sync (per-project
+// HandlerContext built per request). The `(s *Server) handleXxx` methods are
+// thin wrappers retained so the route registrations and any external callers
+// continue to work unchanged.
+
 // ============================================================================
 // GET /health
 // ============================================================================
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	changeToken, _ := s.db.GetChangeToken()
+// HandleHealth returns server status, the active session id, and the current
+// change_token. Pure-function form of (s *Server).handleHealth.
+func HandleHealth(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	changeToken, _ := ctx.DB.GetChangeToken()
 
 	WriteSuccess(w, map[string]interface{}{
 		"status":       "ok",
-		"session_id":   s.sessionID,
+		"session_id":   ctx.SessionID,
 		"change_token": changeToken,
 	}, http.StatusOK)
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	HandleHealth(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // GET /v1/monitor
 // ============================================================================
 
-func (s *Server) handleMonitor(w http.ResponseWriter, r *http.Request) {
+// HandleMonitor returns the consolidated monitor view (boards, focus, recent
+// activity). Pure-function form of (s *Server).handleMonitor.
+func HandleMonitor(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	includeClosed := q.Get("include_closed") == "true"
@@ -48,23 +63,30 @@ func (s *Server) handleMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	msg := monitor.FetchDataWithSearchMode(s.db, s.sessionID, time.Now().Add(-24*time.Hour), search, searchMode, includeClosed, sortMode)
+	msg := monitor.FetchDataWithSearchMode(ctx.DB, ctx.SessionID, time.Now().Add(-24*time.Hour), search, searchMode, includeClosed, sortMode)
 	dto := MonitorDataToDTO(&msg)
 
-	changeToken, _ := s.db.GetChangeToken()
+	changeToken, _ := ctx.DB.GetChangeToken()
 
 	WriteSuccess(w, map[string]interface{}{
 		"monitor":      dto,
-		"session_id":   s.sessionID,
+		"session_id":   ctx.SessionID,
 		"change_token": changeToken,
 	}, http.StatusOK)
+}
+
+func (s *Server) handleMonitor(w http.ResponseWriter, r *http.Request) {
+	HandleMonitor(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // GET /v1/issues
 // ============================================================================
 
-func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
+// HandleListIssues returns a paginated list of issues with optional filtering
+// (status, type, priority, labels, epic, search). Pure-function form of
+// (s *Server).handleListIssues.
+func HandleListIssues(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	// Parse pagination
@@ -126,13 +148,13 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 
 	// Handle TDQ search
 	if search != "" && (searchMode == "tdq" || searchMode == "auto" || searchMode == "") {
-		issues, err := s.tryTDQSearch(search, searchMode, statuses)
+		issues, err := tryTDQSearch(ctx, search, searchMode, statuses)
 		if err == nil {
 			// TDQ succeeded - apply type, priority filters and pagination manually
 			filtered := filterIssues(issues, types, priorities)
 			filtered = filterByLabels(filtered, labels)
 			if epicID != "" {
-				epicIssues, epicErr := s.db.ListIssues(db.ListIssuesOptions{EpicID: epicID})
+				epicIssues, epicErr := ctx.DB.ListIssues(db.ListIssuesOptions{EpicID: epicID})
 				if epicErr != nil {
 					WriteError(w, ErrInternal, "failed to list epic issues: "+epicErr.Error(), http.StatusInternalServerError)
 					return
@@ -177,7 +199,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all matching issues (we need total count)
-	allIssues, err := s.db.ListIssues(opts)
+	allIssues, err := ctx.DB.ListIssues(opts)
 	if err != nil {
 		WriteError(w, ErrInternal, "failed to list issues: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -200,18 +222,25 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusOK)
 }
 
+func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
+	HandleListIssues(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // GET /v1/issues/{id}
 // ============================================================================
 
-func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
+// HandleGetIssue returns a single issue with its logs, comments, latest
+// handoff, and dependency graph. Pure-function form of
+// (s *Server).handleGetIssue.
+func HandleGetIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		WriteError(w, ErrValidation, "issue ID is required", http.StatusBadRequest)
 		return
 	}
 
-	issue, err := s.db.GetIssue(id)
+	issue, err := ctx.DB.GetIssue(id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, "issue not found: "+id, http.StatusNotFound)
@@ -222,22 +251,22 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch logs
-	logs, err := s.db.GetLogs(issue.ID, 0)
+	logs, err := ctx.DB.GetLogs(issue.ID, 0)
 	if err != nil {
 		logs = nil
 	}
 
 	// Fetch comments
-	comments, err := s.db.GetComments(issue.ID)
+	comments, err := ctx.DB.GetComments(issue.ID)
 	if err != nil {
 		comments = nil
 	}
 
 	// Fetch latest handoff
-	handoff, _ := s.db.GetLatestHandoff(issue.ID)
+	handoff, _ := ctx.DB.GetLatestHandoff(issue.ID)
 
 	// Fetch dependencies (outgoing: what this issue depends on)
-	depIDs, _ := s.db.GetDependencies(issue.ID)
+	depIDs, _ := ctx.DB.GetDependencies(issue.ID)
 	dependencies := make([]DependencyDTO, 0, len(depIDs))
 	for _, depID := range depIDs {
 		dependencies = append(dependencies, DependencyDTO{
@@ -249,7 +278,7 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch blocked_by (incoming: issues that depend on this one)
-	blockedByIDs, _ := s.db.GetBlockedBy(issue.ID)
+	blockedByIDs, _ := ctx.DB.GetBlockedBy(issue.ID)
 	blockedBy := make([]DependencyDTO, 0, len(blockedByIDs))
 	for _, blockerID := range blockedByIDs {
 		blockedBy = append(blockedBy, DependencyDTO{
@@ -277,12 +306,18 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusOK)
 }
 
+func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
+	HandleGetIssue(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // GET /v1/sessions
 // ============================================================================
 
-func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := session.ListSessions(s.db)
+// HandleListSessions returns the list of known sessions and the caller's
+// current session id. Pure-function form of (s *Server).handleListSessions.
+func HandleListSessions(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	sessions, err := session.ListSessions(ctx.DB)
 	if err != nil {
 		WriteError(w, ErrInternal, "failed to list sessions: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -290,16 +325,22 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 
 	WriteSuccess(w, map[string]interface{}{
 		"sessions":           SessionsToDTOs(sessions),
-		"current_session_id": s.sessionID,
+		"current_session_id": ctx.SessionID,
 	}, http.StatusOK)
+}
+
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	HandleListSessions(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // GET /v1/stats
 // ============================================================================
 
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.db.GetExtendedStats()
+// HandleStats returns aggregate counts and progress metrics. Pure-function
+// form of (s *Server).handleStats.
+func HandleStats(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	stats, err := ctx.DB.GetExtendedStats()
 	if err != nil {
 		WriteError(w, ErrInternal, "failed to get stats: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -308,12 +349,18 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	WriteSuccess(w, StatsToDTO(stats), http.StatusOK)
 }
 
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	HandleStats(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // GET /v1/boards
 // ============================================================================
 
-func (s *Server) handleListBoards(w http.ResponseWriter, r *http.Request) {
-	boards, err := s.db.ListBoards()
+// HandleListBoards returns all boards. Pure-function form of
+// (s *Server).handleListBoards.
+func HandleListBoards(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	boards, err := ctx.DB.ListBoards()
 	if err != nil {
 		WriteError(w, ErrInternal, "failed to list boards: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -324,18 +371,25 @@ func (s *Server) handleListBoards(w http.ResponseWriter, r *http.Request) {
 	}, http.StatusOK)
 }
 
+func (s *Server) handleListBoards(w http.ResponseWriter, r *http.Request) {
+	HandleListBoards(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // GET /v1/boards/{id}
 // ============================================================================
 
-func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
+// HandleGetBoard returns a board and its issue list (resolved either via the
+// board's TDQ query or via stored positions). Pure-function form of
+// (s *Server).handleGetBoard.
+func HandleGetBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		WriteError(w, ErrValidation, "board ID is required", http.StatusBadRequest)
 		return
 	}
 
-	board, err := s.db.ResolveBoardRef(id)
+	board, err := ctx.DB.ResolveBoardRef(id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, "board not found: "+id, http.StatusNotFound)
@@ -366,7 +420,7 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 	if board.Query != "" {
 		// Execute TDQ query with neutral @me behavior
 		// Pass empty session ID to neutralize @me clauses
-		queryResults, err := query.Execute(s.db, board.Query, "", query.ExecuteOptions{})
+		queryResults, err := query.Execute(ctx.DB, board.Query, "", query.ExecuteOptions{})
 		if err != nil {
 			WriteError(w, ErrInternal, "board query error: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -388,14 +442,14 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 			filtered = queryResults
 		}
 
-		boardIssues, err = s.db.ApplyBoardPositions(board.ID, filtered)
+		boardIssues, err = ctx.DB.ApplyBoardPositions(board.ID, filtered)
 		if err != nil {
 			WriteError(w, ErrInternal, "failed to apply board positions: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
 		// Empty query - use GetBoardIssues
-		boardIssues, err = s.db.GetBoardIssues(board.ID, s.sessionID, statusFilter)
+		boardIssues, err = ctx.DB.GetBoardIssues(board.ID, ctx.SessionID, statusFilter)
 		if err != nil {
 			WriteError(w, ErrInternal, "failed to get board issues: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -418,6 +472,10 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 		"board":  BoardToDTO(board),
 		"issues": issueDTOs,
 	}, http.StatusOK)
+}
+
+func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
+	HandleGetBoard(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -512,9 +570,10 @@ func resolveSortOptions(sortBy, order string) (string, bool) {
 	return col, desc
 }
 
-// tryTDQSearch attempts a TDQ search and returns issues or an error.
-func (s *Server) tryTDQSearch(search, searchMode string, statuses []models.Status) ([]models.Issue, error) {
-	issues, err := query.Execute(s.db, search, s.sessionID, query.ExecuteOptions{})
+// tryTDQSearch attempts a TDQ search and returns issues or an error. Reads
+// from ctx.DB and uses ctx.SessionID for @me resolution.
+func tryTDQSearch(ctx HandlerContext, search, searchMode string, statuses []models.Status) ([]models.Issue, error) {
+	issues, err := query.Execute(ctx.DB, search, ctx.SessionID, query.ExecuteOptions{})
 	if err != nil {
 		return nil, err
 	}
