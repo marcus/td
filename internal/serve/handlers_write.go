@@ -15,20 +15,47 @@ import (
 	"github.com/marcus/td/internal/query"
 )
 
+// This file contains the write-side HTTP handlers (POST/PATCH/PUT/DELETE for
+// issues, boards, comments, dependencies, focus). Each handler is exported as
+// a pure function that takes a HandlerContext, so the same code can be mounted
+// from td-serve (`*Server`) and from td-sync (per-project HandlerContext built
+// per request). The `(s *Server) handleXxx` methods are thin wrappers retained
+// so the existing route registrations continue to work unchanged.
+//
+// Local-process couplings have been gated:
+//   - git.GetState() is only consulted when ctx.BaseDir != "" (we read it from
+//     the on-disk repo). td-sync passes BaseDir == "" and skips branch capture.
+//   - config.SetFocus / config.ClearFocus require ctx.BaseDir; handlers return
+//     a 503-equivalent when called without one.
+//   - title length limits route through titleLengthLimitsFor(ctx), which
+//     prefers ctx.Config values, then on-disk config, then package defaults.
+//   - Post-mutation notification routes through ctx.Config.NotifyChange (nil
+//     on td-sync; the route adapter promotes action_log to events.db there
+//     instead).
+
+// notifyChange invokes the optional NotifyChange callback. Safe to call when
+// ctx.Config.NotifyChange is nil (td-sync path).
+func notifyChange(ctx HandlerContext) {
+	if ctx.Config.NotifyChange != nil {
+		ctx.Config.NotifyChange()
+	}
+}
+
 // ============================================================================
 // POST /v1/issues — Create Issue
 // ============================================================================
 
-// handleCreateIssue creates a new issue from a JSON request body.
-func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
+// HandleCreateIssue creates a new issue from a JSON request body. Pure-function
+// form of (s *Server).handleCreateIssue.
+func HandleCreateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	var body IssueCreateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		WriteError(w, ErrValidation, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Load configurable title length limits
-	titleMin, titleMax := s.titleLengthLimits()
+	// Resolve configurable title length limits (ctx.Config → on-disk → defaults)
+	titleMin, titleMax := titleLengthLimitsFor(ctx)
 
 	// Validate
 	if errs := ValidateIssueCreate(&body, titleMin, titleMax); len(errs) > 0 {
@@ -50,7 +77,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	// If parent_id provided, verify it exists
 	if body.ParentID != "" {
 		normalizedParent := db.NormalizeIssueID(body.ParentID)
-		_, err := s.db.GetIssue(normalizedParent)
+		_, err := ctx.DB.GetIssue(normalizedParent)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				WriteError(w, ErrNotFound, fmt.Sprintf("parent issue not found: %s", body.ParentID), http.StatusNotFound)
@@ -85,41 +112,50 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		Acceptance:     body.Acceptance,
 		Sprint:         body.Sprint,
 		Minor:          body.Minor,
-		CreatorSession: s.sessionID,
+		CreatorSession: ctx.SessionID,
 		DeferUntil:     deferUntil,
 		DueDate:        dueDate,
 	}
 
-	// Capture current git branch
-	gitState, _ := git.GetState()
-	if gitState != nil {
-		issue.CreatedBranch = gitState.Branch
+	// Capture current git branch only when running against an on-disk td root.
+	// td-sync invocations pass BaseDir == "" and intentionally skip branch
+	// capture (no meaningful local repo to inspect).
+	if ctx.BaseDir != "" {
+		gitState, _ := git.GetState()
+		if gitState != nil {
+			issue.CreatedBranch = gitState.Branch
+		}
 	}
 
 	// Create atomically with action log
-	if err := s.db.CreateIssueLogged(issue, s.sessionID); err != nil {
+	if err := ctx.DB.CreateIssueLogged(issue, ctx.SessionID); err != nil {
 		slog.Error("create issue", "err", err)
 		WriteError(w, ErrInternal, "failed to create issue", http.StatusInternalServerError)
 		return
 	}
 
 	// Record session action for bypass prevention
-	if err := s.db.RecordSessionAction(issue.ID, s.sessionID, models.ActionSessionCreated); err != nil {
+	if err := ctx.DB.RecordSessionAction(issue.ID, ctx.SessionID, models.ActionSessionCreated); err != nil {
 		slog.Warn("failed to record session history", "err", err)
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	dto := IssueToDTO(issue)
 	WriteSuccess(w, map[string]interface{}{"issue": dto}, http.StatusCreated)
+}
+
+func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
+	HandleCreateIssue(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // PATCH /v1/issues/{id} — Update Issue
 // ============================================================================
 
-// handleUpdateIssue applies a partial update to an existing issue.
-func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
+// HandleUpdateIssue applies a partial update to an existing issue.
+// Pure-function form of (s *Server).handleUpdateIssue.
+func HandleUpdateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := r.PathValue("id")
 	if issueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
@@ -132,8 +168,8 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load configurable title length limits
-	titleMin, titleMax := s.titleLengthLimits()
+	// Resolve configurable title length limits
+	titleMin, titleMax := titleLengthLimitsFor(ctx)
 
 	// Validate provided fields
 	if errs := ValidateIssueUpdate(&body, titleMin, titleMax); len(errs) > 0 {
@@ -142,7 +178,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing issue
-	issue, err := s.db.GetIssue(issueID)
+	issue, err := ctx.DB.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -180,7 +216,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		if parentID != "" {
 			// Verify parent exists
 			normalizedParent := db.NormalizeIssueID(parentID)
-			_, err := s.db.GetIssue(normalizedParent)
+			_, err := ctx.DB.GetIssue(normalizedParent)
 			if err != nil {
 				if strings.Contains(err.Error(), "not found") {
 					WriteError(w, ErrNotFound, fmt.Sprintf("parent issue not found: %s", parentID), http.StatusNotFound)
@@ -217,24 +253,29 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update atomically with action log
-	if err := s.db.UpdateIssueLogged(issue, s.sessionID, models.ActionUpdate); err != nil {
+	if err := ctx.DB.UpdateIssueLogged(issue, ctx.SessionID, models.ActionUpdate); err != nil {
 		slog.Error("update issue", "err", err, "id", issueID)
 		WriteError(w, ErrInternal, "failed to update issue", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	dto := IssueToDTO(issue)
 	WriteSuccess(w, map[string]interface{}{"issue": dto}, http.StatusOK)
+}
+
+func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
+	HandleUpdateIssue(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // DELETE /v1/issues/{id} — Soft Delete
 // ============================================================================
 
-// handleDeleteIssue soft-deletes an issue.
-func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
+// HandleDeleteIssue soft-deletes an issue. Pure-function form of
+// (s *Server).handleDeleteIssue.
+func HandleDeleteIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := r.PathValue("id")
 	if issueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
@@ -242,7 +283,7 @@ func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify issue exists
-	issue, err := s.db.GetIssue(issueID)
+	issue, err := ctx.DB.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -254,15 +295,19 @@ func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Soft delete with action log
-	if err := s.db.DeleteIssueLogged(issue.ID, s.sessionID); err != nil {
+	if err := ctx.DB.DeleteIssueLogged(issue.ID, ctx.SessionID); err != nil {
 		slog.Error("delete issue", "err", err, "id", issue.ID)
 		WriteError(w, ErrInternal, "failed to delete issue", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"deleted": true}, http.StatusOK)
+}
+
+func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
+	HandleDeleteIssue(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -275,8 +320,9 @@ type BoardCreateBody struct {
 	Query string `json:"query"`
 }
 
-// handleCreateBoard creates a new board from a JSON request body.
-func (s *Server) handleCreateBoard(w http.ResponseWriter, r *http.Request) {
+// HandleCreateBoard creates a new board from a JSON request body. Pure-function
+// form of (s *Server).handleCreateBoard.
+func HandleCreateBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	var body BoardCreateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		WriteError(w, ErrValidation, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -306,17 +352,21 @@ func (s *Server) handleCreateBoard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	board, err := s.db.CreateBoardLogged(body.Name, body.Query, s.sessionID)
+	board, err := ctx.DB.CreateBoardLogged(body.Name, body.Query, ctx.SessionID)
 	if err != nil {
 		slog.Error("create board", "err", err)
 		WriteError(w, ErrInternal, "failed to create board", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	dto := BoardToDTO(board)
 	WriteSuccess(w, map[string]interface{}{"board": dto}, http.StatusCreated)
+}
+
+func (s *Server) handleCreateBoard(w http.ResponseWriter, r *http.Request) {
+	HandleCreateBoard(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -330,8 +380,9 @@ type BoardUpdateBody struct {
 	Query *string `json:"query"`
 }
 
-// handleUpdateBoard applies a partial update to an existing board.
-func (s *Server) handleUpdateBoard(w http.ResponseWriter, r *http.Request) {
+// HandleUpdateBoard applies a partial update to an existing board.
+// Pure-function form of (s *Server).handleUpdateBoard.
+func HandleUpdateBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	boardID := r.PathValue("id")
 	if boardID == "" {
 		WriteError(w, ErrValidation, "board id is required", http.StatusBadRequest)
@@ -345,7 +396,7 @@ func (s *Server) handleUpdateBoard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve board by ID or name
-	board, err := s.db.ResolveBoardRef(boardID)
+	board, err := ctx.DB.ResolveBoardRef(boardID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("board not found: %s", boardID), http.StatusNotFound)
@@ -391,24 +442,29 @@ func (s *Server) handleUpdateBoard(w http.ResponseWriter, r *http.Request) {
 		board.Query = *body.Query
 	}
 
-	if err := s.db.UpdateBoardLogged(board, s.sessionID); err != nil {
+	if err := ctx.DB.UpdateBoardLogged(board, ctx.SessionID); err != nil {
 		slog.Error("update board", "err", err, "id", boardID)
 		WriteError(w, ErrInternal, "failed to update board", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	dto := BoardToDTO(board)
 	WriteSuccess(w, map[string]interface{}{"board": dto}, http.StatusOK)
+}
+
+func (s *Server) handleUpdateBoard(w http.ResponseWriter, r *http.Request) {
+	HandleUpdateBoard(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // DELETE /v1/boards/{id} — Delete Board
 // ============================================================================
 
-// handleDeleteBoard deletes a board.
-func (s *Server) handleDeleteBoard(w http.ResponseWriter, r *http.Request) {
+// HandleDeleteBoard deletes a board. Pure-function form of
+// (s *Server).handleDeleteBoard.
+func HandleDeleteBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	boardID := r.PathValue("id")
 	if boardID == "" {
 		WriteError(w, ErrValidation, "board id is required", http.StatusBadRequest)
@@ -416,7 +472,7 @@ func (s *Server) handleDeleteBoard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve board by ID or name
-	board, err := s.db.ResolveBoardRef(boardID)
+	board, err := ctx.DB.ResolveBoardRef(boardID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("board not found: %s", boardID), http.StatusNotFound)
@@ -433,15 +489,19 @@ func (s *Server) handleDeleteBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.DeleteBoardLogged(board.ID, s.sessionID); err != nil {
+	if err := ctx.DB.DeleteBoardLogged(board.ID, ctx.SessionID); err != nil {
 		slog.Error("delete board", "err", err, "id", boardID)
 		WriteError(w, ErrInternal, "failed to delete board", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"deleted": true}, http.StatusOK)
+}
+
+func (s *Server) handleDeleteBoard(w http.ResponseWriter, r *http.Request) {
+	HandleDeleteBoard(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -454,8 +514,9 @@ type BoardPositionBody struct {
 	Position int    `json:"position"`
 }
 
-// handleSetBoardPosition sets or updates an issue's position on a board.
-func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) {
+// HandleSetBoardPosition sets or updates an issue's position on a board.
+// Pure-function form of (s *Server).handleSetBoardPosition.
+func HandleSetBoardPosition(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	boardID := r.PathValue("id")
 	if boardID == "" {
 		WriteError(w, ErrValidation, "board id is required", http.StatusBadRequest)
@@ -479,7 +540,7 @@ func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Verify board exists
-	board, err := s.db.ResolveBoardRef(boardID)
+	board, err := ctx.DB.ResolveBoardRef(boardID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("board not found: %s", boardID), http.StatusNotFound)
@@ -492,7 +553,7 @@ func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) 
 
 	// Verify issue exists
 	normalizedIssueID := db.NormalizeIssueID(body.IssueID)
-	_, err = s.db.GetIssue(normalizedIssueID)
+	_, err = ctx.DB.GetIssue(normalizedIssueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", body.IssueID), http.StatusNotFound)
@@ -504,7 +565,7 @@ func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Compute sort key from the position slot
-	sortKey, _, err := s.db.ComputeInsertPosition(board.ID, body.Position)
+	sortKey, _, err := ctx.DB.ComputeInsertPosition(board.ID, body.Position)
 	if err != nil {
 		slog.Error("compute insert position", "err", err, "board_id", board.ID, "position", body.Position)
 		WriteError(w, ErrInternal, "failed to compute position", http.StatusInternalServerError)
@@ -512,23 +573,28 @@ func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Set the position
-	if err := s.db.SetIssuePositionLogged(board.ID, normalizedIssueID, sortKey, s.sessionID); err != nil {
+	if err := ctx.DB.SetIssuePositionLogged(board.ID, normalizedIssueID, sortKey, ctx.SessionID); err != nil {
 		slog.Error("set board position", "err", err, "board_id", board.ID, "issue_id", normalizedIssueID)
 		WriteError(w, ErrInternal, "failed to set position", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"positioned": true}, http.StatusOK)
+}
+
+func (s *Server) handleSetBoardPosition(w http.ResponseWriter, r *http.Request) {
+	HandleSetBoardPosition(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // DELETE /v1/boards/{id}/issues/{issue_id} — Remove Board Position
 // ============================================================================
 
-// handleRemoveBoardPosition removes an issue's explicit position from a board.
-func (s *Server) handleRemoveBoardPosition(w http.ResponseWriter, r *http.Request) {
+// HandleRemoveBoardPosition removes an issue's explicit position from a board.
+// Pure-function form of (s *Server).handleRemoveBoardPosition.
+func HandleRemoveBoardPosition(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	boardID := r.PathValue("id")
 	issueID := r.PathValue("issue_id")
 
@@ -542,7 +608,7 @@ func (s *Server) handleRemoveBoardPosition(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Verify board exists
-	board, err := s.db.ResolveBoardRef(boardID)
+	board, err := ctx.DB.ResolveBoardRef(boardID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("board not found: %s", boardID), http.StatusNotFound)
@@ -555,7 +621,7 @@ func (s *Server) handleRemoveBoardPosition(w http.ResponseWriter, r *http.Reques
 
 	normalizedIssueID := db.NormalizeIssueID(issueID)
 
-	if err := s.db.RemoveIssuePositionLogged(board.ID, normalizedIssueID, s.sessionID); err != nil {
+	if err := ctx.DB.RemoveIssuePositionLogged(board.ID, normalizedIssueID, ctx.SessionID); err != nil {
 		if strings.Contains(err.Error(), "not positioned") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue %s not positioned on board %s", issueID, boardID), http.StatusNotFound)
 		} else {
@@ -565,9 +631,13 @@ func (s *Server) handleRemoveBoardPosition(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"removed": true}, http.StatusOK)
+}
+
+func (s *Server) handleRemoveBoardPosition(w http.ResponseWriter, r *http.Request) {
+	HandleRemoveBoardPosition(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -579,8 +649,9 @@ type CommentCreateBody struct {
 	Text string `json:"text"`
 }
 
-// handleAddComment adds a comment to an issue.
-func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
+// HandleAddComment adds a comment to an issue. Pure-function form of
+// (s *Server).handleAddComment.
+func HandleAddComment(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := r.PathValue("id")
 	if issueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
@@ -604,7 +675,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify issue exists
-	issue, err := s.db.GetIssue(issueID)
+	issue, err := ctx.DB.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -617,28 +688,33 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 
 	comment := &models.Comment{
 		IssueID:   issue.ID,
-		SessionID: s.sessionID,
+		SessionID: ctx.SessionID,
 		Text:      body.Text,
 	}
 
-	if err := s.db.AddComment(comment); err != nil {
+	if err := ctx.DB.AddComment(comment); err != nil {
 		slog.Error("add comment", "err", err, "issue_id", issue.ID)
 		WriteError(w, ErrInternal, "failed to add comment", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	dto := CommentToDTO(comment)
 	WriteSuccess(w, map[string]interface{}{"comment": dto}, http.StatusCreated)
+}
+
+func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
+	HandleAddComment(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // DELETE /v1/issues/{id}/comments/{comment_id} — Delete Comment
 // ============================================================================
 
-// handleDeleteComment deletes a comment from an issue.
-func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+// HandleDeleteComment deletes a comment from an issue. Pure-function form of
+// (s *Server).handleDeleteComment.
+func HandleDeleteComment(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := db.NormalizeIssueID(r.PathValue("id"))
 	commentID := r.PathValue("comment_id")
 
@@ -652,7 +728,7 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up the comment and verify it belongs to this issue
-	comment, err := s.db.GetCommentByID(commentID)
+	comment, err := ctx.DB.GetCommentByID(commentID)
 	if err != nil {
 		slog.Error("get comment for delete", "err", err, "comment_id", commentID)
 		WriteError(w, ErrInternal, "failed to fetch comment", http.StatusInternalServerError)
@@ -668,15 +744,19 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hard-delete with action log
-	if err := s.db.DeleteCommentLogged(commentID, s.sessionID); err != nil {
+	if err := ctx.DB.DeleteCommentLogged(commentID, ctx.SessionID); err != nil {
 		slog.Error("delete comment", "err", err, "comment_id", commentID)
 		WriteError(w, ErrInternal, "failed to delete comment", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"deleted": true}, http.StatusOK)
+}
+
+func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+	HandleDeleteComment(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -688,8 +768,9 @@ type DependencyCreateBody struct {
 	DependsOn string `json:"depends_on"`
 }
 
-// handleAddDependency adds a dependency between two issues.
-func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
+// HandleAddDependency adds a dependency between two issues. Pure-function form
+// of (s *Server).handleAddDependency.
+func HandleAddDependency(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	requestedIssueID := r.PathValue("id")
 	if requestedIssueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
@@ -711,7 +792,7 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issue, err := s.db.GetIssue(requestedIssueID)
+	issue, err := ctx.DB.GetIssue(requestedIssueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", requestedIssueID), http.StatusNotFound)
@@ -725,7 +806,7 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 	dependsOnID := db.NormalizeIssueID(body.DependsOn)
 
 	// Validate both issues exist, check for cycles and duplicates
-	if err := dependency.Validate(s.db, issueID, dependsOnID); err != nil {
+	if err := dependency.Validate(ctx.DB, issueID, dependsOnID); err != nil {
 		if err == dependency.ErrDependencyExists {
 			WriteError(w, ErrConflict, "dependency already exists", http.StatusConflict)
 			return
@@ -745,13 +826,13 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add the dependency with action log
-	if err := s.db.AddDependencyLogged(issueID, dependsOnID, "depends_on", s.sessionID); err != nil {
+	if err := ctx.DB.AddDependencyLogged(issueID, dependsOnID, "depends_on", ctx.SessionID); err != nil {
 		slog.Error("add dependency", "err", err, "issue_id", issueID, "depends_on", dependsOnID)
 		WriteError(w, ErrInternal, "failed to add dependency", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	depID := db.DependencyID(issueID, dependsOnID, "depends_on")
 	dto := DependencyDTO{
@@ -764,12 +845,17 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 	WriteSuccess(w, map[string]interface{}{"dependency": dto}, http.StatusCreated)
 }
 
+func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
+	HandleAddDependency(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // DELETE /v1/issues/{id}/dependencies/{dep_id} — Remove Dependency
 // ============================================================================
 
-// handleDeleteDependency removes a dependency by its dep_id.
-func (s *Server) handleDeleteDependency(w http.ResponseWriter, r *http.Request) {
+// HandleDeleteDependency removes a dependency by its dep_id. Pure-function form
+// of (s *Server).handleDeleteDependency.
+func HandleDeleteDependency(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := db.NormalizeIssueID(r.PathValue("id"))
 	depID := r.PathValue("dep_id")
 
@@ -783,7 +869,7 @@ func (s *Server) handleDeleteDependency(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Look up the dependency by its deterministic dep_id
-	dep, err := s.db.GetDependencyByDepID(depID)
+	dep, err := ctx.DB.GetDependencyByDepID(depID)
 	if err != nil {
 		slog.Error("get dependency for delete", "err", err, "dep_id", depID)
 		WriteError(w, ErrInternal, "failed to fetch dependency", http.StatusInternalServerError)
@@ -801,15 +887,19 @@ func (s *Server) handleDeleteDependency(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Remove with action log
-	if err := s.db.RemoveDependencyLogged(dep.IssueID, dep.DependsOnID, s.sessionID); err != nil {
+	if err := ctx.DB.RemoveDependencyLogged(dep.IssueID, dep.DependsOnID, ctx.SessionID); err != nil {
 		slog.Error("remove dependency", "err", err, "dep_id", depID)
 		WriteError(w, ErrInternal, "failed to remove dependency", http.StatusInternalServerError)
 		return
 	}
 
-	s.NotifyChange()
+	notifyChange(ctx)
 
 	WriteSuccess(w, map[string]interface{}{"removed": true}, http.StatusOK)
+}
+
+func (s *Server) handleDeleteDependency(w http.ResponseWriter, r *http.Request) {
+	HandleDeleteDependency(s.handlerContext(), w, r)
 }
 
 // ============================================================================
@@ -822,17 +912,26 @@ type FocusBody struct {
 	IssueID *string `json:"issue_id"`
 }
 
-// handleSetFocus sets or clears the focused issue via config.json.
-func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
+// HandleSetFocus sets or clears the focused issue via config.json. Requires
+// ctx.BaseDir to be non-empty (focus state lives in the local on-disk config).
+// Pure-function form of (s *Server).handleSetFocus.
+func HandleSetFocus(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	var body FocusBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		WriteError(w, ErrValidation, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Focus is a local-process concept (lives in baseDir/config.json). Callers
+	// without an on-disk td root (td-sync) cannot set focus.
+	if ctx.BaseDir == "" {
+		WriteError(w, ErrInternal, "focus is not available without a local td root", http.StatusServiceUnavailable)
+		return
+	}
+
 	if body.IssueID == nil || *body.IssueID == "" {
 		// Clear focus
-		if err := config.ClearFocus(s.baseDir); err != nil {
+		if err := config.ClearFocus(ctx.BaseDir); err != nil {
 			slog.Error("clear focus", "err", err)
 			WriteError(w, ErrInternal, "failed to clear focus", http.StatusInternalServerError)
 			return
@@ -843,7 +942,7 @@ func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
 
 	// Set focus — verify issue exists first
 	issueID := *body.IssueID
-	issue, err := s.db.GetIssue(issueID)
+	issue, err := ctx.DB.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -854,22 +953,16 @@ func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := config.SetFocus(s.baseDir, issue.ID); err != nil {
+	if err := config.SetFocus(ctx.BaseDir, issue.ID); err != nil {
 		slog.Error("set focus", "err", err, "issue_id", issue.ID)
 		WriteError(w, ErrInternal, "failed to set focus", http.StatusInternalServerError)
 		return
 	}
 
-	// Do NOT trigger sync/NotifyChange for focus changes
+	// Do NOT trigger notifyChange for focus changes
 	WriteSuccess(w, map[string]interface{}{"focused_issue_id": issue.ID}, http.StatusOK)
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-// titleLengthLimits returns the configured or default title length limits.
-func (s *Server) titleLengthLimits() (min, max int) {
-	min, max, _ = config.GetTitleLengthLimits(s.baseDir)
-	return min, max
+func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
+	HandleSetFocus(s.handlerContext(), w, r)
 }

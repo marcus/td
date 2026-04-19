@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 )
 
@@ -17,6 +18,13 @@ type HandlerConfig struct {
 	// means "use default". Populated by S1.2.
 	TitleMin int
 	TitleMax int
+
+	// NotifyChange, when non-nil, is invoked by write handlers after a
+	// successful mutation. The local `td serve` Server uses this to broadcast
+	// SSE refresh events and trigger debounced autosync. td-sync leaves this
+	// nil — its REST routes handle event-log promotion at the route adapter
+	// layer instead.
+	NotifyChange func()
 }
 
 // HandlerContext is the request-scoped dependency bundle that pure handler
@@ -41,7 +49,37 @@ func (s *Server) handlerContext() HandlerContext {
 		SessionID: s.sessionID,
 		BaseDir:   s.baseDir,
 		Config: HandlerConfig{
-			// Read handlers don't read config today; populated in S1.2.
+			// Title limits come from on-disk config; defaults applied in
+			// titleLengthLimitsFor when both are zero.
+			NotifyChange: s.NotifyChange,
 		},
 	}
+}
+
+// titleLengthLimitsFor resolves the effective min/max title length for a
+// handler context. When ctx.Config.TitleMin/TitleMax are zero (e.g. td-sync
+// callers that don't carry per-project title rules), it falls back to the
+// on-disk config at ctx.BaseDir if available, then to the package defaults.
+func titleLengthLimitsFor(ctx HandlerContext) (min, max int) {
+	min = ctx.Config.TitleMin
+	max = ctx.Config.TitleMax
+	if min > 0 && max > 0 {
+		return min, max
+	}
+	if ctx.BaseDir != "" {
+		cmin, cmax, _ := config.GetTitleLengthLimits(ctx.BaseDir)
+		if min <= 0 {
+			min = cmin
+		}
+		if max <= 0 {
+			max = cmax
+		}
+	}
+	if min <= 0 {
+		min = config.DefaultTitleMinLength
+	}
+	if max <= 0 {
+		max = config.DefaultTitleMaxLength
+	}
+	return min, max
 }
