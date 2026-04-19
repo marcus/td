@@ -25,7 +25,16 @@ type ProjectResponse struct {
 
 // handleCreateProject handles POST /v1/projects.
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
-	user := getUserFromContext(r.Context())
+	actor, status, code, message, err := s.resolveProjectActor(r)
+	if err != nil {
+		logFor(r.Context()).Error("resolve project actor", "err", err)
+		writeError(w, status, code, message)
+		return
+	}
+	if status != 0 || actor == nil {
+		writeError(w, status, code, message)
+		return
+	}
 
 	var req CreateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -46,7 +55,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, err := s.store.CreateProjectWithID(projectID, req.Name, req.Description, user.UserID)
+	project, err := s.store.CreateProjectWithID(projectID, req.Name, req.Description, actor.UserID)
 	if err != nil {
 		// Clean up the already-created event DB to avoid orphaned directory
 		if delErr := s.dbPool.Delete(projectID); delErr != nil {
@@ -62,9 +71,18 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 // handleListProjects handles GET /v1/projects.
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	user := getUserFromContext(r.Context())
+	actor, status, code, message, err := s.resolveProjectActor(r)
+	if err != nil {
+		logFor(r.Context()).Error("resolve project actor", "err", err)
+		writeError(w, status, code, message)
+		return
+	}
+	if status != 0 || actor == nil {
+		writeError(w, status, code, message)
+		return
+	}
 
-	projects, err := s.store.ListProjectsForUser(user.UserID)
+	projects, err := s.store.ListProjectsForUser(actor.UserID)
 	if err != nil {
 		logFor(r.Context()).Error("list projects", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list projects")

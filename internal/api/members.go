@@ -30,6 +30,7 @@ type UpdateMemberRequest struct {
 func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 	user := getUserFromContext(r.Context())
+	actor := getActingUserFromContext(r.Context())
 
 	var req AddMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -65,7 +66,12 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m, err := s.store.AddMember(projectID, req.UserID, req.Role, user.UserID)
+	invitedBy := user.UserID
+	if actor != nil && actor.UserID != "" {
+		invitedBy = actor.UserID
+	}
+
+	m, err := s.store.AddMember(projectID, req.UserID, req.Role, invitedBy)
 	if err != nil {
 		logFor(r.Context()).Error("add member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to add member")

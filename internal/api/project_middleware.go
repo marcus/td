@@ -16,6 +16,77 @@ import (
 	"strings"
 )
 
+// ActingUser is the effective user identity for td-watch-originated
+// /v1/projects* requests. When admin view-as is active, this is the target
+// user rather than the authenticated admin.
+type ActingUser struct {
+	UserID          string
+	Email           string
+	IsImpersonating bool
+}
+
+func getActingUserFromContext(ctx context.Context) *ActingUser {
+	v, _ := ctx.Value(ctxKeyActingUser).(*ActingUser)
+	return v
+}
+
+func (s *Server) resolveProjectActor(r *http.Request) (*ActingUser, int, string, string, error) {
+	caller := getUserFromContext(r.Context())
+	if caller == nil {
+		return nil, http.StatusUnauthorized, "unauthorized", "missing auth user", nil
+	}
+
+	actor := &ActingUser{
+		UserID: caller.UserID,
+		Email:  caller.Email,
+	}
+
+	targetID := strings.TrimSpace(r.Header.Get(HeaderTdWatchImpersonate))
+	if targetID == "" || !strings.HasPrefix(r.URL.Path, "/v1/projects") {
+		return actor, 0, "", "", nil
+	}
+
+	if !caller.IsAdmin {
+		return nil, http.StatusForbidden, ErrCodeForbidden, "impersonation header requires admin auth", nil
+	}
+
+	target, err := s.store.GetUserByID(targetID)
+	if err != nil {
+		return nil, http.StatusInternalServerError, ErrCodeInternal, "failed to resolve impersonated user", err
+	}
+	if target == nil {
+		return nil, http.StatusNotFound, ErrCodeNotFound, "impersonated user not found", nil
+	}
+	if target.IsAdmin && target.ID != caller.UserID {
+		return nil, http.StatusForbidden, ErrCodeForbidden, "admin-to-admin view-as is not allowed", nil
+	}
+
+	return &ActingUser{
+		UserID:          target.ID,
+		Email:           target.Email,
+		IsImpersonating: true,
+	}, 0, "", "", nil
+}
+
+func (s *Server) attachProjectActor(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	actor, status, code, message, err := s.resolveProjectActor(r)
+	if err != nil {
+		logFor(r.Context()).Error("resolve project actor", "err", err, "path", r.URL.Path)
+		writeError(w, status, code, message)
+		return nil, false
+	}
+	if status != 0 {
+		writeError(w, status, code, message)
+		return nil, false
+	}
+
+	ctx := context.WithValue(r.Context(), ctxKeyActingUser, actor)
+	if actor.IsImpersonating {
+		ctx = context.WithValue(ctx, ctxKeyLogger, logFor(ctx).With("acting_uid", actor.UserID))
+	}
+	return r.WithContext(ctx), true
+}
+
 // HeaderTdWatchSession carries the td-watch app session id (NOT a Claude/td
 // session). td-watch's BFF forwards this for every project-scoped request so
 // td-sync can derive a stable, attributable action_log session_id.
@@ -39,12 +110,16 @@ const TdWatchServerDeviceID = "td_watch_server"
 // "id" path value. It composes with requireAuth so the inner handler is only
 // invoked after both API-key validation and project authorization succeed.
 //
-// role must be one of serverdb.RoleReader or serverdb.RoleWriter. Admin users
-// bypass the membership check (admins routinely operate cross-project, and
-// the td-watch BFF relies on this for "view as user" reads).
+// role must be one of serverdb.RoleReader or serverdb.RoleWriter. Plain admin
+// requests still bypass membership checks; admin requests carrying
+// X-Td-Watch-Impersonate must satisfy membership as the target user.
 func (s *Server) requireProjectMembership(role string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return s.requireAuthHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r, ok := s.attachProjectActor(w, r)
+			if !ok {
+				return
+			}
 			projectID := r.PathValue("id")
 			if projectID == "" {
 				writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
@@ -58,7 +133,18 @@ func (s *Server) requireProjectMembership(role string) func(http.Handler) http.H
 				return
 			}
 
-			if !user.IsAdmin {
+			actor := getActingUserFromContext(r.Context())
+			if actor == nil || actor.UserID == "" {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "missing acting user")
+				return
+			}
+
+			if actor.IsImpersonating {
+				if err := s.store.Authorize(projectID, actor.UserID, role); err != nil {
+					writeError(w, http.StatusForbidden, "forbidden", err.Error())
+					return
+				}
+			} else if !user.IsAdmin {
 				if err := s.store.Authorize(projectID, user.UserID, role); err != nil {
 					writeError(w, http.StatusForbidden, "forbidden", err.Error())
 					return

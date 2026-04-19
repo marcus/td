@@ -18,6 +18,7 @@ const (
 	_ // reserved
 	ctxKeyLogger
 	ctxKeyTdWatchSessionID
+	ctxKeyActingUser
 )
 
 // AuthUser holds the authenticated user information extracted from the API key.
@@ -220,6 +221,10 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 // the required role for the project identified by the "id" path value.
 func (s *Server) requireProjectAuth(requiredRole string, handler http.HandlerFunc) http.HandlerFunc {
 	return s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		r, ok := s.attachProjectActor(w, r)
+		if !ok {
+			return
+		}
 		projectID := r.PathValue("id")
 		if projectID == "" {
 			writeError(w, http.StatusBadRequest, "bad_request", "missing project id")
@@ -227,9 +232,22 @@ func (s *Server) requireProjectAuth(requiredRole string, handler http.HandlerFun
 		}
 
 		user := getUserFromContext(r.Context())
-		if err := s.store.Authorize(projectID, user.UserID, requiredRole); err != nil {
-			writeError(w, http.StatusForbidden, "forbidden", err.Error())
+		actor := getActingUserFromContext(r.Context())
+		if actor == nil || actor.UserID == "" {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "missing acting user")
 			return
+		}
+
+		if actor.IsImpersonating {
+			if err := s.store.Authorize(projectID, actor.UserID, requiredRole); err != nil {
+				writeError(w, http.StatusForbidden, "forbidden", err.Error())
+				return
+			}
+		} else {
+			if err := s.store.Authorize(projectID, user.UserID, requiredRole); err != nil {
+				writeError(w, http.StatusForbidden, "forbidden", err.Error())
+				return
+			}
 		}
 
 		// Enrich logger with project ID

@@ -259,6 +259,82 @@ func TestImpersonationKey_RejectsProjectPost(t *testing.T) {
 	AssertErrorResponse(t, resp, http.StatusForbidden, "method_not_allowed_view_as")
 }
 
+func TestAdminImpersonationHeader_ListsTargetProjects(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithAdmin("admin@test.com", "admin:read:server,sync").
+		WithUser("target@test.com").
+		WithUser("other@test.com").
+		WithProject("target-proj", "target@test.com").
+		WithProject("other-proj", "other@test.com").
+		Done()
+
+	resp := h.DoWithHeaders(
+		"GET",
+		"/v1/projects",
+		state.AdminToken("admin@test.com"),
+		nil,
+		map[string]string{HeaderTdWatchImpersonate: state.UserID("target@test.com")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var projects []ProjectResponse
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		t.Fatalf("decode projects: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("expected 1 target project, got %d", len(projects))
+	}
+	if projects[0].ID != state.ProjectID("target-proj") {
+		t.Fatalf("got project %q, want %q", projects[0].ID, state.ProjectID("target-proj"))
+	}
+}
+
+func TestAdminImpersonationHeader_CreatesProjectForTargetUser(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithAdmin("admin@test.com", "admin:read:server,sync").
+		WithUser("target@test.com").
+		Done()
+
+	resp := h.DoWithHeaders(
+		"POST",
+		"/v1/projects",
+		state.AdminToken("admin@test.com"),
+		CreateProjectRequest{Name: "impersonated create"},
+		map[string]string{HeaderTdWatchImpersonate: state.UserID("target@test.com")},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+
+	var project ProjectResponse
+	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+
+	targetProjects, err := h.Store.ListProjectsForUser(state.UserID("target@test.com"))
+	if err != nil {
+		t.Fatalf("list target projects: %v", err)
+	}
+	found := false
+	for _, p := range targetProjects {
+		if p.ID == project.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("created project %q not owned by impersonated target", project.ID)
+	}
+}
+
 func TestImpersonationKey_RejectsWrongProject(t *testing.T) {
 	t.Parallel()
 	h := newTestHarness(t)

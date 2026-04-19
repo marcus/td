@@ -123,6 +123,47 @@ func (h *TestHarness) Do(method, path, token string, body any) *http.Response {
 	return resp
 }
 
+func (h *TestHarness) DoWithHeaders(method, path, token string, body any, headers map[string]string) *http.Response {
+	h.t.Helper()
+
+	url := h.BaseURL + path
+
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			h.t.Fatalf("marshal request body: %v", err)
+		}
+	}
+
+	var req *http.Request
+	var err error
+	if body != nil {
+		req, err = http.NewRequest(method, url, &buf)
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+	if err != nil {
+		h.t.Fatalf("create request: %v", err)
+	}
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := h.client.Do(req)
+	if err != nil {
+		h.t.Fatalf("do request %s %s: %v", method, path, err)
+	}
+
+	return resp
+}
+
 // DoJSON sends an HTTP request and decodes the JSON response into out.
 // Fatals if the response status is >= 400 or if JSON decoding fails.
 func (h *TestHarness) DoJSON(method, path, token string, body any, out any) *http.Response {

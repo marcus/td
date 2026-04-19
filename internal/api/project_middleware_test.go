@@ -124,6 +124,42 @@ func TestRequireProjectMembership_AdminAllowedWithoutMembership(t *testing.T) {
 	}
 }
 
+func TestRequireProjectMembership_AdminImpersonationUsesTargetMembership(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, adminToken := createTestAdminKey(t, store, "admin@test.com", "sync")
+	ownerID, _ := createTestUser(t, store, "owner@test.com")
+	targetID, _ := createTestUser(t, store, "target@test.com")
+	pid := newProjectWithMembers(t, store, ownerID, map[string]string{targetID: serverdb.RoleWriter})
+
+	w, called := callMembership(srv, serverdb.RoleWriter, pid, adminToken, map[string]string{
+		HeaderTdWatchImpersonate: targetID,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !*called {
+		t.Fatal("inner handler not invoked")
+	}
+}
+
+func TestRequireProjectMembership_AdminImpersonationForbiddenWhenTargetLacksMembership(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, adminToken := createTestAdminKey(t, store, "admin@test.com", "sync")
+	ownerID, _ := createTestUser(t, store, "owner@test.com")
+	targetID, _ := createTestUser(t, store, "target@test.com")
+	pid := newProjectWithMembers(t, store, ownerID, nil)
+
+	w, called := callMembership(srv, serverdb.RoleReader, pid, adminToken, map[string]string{
+		HeaderTdWatchImpersonate: targetID,
+	})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+	if *called {
+		t.Fatal("inner handler should not be invoked")
+	}
+}
+
 func TestRequireProjectMembership_NoAuthReturns401(t *testing.T) {
 	srv, _ := newTestServer(t)
 	w, called := callMembership(srv, serverdb.RoleReader, "p_nosuch", "", nil)

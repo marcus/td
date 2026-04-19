@@ -326,9 +326,13 @@ func TestUnauthorized_NoMembership(t *testing.T) {
 
 func TestImpersonationHeaders(t *testing.T) {
 	h := newProjectRoutesHarness(t)
+	targetID, _ := createTestUser(t, h.store, "target@test.com")
+	if _, err := h.store.AddMember(h.pid, targetID, serverdb.RoleWriter, h.owner); err != nil {
+		t.Fatalf("add target writer: %v", err)
+	}
 
 	// Admin (first user) impersonates another user via headers. The route
-	// stack is requireAuth -> requireProjectMembership (admin bypass) ->
+	// stack is requireAuth -> requireProjectMembership (target membership) ->
 	// resolveTdWatchSession -> wrap. resolveTdWatchSession should encode the
 	// session_id as twa_<adminSession>_as_<targetUserID>.
 	//
@@ -358,7 +362,7 @@ func TestImpersonationHeaders(t *testing.T) {
 		adminTok, serve.IssueCreateBody{Title: "impersonated write from admin"},
 		map[string]string{
 			HeaderTdWatchSession:     "adminSes",
-			HeaderTdWatchImpersonate: "u_target",
+			HeaderTdWatchImpersonate: targetID,
 		})
 	if createResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(createResp.Body)
@@ -387,8 +391,8 @@ func TestImpersonationHeaders(t *testing.T) {
 			t.Fatalf("scan: %v", err)
 		}
 		t.Logf("action_log row: session=%s action=%s entity=%s/%s", sessionID, actionType, entityType, entityID)
-		if !strings.HasPrefix(sessionID, "twa_") || !strings.Contains(sessionID, "_as_u_target") {
-			t.Errorf("action_log session_id = %q, want twa_*_as_u_target prefix", sessionID)
+		if !strings.HasPrefix(sessionID, "twa_") || !strings.Contains(sessionID, "_as_"+targetID) {
+			t.Errorf("action_log session_id = %q, want twa_*_as_%s prefix", sessionID, targetID)
 			continue
 		}
 		found = true
@@ -397,6 +401,6 @@ func TestImpersonationHeaders(t *testing.T) {
 		t.Fatalf("rows: %v", err)
 	}
 	if !found {
-		t.Fatal("no action_log row matched twa_*_as_u_target shape")
+		t.Fatalf("no action_log row matched twa_*_as_%s shape", targetID)
 	}
 }
