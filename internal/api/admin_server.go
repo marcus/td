@@ -18,6 +18,9 @@ type serverOverviewResponse struct {
 	TotalProjects int             `json:"total_projects"`
 	TotalUsers    int             `json:"total_users"`
 	TotalMembers  int             `json:"total_members"`
+	// CallerUserID is the authenticated admin's own user id. Used by td-watch to
+	// decide when "view as self" is allowed vs. "view as another admin".
+	CallerUserID string `json:"caller_user_id"`
 }
 
 // handleAdminServerOverview returns server overview including uptime, health, metrics, and counts.
@@ -48,6 +51,12 @@ func (s *Server) handleAdminServerOverview(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	caller := getUserFromContext(r.Context())
+	callerID := ""
+	if caller != nil {
+		callerID = caller.UserID
+	}
+
 	writeJSON(w, http.StatusOK, serverOverviewResponse{
 		UptimeSeconds: time.Since(s.startTime).Seconds(),
 		Health:        health,
@@ -55,6 +64,7 @@ func (s *Server) handleAdminServerOverview(w http.ResponseWriter, r *http.Reques
 		TotalProjects: projects,
 		TotalUsers:    users,
 		TotalMembers:  members,
+		CallerUserID:  callerID,
 	})
 }
 

@@ -89,7 +89,7 @@ func TestIssueImpersonationToken_Success(t *testing.T) {
 	}
 }
 
-func TestIssueImpersonationToken_SelfIsForbidden(t *testing.T) {
+func TestIssueImpersonationToken_SelfIsAllowed(t *testing.T) {
 	t.Parallel()
 	h := newTestHarness(t)
 	state := h.Build().
@@ -97,8 +97,64 @@ func TestIssueImpersonationToken_SelfIsForbidden(t *testing.T) {
 		Done()
 
 	adminID := state.UserID("admin@test.com")
-	resp := h.Do("POST", fmt.Sprintf("/v1/admin/users/%s/impersonation-token", adminID), state.AdminToken("admin@test.com"), struct{}{})
-	AssertErrorResponse(t, resp, http.StatusBadRequest, "invalid_target")
+	tok := issueImpersonationToken(t, h, state.AdminToken("admin@test.com"), adminID)
+
+	if !strings.HasPrefix(tok.APIKey, "td_ipk_") {
+		t.Fatalf("expected td_ipk_ prefix, got %q", tok.APIKey)
+	}
+	if tok.Scopes != "impersonation:read" {
+		t.Fatalf("expected impersonation:read scopes, got %q", tok.Scopes)
+	}
+
+	// Key is bound to the admin themselves (target == caller).
+	keys, err := h.Store.ListAPIKeysForUser(adminID)
+	if err != nil {
+		t.Fatalf("list keys: %v", err)
+	}
+	found := false
+	for _, k := range keys {
+		if k.ID == tok.KeyID && k.Scopes == "impersonation:read" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected impersonation key row bound to admin's own user id")
+	}
+
+	// auth_event recorded with admin_user_id == target_user_id.
+	got, err := h.Store.QueryAuthEvents(serverdb.AuthEventImpersonationIssued, "", "", "", 0, "")
+	if err != nil {
+		t.Fatalf("query auth events: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected 1 impersonation_issued event, got %d", len(got.Data))
+	}
+	meta := got.Data[0].Metadata
+	if !strings.Contains(meta, fmt.Sprintf(`"admin_user_id":%q`, adminID)) {
+		t.Fatalf("expected metadata admin_user_id == %q, got %s", adminID, meta)
+	}
+	if !strings.Contains(meta, fmt.Sprintf(`"target_user_id":%q`, adminID)) {
+		t.Fatalf("expected metadata target_user_id == %q, got %s", adminID, meta)
+	}
+}
+
+func TestIssueImpersonationToken_SelfWhenAdmin(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithAdmin("admin@test.com", "admin:read:server,sync").
+		Done()
+
+	adminID := state.UserID("admin@test.com")
+	resp := h.Do("POST",
+		fmt.Sprintf("/v1/admin/users/%s/impersonation-token", adminID),
+		state.AdminToken("admin@test.com"),
+		struct{}{},
+	)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for admin viewing as self, got %d", resp.StatusCode)
+	}
 }
 
 func TestIssueImpersonationToken_TargetIsAdmin(t *testing.T) {
@@ -109,6 +165,7 @@ func TestIssueImpersonationToken_TargetIsAdmin(t *testing.T) {
 		WithAdmin("admin2@test.com", "sync").
 		Done()
 
+	// admin1 targets admin2 (a DIFFERENT admin) — must be rejected with 403.
 	resp := h.Do("POST",
 		fmt.Sprintf("/v1/admin/users/%s/impersonation-token", state.UserID("admin2@test.com")),
 		state.AdminToken("admin1@test.com"),

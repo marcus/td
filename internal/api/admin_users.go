@@ -135,7 +135,7 @@ type impersonationTokenResponse struct {
 // handleAdminIssueImpersonationToken issues a short-lived td_ipk_ key bound
 // to the target user. The caller must be an admin with admin:read:server
 // scope AND must not themselves be using an impersonation key (no chained
-// view-as). Admin-to-self and admin-to-admin targets are rejected.
+// view-as). Admin-to-self is allowed; admin-to-other-admin is rejected.
 func (s *Server) handleAdminIssueImpersonationToken(w http.ResponseWriter, r *http.Request) {
 	caller := getUserFromContext(r.Context())
 
@@ -157,11 +157,6 @@ func (s *Server) handleAdminIssueImpersonationToken(w http.ResponseWriter, r *ht
 	// Drain any body (contract allows empty {}).
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&struct{}{})
 
-	if targetID == caller.UserID {
-		writeError(w, http.StatusBadRequest, "invalid_target", "cannot view as self")
-		return
-	}
-
 	target, err := s.store.GetUserByID(targetID)
 	if err != nil {
 		logFor(r.Context()).Error("admin issue impersonation token: get user", "err", err)
@@ -172,7 +167,7 @@ func (s *Server) handleAdminIssueImpersonationToken(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusNotFound, ErrCodeNotFound, "user not found")
 		return
 	}
-	if target.IsAdmin {
+	if target.IsAdmin && target.ID != caller.UserID {
 		writeError(w, http.StatusForbidden, ErrCodeForbidden, "admin-to-admin view-as is not allowed")
 		return
 	}
