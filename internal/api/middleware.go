@@ -17,6 +17,7 @@ const (
 	ctxKeyRequestID
 	_ // reserved
 	ctxKeyLogger
+	ctxKeyTdWatchSessionID
 )
 
 // AuthUser holds the authenticated user information extracted from the API key.
