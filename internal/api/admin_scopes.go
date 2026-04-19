@@ -14,6 +14,11 @@ const (
 	AdminScopeExport        = "admin:export"
 )
 
+// ImpersonationScopeRead is the scope carried by admin "view-as" ephemeral
+// keys. It is NOT an admin scope — it grants read-only access to the target
+// user's /v1/projects/* surface and nothing else.
+const ImpersonationScopeRead = "impersonation:read"
+
 // ValidAdminScopes contains all recognized admin scopes.
 var ValidAdminScopes = map[string]bool{
 	AdminScopeReadServer:    true,
@@ -23,8 +28,9 @@ var ValidAdminScopes = map[string]bool{
 	AdminScopeExport:        true,
 }
 
-// ValidateScopes checks that every comma-separated scope is either "sync" or
-// a recognized admin scope. Returns an error listing the first invalid scope.
+// ValidateScopes checks that every comma-separated scope is either "sync",
+// a recognized admin scope, or the impersonation:read scope. Returns an
+// error listing the first invalid scope.
 func ValidateScopes(scopes string) error {
 	if scopes == "" {
 		return nil
@@ -34,7 +40,7 @@ func ValidateScopes(scopes string) error {
 		if s == "" {
 			continue
 		}
-		if s == "sync" {
+		if s == "sync" || s == ImpersonationScopeRead {
 			continue
 		}
 		if !ValidAdminScopes[s] {

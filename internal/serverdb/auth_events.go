@@ -19,11 +19,12 @@ type AuthEvent struct {
 
 // Auth event type constants.
 const (
-	AuthEventStarted      = "started"
-	AuthEventCodeVerified = "code_verified"
-	AuthEventKeyIssued    = "key_issued"
-	AuthEventExpired      = "expired"
-	AuthEventFailed       = "failed"
+	AuthEventStarted              = "started"
+	AuthEventCodeVerified         = "code_verified"
+	AuthEventKeyIssued            = "key_issued"
+	AuthEventExpired              = "expired"
+	AuthEventFailed               = "failed"
+	AuthEventImpersonationIssued  = "impersonation_issued"
 )
 
 // InsertAuthEvent inserts an auth event row.

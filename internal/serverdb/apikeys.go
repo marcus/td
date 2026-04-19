@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	apiKeyPrefix = "td_live_"
-	keyLength    = 32
+	apiKeyPrefix             = "td_live_"
+	impersonationKeyPrefix   = "td_ipk_"
+	keyLength                = 32
 )
 
 var base62Chars = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
@@ -141,6 +142,100 @@ func (db *ServerDB) RevokeAPIKey(keyID, userID string) error {
 		return fmt.Errorf("api key not found or not owned by user")
 	}
 	return nil
+}
+
+// GenerateImpersonationKey creates a new short-lived ephemeral "view-as"
+// key for the target user. Uses the td_ipk_ prefix and stores the row with
+// scopes = "impersonation:read". Any existing unexpired td_ipk_ keys for the
+// same target user are revoked first ("last one wins").
+func (db *ServerDB) GenerateImpersonationKey(targetUserID string, ttl time.Duration) (string, *APIKey, error) {
+	// Validate user exists
+	var exists int
+	if err := db.conn.QueryRow(`SELECT 1 FROM users WHERE id = ?`, targetUserID).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil, fmt.Errorf("user not found: %s", targetUserID)
+		}
+		return "", nil, fmt.Errorf("check user: %w", err)
+	}
+
+	now := time.Now().UTC()
+
+	// Revoke any existing unexpired td_ipk_ keys for this user.
+	if _, err := db.conn.Exec(
+		`DELETE FROM api_keys WHERE user_id = ? AND key_prefix LIKE 'ipk_%' AND (expires_at IS NULL OR expires_at > ?)`,
+		targetUserID, now,
+	); err != nil {
+		return "", nil, fmt.Errorf("revoke existing impersonation keys: %w", err)
+	}
+
+	id, err := generateID("ak_")
+	if err != nil {
+		return "", nil, fmt.Errorf("generate api key id: %w", err)
+	}
+
+	secret := make([]byte, keyLength)
+	for i := range secret {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(base62Chars))))
+		if err != nil {
+			return "", nil, fmt.Errorf("generate random key: %w", err)
+		}
+		secret[i] = base62Chars[n.Int64()]
+	}
+
+	plaintext := impersonationKeyPrefix + string(secret)
+	// key_prefix is stored as "ipk_" + first 4 chars of secret to make it
+	// identifiable in queries (see DELETE above) while remaining opaque.
+	prefix := "ipk_" + string(secret[:4])
+
+	hash := sha256.Sum256([]byte(plaintext))
+	keyHash := hex.EncodeToString(hash[:])
+
+	expiresAt := now.Add(ttl)
+
+	_, err = db.conn.Exec(
+		`INSERT INTO api_keys (id, user_id, key_hash, key_prefix, name, scopes, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, targetUserID, keyHash, prefix, "view-as", "impersonation:read", expiresAt, now,
+	)
+	if err != nil {
+		return "", nil, fmt.Errorf("insert impersonation key: %w", err)
+	}
+
+	ak := &APIKey{
+		ID:        id,
+		UserID:    targetUserID,
+		KeyPrefix: prefix,
+		Name:      "view-as",
+		Scopes:    "impersonation:read",
+		ExpiresAt: &expiresAt,
+		CreatedAt: now,
+	}
+	return plaintext, ak, nil
+}
+
+// ExtendImpersonationKey extends the expires_at of an impersonation key by
+// renewTTL, capped at cap from the key's created_at. Also updates last_used_at
+// to now. Returns the new expires_at. No-ops silently (logs a warning) on
+// failure — callers should not fail the request over a stats update.
+func (db *ServerDB) ExtendImpersonationKey(keyID string, renewTTL, maxTTL time.Duration) {
+	now := time.Now().UTC()
+	var createdAt time.Time
+	if err := db.conn.QueryRow(
+		`SELECT created_at FROM api_keys WHERE id = ?`, keyID,
+	).Scan(&createdAt); err != nil {
+		slog.Warn("extend impersonation key: lookup", "key_id", keyID, "err", err)
+		return
+	}
+	renewed := now.Add(renewTTL)
+	cap := createdAt.Add(maxTTL)
+	if renewed.After(cap) {
+		renewed = cap
+	}
+	if _, err := db.conn.Exec(
+		`UPDATE api_keys SET expires_at = ?, last_used_at = ? WHERE id = ?`,
+		renewed, now, keyID,
+	); err != nil {
+		slog.Warn("extend impersonation key: update", "key_id", keyID, "err", err)
+	}
 }
 
 // ListAPIKeys returns all API keys for a user (without secrets).

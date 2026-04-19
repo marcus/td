@@ -20,6 +20,7 @@ const (
 	ErrCodeAlreadyUsed            = "already_used"
 	ErrCodeNoEvents               = "no_events"
 	ErrCodeNotImplemented         = "not_implemented"
+	ErrCodeMethodNotAllowedViewAs = "method_not_allowed_view_as"
 	// New codes for sections 9.5, 10
 	ErrCodeProjectDeleted      = "project_deleted"
 	ErrCodeSnapshotUnavailable = "snapshot_unavailable"

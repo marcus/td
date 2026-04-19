@@ -176,9 +176,41 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 			IsAdmin: isAdmin,
 		}
 
+		// Impersonation ("view-as") keys are tightly scoped: GET on
+		// /v1/projects/* only, with a sliding TTL bumped per successful
+		// request.
+		isImpersonation := false
+		for _, sc := range scopes {
+			if sc == ImpersonationScopeRead {
+				isImpersonation = true
+				break
+			}
+		}
+		if isImpersonation {
+			path := r.URL.Path
+			if !strings.HasPrefix(path, "/v1/projects") {
+				writeError(w, http.StatusForbidden, ErrCodeForbidden, "impersonation key is limited to /v1/projects read access")
+				return
+			}
+			if r.Method != http.MethodGet {
+				writeError(w, http.StatusForbidden, ErrCodeMethodNotAllowedViewAs, "read-only while viewing as user")
+				return
+			}
+		}
+
 		ctx := context.WithValue(r.Context(), ctxKeyAuthUser, authUser)
 		// Enrich logger with user ID
 		ctx = context.WithValue(ctx, ctxKeyLogger, logFor(ctx).With("uid", user.ID))
+
+		if isImpersonation {
+			sc := &statusCapture{ResponseWriter: w, code: http.StatusOK}
+			handler(sc, r.WithContext(ctx))
+			if sc.code < 400 {
+				s.store.ExtendImpersonationKey(ak.ID, impersonationRenewTTL, impersonationMaxTTL)
+			}
+			return
+		}
+
 		handler(w, r.WithContext(ctx))
 	}
 }

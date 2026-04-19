@@ -1,11 +1,20 @@
 package api
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/marcus/td/internal/serverdb"
+)
+
+// Impersonation key TTL parameters. Exposed as vars for tests.
+var (
+	impersonationInitialTTL = 15 * time.Minute
+	impersonationRenewTTL   = 5 * time.Minute
+	impersonationMaxTTL     = 4 * time.Hour
 )
 
 // handleAdminListUsers returns a paginated list of users with aggregate info.
@@ -113,6 +122,84 @@ func (s *Server) handleAdminUserKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"data": resp})
+}
+
+// impersonationTokenResponse is the JSON shape for an issued impersonation token.
+type impersonationTokenResponse struct {
+	KeyID     string `json:"key_id"`
+	APIKey    string `json:"api_key"`
+	ExpiresAt string `json:"expires_at"`
+	Scopes    string `json:"scopes"`
+}
+
+// handleAdminIssueImpersonationToken issues a short-lived td_ipk_ key bound
+// to the target user. The caller must be an admin with admin:read:server
+// scope AND must not themselves be using an impersonation key (no chained
+// view-as). Admin-to-self and admin-to-admin targets are rejected.
+func (s *Server) handleAdminIssueImpersonationToken(w http.ResponseWriter, r *http.Request) {
+	caller := getUserFromContext(r.Context())
+
+	// Block chained view-as: an impersonation key must not be able to issue
+	// another impersonation key.
+	for _, sc := range caller.Scopes {
+		if sc == ImpersonationScopeRead {
+			writeError(w, http.StatusForbidden, ErrCodeForbidden, "chained view-as is not allowed")
+			return
+		}
+	}
+
+	targetID := r.PathValue("id")
+	if targetID == "" {
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing user id")
+		return
+	}
+
+	// Drain any body (contract allows empty {}).
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&struct{}{})
+
+	if targetID == caller.UserID {
+		writeError(w, http.StatusBadRequest, "invalid_target", "cannot view as self")
+		return
+	}
+
+	target, err := s.store.GetUserByID(targetID)
+	if err != nil {
+		logFor(r.Context()).Error("admin issue impersonation token: get user", "err", err)
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get user")
+		return
+	}
+	if target == nil {
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "user not found")
+		return
+	}
+	if target.IsAdmin {
+		writeError(w, http.StatusForbidden, ErrCodeForbidden, "admin-to-admin view-as is not allowed")
+		return
+	}
+
+	plaintext, ak, err := s.store.GenerateImpersonationKey(target.ID, impersonationInitialTTL)
+	if err != nil {
+		logFor(r.Context()).Error("admin issue impersonation token: generate", "err", err)
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to issue impersonation token")
+		return
+	}
+
+	meta, _ := json.Marshal(map[string]string{
+		"admin_user_id":  caller.UserID,
+		"target_user_id": target.ID,
+		"key_id":         ak.ID,
+	})
+	if err := s.store.InsertAuthEvent("", target.Email, serverdb.AuthEventImpersonationIssued, string(meta)); err != nil {
+		slog.Warn("log impersonation issued", "err", err)
+	}
+
+	resp := impersonationTokenResponse{
+		KeyID:     ak.ID,
+		APIKey:    plaintext,
+		ExpiresAt: ak.ExpiresAt.UTC().Format(time.RFC3339),
+		Scopes:    ak.Scopes,
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleAdminAuthEvents returns paginated auth events with optional filters.

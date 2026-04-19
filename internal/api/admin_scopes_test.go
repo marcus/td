@@ -20,6 +20,7 @@ func TestValidateScopes(t *testing.T) {
 		{"mixed valid and invalid", "sync,admin:read:server,bogus", true},
 		{"completely unknown", "foo", true},
 		{"trailing comma (empty part)", "sync,", false},
+		{"impersonation read scope", "impersonation:read", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

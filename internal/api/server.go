@@ -201,6 +201,7 @@ func (s *Server) routes() http.Handler {
 	adminMux.HandleFunc("GET /v1/admin/users", s.requireAdmin(AdminScopeReadServer, s.handleAdminListUsers))
 	adminMux.HandleFunc("GET /v1/admin/users/{id}", s.requireAdmin(AdminScopeReadServer, s.handleAdminGetUser))
 	adminMux.HandleFunc("GET /v1/admin/users/{id}/keys", s.requireAdmin(AdminScopeReadServer, s.handleAdminUserKeys))
+	adminMux.HandleFunc("POST /v1/admin/users/{id}/impersonation-token", s.requireAdmin(AdminScopeReadServer, s.handleAdminIssueImpersonationToken))
 	adminMux.HandleFunc("GET /v1/admin/auth/events", s.requireAdmin(AdminScopeReadServer, s.handleAdminAuthEvents))
 	adminMux.HandleFunc("GET /v1/admin/projects", s.requireAdmin(AdminScopeReadProjects, s.handleAdminListProjects))
 	adminMux.HandleFunc("GET /v1/admin/projects/{id}", s.requireAdmin(AdminScopeReadProjects, s.handleAdminGetProject))
