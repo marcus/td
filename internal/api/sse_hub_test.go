@@ -105,40 +105,130 @@ func TestSSEHub_Broadcast_DeliveredToSubscribers(t *testing.T) {
 	}
 }
 
-// TestSSEHub_Broadcast_SlowClientGetsRefresh verifies that a subscriber with a
-// full channel receives a refresh event instead of a dropped event.
+// TestSSEHub_Broadcast_SlowClientGetsRefresh verifies the named behavior: a
+// subscriber whose normal event slots are saturated receives a refresh event
+// rather than a silent drop. This asserts the actual delivery, not just
+// non-blocking execution.
+//
+// Mechanism: each subscriber channel has capacity eventSlots+1 (17). Broadcast
+// treats positions 0–15 as normal slots and position 16 as a reserved refresh
+// slot. When all 16 normal slots are occupied, the next broadcast puts a refresh
+// in the reserved slot. The subscriber can drain all 17 events and inspect them.
+//
+// Because Broadcast holds the hub mutex, the len check is race-free with
+// respect to concurrent Broadcast calls. The subscriber (reader) only reduces
+// len, so the check is conservative and the subsequent direct send is safe.
 func TestSSEHub_Broadcast_SlowClientGetsRefresh(t *testing.T) {
 	hub := newSSEHub(nil)
-
-	// Pre-fill the channel by registering, filling it, then broadcasting.
 	ch := hub.Register()
 	defer hub.Unregister(ch)
 
-	// Fill the buffer completely (capacity 16).
-	filler := ProjectEvent{Type: EventRefresh, ChangeToken: "filler", Timestamp: time.Now()}
-	for range 16 {
-		ch <- filler
+	// Saturate all 16 normal slots by broadcasting 16 events without reading.
+	// Since no goroutine drains ch, the events accumulate in the buffer.
+	filler := ProjectEvent{
+		Type:        EventIssueUpserted,
+		IssueID:     "filler",
+		ChangeToken: "f",
+		Timestamp:   time.Now(),
+	}
+	for range eventSlots {
+		hub.Broadcast(filler)
 	}
 
-	// Now broadcast an issue event; channel is full so client should get
-	// a refresh event queued (if there were space, but since it's full it
-	// will be dropped at the second select too — that's acceptable). What
-	// we assert is that Broadcast does NOT block.
+	// Broadcast one more event: normal slots are full, so Broadcast must queue
+	// a refresh in the reserved 17th slot. Assert it does not block.
+	overflow := ProjectEvent{
+		Type:        EventIssueUpserted,
+		IssueID:     "issue-slow",
+		ChangeToken: "tok-slow",
+		Timestamp:   time.Now(),
+	}
 	done := make(chan struct{})
 	go func() {
-		hub.Broadcast(ProjectEvent{
-			Type:        EventIssueUpserted,
-			IssueID:     "issue-slow",
-			ChangeToken: "tok-slow",
-			Timestamp:   time.Now(),
-		})
+		hub.Broadcast(overflow)
 		close(done)
 	}()
-
 	select {
 	case <-done:
 		// Good: Broadcast returned without blocking.
 	case <-time.After(time.Second):
 		t.Fatal("Broadcast blocked on full client channel")
+	}
+
+	// Drain all eventSlots+1 events and assert exactly one is a refresh with
+	// the overflow's change token. Order is deterministic here (single writer,
+	// single reader, FIFO channel): the 16 filler events arrive first, then
+	// the refresh. We assert generically to be resilient to any reordering.
+	deadline := time.After(2 * time.Second)
+	var gotRefresh bool
+	for range eventSlots + 1 {
+		select {
+		case got := <-ch:
+			if got.Type == EventRefresh {
+				gotRefresh = true
+				if got.ChangeToken != overflow.ChangeToken {
+					t.Errorf("refresh has wrong change_token: want %q got %q",
+						overflow.ChangeToken, got.ChangeToken)
+				}
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for all events (16 fillers + 1 refresh)")
+		}
+	}
+	if !gotRefresh {
+		t.Error("slow client did not receive a refresh event; overflow was silently dropped")
+	}
+}
+
+// TestSSEHubRegistry_IdleCleanup_Race verifies the idle-cleanup race is closed.
+//
+// The race: after Unregister releases h.mu, a concurrent GetOrCreate on the
+// fast RLock path can retrieve the hub (still in the registry map) and register
+// a new subscriber. remove() must not delete a hub that acquired a live
+// subscriber since onEmpty was called.
+//
+// The fix: remove() re-reads the hub under the write lock and calls
+// hub.ClientCount(). If ClientCount() > 0, it skips the delete. This test
+// validates that Broadcast reaches the post-race subscriber.
+func TestSSEHubRegistry_IdleCleanup_Race(t *testing.T) {
+	const project = "proj-race"
+	reg := NewSSEHubRegistry()
+
+	// Create hub, register one subscriber, then unregister (triggers remove).
+	hub := reg.GetOrCreate(project)
+	ch := hub.Register()
+	hub.Unregister(ch) // onEmpty → remove(); hub count should be 0 now
+
+	if reg.HubCount() != 0 {
+		t.Fatalf("expected 0 hubs after full unregister, got %d", reg.HubCount())
+	}
+
+	// Simulate the racy GetOrCreate: creates a new hub and immediately
+	// registers a subscriber. If remove() had not guarded ClientCount, a
+	// concurrent late-arriving remove() could evict this hub.
+	hub2 := reg.GetOrCreate(project)
+	ch2 := hub2.Register()
+	defer hub2.Unregister(ch2)
+
+	if reg.HubCount() != 1 {
+		t.Fatalf("expected 1 hub after re-create, got %d", reg.HubCount())
+	}
+
+	// Broadcast through the registry must reach the subscriber on hub2.
+	ev := ProjectEvent{
+		Type:        EventIssueUpserted,
+		IssueID:     "race-issue",
+		ChangeToken: "tok-race",
+		Timestamp:   time.Now().UTC(),
+	}
+	reg.Broadcast(project, ev)
+
+	select {
+	case got := <-ch2:
+		if got.Type != EventIssueUpserted || got.IssueID != "race-issue" {
+			t.Errorf("unexpected event: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("broadcast did not reach subscriber after idle-cleanup race")
 	}
 }
