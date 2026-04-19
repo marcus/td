@@ -70,13 +70,42 @@ func runReleaseNotesCommand(t *testing.T, dir string, args ...string) (string, e
 	saveAndRestoreGlobals(t)
 	baseDir := dir
 	baseDirOverride = &baseDir
-	_ = releaseNotesCmd.Flags().Set("from", "")
-	_ = releaseNotesCmd.Flags().Set("to", "HEAD")
-	_ = releaseNotesCmd.Flags().Set("range", "")
-	_ = releaseNotesCmd.Flags().Set("output", "markdown")
-	_ = releaseNotesCmd.Flags().Set("include-files", "false")
-	_ = releaseNotesCmd.Flags().Set("include-stats", "false")
-	_ = releaseNotesCmd.Flags().Set("title", "Release Notes Draft")
+	resetReleaseNotesFlags(t)
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+
+		name := strings.TrimLeft(arg, "-")
+		if eq := strings.Index(name, "="); eq != -1 {
+			flagName := name[:eq]
+			flagValue := name[eq+1:]
+			if err := releaseNotesCmd.Flags().Set(flagName, flagValue); err != nil {
+				t.Fatalf("set flag %s: %v", flagName, err)
+			}
+			continue
+		}
+
+		flag := releaseNotesCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("flag %s not found", name)
+		}
+		if flag.NoOptDefVal != "" {
+			if err := releaseNotesCmd.Flags().Set(name, flag.NoOptDefVal); err != nil {
+				t.Fatalf("set bool flag %s: %v", name, err)
+			}
+			continue
+		}
+		if i+1 >= len(args) {
+			t.Fatalf("missing value for flag %s", arg)
+		}
+		if err := releaseNotesCmd.Flags().Set(name, args[i+1]); err != nil {
+			t.Fatalf("set flag %s: %v", name, err)
+		}
+		i++
+	}
 
 	var output bytes.Buffer
 	oldStdout := os.Stdout
@@ -93,6 +122,31 @@ func runReleaseNotesCommand(t *testing.T, dir string, args ...string) (string, e
 	_, _ = io.Copy(&output, r)
 
 	return output.String(), runErr
+}
+
+func resetReleaseNotesFlags(t *testing.T) {
+	t.Helper()
+
+	defaults := map[string]string{
+		"from":          "",
+		"to":            "HEAD",
+		"range":         "",
+		"output":        "markdown",
+		"include-files": "false",
+		"include-stats": "false",
+		"title":         "Release Notes Draft",
+	}
+
+	for name, value := range defaults {
+		flag := releaseNotesCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("flag %s not found", name)
+		}
+		if err := flag.Value.Set(value); err != nil {
+			t.Fatalf("reset flag %s: %v", name, err)
+		}
+		flag.Changed = false
+	}
 }
 
 func TestReleaseNotesCommandOutputsMarkdownDraft(t *testing.T) {
@@ -173,5 +227,21 @@ func TestReleaseNotesCommandErrorsWithoutTags(t *testing.T) {
 	_, err := runReleaseNotesCommand(t, dir)
 	if err == nil || !strings.Contains(err.Error(), "no tags found") {
 		t.Fatalf("expected no-tags error, got %v", err)
+	}
+}
+
+func TestReleaseNotesCommandAcceptsExplicitRange(t *testing.T) {
+	dir := initReleaseNotesRepo(t)
+
+	output, err := runReleaseNotesCommand(t, dir, "--range", "v0.1.0..HEAD")
+	if err != nil {
+		t.Fatalf("RunE error: %v", err)
+	}
+
+	if !strings.Contains(output, "_Range: `v0.1.0..HEAD`_") {
+		t.Fatalf("expected explicit range in output:\n%s", output)
+	}
+	if !strings.Contains(output, "- Add release notes command") {
+		t.Fatalf("expected feature entry in output:\n%s", output)
 	}
 }

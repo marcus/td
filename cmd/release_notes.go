@@ -33,6 +33,16 @@ var releaseNotesCmd = &cobra.Command{
 		includeStats, _ := cmd.Flags().GetBool("include-stats")
 		title, _ := cmd.Flags().GetString("title")
 
+		if !cmd.Flags().Changed("from") {
+			from = ""
+		}
+		if !cmd.Flags().Changed("to") {
+			to = ""
+		}
+		if !cmd.Flags().Changed("range") {
+			rangeArg = ""
+		}
+
 		revisionRange, err := repo.ResolveRevisionRange(from, to, rangeArg)
 		if err != nil {
 			if errors.Is(err, git.ErrNoTagsFound) {
