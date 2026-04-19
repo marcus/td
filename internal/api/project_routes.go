@@ -3,7 +3,7 @@
 //
 // This file is the Stream 2.3 deliverable for the td-watch rich UI plan
 // (docs/td-watch-rich-ui-plan.md §6). It registers the
-// `/v1/projects/{id}/{issues,boards,focus,stats,sessions}` surface alongside
+// `/v1/projects/{id}/{issues,boards,focus,stats,sessions,labels}` surface alongside
 // the existing /v1/projects/{id}/sync/* CLI sync routes, composing:
 //
 //	requireAuth -> requireProjectMembership -> resolveTdWatchSession
@@ -124,7 +124,8 @@ func (s *Server) projectReadChain(h http.HandlerFunc) http.HandlerFunc {
 
 // registerProjectRoutes wires all Perch-shape /v1/projects/{id}/* routes onto
 // the supplied mux. The full inventory below mirrors td-serve's route table
-// and matches the plan §6.2 list.
+// and matches the plan §6.2 list plus the follow-up labels catalog route used
+// by td-watch rich issue fields.
 func (s *Server) registerProjectRoutes(mux *http.ServeMux) {
 	// Path-var remappings:
 	//   project routes use {iid} for the issue id inside /issues/{iid}
@@ -210,4 +211,6 @@ func (s *Server) registerProjectRoutes(mux *http.ServeMux) {
 		s.projectReadChain(s.wrapServeHandler(serve.HandleStats)))
 	mux.HandleFunc("GET /v1/projects/{id}/sessions",
 		s.projectReadChain(s.wrapServeHandler(serve.HandleListSessions)))
+	mux.HandleFunc("GET /v1/projects/{id}/labels",
+		s.projectReadChain(s.wrapServeHandler(serve.HandleListLabels)))
 }

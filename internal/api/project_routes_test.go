@@ -297,6 +297,55 @@ func TestListIssues_Filters(t *testing.T) {
 	}
 }
 
+func TestProjectLabelsCatalog(t *testing.T) {
+	h := newProjectRoutesHarness(t)
+
+	for _, body := range []serve.IssueCreateBody{
+		{Title: "Project labels one", Labels: []string{"dispatch", "agent:codex"}},
+		{Title: "Project labels two", Labels: []string{"backend", "dispatch"}},
+	} {
+		resp := h.do(t, "POST", fmt.Sprintf("/v1/projects/%s/issues", h.pid),
+			h.ownerTok, body, map[string]string{HeaderTdWatchSession: "ses1"})
+		if resp.StatusCode != http.StatusCreated {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("seed create: status=%d body=%s", resp.StatusCode, respBody)
+		}
+		resp.Body.Close()
+	}
+
+	resp := h.do(t, "GET", fmt.Sprintf("/v1/projects/%s/labels", h.pid),
+		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses1"})
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("GET /labels: status=%d body=%s", resp.StatusCode, respBody)
+	}
+
+	var got struct {
+		Labels          []string         `json:"labels"`
+		Workflows       []map[string]any `json:"workflows"`
+		DefaultWorkflow string           `json:"default_workflow"`
+	}
+	readEnvelope(t, resp, &got)
+
+	want := []string{"agent:codex", "backend", "dispatch"}
+	if len(got.Labels) != len(want) {
+		t.Fatalf("labels len = %d, want %d (%v)", len(got.Labels), len(want), got.Labels)
+	}
+	for i := range want {
+		if got.Labels[i] != want[i] {
+			t.Fatalf("labels[%d] = %q, want %q (full=%v)", i, got.Labels[i], want[i], got.Labels)
+		}
+	}
+	if len(got.Workflows) != 0 {
+		t.Fatalf("workflows len = %d, want 0", len(got.Workflows))
+	}
+	if got.DefaultWorkflow != "standard" {
+		t.Fatalf("default_workflow = %q, want standard", got.DefaultWorkflow)
+	}
+}
+
 // --- TestUnauthorized_NoMembership ----------------------------------------
 
 func TestUnauthorized_NoMembership(t *testing.T) {

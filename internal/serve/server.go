@@ -196,6 +196,7 @@ func (s *Server) registerRoutes() {
 
 	// Stats (read)
 	s.mux.HandleFunc("GET /v1/stats", s.handleStats)
+	s.mux.HandleFunc("GET /v1/labels", s.handleListLabels)
 
 	// SSE events
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)

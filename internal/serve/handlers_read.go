@@ -354,6 +354,30 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// GET /v1/labels
+// ============================================================================
+
+// HandleListLabels returns the distinct label catalog for the project. Pure-
+// function form of (s *Server).handleListLabels.
+func HandleListLabels(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	labels, err := ctx.DB.ListDistinctLabels()
+	if err != nil {
+		WriteError(w, ErrInternal, "failed to list labels: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"labels":           labels,
+		"workflows":        []interface{}{},
+		"default_workflow": "standard",
+	}, http.StatusOK)
+}
+
+func (s *Server) handleListLabels(w http.ResponseWriter, r *http.Request) {
+	HandleListLabels(s.handlerContext(), w, r)
+}
+
+// ============================================================================
 // GET /v1/boards
 // ============================================================================
 

@@ -550,6 +550,76 @@ func TestIntegration_ListIssues_FilterByLabels(t *testing.T) {
 	}
 }
 
+func TestIntegration_ListLabels_ReturnsDistinctSortedCatalog(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Label catalog one",
+		"labels": []string{"dispatch", "agent:codex"},
+	})
+	iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Label catalog two",
+		"labels": []string{"backend", "dispatch"},
+	})
+
+	closedID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Closed issue label source",
+		"labels": []string{"release"},
+	})
+	closeResp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+closedID+"/close", map[string]interface{}{})
+	if closeResp.StatusCode != http.StatusOK {
+		t.Fatalf("close issue: status=%d", closeResp.StatusCode)
+	}
+	closeResp.Body.Close()
+
+	deletedID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":  "Deleted issue label source",
+		"labels": []string{"ghost"},
+	})
+	deleteResp := iDoJSON(t, "DELETE", baseURL+"/v1/issues/"+deletedID, nil)
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete issue: status=%d", deleteResp.StatusCode)
+	}
+	deleteResp.Body.Close()
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/labels", nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("list labels failed")
+	}
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshal response data: %v", err)
+	}
+
+	var payload struct {
+		Labels          []string         `json:"labels"`
+		Workflows       []map[string]any `json:"workflows"`
+		DefaultWorkflow string           `json:"default_workflow"`
+	}
+	if err := json.Unmarshal(dataBytes, &payload); err != nil {
+		t.Fatalf("decode labels payload: %v", err)
+	}
+
+	want := []string{"agent:codex", "backend", "dispatch", "release"}
+	if len(payload.Labels) != len(want) {
+		t.Fatalf("labels len = %d, want %d (%v)", len(payload.Labels), len(want), payload.Labels)
+	}
+	for i := range want {
+		if payload.Labels[i] != want[i] {
+			t.Fatalf("labels[%d] = %q, want %q (full=%v)", i, payload.Labels[i], want[i], payload.Labels)
+		}
+	}
+	if len(payload.Workflows) != 0 {
+		t.Fatalf("workflows len = %d, want 0", len(payload.Workflows))
+	}
+	if payload.DefaultWorkflow != "standard" {
+		t.Fatalf("default_workflow = %q, want standard", payload.DefaultWorkflow)
+	}
+}
+
 func TestIntegration_ListIssues_FilterByEpic(t *testing.T) {
 	baseURL, _, cleanup := setupIntegrationServer(t)
 	defer cleanup()
