@@ -191,6 +191,22 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply accepted events to project.db (live state). Same machinery the
+	// pool's bootstrap replay uses (tdsync.ApplyRemoteEvents). Plan §7.2.
+	//
+	// Failure handling: events.db is already committed above, so the next push
+	// (or a CLI retry) will see these events again and reapply via the
+	// idempotent cursor logic in applyAcceptedEventsToProjectDB. We surface
+	// 500 here so the client retries; meanwhile project.db is behind for this
+	// project. buildSnapshot remains the recovery valve per plan §7.2.
+	if s.projectLivePool != nil && result.Accepted > 0 {
+		if err := applyAcceptedEventsToProjectDB(s.projectLivePool, projectID, events, result); err != nil {
+			logFor(r.Context()).Error("apply push to project.db", "project", projectID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to apply events to project state")
+			return
+		}
+	}
+
 	// Update cached event count in server.db
 	if result.Accepted > 0 {
 		if err := s.store.UpdateProjectEventCount(projectID, result.Accepted, time.Now().UTC()); err != nil {
