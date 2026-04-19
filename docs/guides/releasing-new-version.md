@@ -35,6 +35,16 @@ git tag -l | sort -V | tail -1
 
 ### 2. Update CHANGELOG.md
 
+Draft release notes from git history before editing the changelog:
+
+```bash
+# Default: latest tag..HEAD rendered in the terminal
+td release-notes
+
+# Raw markdown, plus file and diff context for maintainers
+td release-notes --output markdown --include-files --include-stats > /tmp/release-notes.md
+```
+
 Add entry at the top of `CHANGELOG.md`:
 
 ```markdown
@@ -134,6 +144,9 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
+# Draft release notes from latest tag..HEAD
+td release-notes --output markdown --include-files --include-stats
+
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
@@ -154,6 +167,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] Draft release notes reviewed (`td release-notes`)
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
