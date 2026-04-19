@@ -153,12 +153,12 @@ deploy_remote() {
     rsync -avz --delete \
         --exclude '.git' \
         --exclude '.todos' \
-        --exclude 'test/' \
+        --exclude '/test/' \
         --exclude 'deploy/envs/.env.*' \
-        --exclude 'td' \
-        --exclude 'td-sync' \
-        --exclude 'website/node_modules' \
-        --exclude 'website/build' \
+        --exclude '/td' \
+        --exclude '/td-sync' \
+        --exclude '/website/node_modules' \
+        --exclude '/website/build' \
         --exclude '*.db' \
         --exclude '*.db-wal' \
         --exclude '*.db-shm' \
