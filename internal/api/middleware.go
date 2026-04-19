@@ -119,6 +119,14 @@ func (sc *statusCapture) WriteHeader(code int) {
 	sc.ResponseWriter.WriteHeader(code)
 }
 
+// Flush implements http.Flusher so SSE and streaming handlers work correctly
+// when statusCapture is in the middleware chain.
+func (sc *statusCapture) Flush() {
+	if f, ok := sc.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // loggingMiddleware logs each request with method, path, status, and duration.
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

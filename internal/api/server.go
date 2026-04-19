@@ -24,6 +24,12 @@ type Server struct {
 	snapshotGroup   singleflight.Group
 	cancel          context.CancelFunc
 	startTime       time.Time
+
+	// sseHubs is the per-project SSE fan-out registry. Initialized in NewServer.
+	sseHubs *SSEHubRegistry
+	// pingInterval controls how often the SSE handler sends keep-alive pings.
+	// Default is defaultPingInterval (15s); tests may inject a shorter value.
+	pingInterval time.Duration
 }
 
 // NewServer creates a new Server with the given config and store.
@@ -36,6 +42,8 @@ func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 		metrics:         NewMetrics(),
 		rateLimiter:     NewRateLimiter(),
 		startTime:       time.Now(),
+		sseHubs:         NewSSEHubRegistry(),
+		pingInterval:    defaultPingInterval,
 	}
 
 	s.http = &http.Server{
@@ -196,6 +204,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleListMembers, s.config.RateLimitOther)))
 	mux.HandleFunc("PATCH /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleUpdateMember, s.config.RateLimitOther)))
 	mux.HandleFunc("DELETE /v1/projects/{id}/members/{userID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleRemoveMember, s.config.RateLimitOther)))
+
+	// Realtime SSE — no rate limit wrapper; it's a long-lived stream.
+	mux.HandleFunc("GET /v1/projects/{id}/events", s.requireProjectAuth(serverdb.RoleReader, s.handleProjectEvents))
 
 	// Sync
 	mux.HandleFunc("POST /v1/projects/{id}/sync/push", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleSyncPush, s.config.RateLimitPush)))
