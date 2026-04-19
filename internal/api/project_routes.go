@@ -137,33 +137,35 @@ func (s *Server) registerProjectRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/projects/{id}/issues",
 		s.projectReadChain(s.wrapServeHandler(serve.HandleListIssues)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleCreateIssue)))
+		// Create: issue ID not in URL; broadcast upsert with empty issueID so
+		// subscribers know to refresh the list.
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleCreateIssue, "")))
 
 	// Issues — read/update/delete by id
 	mux.HandleFunc("GET /v1/projects/{id}/issues/{iid}",
 		s.projectReadChain(s.wrapServeHandler(serve.HandleGetIssue, issueRemap)))
 	mux.HandleFunc("PATCH /v1/projects/{id}/issues/{iid}",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleUpdateIssue, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleUpdateIssue, "iid", issueRemap)))
 	mux.HandleFunc("DELETE /v1/projects/{id}/issues/{iid}",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleDeleteIssue, issueRemap)))
+		s.projectMutateChain(s.wrapIssueDelete(serve.HandleDeleteIssue, "iid", issueRemap)))
 
-	// Issue transitions
+	// Issue transitions — all are upserts (status changes, row stays)
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/start",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleStart, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleStart, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/review",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleReview, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleReview, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/approve",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleApprove, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleApprove, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/reject",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleReject, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleReject, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/block",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleBlock, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleBlock, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/unblock",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleUnblock, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleUnblock, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/close",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleClose, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleClose, "iid", issueRemap)))
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/reopen",
-		s.projectMutateChain(s.wrapServeHandler(serve.HandleReopen, issueRemap)))
+		s.projectMutateChain(s.wrapIssueUpsert(serve.HandleReopen, "iid", issueRemap)))
 
 	// Comments
 	mux.HandleFunc("POST /v1/projects/{id}/issues/{iid}/comments",
