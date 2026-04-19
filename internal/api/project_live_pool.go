@@ -142,6 +142,21 @@ func (p *ProjectLivePool) Release(projectID string) {
 	}
 }
 
+// Snapshot returns the set of project IDs that currently have an open handle in
+// the pool. Used by periodic background tasks (e.g. the apply-cursor lag
+// sampler in metrics_lag.go) that want to iterate live projects without
+// holding the pool's mutex while doing slow per-project I/O. The returned
+// slice is a copy and safe to mutate; the pool itself is not held during use.
+func (p *ProjectLivePool) Snapshot() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.entries))
+	for id := range p.entries {
+		out = append(out, id)
+	}
+	return out
+}
+
 // Close closes every cached handle and clears the pool. Safe to call multiple
 // times.
 func (p *ProjectLivePool) Close() error {

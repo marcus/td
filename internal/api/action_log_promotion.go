@@ -30,7 +30,9 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"time"
 
 	tddb "github.com/marcus/td/internal/db"
 	tdsync "github.com/marcus/td/internal/sync"
@@ -58,7 +60,30 @@ import (
 // This is the recovery valve. Callers should log the error but should not
 // fail the user-facing response — the write into project.db has already
 // succeeded.
-func (s *Server) promoteActionLog(projectID string, projectDB *tddb.DB) (int, error) {
+func (s *Server) promoteActionLog(projectID string, projectDB *tddb.DB) (promoted int, err error) {
+	// Plan §9.3 (a): structured-log timing for every promotion call so we can
+	// correlate p95 spikes with deploys / load. Single line per call covers
+	// success, no-op, and error paths uniformly. duration_ms / promoted are the
+	// stable keys; downstream scrapers should not rely on err being non-empty.
+	start := time.Now()
+	defer func() {
+		elapsedMs := time.Since(start).Milliseconds()
+		if err != nil {
+			slog.Error("action_log_promotion",
+				"project", projectID,
+				"duration_ms", elapsedMs,
+				"promoted", promoted,
+				"err", err,
+			)
+		} else {
+			slog.Info("action_log_promotion",
+				"project", projectID,
+				"duration_ms", elapsedMs,
+				"promoted", promoted,
+			)
+		}
+	}()
+
 	if projectID == "" {
 		return 0, fmt.Errorf("promoteActionLog: empty projectID")
 	}

@@ -148,6 +148,11 @@ func (s *Server) Start() error {
 		}
 	}()
 
+	// Plan §9.3 (b): sample per-project applied_cursor lag every 30s. Shares
+	// the same shutdown ctx as the cleanup goroutines so Shutdown() tears it
+	// down with the rest of the periodic tasks.
+	s.startLagSampler(ctx)
+
 	return nil
 }
 
