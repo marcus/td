@@ -103,6 +103,16 @@ func Initialize(baseDir string) (*DB, error) {
 	return db, nil
 }
 
+// NewWithConn wraps an already-opened *sql.DB and a base directory in a *DB.
+// This exists for callers that own the file layout (e.g., the td-sync API
+// server, which keeps per-project DBs at non-standard paths like
+// `{projectDir}/project.db`) and have already opened the connection via
+// OpenSQLite. The returned *DB participates in the same DB API surface
+// (Conn, BaseDir, etc.) as Open/Initialize.
+func NewWithConn(conn *sql.DB, baseDir string) *DB {
+	return &DB{conn: conn, baseDir: baseDir}
+}
+
 // Close closes the database connection.
 // It performs a PASSIVE checkpoint first to flush the WAL into the main DB
 // file where possible without blocking readers/writers in other processes.
