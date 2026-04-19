@@ -304,6 +304,19 @@ vim deploy/envs/.env.staging
 
 The deploy script handles rsync, environment config, and docker compose automatically.
 
+Production note: the deploy script rsyncs your local repository state as-is. If your checkout contains unrelated local artifacts or in-progress work, deploy from a clean worktree pinned to the commit you actually want on the server.
+
+```bash
+SYNC_SHA=$(git rev-parse HEAD)
+tmp=$(mktemp -d /tmp/td-deploy-XXXXXX)
+git worktree add "$tmp" "$SYNC_SHA"
+cp deploy/envs/.env.staging "$tmp/deploy/envs/.env.staging"
+cd "$tmp"
+./deploy/deploy.sh staging --build
+```
+
+This is especially useful when `td-sync` and `td-watch` share a host and you are doing a coordinated cross-repo rollout.
+
 ### 6. Firewall Configuration
 
 ```bash
@@ -364,6 +377,8 @@ To deploy updates:
 # Or force a rebuild:
 ./deploy/deploy.sh staging --build
 ```
+
+Treat the deploy script's successful return plus `/healthz` passing as the authoritative completion signal. A separate shell may still show the old healthy container until the remote build finishes and Compose swaps it.
 
 ### Viewing Logs
 
