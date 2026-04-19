@@ -13,6 +13,14 @@ import (
 	"github.com/marcus/td/internal/workflow"
 )
 
+// This file contains the status-transition HTTP handlers (start/review/
+// approve/reject/block/unblock/close/reopen). Each handler is exported as a
+// pure function that takes a HandlerContext, so the same code can be mounted
+// from td-serve (`*Server`) and from td-sync (per-project HandlerContext built
+// per request). The `(s *Server) handleXxx` methods are thin wrappers retained
+// so the route registrations and any external callers continue to work
+// unchanged.
+
 // ============================================================================
 // Status Transition Endpoints
 // ============================================================================
@@ -38,9 +46,9 @@ type transitionSpec struct {
 	actionType models.ActionType
 	// applySideEffects mutates the issue model for transition-specific side
 	// effects (session fields, closed_at, etc.). Called after status is set.
-	applySideEffects func(s *Server, issue *models.Issue)
+	applySideEffects func(ctx HandlerContext, issue *models.Issue)
 	// runCascades executes any post-transition cascades and returns results.
-	runCascades func(s *Server, issue *models.Issue) transitionCascadeResult
+	runCascades func(ctx HandlerContext, issue *models.Issue) transitionCascadeResult
 	// defaultLogMsg is the default progress log message when no reason is given.
 	defaultLogMsg string
 	// logType overrides the log type (defaults to LogTypeProgress).
@@ -48,7 +56,9 @@ type transitionSpec struct {
 }
 
 // handleTransition is the common handler for all status transition endpoints.
-func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec transitionSpec) {
+// It is a pure function that operates on a HandlerContext, so it can be reused
+// by td-sync's per-project routes.
+func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request, spec transitionSpec) {
 	issueID := r.PathValue("id")
 	if issueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
@@ -56,7 +66,7 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	}
 
 	// Fetch issue
-	issue, err := s.db.GetIssue(issueID)
+	issue, err := ctx.DB.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -101,11 +111,11 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	// Apply the transition
 	issue.Status = spec.toStatus
 	if spec.applySideEffects != nil {
-		spec.applySideEffects(s, issue)
+		spec.applySideEffects(ctx, issue)
 	}
 
 	// Persist
-	if err := s.db.UpdateIssueLogged(issue, s.sessionID, spec.actionType); err != nil {
+	if err := ctx.DB.UpdateIssueLogged(issue, ctx.SessionID, spec.actionType); err != nil {
 		slog.Error("transition issue", "err", err, "id", issueID, "to", spec.toStatus)
 		WriteError(w, ErrInternal, "failed to update issue", http.StatusInternalServerError)
 		return
@@ -120,9 +130,9 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	if spec.logType != "" {
 		logType = spec.logType
 	}
-	if logErr := s.db.AddLog(&models.Log{
+	if logErr := ctx.DB.AddLog(&models.Log{
 		IssueID:   canonicalIssueID,
-		SessionID: s.sessionID,
+		SessionID: ctx.SessionID,
 		Message:   logMsg,
 		Type:      logType,
 	}); logErr != nil {
@@ -132,7 +142,7 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	// Run cascades
 	var cascades transitionCascadeResult
 	if spec.runCascades != nil {
-		cascades = spec.runCascades(s, issue)
+		cascades = spec.runCascades(ctx, issue)
 	}
 	if cascades.ParentStatusUpdates == nil {
 		cascades.ParentStatusUpdates = []IssueDTO{}
@@ -142,7 +152,7 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	}
 
 	// Re-read the issue to get the final state (UpdatedAt, etc.)
-	updated, err := s.db.GetIssue(canonicalIssueID)
+	updated, err := ctx.DB.GetIssue(canonicalIssueID)
 	if err != nil {
 		// Fallback to the in-memory version
 		updated = issue
@@ -166,10 +176,10 @@ func statusIn(s models.Status, set []models.Status) bool {
 }
 
 // cascadeIDsToIssueDTOs fetches issues by ID and converts to DTOs.
-func (s *Server) cascadeIDsToIssueDTOs(ids []string) []IssueDTO {
+func cascadeIDsToIssueDTOs(ctx HandlerContext, ids []string) []IssueDTO {
 	var dtos []IssueDTO
 	for _, id := range ids {
-		issue, err := s.db.GetIssue(id)
+		issue, err := ctx.DB.GetIssue(id)
 		if err == nil {
 			dtos = append(dtos, IssueToDTO(issue))
 		}
@@ -184,37 +194,47 @@ func (s *Server) cascadeIDsToIssueDTOs(ids []string) []IssueDTO {
 // POST /v1/issues/{id}/start
 // ============================================================================
 
-func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleStart transitions an issue from open to in_progress and stamps the
+// caller's session as the implementer. Pure-function form of
+// (s *Server).handleStart.
+func HandleStart(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusOpen},
 		toStatus:   models.StatusInProgress,
 		actionType: models.ActionStart,
-		applySideEffects: func(srv *Server, issue *models.Issue) {
-			issue.ImplementerSession = srv.sessionID
+		applySideEffects: func(c HandlerContext, issue *models.Issue) {
+			issue.ImplementerSession = c.SessionID
 		},
 		defaultLogMsg: "Started work",
 	})
+}
+
+func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
+	HandleStart(s.handlerContext(), w, r)
 }
 
 // ============================================================================
 // POST /v1/issues/{id}/review
 // ============================================================================
 
-func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleReview transitions an issue to in_review and cascades the parent's
+// status to in_review when all siblings qualify. Pure-function form of
+// (s *Server).handleReview.
+func HandleReview(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusOpen, models.StatusInProgress},
 		toStatus:   models.StatusInReview,
 		actionType: models.ActionReview,
-		applySideEffects: func(srv *Server, issue *models.Issue) {
+		applySideEffects: func(c HandlerContext, issue *models.Issue) {
 			if issue.ImplementerSession == "" {
-				issue.ImplementerSession = srv.sessionID
+				issue.ImplementerSession = c.SessionID
 			}
 		},
-		runCascades: func(srv *Server, issue *models.Issue) transitionCascadeResult {
+		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
 			var cr transitionCascadeResult
 			// Parent cascade to in_review when all siblings qualify
-			if _, ids := srv.db.CascadeUpParentStatus(issue.ID, models.StatusInReview, srv.sessionID); len(ids) > 0 {
-				cr.ParentStatusUpdates = srv.cascadeIDsToIssueDTOs(ids)
+			if _, ids := c.DB.CascadeUpParentStatus(issue.ID, models.StatusInReview, c.SessionID); len(ids) > 0 {
+				cr.ParentStatusUpdates = cascadeIDsToIssueDTOs(c, ids)
 			}
 			return cr
 		},
@@ -222,29 +242,36 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
+	HandleReview(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/approve
 // ============================================================================
 
-func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleApprove transitions an issue from in_review to closed, stamps the
+// reviewer/closed_at, and runs parent-close + dependency-unblock cascades.
+// Pure-function form of (s *Server).handleApprove.
+func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusInReview},
 		toStatus:   models.StatusClosed,
 		actionType: models.ActionApprove,
-		applySideEffects: func(srv *Server, issue *models.Issue) {
-			issue.ReviewerSession = srv.sessionID
+		applySideEffects: func(c HandlerContext, issue *models.Issue) {
+			issue.ReviewerSession = c.SessionID
 			now := time.Now()
 			issue.ClosedAt = &now
 		},
-		runCascades: func(srv *Server, issue *models.Issue) transitionCascadeResult {
+		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
 			var cr transitionCascadeResult
 			// Parent cascade to closed when all siblings closed
-			if _, ids := srv.db.CascadeUpParentStatus(issue.ID, models.StatusClosed, srv.sessionID); len(ids) > 0 {
-				cr.ParentStatusUpdates = srv.cascadeIDsToIssueDTOs(ids)
+			if _, ids := c.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, c.SessionID); len(ids) > 0 {
+				cr.ParentStatusUpdates = cascadeIDsToIssueDTOs(c, ids)
 			}
 			// Dependency unblocking cascade
-			if _, ids := srv.db.CascadeUnblockDependents(issue.ID, srv.sessionID); len(ids) > 0 {
-				cr.AutoUnblocked = srv.cascadeIDsToIssueDTOs(ids)
+			if _, ids := c.DB.CascadeUnblockDependents(issue.ID, c.SessionID); len(ids) > 0 {
+				cr.AutoUnblocked = cascadeIDsToIssueDTOs(c, ids)
 			}
 			return cr
 		},
@@ -252,16 +279,23 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
+	HandleApprove(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/reject
 // ============================================================================
 
-func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleReject sends an issue back from in_review to open and clears the
+// implementer/reviewer session and closed_at. Pure-function form of
+// (s *Server).handleReject.
+func HandleReject(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusInReview},
 		toStatus:   models.StatusOpen,
 		actionType: models.ActionReject,
-		applySideEffects: func(_ *Server, issue *models.Issue) {
+		applySideEffects: func(_ HandlerContext, issue *models.Issue) {
 			issue.ImplementerSession = ""
 			issue.ReviewerSession = ""
 			issue.ClosedAt = nil
@@ -270,12 +304,18 @@ func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
+	HandleReject(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/block
 // ============================================================================
 
-func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleBlock marks an issue as blocked, logging a blocker entry. Pure-function
+// form of (s *Server).handleBlock.
+func HandleBlock(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:     []models.Status{models.StatusOpen, models.StatusInProgress},
 		toStatus:      models.StatusBlocked,
 		actionType:    models.ActionBlock,
@@ -284,12 +324,18 @@ func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
+	HandleBlock(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/unblock
 // ============================================================================
 
-func (s *Server) handleUnblock(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleUnblock returns a blocked issue to open. Pure-function form of
+// (s *Server).handleUnblock.
+func HandleUnblock(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:     []models.Status{models.StatusBlocked},
 		toStatus:      models.StatusOpen,
 		actionType:    models.ActionUnblock,
@@ -297,28 +343,34 @@ func (s *Server) handleUnblock(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleUnblock(w http.ResponseWriter, r *http.Request) {
+	HandleUnblock(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/close
 // ============================================================================
 
-func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleClose closes an issue from any non-closed state and runs parent-close
+// + dependency-unblock cascades. Pure-function form of (s *Server).handleClose.
+func HandleClose(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusOpen, models.StatusInProgress, models.StatusBlocked, models.StatusInReview},
 		toStatus:   models.StatusClosed,
 		actionType: models.ActionClose,
-		applySideEffects: func(_ *Server, issue *models.Issue) {
+		applySideEffects: func(_ HandlerContext, issue *models.Issue) {
 			now := time.Now()
 			issue.ClosedAt = &now
 		},
-		runCascades: func(srv *Server, issue *models.Issue) transitionCascadeResult {
+		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
 			var cr transitionCascadeResult
 			// Parent cascade to closed when all siblings closed
-			if _, ids := srv.db.CascadeUpParentStatus(issue.ID, models.StatusClosed, srv.sessionID); len(ids) > 0 {
-				cr.ParentStatusUpdates = srv.cascadeIDsToIssueDTOs(ids)
+			if _, ids := c.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, c.SessionID); len(ids) > 0 {
+				cr.ParentStatusUpdates = cascadeIDsToIssueDTOs(c, ids)
 			}
 			// Dependency unblocking cascade
-			if _, ids := srv.db.CascadeUnblockDependents(issue.ID, srv.sessionID); len(ids) > 0 {
-				cr.AutoUnblocked = srv.cascadeIDsToIssueDTOs(ids)
+			if _, ids := c.DB.CascadeUnblockDependents(issue.ID, c.SessionID); len(ids) > 0 {
+				cr.AutoUnblocked = cascadeIDsToIssueDTOs(c, ids)
 			}
 			return cr
 		},
@@ -326,19 +378,29 @@ func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
+	HandleClose(s.handlerContext(), w, r)
+}
+
 // ============================================================================
 // POST /v1/issues/{id}/reopen
 // ============================================================================
 
-func (s *Server) handleReopen(w http.ResponseWriter, r *http.Request) {
-	s.handleTransition(w, r, transitionSpec{
+// HandleReopen reopens a closed issue, clearing reviewer + closed_at.
+// Pure-function form of (s *Server).handleReopen.
+func HandleReopen(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusClosed},
 		toStatus:   models.StatusOpen,
 		actionType: models.ActionReopen,
-		applySideEffects: func(_ *Server, issue *models.Issue) {
+		applySideEffects: func(_ HandlerContext, issue *models.Issue) {
 			issue.ReviewerSession = ""
 			issue.ClosedAt = nil
 		},
 		defaultLogMsg: "Reopened",
 	})
+}
+
+func (s *Server) handleReopen(w http.ResponseWriter, r *http.Request) {
+	HandleReopen(s.handlerContext(), w, r)
 }
