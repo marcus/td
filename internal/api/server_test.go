@@ -47,7 +47,12 @@ func newTestServer(t *testing.T) (*Server, *serverdb.ServerDB) {
 	if err != nil {
 		t.Fatalf("create server: %v", err)
 	}
-	t.Cleanup(func() { srv.dbPool.CloseAll() })
+	t.Cleanup(func() {
+		srv.dbPool.CloseAll()
+		if srv.projectLivePool != nil {
+			_ = srv.projectLivePool.Close()
+		}
+	})
 
 	return srv, store
 }
@@ -86,7 +91,12 @@ func newTestServerWithConfig(t *testing.T, modCfg func(*Config)) (*Server, *serv
 	if err != nil {
 		t.Fatalf("create server: %v", err)
 	}
-	t.Cleanup(func() { srv.dbPool.CloseAll() })
+	t.Cleanup(func() {
+		srv.dbPool.CloseAll()
+		if srv.projectLivePool != nil {
+			_ = srv.projectLivePool.Close()
+		}
+	})
 
 	return srv, store
 }

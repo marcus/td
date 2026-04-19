@@ -14,26 +14,28 @@ import (
 
 // Server is the HTTP API server for td-sync.
 type Server struct {
-	config        Config
-	http          *http.Server
-	store         *serverdb.ServerDB
-	dbPool        *ProjectDBPool
-	metrics       *Metrics
-	rateLimiter   *RateLimiter
-	snapshotGroup singleflight.Group
-	cancel        context.CancelFunc
-	startTime     time.Time
+	config          Config
+	http            *http.Server
+	store           *serverdb.ServerDB
+	dbPool          *ProjectDBPool
+	projectLivePool *ProjectLivePool
+	metrics         *Metrics
+	rateLimiter     *RateLimiter
+	snapshotGroup   singleflight.Group
+	cancel          context.CancelFunc
+	startTime       time.Time
 }
 
 // NewServer creates a new Server with the given config and store.
 func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 	s := &Server{
-		config:      cfg,
-		store:       store,
-		dbPool:      NewProjectDBPool(cfg.ProjectDataDir),
-		metrics:     NewMetrics(),
-		rateLimiter: NewRateLimiter(),
-		startTime:   time.Now(),
+		config:          cfg,
+		store:           store,
+		dbPool:          NewProjectDBPool(cfg.ProjectDataDir),
+		projectLivePool: NewProjectLivePool(cfg.ProjectDataDir),
+		metrics:         NewMetrics(),
+		rateLimiter:     NewRateLimiter(),
+		startTime:       time.Now(),
 	}
 
 	s.http = &http.Server{
@@ -157,6 +159,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.rateLimiter.Stop()
 	err := s.http.Shutdown(ctx)
 	s.dbPool.CloseAll()
+	if s.projectLivePool != nil {
+		_ = s.projectLivePool.Close()
+	}
 	return err
 }
 
@@ -192,6 +197,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}/sync/pull", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncPull, s.config.RateLimitPull)))
 	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncStatus, s.config.RateLimitOther)))
 	mux.HandleFunc("GET /v1/projects/{id}/sync/snapshot", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncSnapshot, s.config.RateLimitOther)))
+
+	// Perch-shape REST routes (S2.3) — wraps td-serve handlers against per-project
+	// project.db. See internal/api/project_routes.go and plan §6 for details.
+	s.registerProjectRoutes(mux)
 
 	// Admin (CORS-enabled)
 	adminMux := http.NewServeMux()

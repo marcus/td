@@ -73,6 +73,9 @@ func newTestHarness(t *testing.T, opts ...func(*Config)) *TestHarness {
 	t.Cleanup(func() {
 		httpSrv.Close()
 		srv.dbPool.CloseAll()
+		if srv.projectLivePool != nil {
+			_ = srv.projectLivePool.Close()
+		}
 		store.Close()
 	})
 

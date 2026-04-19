@@ -23,14 +23,14 @@ import (
 //
 // On first acquire for a project, if `project.db` does not exist, the pool
 // performs a one-time bootstrap:
-//   1. Initialize a fresh td schema in a temporary directory via
-//      `tddb.Initialize` (this guarantees the schema matches the td CLI
-//      exactly, including all migrations).
-//   2. Copy the resulting issues.db file to `project.db`.
-//   3. Re-open `project.db` and replay every event in `events.db` (in
-//      `server_seq` order) into it via `tdsync.ApplyRemoteEvents`.
-//   4. Record the highest applied `server_seq` in a small `applied_events`
-//      bookkeeping table inside project.db.
+//  1. Initialize a fresh td schema in a temporary directory via
+//     `tddb.Initialize` (this guarantees the schema matches the td CLI
+//     exactly, including all migrations).
+//  2. Copy the resulting issues.db file to `project.db`.
+//  3. Re-open `project.db` and replay every event in `events.db` (in
+//     `server_seq` order) into it via `tdsync.ApplyRemoteEvents`.
+//  4. Record the highest applied `server_seq` in a small `applied_events`
+//     bookkeeping table inside project.db.
 //
 // This is the **one-time bootstrap path only**. Ongoing event application
 // (post-commit promotion of action_log → events.db, and inbound /v1/sync/push
@@ -197,6 +197,13 @@ func (p *ProjectLivePool) openOrBootstrap(projectID string) (*tddb.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir project dir: %w", err)
 	}
+	// tddb.withWriteLock (used by every *Logged write in tddb) opens its
+	// lock file at `{baseDir}/.todos/db.lock`. Our baseDir for the project
+	// handle is `{baseDir}/{projectID}`, so the .todos subdirectory must
+	// exist before any mutation handler runs.
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(dbPath), ".todos"), 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir .todos lock dir: %w", err)
+	}
 
 	tmpDir, err := os.MkdirTemp("", "td-project-live-init-*")
 	if err != nil {
@@ -252,6 +259,13 @@ func openExistingProjectDB(projectDir string) (*tddb.DB, error) {
 	conn, err := tddb.OpenSQLite(dbPath, tddb.OpenOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open project.db: %w", err)
+	}
+	// Defensive: ensure the lock directory exists. Bootstrap always creates
+	// it, but a project.db that was hand-created (or restored from backup
+	// without `.todos`) would otherwise fail the first Logged write.
+	if err := os.MkdirAll(filepath.Join(projectDir, ".todos"), 0o755); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("mkdir .todos lock dir: %w", err)
 	}
 	return tddb.NewWithConn(conn, projectDir), nil
 }
@@ -332,4 +346,3 @@ func (p *ProjectLivePool) replayEvents(projectID string, projectDB *tddb.DB) err
 	}
 	return nil
 }
-
