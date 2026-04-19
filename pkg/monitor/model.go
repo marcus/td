@@ -116,7 +116,7 @@ type Model struct {
 
 	// Activity detail modal state
 	ActivityDetailOpen         bool
-	ActivityDetailItem         *ActivityItem  // The selected activity item
+	ActivityDetailItem         *ActivityItem // The selected activity item
 	ActivityDetailScroll       int
 	ActivityDetailModal        *modal.Modal   // Declarative modal instance
 	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
@@ -128,8 +128,8 @@ type Model struct {
 	NotesMouseHandler *mouse.Handler // Mouse handler for notes modal
 
 	// Form modal state
-	FormOpen        bool
-	FormState       *FormState
+	FormOpen         bool
+	FormState        *FormState
 	FormScrollOffset int // Scroll offset for form modal when content overflows
 
 	// Getting Started modal state

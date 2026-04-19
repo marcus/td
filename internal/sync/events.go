@@ -138,7 +138,7 @@ func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
 }
 
 // getTextEmptyDefaultColumns returns the set of TEXT columns declared with
-// DEFAULT '' on the given table. Sync payloads may carry these fields as
+// DEFAULT "" on the given table. Sync payloads may carry these fields as
 // JSON null (either because a previous write set them to NULL, or because
 // the sender serialized an empty pointer/string as null). Binding NULL for
 // such columns breaks readers that scan into plain `string` — notably
@@ -473,8 +473,8 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 // application-level cascade is needed for FK-backed relations.
 //
 // The one exception is issues.parent_id: per migration 30's rationale,
-// td uses '' (empty string) as the "no parent" sentinel, which is
-// incompatible with a schema-level FK (SQLite treats '' as a real value).
+// td uses "" (empty string) as the "no parent" sentinel, which is
+// incompatible with a schema-level FK (SQLite treats "" as a real value).
 // That relation has no FK at all, so parent_id cleanup must still happen
 // here. This was the regression fix from commit baa9b23 (td-4846e6).
 func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
@@ -537,7 +537,7 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 // All other array/object fields are stored as JSON strings.
 //
 // textEmptyDefaultCols, when non-nil, lists TEXT columns declared with
-// DEFAULT '' on this table. Any field present in fields with a nil value
+// DEFAULT "" on this table. Any field present in fields with a nil value
 // whose column is in this set is defaulted to "" — otherwise INSERT binds
 // NULL, which breaks readers that scan into plain `string` (see
 // getTextEmptyDefaultColumns for the symptom that motivated this).
