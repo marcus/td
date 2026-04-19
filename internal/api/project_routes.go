@@ -73,11 +73,32 @@ func (s *Server) wrapServeHandler(
 
 		h(ctx, w, r)
 
-		// TODO(stream-3): after successful mutations, promote any new
-		// action_log rows to events.db. The trigger is intentionally not
-		// wired here yet — Stream 3 (action_log_promotion.go) owns the
-		// ATTACH-and-promote logic. For now, mutations land in project.db
-		// only; events.db is still updated by /v1/sync/push from the CLI.
+		// Stream 3.1: promote any new action_log rows produced by the
+		// handler into the project's events.db. Owned by
+		// action_log_promotion.go; runs ATTACH + insert + synced_at flip in
+		// a single transaction so partial work is impossible.
+		//
+		// Skipped for read-only methods (GET/HEAD/OPTIONS) — they can't
+		// produce action_log rows. We deliberately do NOT inspect the
+		// handler's status code: a 4xx that still wrote to action_log
+		// (rare, but possible if a handler logs first and then returns an
+		// error) should still be promoted; conversely, a 2xx that wrote
+		// nothing is a cheap no-op.
+		//
+		// Errors here are logged but never bubble up to the response: the
+		// handler's reply has already been written and rolling back would
+		// be impossible anyway. The action_log row stays synced_at IS NULL
+		// so the next request into the same project retries promotion —
+		// that's the recovery valve called out in plan §7.1.
+		if shouldPromote(r.Method) {
+			if n, err := s.promoteActionLog(projectID, liveDB); err != nil {
+				logFor(r.Context()).Error("action_log promotion",
+					"err", err, "pid", projectID, "method", r.Method, "path", r.URL.Path)
+			} else if n > 0 {
+				logFor(r.Context()).Debug("action_log promoted",
+					"count", n, "pid", projectID, "method", r.Method)
+			}
+		}
 	}
 }
 

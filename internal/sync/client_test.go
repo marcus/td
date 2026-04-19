@@ -287,6 +287,99 @@ func TestGetPendingEvents_EntityTypeNormalization(t *testing.T) {
 	}
 }
 
+// --- GetPendingEventsPreserveSession ---------------------------------------
+
+func TestGetPendingEventsPreserveSession_PerRowSession(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "twu_alice", "create", "issues", "i1",
+		`{"title":"Alice","status":"open"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000002", "twu_bob", "create", "issues", "i2",
+		`{"title":"Bob","status":"open"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000003", "twa_carol_as_dave", "update", "issues", "i1",
+		`{"title":"Carol-as-Dave","status":"open"}`, `{"title":"Alice","status":"open"}`, 0, "")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer tx.Rollback()
+
+	events, err := GetPendingEventsPreserveSession(tx, "td_watch_server")
+	if err != nil {
+		t.Fatalf("GetPendingEventsPreserveSession: %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("got %d events, want 3", len(events))
+	}
+
+	wantSessions := []string{"twu_alice", "twu_bob", "twa_carol_as_dave"}
+	for i, want := range wantSessions {
+		if events[i].SessionID != want {
+			t.Errorf("event[%d] session_id: got %q, want %q", i, events[i].SessionID, want)
+		}
+		if events[i].DeviceID != "td_watch_server" {
+			t.Errorf("event[%d] device_id: got %q, want td_watch_server", i, events[i].DeviceID)
+		}
+		if events[i].ClientActionID <= 0 {
+			t.Errorf("event[%d] ClientActionID should be positive rowid, got %d", i, events[i].ClientActionID)
+		}
+	}
+}
+
+func TestGetPendingEventsPreserveSession_SkipsSyncedAndUndone(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "twu_a", "create", "issues", "i1",
+		`{"title":"Synced"}`, `{}`, 0, "2025-01-01 00:00:00")
+	insertActionLog(t, db, "al-00000002", "twu_b", "create", "issues", "i2",
+		`{"title":"Undone"}`, `{}`, 1, "")
+	insertActionLog(t, db, "al-00000003", "twu_c", "create", "issues", "i3",
+		`{"title":"Pending"}`, `{}`, 0, "")
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+
+	events, err := GetPendingEventsPreserveSession(tx, "td_watch_server")
+	if err != nil {
+		t.Fatalf("GetPendingEventsPreserveSession: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].EntityID != "i3" || events[0].SessionID != "twu_c" {
+		t.Errorf("got entity=%q session=%q, want i3/twu_c", events[0].EntityID, events[0].SessionID)
+	}
+}
+
+func TestGetPendingEventsPreserveSession_PayloadShape(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "twu_a", "create", "issues", "i1",
+		`{"title":"Hello"}`, `{}`, 0, "")
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+
+	events, err := GetPendingEventsPreserveSession(tx, "td_watch_server")
+	if err != nil {
+		t.Fatalf("GetPendingEventsPreserveSession: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	for _, k := range []string{"schema_version", "new_data", "previous_data"} {
+		if _, ok := payload[k]; !ok {
+			t.Errorf("payload missing %q", k)
+		}
+	}
+}
+
 func TestApplyRemoteEvents_Basic(t *testing.T) {
 	db := setupClientDB(t)
 

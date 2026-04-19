@@ -34,6 +34,27 @@ func InitServerEventLog(db *sql.DB) error {
 // InsertServerEvents inserts events into the server event log within the given transaction.
 // Duplicates (by device_id, session_id, client_action_id) are rejected, not errored.
 func InsertServerEvents(tx *sql.Tx, events []Event) (PushResult, error) {
+	return InsertServerEventsAttached(tx, "main", events)
+}
+
+// InsertServerEventsAttached behaves like InsertServerEvents but targets the
+// `events` table in the named schema. Pass "main" for the conventional
+// single-DB case; pass an attached schema name (e.g. "events_db") to write
+// into a database that was opened with `ATTACH DATABASE … AS events_db`.
+//
+// This is the path used by the td-watch post-commit promotion: project.db is
+// the main schema (action_log lives there) and events.db is attached so the
+// promotion + synced_at flip commit atomically.
+func InsertServerEventsAttached(tx *sql.Tx, schema string, events []Event) (PushResult, error) {
+	if schema == "" {
+		schema = "main"
+	}
+	insertSQL := fmt.Sprintf(
+		`INSERT OR IGNORE INTO %s.events (device_id, session_id, client_action_id, action_type, entity_type, entity_id, payload, client_timestamp)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, schema)
+	dupSelectSQL := fmt.Sprintf(
+		`SELECT server_seq FROM %s.events WHERE device_id=? AND session_id=? AND client_action_id=?`, schema)
+
 	var result PushResult
 
 	for _, ev := range events {
@@ -60,9 +81,7 @@ func InsertServerEvents(tx *sql.Tx, events []Event) (PushResult, error) {
 			continue
 		}
 
-		res, err := tx.Exec(
-			`INSERT OR IGNORE INTO events (device_id, session_id, client_action_id, action_type, entity_type, entity_id, payload, client_timestamp)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		res, err := tx.Exec(insertSQL,
 			ev.DeviceID, ev.SessionID, ev.ClientActionID,
 			ev.ActionType, ev.EntityType, ev.EntityID,
 			ev.Payload, ev.ClientTimestamp,
@@ -79,8 +98,7 @@ func InsertServerEvents(tx *sql.Tx, events []Event) (PushResult, error) {
 		if rows == 0 {
 			// Duplicate — look up existing server_seq so client can mark synced
 			var existingSeq int64
-			err := tx.QueryRow(
-				`SELECT server_seq FROM events WHERE device_id=? AND session_id=? AND client_action_id=?`,
+			err := tx.QueryRow(dupSelectSQL,
 				ev.DeviceID, ev.SessionID, ev.ClientActionID,
 			).Scan(&existingSeq)
 			if err != nil {

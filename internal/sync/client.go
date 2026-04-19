@@ -208,6 +208,111 @@ func localModifiedSinceSync(oldData json.RawMessage, lastSyncAt *time.Time) bool
 	return true
 }
 
+// GetPendingEventsPreserveSession reads unsynced, non-undone action_log rows
+// and returns them as Events whose SessionID is the value stored on each row
+// (NOT a caller-supplied session). Use this from the td-sync post-commit
+// promotion path so per-actor session_ids stamped by the REST middleware
+// (`twu_*` / `twa_*_as_*`) propagate end-to-end into events.db.
+//
+// Behavioural differences vs GetPendingEvents:
+//   - Per-row session_id is taken from action_log.session_id rather than
+//     overwritten with the caller's session.
+//   - DeviceID is the constant supplied by the caller (typically
+//     api.TdWatchServerDeviceID = "td_watch_server" — see plan §10 Q2).
+//   - No backfill (BackfillOrphanEntities / BackfillStaleIssues): promotion
+//     is for fresh writes from the REST handler that just committed. The
+//     backfill helpers exist to repair pre-existing data on the local CLI
+//     before the first push and would race / duplicate when run repeatedly
+//     on the server side.
+//
+// Other field semantics (action_type mapping, entity_type normalization,
+// {schema_version, new_data, previous_data} payload envelope, timestamp
+// parsing, ClientActionID = rowid) match GetPendingEvents exactly so
+// downstream consumers (InsertServerEvents, ApplyRemoteEvents) can't tell
+// the two paths apart.
+func GetPendingEventsPreserveSession(tx *sql.Tx, deviceID string) ([]Event, error) {
+	rows, err := tx.Query(`
+		SELECT rowid, id, session_id, action_type, entity_type, entity_id, new_data, previous_data, timestamp
+		FROM action_log
+		WHERE synced_at IS NULL AND undone = 0
+		ORDER BY rowid ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query pending events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var (
+			rowid                                              int64
+			id                                                 sql.NullString
+			rowSessionID                                       sql.NullString
+			actionType, entityType, entityID, tsStr            string
+			newDataStr, prevDataStr                            sql.NullString
+		)
+		if err := rows.Scan(&rowid, &id, &rowSessionID, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
+			return nil, fmt.Errorf("scan action_log row: %w", err)
+		}
+		if !id.Valid || id.String == "" {
+			slog.Warn("sync: skipping action_log with NULL/empty id", "rowid", rowid)
+			continue
+		}
+		if !rowSessionID.Valid || rowSessionID.String == "" {
+			// Defensive: action_log.session_id is NOT NULL per schema, so
+			// this branch shouldn't fire; skip rather than emit an event
+			// with empty session_id (InsertServerEvents would reject anyway).
+			slog.Warn("sync: skipping action_log with empty session_id", "rowid", rowid)
+			continue
+		}
+
+		clientTS, err := parseTimestamp(tsStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse timestamp rowid=%d: %w", rowid, err)
+		}
+
+		canonicalType, ok := normalizeEntityType(entityType)
+		if !ok {
+			slog.Warn("sync: skipping unsupported entity type", "entity_type", entityType, "action_id", id.String)
+			continue
+		}
+
+		newData := json.RawMessage("{}")
+		if newDataStr.Valid && newDataStr.String != "" {
+			newData = json.RawMessage(newDataStr.String)
+		}
+		prevData := json.RawMessage("{}")
+		if prevDataStr.Valid && prevDataStr.String != "" {
+			prevData = json.RawMessage(prevDataStr.String)
+		}
+
+		payload := map[string]any{
+			"schema_version": 1,
+			"new_data":       newData,
+			"previous_data":  prevData,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal payload rowid=%d: %w", rowid, err)
+		}
+
+		events = append(events, Event{
+			ClientActionID:  rowid,
+			DeviceID:        deviceID,
+			SessionID:       rowSessionID.String,
+			ActionType:      mapActionType(actionType),
+			EntityType:      canonicalType,
+			EntityID:        entityID,
+			Payload:         payloadBytes,
+			ClientTimestamp: clientTS,
+			ServerSeq:       0,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration: %w", err)
+	}
+	return events, nil
+}
+
 // MarkEventsSynced updates action_log rows with their server-assigned sequence numbers.
 func MarkEventsSynced(tx *sql.Tx, acks []Ack) error {
 	for _, ack := range acks {
