@@ -32,7 +32,10 @@ func marshalIssue(issue *models.Issue) string {
 // Returns the issue and any error. Uses the same column set as GetIssue.
 func (db *DB) scanIssueRow(id string) (*models.Issue, error) {
 	var issue models.Issue
-	var labels string
+	// NullString for every TEXT DEFAULT '' column: old rows or incoming sync
+	// payloads may have written NULL (see internal/sync/events.go). Scanning
+	// NULL into plain string crashes `td monitor` and many CLI commands.
+	var description, labels sql.NullString
 	var closedAt, deletedAt sql.NullTime
 	var parentID, acceptance, sprint sql.NullString
 	var implSession, creatorSession, reviewerSession sql.NullString
@@ -46,7 +49,7 @@ func (db *DB) scanIssueRow(id string) (*models.Issue, error) {
 		       defer_until, due_date, defer_count
 		FROM issues WHERE id = ?
 	`, id).Scan(
-		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
+		&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 		&pointsNull, &labels, &parentID, &acceptance, &sprint,
 		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		&deferUntil, &dueDate, &issue.DeferCount,
@@ -58,8 +61,9 @@ func (db *DB) scanIssueRow(id string) (*models.Issue, error) {
 		return nil, err
 	}
 
-	if labels != "" {
-		issue.Labels = strings.Split(labels, ",")
+	issue.Description = description.String
+	if labels.Valid && labels.String != "" {
+		issue.Labels = strings.Split(labels.String, ",")
 	}
 	if closedAt.Valid {
 		issue.ClosedAt = &closedAt.Time

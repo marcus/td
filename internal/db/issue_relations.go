@@ -82,7 +82,8 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 	var children []*models.Issue
 	for rows.Next() {
 		var issue models.Issue
-		var labels string
+		// NullString for every TEXT DEFAULT '' column — see GetIssue.
+		var description, labels sql.NullString
 		var closedAt, deletedAt sql.NullTime
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
@@ -91,7 +92,7 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		var deferUntil, dueDate sql.NullString
 
 		err := rows.Scan(
-			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
+			&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 			&deferUntil, &dueDate, &issue.DeferCount,
@@ -100,8 +101,9 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 			return nil, err
 		}
 
-		if labels != "" {
-			issue.Labels = strings.Split(labels, ",")
+		issue.Description = description.String
+		if labels.Valid && labels.String != "" {
+			issue.Labels = strings.Split(labels.String, ",")
 		}
 		if closedAt.Valid {
 			issue.ClosedAt = &closedAt.Time

@@ -137,6 +137,43 @@ func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
 	return cols, rows.Err()
 }
 
+// getTextEmptyDefaultColumns returns the set of TEXT columns declared with
+// DEFAULT '' on the given table. Sync payloads may carry these fields as
+// JSON null (either because a previous write set them to NULL, or because
+// the sender serialized an empty pointer/string as null). Binding NULL for
+// such columns breaks readers that scan into plain `string` — notably
+// scanIssueRow in internal/db/issues_logged.go, which crashed `td monitor`
+// with: Scan error on column index 7, name "labels": converting NULL to
+// string is unsupported. We default nil → "" for these columns at apply
+// time to match the schema's intent.
+func getTextEmptyDefaultColumns(tx *sql.Tx, table string) (map[string]bool, error) {
+	if !validColumnName.MatchString(table) {
+		return nil, fmt.Errorf("invalid table name: %q", table)
+	}
+	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return nil, err
+		}
+		// PRAGMA returns the raw default-value SQL literal. For TEXT
+		// DEFAULT '' it comes back as the two-character string "''".
+		if strings.EqualFold(ctype, "TEXT") && dfltValue.Valid && dfltValue.String == "''" {
+			cols[name] = true
+		}
+	}
+	return cols, rows.Err()
+}
+
 // applyResult holds the outcome of applying a single event.
 type applyResult struct {
 	Overwritten bool
@@ -200,9 +237,13 @@ func applyPartialUpdate(tx *sql.Tx, entityType string, entityID string, changedF
 	if err != nil {
 		return 0, fmt.Errorf("partial update %s/%s: get columns: %w", entityType, entityID, err)
 	}
+	textEmptyDefaults, err := getTextEmptyDefaultColumns(tx, entityType)
+	if err != nil {
+		return 0, fmt.Errorf("partial update %s/%s: get text defaults: %w", entityType, entityID, err)
+	}
 
 	// Normalize values for DB storage
-	normalizeFieldsForDB(entityType, changedFields)
+	normalizeFieldsForDB(entityType, changedFields, textEmptyDefaults)
 
 	// Build SET clause with only valid, changed columns
 	keys := make([]string, 0, len(changedFields))
@@ -387,13 +428,17 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 
 	fields["id"] = entityID
 
-	normalizeFieldsForDB(entityType, fields)
-
 	// Filter unknown columns for forward compatibility (spec: ignore unknown fields)
 	validCols, err := getTableColumns(tx, entityType)
 	if err != nil {
 		return applyResult{}, fmt.Errorf("upsert %s/%s: get columns: %w", entityType, entityID, err)
 	}
+	textEmptyDefaults, err := getTextEmptyDefaultColumns(tx, entityType)
+	if err != nil {
+		return applyResult{}, fmt.Errorf("upsert %s/%s: get text defaults: %w", entityType, entityID, err)
+	}
+
+	normalizeFieldsForDB(entityType, fields, textEmptyDefaults)
 	for k := range fields {
 		if !validCols[k] {
 			slog.Debug("upsert: dropping unknown column", "table", entityType, "column", k)
@@ -490,10 +535,16 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 // normalizeFieldsForDB converts non-scalar values (slices, maps) to DB-compatible strings.
 // Special case: issues.labels is stored as comma-separated text.
 // All other array/object fields are stored as JSON strings.
-func normalizeFieldsForDB(entityType string, fields map[string]any) {
+//
+// textEmptyDefaultCols, when non-nil, lists TEXT columns declared with
+// DEFAULT '' on this table. Any field present in fields with a nil value
+// whose column is in this set is defaulted to "" — otherwise INSERT binds
+// NULL, which breaks readers that scan into plain `string` (see
+// getTextEmptyDefaultColumns for the symptom that motivated this).
+func normalizeFieldsForDB(entityType string, fields map[string]any, textEmptyDefaultCols map[string]bool) {
 	for k, v := range fields {
 		if v == nil {
-			if entityType == "issues" && (k == "implementer_session" || k == "reviewer_session" || k == "creator_session") {
+			if textEmptyDefaultCols[k] {
 				fields[k] = ""
 			}
 			continue

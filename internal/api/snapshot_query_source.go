@@ -33,7 +33,8 @@ const issueColumns = `id, title, description, status, type, priority, points, la
 // scanIssue scans a single issue row using the standard column order.
 func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, error) {
 	var issue models.Issue
-	var labels string
+	// NullString for every TEXT DEFAULT '' column — see internal/db/issues.go GetIssue.
+	var description, labels sql.NullString
 	var closedAt, deletedAt sql.NullTime
 	var parentID, acceptance, sprint sql.NullString
 	var implSession, creatorSession, reviewerSession sql.NullString
@@ -42,7 +43,7 @@ func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, erro
 	var deferUntil, dueDate sql.NullString
 
 	err := scanner.Scan(
-		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
+		&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 		&pointsNull, &labels, &parentID, &acceptance, &sprint,
 		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		&deferUntil, &dueDate, &issue.DeferCount,
@@ -52,8 +53,9 @@ func scanIssue(scanner interface{ Scan(dest ...any) error }) (models.Issue, erro
 	}
 
 	issue.Points = int(pointsNull.Int64)
-	if labels != "" {
-		issue.Labels = strings.Split(labels, ",")
+	issue.Description = description.String
+	if labels.Valid && labels.String != "" {
+		issue.Labels = strings.Split(labels.String, ",")
 	}
 	if closedAt.Valid {
 		issue.ClosedAt = &closedAt.Time

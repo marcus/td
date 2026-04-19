@@ -113,7 +113,8 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 
 	// Oldest open issue
 	var oldestIssue models.Issue
-	var labels string
+	// NullString for every TEXT DEFAULT '' column — see internal/db/issues.go GetIssue.
+	var description, labels sql.NullString
 	var closedAt, deletedAt sql.NullTime
 	var parentID1, acceptance1, sprint1 sql.NullString
 	var implSession1, creatorSession1, reviewerSession1 sql.NullString
@@ -125,15 +126,16 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		       defer_until, due_date, defer_count
 		FROM issues WHERE status = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1
 	`, models.StatusOpen).Scan(
-		&oldestIssue.ID, &oldestIssue.Title, &oldestIssue.Description, &oldestIssue.Status, &oldestIssue.Type,
+		&oldestIssue.ID, &oldestIssue.Title, &description, &oldestIssue.Status, &oldestIssue.Type,
 		&oldestIssue.Priority, &oldestIssue.Points, &labels, &parentID1, &acceptance1, &sprint1,
 		&implSession1, &creatorSession1, &reviewerSession1, &oldestIssue.CreatedAt, &oldestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &oldestIssue.Minor, &createdBranch1,
 		&deferUntil1, &dueDate1, &oldestIssue.DeferCount,
 	)
 	if err == nil {
-		if labels != "" {
-			oldestIssue.Labels = strings.Split(labels, ",")
+		oldestIssue.Description = description.String
+		if labels.Valid && labels.String != "" {
+			oldestIssue.Labels = strings.Split(labels.String, ",")
 		}
 		if closedAt.Valid {
 			oldestIssue.ClosedAt = &closedAt.Time
@@ -159,7 +161,8 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 
 	// Newest task (created most recently)
 	var newestIssue models.Issue
-	labels = ""
+	description = sql.NullString{}
+	labels = sql.NullString{}
 	closedAt = sql.NullTime{}
 	deletedAt = sql.NullTime{}
 	var parentID2, acceptance2, sprint2 sql.NullString
@@ -172,15 +175,16 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		       defer_until, due_date, defer_count
 		FROM issues WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1
 	`).Scan(
-		&newestIssue.ID, &newestIssue.Title, &newestIssue.Description, &newestIssue.Status, &newestIssue.Type,
+		&newestIssue.ID, &newestIssue.Title, &description, &newestIssue.Status, &newestIssue.Type,
 		&newestIssue.Priority, &newestIssue.Points, &labels, &parentID2, &acceptance2, &sprint2,
 		&implSession2, &creatorSession2, &reviewerSession2, &newestIssue.CreatedAt, &newestIssue.UpdatedAt,
 		&closedAt, &deletedAt, &newestIssue.Minor, &createdBranch2,
 		&deferUntil2, &dueDate2, &newestIssue.DeferCount,
 	)
 	if err == nil {
-		if labels != "" {
-			newestIssue.Labels = strings.Split(labels, ",")
+		newestIssue.Description = description.String
+		if labels.Valid && labels.String != "" {
+			newestIssue.Labels = strings.Split(labels.String, ",")
 		}
 		if closedAt.Valid {
 			newestIssue.ClosedAt = &closedAt.Time
@@ -206,7 +210,8 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 
 	// Last closed issue
 	var closedIssue models.Issue
-	labels = ""
+	description = sql.NullString{}
+	labels = sql.NullString{}
 	closedAt = sql.NullTime{}
 	deletedAt = sql.NullTime{}
 	var parentID3, acceptance3, sprint3 sql.NullString
@@ -220,15 +225,16 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		FROM issues WHERE status = ? AND closed_at IS NOT NULL AND deleted_at IS NULL
 		ORDER BY closed_at DESC LIMIT 1
 	`, models.StatusClosed).Scan(
-		&closedIssue.ID, &closedIssue.Title, &closedIssue.Description, &closedIssue.Status, &closedIssue.Type,
+		&closedIssue.ID, &closedIssue.Title, &description, &closedIssue.Status, &closedIssue.Type,
 		&closedIssue.Priority, &closedIssue.Points, &labels, &parentID3, &acceptance3, &sprint3,
 		&implSession3, &creatorSession3, &reviewerSession3, &closedIssue.CreatedAt, &closedIssue.UpdatedAt,
 		&closedAt, &deletedAt, &closedIssue.Minor, &createdBranch3,
 		&deferUntil3, &dueDate3, &closedIssue.DeferCount,
 	)
 	if err == nil {
-		if labels != "" {
-			closedIssue.Labels = strings.Split(labels, ",")
+		closedIssue.Description = description.String
+		if labels.Valid && labels.String != "" {
+			closedIssue.Labels = strings.Split(labels.String, ",")
 		}
 		if closedAt.Valid {
 			closedIssue.ClosedAt = &closedAt.Time
