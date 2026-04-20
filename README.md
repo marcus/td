@@ -189,15 +189,21 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit message normalization)
 make install-hooks
 ```
+
+Commit subjects for task work use the canonical format `type[(scope)]: summary (td-<id>)`.
+Example: `feat(sync): persist per-device cursor state (td-a1b2)`.
 
 ## Tests & Quality Checks
 
 ```bash
 # Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
 make test
+
+# Test git hook scripts
+make test-hooks
 
 # Expected output: ok for each package, ~2s total runtime
 # Example:

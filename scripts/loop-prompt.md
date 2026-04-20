@@ -158,7 +158,7 @@ Batch review loops:
 
 ```bash
 git add <specific files>
-git commit -m "feat: <summary> (td-<id>)"
+git commit -m "feat(scope): <summary> (td-<id>)"
 td review <id>
 ```
 
@@ -174,4 +174,4 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit messages reference td.** Format: `type[(scope)]: <summary> (td-<id>)`
