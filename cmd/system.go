@@ -557,11 +557,11 @@ var importCmd = &cobra.Command{
 
 // exportedItem matches the JSON structure produced by the export command.
 type exportedItem struct {
-	Issue        models.Issue              `json:"issue"`
-	Logs         []models.Log              `json:"logs"`
-	Handoffs     []models.Handoff          `json:"handoffs"`
-	Dependencies []models.IssueDependency  `json:"dependencies"`
-	Files        []models.IssueFile        `json:"files"`
+	Issue        models.Issue             `json:"issue"`
+	Logs         []models.Log             `json:"logs"`
+	Handoffs     []models.Handoff         `json:"handoffs"`
+	Dependencies []models.IssueDependency `json:"dependencies"`
+	Files        []models.IssueFile       `json:"files"`
 }
 
 // UnmarshalJSON supports backward-compatible deserialization:
