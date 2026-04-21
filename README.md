@@ -189,9 +189,13 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks:
+#   pre-commit runs gofmt/go vet/go build checks
+#   commit-msg normalizes subjects to type: summary [(td-<id>)]
 make install-hooks
 ```
+
+Regular development commits should use `type: summary (td-<id>)`, for example `feat: add query validation (td-a1b2)`. Automation or release-maintenance commits that are not tied to a td task should use `type: summary`, for example `chore: bump homebrew formula to v0.2.0`.
 
 ## Tests & Quality Checks
 

@@ -53,7 +53,7 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 ```
 
 ### 3. Verify Tests Pass
@@ -73,7 +73,7 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z: brief description"
 git push origin vX.Y.Z
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries, create the GitHub release, and update the Homebrew tap.
+Pushing the tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries, create the GitHub release, and update the Homebrew tap. Release automation uses the same canonical subject shape as the rest of the repo: `type: summary`. For normal development work, keep using `type: summary (td-<id>)`.
 
 ### 5. Verify
 
@@ -137,7 +137,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
