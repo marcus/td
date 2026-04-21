@@ -125,7 +125,7 @@ func applyCrossEntityFilters(database QuerySource, issues []models.Issue, query 
 
 // crossEntityPrefetch holds pre-fetched bulk data to avoid per-issue queries
 type crossEntityPrefetch struct {
-	reworkIDs        map[string]bool
+	reworkIDs          map[string]bool
 	issuesWithOpenDeps map[string]bool
 }
 
