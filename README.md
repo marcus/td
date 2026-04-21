@@ -189,9 +189,14 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks:
+# - pre-commit runs gofmt, go vet, and go build
+# - commit-msg normalizes to type: summary or type: summary (td-<id>)
 make install-hooks
 ```
+
+For task-linked development commits, use `type: summary (td-<id>)` such as `feat: normalize commit messages (td-a1b2)`.
+For automation or release commits without a td task, use `type: summary` such as `chore: bump Homebrew formula to v0.3.0`.
 
 ## Tests & Quality Checks
 
@@ -543,8 +548,9 @@ Contributions welcome! Process:
 1. **Fork and branch**: Work on feature branches
 2. **Tests required**: Add tests for new features/fixes (see `cmd/*_test.go` for patterns)
 3. **Run `make test` and `make fmt`** before submitting
-4. **PR review**: One reviewer approval required
-5. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
+4. **Commit format**: Use `type: summary (td-<id>)` for task-linked work, or `type: summary` when no td task applies
+5. **PR review**: One reviewer approval required
+6. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
 
 ## Support
 

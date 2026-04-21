@@ -34,7 +34,7 @@ go test ./...              # Test all
 ```bash
 # Commit changes with proper message
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat: normalize commit messages (td-a1b2)
 
 Details here
 
@@ -55,6 +55,9 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Task-linked commits should use `type: summary (td-<id>)`.
+Automation-only commits should use `type: summary`, for example `chore: bump Homebrew formula to v0.3.0`.
 
 ## Architecture
 
