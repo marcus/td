@@ -16,8 +16,8 @@ import (
 
 // Styles for sync tail output
 var (
-	pushArrow = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("→")  // green
-	pullArrow = lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Render("←")  // cyan
+	pushArrow = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("→") // green
+	pullArrow = lipgloss.NewStyle().Foreground(lipgloss.Color("45")).Render("←") // cyan
 	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
