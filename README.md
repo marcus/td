@@ -189,9 +189,11 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit subject normalization)
 make install-hooks
 ```
+
+Commit subjects should use `type: summary (td-<id>)` for task-linked development work and `type: summary` for release or automation commits.
 
 ## Tests & Quality Checks
 
@@ -543,8 +545,9 @@ Contributions welcome! Process:
 1. **Fork and branch**: Work on feature branches
 2. **Tests required**: Add tests for new features/fixes (see `cmd/*_test.go` for patterns)
 3. **Run `make test` and `make fmt`** before submitting
-4. **PR review**: One reviewer approval required
-5. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
+4. **Commit format**: Use `type: summary (td-<id>)` for task-linked commits; automation/release commits may omit the td suffix
+5. **PR review**: One reviewer approval required
+6. **Session isolation respected**: PRs should follow td's own handoff patterns where applicable
 
 ## Support
 
