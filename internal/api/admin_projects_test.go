@@ -319,11 +319,11 @@ func TestAdminSyncCursors_BackfillFromEvents(t *testing.T) {
 		events := make([]EventInput, count)
 		for i := 0; i < count; i++ {
 			events[i] = EventInput{
-				ClientActionID: startID + int64(i),
-				ActionType:     "create",
-				EntityType:     "issues",
-				EntityID:       fmt.Sprintf("i_%s_%d", dev, i),
-				Payload:        json.RawMessage(`{"title":"x"}`),
+				ClientActionID:  startID + int64(i),
+				ActionType:      "create",
+				EntityType:      "issues",
+				EntityID:        fmt.Sprintf("i_%s_%d", dev, i),
+				Payload:         json.RawMessage(`{"title":"x"}`),
 				ClientTimestamp: "2025-01-01T00:00:00Z",
 			}
 		}

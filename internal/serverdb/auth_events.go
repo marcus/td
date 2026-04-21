@@ -9,22 +9,22 @@ import (
 
 // AuthEvent represents a row in the auth_events table.
 type AuthEvent struct {
-	ID              int64  `json:"id"`
-	AuthRequestID   string `json:"auth_request_id"`
-	Email           string `json:"email"`
-	EventType       string `json:"event_type"`
-	Metadata        string `json:"metadata"`
-	CreatedAt       string `json:"created_at"`
+	ID            int64  `json:"id"`
+	AuthRequestID string `json:"auth_request_id"`
+	Email         string `json:"email"`
+	EventType     string `json:"event_type"`
+	Metadata      string `json:"metadata"`
+	CreatedAt     string `json:"created_at"`
 }
 
 // Auth event type constants.
 const (
-	AuthEventStarted              = "started"
-	AuthEventCodeVerified         = "code_verified"
-	AuthEventKeyIssued            = "key_issued"
-	AuthEventExpired              = "expired"
-	AuthEventFailed               = "failed"
-	AuthEventImpersonationIssued  = "impersonation_issued"
+	AuthEventStarted             = "started"
+	AuthEventCodeVerified        = "code_verified"
+	AuthEventKeyIssued           = "key_issued"
+	AuthEventExpired             = "expired"
+	AuthEventFailed              = "failed"
+	AuthEventImpersonationIssued = "impersonation_issued"
 )
 
 // InsertAuthEvent inserts an auth event row.

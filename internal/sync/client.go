@@ -244,11 +244,11 @@ func GetPendingEventsPreserveSession(tx *sql.Tx, deviceID string) ([]Event, erro
 	var events []Event
 	for rows.Next() {
 		var (
-			rowid                                              int64
-			id                                                 sql.NullString
-			rowSessionID                                       sql.NullString
-			actionType, entityType, entityID, tsStr            string
-			newDataStr, prevDataStr                            sql.NullString
+			rowid                                   int64
+			id                                      sql.NullString
+			rowSessionID                            sql.NullString
+			actionType, entityType, entityID, tsStr string
+			newDataStr, prevDataStr                 sql.NullString
 		)
 		if err := rows.Scan(&rowid, &id, &rowSessionID, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
 			return nil, fmt.Errorf("scan action_log row: %w", err)
