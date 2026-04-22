@@ -861,6 +861,80 @@ func (m Model) handleCloseConfirmAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openRecordReviewModal opens the record-review reason prompt. Mirrors the
+// openCloseConfirmModal pattern — one text input for the reason plus the
+// Confirm / Cancel buttons. The "changes_requested" variant is available by
+// toggling decision on the model (bound to 'c' in the modal context).
+func (m Model) openRecordReviewModal(issueID, issueTitle string) Model {
+	m.RecordReviewOpen = true
+	m.RecordReviewIssueID = issueID
+	m.RecordReviewTitle = issueTitle
+	m.RecordReviewDecision = "approved"
+
+	m.RecordReviewInput = textinput.New()
+	m.RecordReviewInput.Placeholder = "Review summary (required)"
+	m.RecordReviewInput.Width = 50
+	m.RecordReviewInput.Focus()
+
+	m.RecordReviewModal = m.createRecordReviewModal()
+	m.RecordReviewModal.Reset()
+	m.RecordReviewMouseHandler = mouse.NewHandler()
+	return m
+}
+
+// closeRecordReviewModal clears the record-review modal state.
+func (m *Model) closeRecordReviewModal() {
+	m.RecordReviewOpen = false
+	m.RecordReviewIssueID = ""
+	m.RecordReviewTitle = ""
+	m.RecordReviewDecision = ""
+	m.RecordReviewModal = nil
+	m.RecordReviewMouseHandler = nil
+}
+
+// createRecordReviewModal builds the declarative modal for record-review.
+func (m *Model) createRecordReviewModal() *modal.Modal {
+	width := 60
+	title := fmt.Sprintf("Record review for %s?", m.RecordReviewIssueID)
+	md := modal.New(title,
+		modal.WithWidth(width),
+		modal.WithHints(false),
+		modal.WithPrimaryAction("confirm"),
+	)
+
+	displayTitle := m.RecordReviewTitle
+	if len(displayTitle) > 48 {
+		displayTitle = displayTitle[:45] + "..."
+	}
+	md.AddSection(modal.Text("\"" + displayTitle + "\""))
+	md.AddSection(modal.Text("Decision: " + m.RecordReviewDecision + "   (c: toggle changes_requested)"))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.InputWithLabel("reason", "Summary (required):", &m.RecordReviewInput,
+		modal.WithSubmitOnEnter(true),
+		modal.WithSubmitAction("confirm"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Confirm ", "confirm"),
+		modal.Btn(" Cancel ", "cancel"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Tab:switch  Enter:confirm  Esc:cancel  c:toggle decision"))
+	return md
+}
+
+// handleRecordReviewAction handles button actions on the record-review modal.
+func (m Model) handleRecordReviewAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "confirm":
+		return m.executeRecordReview()
+	case "cancel":
+		m.closeRecordReviewModal()
+		return m, nil
+	}
+	return m, nil
+}
+
 // navigateEpicTask navigates to the prev/next task within the epic's task list
 func (m Model) navigateEpicTask(delta int) (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()

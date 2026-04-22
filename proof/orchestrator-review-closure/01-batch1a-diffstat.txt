@@ -1,0 +1,13 @@
+ .gitignore                            |  1 +
+ cmd/sync.go                           |  8 ++++++
+ internal/api/snapshot_query_source.go | 14 +++++++---
+ internal/db/import.go                 |  8 +++---
+ internal/db/issues.go                 | 50 +++++++++++++++++++++++++++--------
+ internal/db/issues_logged.go          | 22 +++++++++++----
+ internal/db/migrations.go             | 10 +++++++
+ internal/db/schema.go                 |  9 ++++++-
+ internal/db/stats.go                  | 46 +++++++++++++++++++++++++-------
+ internal/events/taxonomy.go           | 11 ++++++++
+ internal/events/taxonomy_test.go      |  4 +--
+ internal/models/models.go             | 50 ++++++++++++++++++++++++++---------
+ 12 files changed, 185 insertions(+), 48 deletions(-)

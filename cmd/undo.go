@@ -24,6 +24,8 @@ Supported actions:
   - start: Reverts issue to open status
   - review: Reverts issue to in_progress status
   - approve/reject: Reverts issue to in_review status
+  - review_approve / review_changes_requested: Rolls back recorded review row
+  - close_after_review: Re-opens a delegated-close issue to in_review
 
 Use 'td undo --list' to see recent undoable actions.`,
 	GroupID: "system",
@@ -136,7 +138,8 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 		return database.RestoreIssueLogged(action.EntityID, sessionID)
 
 	case models.ActionUpdate, models.ActionStart, models.ActionReview,
-		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen:
+		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen,
+		models.ActionReviewApprove, models.ActionReviewChangesRequested, models.ActionCloseAfterReview:
 		// Restore previous state
 		if action.PreviousData == "" {
 			return fmt.Errorf("no previous data to restore")
@@ -144,6 +147,21 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 		var issue models.Issue
 		if err := json.Unmarshal([]byte(action.PreviousData), &issue); err != nil {
 			return fmt.Errorf("failed to parse previous data: %w", err)
+		}
+		// For review-aware actions, NewData carries a ReviewUndoPayload with
+		// the created review id and any prior-active review id that was
+		// superseded. Roll those back before restoring the issue state so
+		// audit history stays consistent.
+		if action.NewData != "" {
+			var payload models.ReviewUndoPayload
+			if err := json.Unmarshal([]byte(action.NewData), &payload); err == nil {
+				if payload.CreatedReviewID != "" {
+					_ = database.DeleteIssueReview(payload.CreatedReviewID)
+				}
+				if payload.PriorActiveReviewID != "" {
+					_ = database.ClearReviewSupersededAt(payload.PriorActiveReviewID)
+				}
+			}
 		}
 		// Use logged variant to generate sync event
 		return database.UpdateIssueLogged(&issue, sessionID, models.ActionUpdate)

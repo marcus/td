@@ -130,6 +130,9 @@ Examples:
 		logs, _ := database.GetLogs(issueID, 0)
 		handoff, _ := database.GetLatestHandoff(issueID)
 
+		// Get review history (best-effort; never fail show on this)
+		reviews, _ := database.ListIssueReviews(issueID)
+
 		// Get linked files
 		files, _ := database.GetLinkedFiles(issueID)
 
@@ -155,24 +158,53 @@ Examples:
 		}
 		if jsonOutput {
 			result := map[string]interface{}{
-				"id":                  issue.ID,
-				"title":               issue.Title,
-				"description":         issue.Description,
-				"status":              issue.Status,
-				"type":                issue.Type,
-				"priority":            issue.Priority,
-				"points":              issue.Points,
-				"labels":              issue.Labels,
-				"parent_id":           issue.ParentID,
-				"acceptance":          issue.Acceptance,
-				"implementer_session": issue.ImplementerSession,
-				"reviewer_session":    issue.ReviewerSession,
-				"created_at":          issue.CreatedAt,
-				"updated_at":          issue.UpdatedAt,
-				"minor":               issue.Minor,
+				"id":                          issue.ID,
+				"title":                       issue.Title,
+				"description":                 issue.Description,
+				"status":                      issue.Status,
+				"type":                        issue.Type,
+				"priority":                    issue.Priority,
+				"points":                      issue.Points,
+				"labels":                      issue.Labels,
+				"parent_id":                   issue.ParentID,
+				"acceptance":                  issue.Acceptance,
+				"implementer_session":         issue.ImplementerSession,
+				"reviewer_session":            issue.ReviewerSession,
+				"review_requested_by_session": issue.ReviewRequestedBySession,
+				"closed_by_session":           issue.ClosedBySession,
+				"created_at":                  issue.CreatedAt,
+				"updated_at":                  issue.UpdatedAt,
+				"minor":                       issue.Minor,
+			}
+			if issue.ReviewedAt != nil {
+				result["reviewed_at"] = issue.ReviewedAt
 			}
 			if issue.ClosedAt != nil {
 				result["closed_at"] = issue.ClosedAt
+			}
+			if len(reviews) > 0 {
+				reviewEntries := make([]map[string]interface{}, 0, len(reviews))
+				// Show last 3 in chronological (oldest first) order.
+				start := 0
+				if len(reviews) > 3 {
+					start = len(reviews) - 3
+				}
+				for _, r := range reviews[start:] {
+					e := map[string]interface{}{
+						"id":               r.ID,
+						"decision":         r.Decision,
+						"reviewer_session": r.ReviewerSession,
+						"summary":          r.Summary,
+						"created_at":       r.CreatedAt,
+						"requested_by":     r.RequestedBySession,
+						"superseded":       r.SupersededAt != nil,
+					}
+					if r.SupersededAt != nil {
+						e["superseded_at"] = r.SupersededAt
+					}
+					reviewEntries = append(reviewEntries, e)
+				}
+				result["review_history"] = reviewEntries
 			}
 			if issue.DeferUntil != nil {
 				result["defer_until"] = *issue.DeferUntil
@@ -241,6 +273,51 @@ Examples:
 
 		// Long format (default)
 		fmt.Print(output.FormatIssueLong(issueForOutput, logs, handoff))
+
+		// Reviewer/closer metadata: surfaced whenever any field is set so the
+		// audit data is visible even for closed issues.
+		if issue.ReviewerSession != "" || issue.ClosedBySession != "" || issue.ReviewedAt != nil || issue.ClosedAt != nil {
+			fmt.Print(output.SectionHeader("Review / Close"))
+			if issue.ReviewerSession != "" {
+				line := fmt.Sprintf("  Reviewer of record: %s", issue.ReviewerSession)
+				if issue.ReviewedAt != nil {
+					line += fmt.Sprintf(" (reviewed %s)", output.FormatTimeAgo(*issue.ReviewedAt))
+				}
+				fmt.Println(line)
+			}
+			if issue.ReviewRequestedBySession != "" {
+				fmt.Printf("  Review requested by: %s\n", issue.ReviewRequestedBySession)
+			}
+			if issue.ClosedBySession != "" {
+				line := fmt.Sprintf("  Closed by: %s", issue.ClosedBySession)
+				if issue.ClosedAt != nil {
+					line += fmt.Sprintf(" (closed %s)", output.FormatTimeAgo(*issue.ClosedAt))
+				}
+				fmt.Println(line)
+			}
+		}
+
+		// Recent review history: last 3 entries chronologically.
+		if len(reviews) > 0 {
+			fmt.Print(output.SectionHeader("Recent Reviews"))
+			start := 0
+			if len(reviews) > 3 {
+				start = len(reviews) - 3
+			}
+			for _, r := range reviews[start:] {
+				marker := ""
+				if r.SupersededAt != nil {
+					marker = " [superseded]"
+				}
+				summary := r.Summary
+				if summary == "" {
+					summary = "(no summary)"
+				}
+				fmt.Printf("  [%s] %s by %s: %s%s\n",
+					r.CreatedAt.Format("2006-01-02 15:04"),
+					r.Decision, r.ReviewerSession, summary, marker)
+			}
+		}
 
 		// Add git state section
 		if startSnapshot != nil {

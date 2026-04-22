@@ -14,6 +14,7 @@ import (
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/pkg/monitor/keymap"
@@ -548,6 +549,49 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil // Key was handled by modal
 		}
 		// Also consume regular character keys for the input field
+		if msg.Type == tea.KeyRunes {
+			return m, nil
+		}
+		// Fall through to keymap only for unhandled keys (like esc)
+	}
+
+	// Record-review modal: 'c' toggles decision between approved and
+	// changes_requested. All other keys are routed through the declarative
+	// modal (tab/shift+tab/enter/esc + text input). Without this block the
+	// modal's "c: toggle changes_requested" hint is dead — the decision stays
+	// stuck on "approved".
+	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
+		// Intercept 'c' before the modal so it doesn't flow into the textinput.
+		// Only toggle when the focused section isn't the text input (i.e. no
+		// runes should reach the input field); using msg.String() == "c" keeps
+		// this strict. When the user is typing in the input field (focused via
+		// tab), the declarative modal's text section consumes runes — we
+		// short-circuit here so 'c' is always a toggle, not a literal.
+		if msg.String() == "c" {
+			if m.RecordReviewDecision == reviewpolicy.DecisionChangesRequested {
+				m.RecordReviewDecision = reviewpolicy.DecisionApproved
+			} else {
+				m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
+			}
+			// Rebuild modal so the rendered "Decision: ..." line reflects the
+			// new state.
+			m.RecordReviewModal = m.createRecordReviewModal()
+			m.RecordReviewModal.Reset()
+			return m, nil
+		}
+
+		action, cmd := m.RecordReviewModal.HandleKey(msg)
+		if action != "" {
+			return m.handleRecordReviewAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		key := msg.String()
+		switch key {
+		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end", "backspace", "delete":
+			return m, nil
+		}
 		if msg.Type == tea.KeyRunes {
 			return m, nil
 		}
@@ -1213,6 +1257,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdApprove:
 		if m.ActivePanel == PanelTaskList {
 			return m.approveIssue()
+		}
+		return m, nil
+
+	case keymap.CmdRecordReview:
+		if m.ActivePanel == PanelTaskList {
+			return m.recordReviewAction()
 		}
 		return m, nil
 

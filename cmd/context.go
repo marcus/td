@@ -85,8 +85,22 @@ var usageCmd = &cobra.Command{
 			SortBy:      "priority",
 		})
 
-		// Get reviewable issues
-		reviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+		// Get reviewable issues and split into awaiting/ready-to-close.
+		allReviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+		reviewable := make([]models.Issue, 0, len(allReviewable))
+		readyToClose := make([]models.Issue, 0)
+		readyReviews := make(map[string]*models.IssueReview)
+		for _, issue := range allReviewable {
+			rev, _ := database.GetActiveApprovalReview(issue.ID)
+			if rev == nil {
+				reviewable = append(reviewable, issue)
+				continue
+			}
+			if closerAllowed(&issue, sess.ID, rev) {
+				readyToClose = append(readyToClose, issue)
+				readyReviews[issue.ID] = rev
+			}
+		}
 
 		// Get ready issues (open, not blocked by dependencies)
 		ready, _ := database.ListIssues(db.ListIssuesOptions{
@@ -98,13 +112,14 @@ var usageCmd = &cobra.Command{
 
 		if jsonOutput {
 			result := map[string]interface{}{
-				"session":      sess.ID,
-				"focused":      focusedIssue,
-				"work_session": activeWS,
-				"ws_issues":    wsIssues,
-				"in_progress":  inProgress,
-				"reviewable":   reviewable,
-				"ready":        ready,
+				"session":        sess.ID,
+				"focused":        focusedIssue,
+				"work_session":   activeWS,
+				"ws_issues":      wsIssues,
+				"in_progress":    inProgress,
+				"reviewable":     reviewable,
+				"ready_to_close": readyToClose,
+				"ready":          ready,
 			}
 			return output.JSON(result)
 		}
@@ -181,6 +196,15 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 		}
 
+		if len(readyToClose) > 0 {
+			fmt.Printf("READY TO CLOSE (%d issues) — review already recorded:\n", len(readyToClose))
+			for _, issue := range readyToClose {
+				rev := readyReviews[issue.ID]
+				fmt.Printf("  %s \"%s\" %s - reviewed by %s (run `td approve %s` to close)\n", issue.ID, issue.Title, issue.Priority, rev.ReviewerSession, issue.ID)
+			}
+			fmt.Println()
+		}
+
 		if len(ready) > 0 {
 			fmt.Printf("READY TO START (%d issues):\n", len(ready))
 			for _, issue := range ready {
@@ -199,7 +223,10 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  3. `td handoff <id>` to capture state (REQUIRED)")
 			fmt.Println("     Multi-issue: `td ws handoff`")
 			fmt.Println("  4. `td review <id>` to submit for review")
-			fmt.Println("  5. Reviewer: `td approve <id>` to close in_review work, or `td reject <id>` to send it back to open")
+			fmt.Println("     (the submitting session is recorded as review_requested_by_session)")
+			fmt.Println("  5. Reviewer: `td approve <id>` to review + close, or `td reject <id>` to return to open")
+			fmt.Println("     Delegated mode: reviewer can `td approve <id> --record-only --reason \"...\"` to")
+			fmt.Println("     record approval without closing; any involved session may then close with `td approve <id>`.")
 			fmt.Println()
 			fmt.Println("  Use `td ws` commands when implementing multiple related issues.")
 			fmt.Println()
@@ -212,9 +239,16 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  td status --json        Machine-readable session and review state")
 			fmt.Println("  td list --json          Machine-readable issue listings for scripts")
 			fmt.Println("  td reviewable           Issues you can review")
+			fmt.Println("  td reviewable --include-approved  Also show reviewed issues you can close")
 			fmt.Println("  td approve/reject <id>  Complete review")
 			fmt.Println()
-			fmt.Println("IMPORTANT: You cannot approve issues you implemented.")
+			fmt.Println("IMPORTANT: You cannot review your own implementation, but you can close after")
+			fmt.Println("  an independent review has been recorded. An independent review is required;")
+			fmt.Println("  the close may be delegated to any involved session.")
+			fmt.Println("  Under review_policy_mode=delegated: reviewer runs")
+			fmt.Println("  `td approve <id> --record-only --reason \"...\"`, then any involved session")
+			fmt.Println("  (creator, implementer, review-requester, reviewer-of-record) closes with")
+			fmt.Println("  `td approve <id>`.")
 			fmt.Println("  Exception: `td add \"title\" --minor` creates self-reviewable tasks.")
 			fmt.Println()
 			fmt.Println("WARNING: Do NOT use `td close` for completed work!")

@@ -18,7 +18,7 @@ func marshalDependency(id, issueID, dependsOnID, relationType string) string {
 
 // AddDependencyLogged adds a dependency and logs the action atomically within a single withWriteLock call.
 func (db *DB) AddDependencyLogged(issueID, dependsOnID, relationType, sessionID string) error {
-	return db.withWriteLock(func() error {
+	err := db.withWriteLock(func() error {
 		depID := DependencyID(issueID, dependsOnID, relationType)
 		_, err := db.conn.Exec(`
 			INSERT OR REPLACE INTO issue_dependencies (id, issue_id, depends_on_id, relation_type)
@@ -44,6 +44,12 @@ func (db *DB) AddDependencyLogged(issueID, dependsOnID, relationType, sessionID 
 
 		return nil
 	})
+	if err == nil {
+		// reviewpolicy.IssueMutation.DependenciesChanged: post-mutation
+		// invalidation of any active approval on this issue. Best-effort.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }
 
 // marshalFileLink returns a JSON representation of an issue_files row for action_log storage.
@@ -56,7 +62,7 @@ func marshalFileLink(id, issueID, filePath, role, sha, linkedAt string) string {
 
 // LinkFileLogged links a file and logs the action atomically within a single withWriteLock call.
 func (db *DB) LinkFileLogged(issueID, filePath string, role models.FileRole, sha, sessionID string) error {
-	return db.withWriteLock(func() error {
+	err := db.withWriteLock(func() error {
 		id := IssueFileID(issueID, filePath)
 		now := time.Now()
 		_, err := db.conn.Exec(`
@@ -80,11 +86,18 @@ func (db *DB) LinkFileLogged(issueID, filePath string, role models.FileRole, sha
 		}
 		return nil
 	})
+	if err == nil {
+		// reviewpolicy.IssueMutation.LinkedFilesChanged: supersede any
+		// active approval on the issue. Best-effort.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }
 
 // UnlinkFileLogged removes a file link and logs the action atomically within a single withWriteLock call.
 func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
-	return db.withWriteLock(func() error {
+	var didDelete bool
+	err := db.withWriteLock(func() error {
 		id := IssueFileID(issueID, filePath)
 
 		// Capture current row before deletion
@@ -101,6 +114,7 @@ func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
 		if err != nil {
 			return err
 		}
+		didDelete = true
 
 		actionID, err := generateActionID()
 		if err != nil {
@@ -115,12 +129,19 @@ func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
 		}
 		return nil
 	})
+	if err == nil && didDelete {
+		// LinkedFilesChanged invalidation. Skipped on the no-op path
+		// (row didn't exist) so missing-link calls don't reset reviews.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }
 
 // RemoveDependencyLogged removes a dependency and logs the action atomically within a single withWriteLock call.
 // If the dependency does not exist locally, this is a no-op (no action_log entry is created).
 func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) error {
-	return db.withWriteLock(func() error {
+	var didDelete bool
+	err := db.withWriteLock(func() error {
 		// Check if the dependency exists before deleting
 		var relationType string
 		err := db.conn.QueryRow(`SELECT relation_type FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID).Scan(&relationType)
@@ -136,6 +157,7 @@ func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) err
 		if err != nil {
 			return err
 		}
+		didDelete = true
 
 		// Log the action
 		actionID, err := generateActionID()
@@ -152,4 +174,9 @@ func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) err
 
 		return nil
 	})
+	if err == nil && didDelete {
+		// DependenciesChanged invalidation. Best-effort.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }

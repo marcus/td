@@ -1,5 +1,8 @@
 # Spec: Balanced Review Policy
 
+> **Superseded for orchestrator flows by** [spec-delegated-review-closure.md](./spec-delegated-review-closure.md).
+> Balanced mode remains available as a policy mode (`review_policy_mode=balanced`) for projects that want the creator-exception behavior without the full delegated-review model. The broader orchestrator use case — independent reviewer + delegated close — is now handled by the `delegated` mode described in that spec.
+
 ## Summary
 
 TD now supports a balanced review policy that reduces coordinator friction in multi-agent workflows while preserving anti-rubber-stamp guardrails.

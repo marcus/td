@@ -69,15 +69,15 @@ Steps 3-4 are critical for multi-context work. Logs and handoffs persist across 
 
 Each agent instance (terminal, context window) gets a unique session ID. This ensures:
 
-- Agent A's work is reviewed by Agent B (no self-approval)
+- Agent A's work is reviewed by an independent session (no self-review)
 - Handoffs between contexts are explicit and trackable
-- Review history shows which session made which changes
+- Review history shows which session implemented, which recorded the review, and which closed
 
-Sessions are created automatically based on the agent's terminal context. You can also force a new session with `td session --new` or label the current one with `td session "name"`.
+Sessions are created automatically based on the agent's terminal context. You can also force a new session with `td session --new` or label the current one with `td session "name"`. **Do not start a new session mid-work just to satisfy the review rules** — it defeats the audit trail.
 
 ## Multi-Agent Workflows
 
-td enforces that the implementer cannot be the reviewer. This naturally supports multi-agent workflows:
+The core guardrail is simple: you cannot review your own implementation, but you can close after an independent review has been recorded. This naturally supports multi-agent workflows:
 
 ```bash
 # Agent 1 implements
@@ -86,37 +86,78 @@ td log "implemented feature X"
 td handoff td-a1b2 --done "Built X with tests" --remaining "Needs review"
 td review td-a1b2
 
-# Agent 2 reviews (different session)
+# Agent 2 reviews (separate session)
 td reviewable
 td approve td-a1b2    # or: td reject td-a1b2 --reason "needs fix"
 ```
 
-Because each agent context gets a different session ID, the system prevents the same agent from both implementing and approving a change.
+### Review Policy Modes
 
-### Balanced Review Policy
+td supports three review policy modes via `review_policy_mode`:
 
-By default, td uses a **balanced review policy** that makes lead/worker patterns smoother. If your orchestrator session *created* a task but a sub-agent *implemented* it, the orchestrator can approve with a reason:
+- `delegated` — **default for new installs.** Review attestations; any involved session may close after an independent review is recorded.
+- `strict` — no prior involvement allowed on the reviewer.
+- `balanced` — strict, plus a creator-approval exception. Retained for projects that explicitly opt in.
+
+The legacy `balanced_review_policy` flag is deprecated; prefer `review_policy_mode=balanced` instead.
+
+Pin or change the mode:
 
 ```bash
-# Orchestrator creates task
-td add "Refactor auth module"
-
-# Sub-agent implements (different session)
-td start td-c3d4
-td review td-c3d4
-
-# Orchestrator approves (creator, not implementer)
-td approve td-c3d4 --reason "Reviewed diff, tests pass"
+td feature set review_policy_mode strict     # or balanced, or delegated
+# or, one-off:
+TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 ```
 
-Implementation self-approval remains blocked — you can't approve work you started or worked on. Creator-exception approvals are logged to the security audit trail (`td security`).
+### Delegated Review: Orchestrator + Sub-Agents
 
-To disable and revert to strict mode: `td feature set balanced_review_policy false`.
+Under `delegated`, an orchestrator coordinates work across sub-agents. The review must come from a session that did not participate in implementation, but the close may be performed by any involved session — so the orchestrator can finish the task once a reviewer sub-agent records approval.
+
+```bash
+# Orchestrator creates work
+td add "Refactor auth module" --type feature
+
+# Implementer sub-agent (separate session) does the work
+td start td-c3d4
+td log "refactored auth module"
+td handoff td-c3d4 --done "refactor" --remaining "none"
+
+# Orchestrator submits for review — this sets review_requested_by_session,
+# which is one of the allowed-closer roles under delegated mode.
+td review td-c3d4
+
+# Reviewer sub-agent (separate session) records an approval without closing
+td approve td-c3d4 --record-only --reason "Reviewed diff, tests pass"
+
+# Orchestrator (or the implementer) closes using the recorded approval
+td approve td-c3d4
+```
+
+Important details for orchestrators:
+
+- The orchestrator must own at least one explicit role on the issue (creator, implementer, reviewer-of-record, or the session that ran `td review`). Running `td review` from the orchestrator is the simplest way to reserve close permission.
+- The reviewer sub-agent cannot have implementation history on the issue. Fresh reviewer sessions are the safest choice.
+- A reviewer can also record a non-approving decision: `td approve <id> --record-only --decision changes_requested --reason "fix X"`.
+- Use `td reviewable --include-approved` to surface reviewed issues the current session is allowed to close.
+
+### Balanced (Legacy): Creator Exception
+
+Under `balanced`, if your orchestrator session *created* a task but a sub-agent *implemented* it, the orchestrator can approve with a reason. This is a legacy pattern; prefer the delegated flow above when it is available.
+
+```bash
+td add "Refactor auth module"                              # orchestrator
+td start td-c3d4                                           # sub-agent
+td review td-c3d4
+td approve td-c3d4 --reason "Reviewed diff, tests pass"    # orchestrator
+```
+
+Implementation self-approval remains blocked. Creator-exception approvals are logged to the security audit trail (`td security`).
 
 ## Tips
 
 - **Always start with `td usage --new-session`** -- this is the single most important instruction for any agent.
 - **Log frequently** -- short, hyper-concise messages. These survive context resets.
 - **Handoff before stopping** -- if work is incomplete, `td handoff` captures state for the next agent.
-- **Don't start new sessions mid-work** -- sessions track implementers. A new session mid-task bypasses review enforcement.
+- **Do NOT start new sessions mid-work** -- sessions track implementers. A new session mid-task looks like a bypass of the review guardrails and breaks audit trails. Use a real reviewer sub-agent instead.
+- **Orchestrators: run `td review` yourself** -- it stamps `review_requested_by_session` so you retain close permission once a reviewer sub-agent records approval.
 - **Use quiet mode after first read** -- `td usage -q` avoids repeating workflow instructions every time.

@@ -103,7 +103,7 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 
 // TagIssueToWorkSession links an issue to a work session
 func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
-	return db.withWriteLock(func() error {
+	err := db.withWriteLock(func() error {
 		id := WsiID(wsID, issueID)
 		now := time.Now()
 		_, err := db.conn.Exec(`
@@ -130,11 +130,16 @@ func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
 
 		return nil
 	})
+	if err == nil {
+		// WorkSessionTagsChanged invalidation. Best-effort.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }
 
 // UntagIssueFromWorkSession removes an issue from a work session
 func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
-	return db.withWriteLock(func() error {
+	err := db.withWriteLock(func() error {
 		id := WsiID(wsID, issueID)
 		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE id = ?`, id)
 		if err != nil {
@@ -157,6 +162,13 @@ func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
 
 		return nil
 	})
+	if err == nil {
+		// WorkSessionTagsChanged invalidation. Best-effort. The DELETE
+		// is a no-op when the row doesn't exist, but supersede is also
+		// a no-op when there's no active approval, so this is safe.
+		db.supersedeApprovalIfLinked(issueID)
+	}
+	return err
 }
 
 // GetWorkSessionIssues returns issues tagged to a work session

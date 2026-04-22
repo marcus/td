@@ -50,6 +50,7 @@ func DefaultBindings() []Binding {
 		{Key: "r", Command: CmdMarkForReview, Context: ContextMain, Description: "Review/Refresh"},
 		{Key: "R", Command: CmdMarkForReview, Context: ContextMain, Description: "Submit for review"},
 		{Key: "a", Command: CmdApprove, Context: ContextMain, Description: "Approve issue"},
+		{Key: "V", Command: CmdRecordReview, Context: ContextMain, Description: "Record approval review (delegated mode)"},
 		{Key: "x", Command: CmdDelete, Context: ContextMain, Description: "Delete issue"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextMain, Description: "Close issue"},
 		{Key: "O", Command: CmdReopenIssue, Context: ContextMain, Description: "Reopen issue"},

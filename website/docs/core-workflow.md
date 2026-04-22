@@ -79,40 +79,84 @@ Without handoffs, the next AI session starts from scratch, re-reads code, and ma
 Submit completed work for review:
 
 ```bash
-td review td-a1b2         # Submit for review (status -> in_review)
-td reviewable              # Show issues reviewable by current session
-td approve td-a1b2         # Close the issue
-td reject td-a1b2 --reason "Missing error handling"  # Back to in_progress
+td review td-a1b2                # Submit for review (status -> in_review)
+td reviewable                     # Issues you can independently review
+td reviewable --include-approved  # Also show reviewed issues you can close
+td approve td-a1b2                # Approve and close
+td reject td-a1b2 --reason "Missing error handling"  # Back to open
 ```
 
-The session that implemented an issue **cannot** approve it — but the review policy is smarter than a blanket block.
+**You cannot review your own implementation, but you can close after an independent review has been recorded.** An independent review is required; the close itself may be delegated to any involved session.
 
-### Balanced Review Policy (default)
+### Review Policy Modes
 
-td uses a **balanced review policy** that distinguishes between creating a task and implementing it:
+td exposes three policy modes via `review_policy_mode`:
 
-- **Implementer self-approval is always blocked** — if you started or worked on a task, you can't approve it.
-- **Creator-approval is allowed** when a *different* session did the implementation, as long as you provide a reason: `td approve td-a1b2 --reason "Reviewed agent output, tests pass"`.
-- **All other previously-involved sessions remain blocked**.
+- `delegated` — review attestations with delegated close. **Default for new installs.** Reviewer independence is enforced; any involved role (creator, implementer, reviewer, review-requester) may perform the final close once an independent review has been recorded.
+- `strict` — no prior involvement allowed on the reviewer at all. Preserved for orchestrators that want the legacy close-time session lock.
+- `balanced` — strict, plus a creator-approval exception (see below). Retained for projects that explicitly opt in.
 
-This unlocks the common lead/worker pattern:
+The legacy `balanced_review_policy` flag is **deprecated**; prefer `review_policy_mode=balanced` instead. Setting the legacy flag still works but emits a one-time deprecation warning.
+
+Set the mode per-project or via env:
 
 ```bash
-# Lead creates and assigns work
-td add "Build feature X"
-
-# Agent implements (different session)
-td start td-a1b2
-td log "implemented feature X"
-td review td-a1b2
-
-# Lead reviews and approves (same session that created)
-td approve td-a1b2 --reason "Reviewed output, looks good"
+td feature set review_policy_mode strict   # or balanced, or delegated
+# or, one-off:
+TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 ```
 
-Creator-exception approvals are audited in the security log (`td security`).
+### Balanced (Legacy) — Creator Exception
 
-To revert to strict mode (no creator-exception): `td feature set balanced_review_policy false`.
+Under `balanced`, a session that *created* a task (but didn't implement it) can approve with a reason:
+
+- **Implementer self-approval is always blocked** — if you started or worked on a task, you can't approve it.
+- **Creator-approval is allowed** when a *different* session did the implementation, with `--reason`.
+- **All other previously-involved sessions remain blocked**.
+
+```bash
+# Lead creates work, agent implements, lead approves
+td add "Build feature X"
+td start td-a1b2           # agent session
+td review td-a1b2
+td approve td-a1b2 --reason "Reviewed output, looks good"   # lead session
+```
+
+Creator-exception approvals are audited in `td security`.
+
+### Delegated — Review Attestations and Delegated Close
+
+Under `delegated`, the review step and the close step are separate:
+
+- A reviewer session records an approval (or requests changes) via `td approve --record-only --reason "..."`.
+- Once an approval review exists, **any involved session** (creator, implementer, review-requester, reviewer-of-record) may close with `td approve`.
+
+Two flows are natural under this mode:
+
+**Direct reviewer-close** — the reviewer both approves and closes in one step:
+
+```bash
+td review td-a1b2
+td approve td-a1b2                 # reviewer session: approve + close
+```
+
+**Record approval, close later** — a reviewer sub-agent attests, and the orchestrator or implementer closes when convenient:
+
+```bash
+td review td-a1b2                                                          # orchestrator submits
+td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"      # reviewer records
+td approve td-a1b2                                                         # orchestrator closes
+```
+
+The second flow is the typical orchestrator pattern. The orchestrator must own at least one role on the issue (creator, implementer, reviewer-of-record, or `review_requested_by_session`); submitting the issue with `td review` is the simplest way to reserve the close permission.
+
+A reviewer can also record a non-approving decision:
+
+```bash
+td approve td-a1b2 --record-only --decision changes_requested --reason "fix X"
+```
+
+Use `td reviewable --include-approved` to surface reviewed issues you're allowed to close.
 
 ## Issue Lifecycle
 
@@ -133,7 +177,7 @@ Rejection sends an issue back to `in_progress` with a reason attached, so the im
 
 ## Session Isolation
 
-Every terminal or context window gets an automatic session ID. This powers the review constraint: the implementing session cannot also approve its own work.
+Every terminal or context window gets an automatic session ID. This powers the core review guardrail: the review must come from a session that did not participate in implementation.
 
 Why this matters:
 - Forces structured handoffs between sessions rather than implicit assumptions
@@ -141,4 +185,6 @@ Why this matters:
 - Prevents a single long-lived session from both writing and rubber-stamping code
 - Mirrors real code review, where a different person checks the work
 
-The balanced review policy relaxes this for task *creators* who didn't implement the work — see [Review Workflow](#review-workflow) above.
+**Do not start a new session mid-work just to satisfy the review rules.** Sessions track implementers, and an artificial mid-task rotation defeats the audit trail. Use a real reviewer sub-agent or a separate agent context instead.
+
+Under `delegated` mode the *review* must be independent but the *close* may be delegated to any involved session — see [Review Workflow](#review-workflow) above. Under `balanced` mode, a creator-approval exception allows the same session that created a task to approve it once a different session implemented it.

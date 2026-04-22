@@ -48,6 +48,7 @@ var commandMetadata = map[Command]struct {
 	// High priority - always in footer (P1)
 	CmdOpenDetails:   {"Details", "Open issue details", 1},
 	CmdApprove:       {"Approve", "Approve issue", 1},
+	CmdRecordReview:  {"Record", "Record approval review only", 2},
 	CmdMarkForReview: {"Review", "Mark for review", 1},
 	CmdSearch:        {"Search", "Search issues", 1},
 	CmdClose:         {"Close", "Close modal", 1},

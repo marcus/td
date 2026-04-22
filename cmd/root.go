@@ -394,7 +394,7 @@ func showWorkflowHint(attempted, suggested, hint string) {
 	fmt.Fprintf(os.Stderr, "  1. td start <id>     - Begin work\n")
 	fmt.Fprintf(os.Stderr, "  2. td handoff <id>   - Capture state (required)\n")
 	fmt.Fprintf(os.Stderr, "  3. td review <id>    - Submit for review\n")
-	fmt.Fprintf(os.Stderr, "  4. td approve <id>   - Complete (different session)\n\n")
+	fmt.Fprintf(os.Stderr, "  4. td approve <id>   - Complete (independent reviewer records approval)\n\n")
 	fmt.Fprintf(os.Stderr, "%s\n\n", hint)
 	fmt.Fprintf(os.Stderr, "Run 'td usage -q' for full reference.\n")
 }

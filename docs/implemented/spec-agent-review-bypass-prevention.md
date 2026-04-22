@@ -1,5 +1,8 @@
 # Spec: Prevent Agents from Bypassing Review Workflow
 
+> **See also** [spec-delegated-review-closure.md](./spec-delegated-review-closure.md).
+> The implementation-history tracking introduced here (`CreatorSession`, `issue_session_history`, `WasSessionImplementationInvolved`) is the foundation that the delegated-review policy builds on. Delegated review reuses these checks to define reviewer independence, while allowing any involved session to perform the close once an independent review has been recorded.
+
 ## Problem Summary
 
 Agents can bypass the review workflow through several mechanisms:

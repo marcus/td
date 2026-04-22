@@ -31,13 +31,15 @@ func upsertIssueExec(e execer, issue *models.Issue) error {
 		INSERT OR REPLACE INTO issues (
 			id, title, description, status, type, priority, points, labels,
 			parent_id, acceptance, sprint, implementer_session, creator_session,
-			reviewer_session, created_at, updated_at, closed_at, deleted_at,
+			reviewer_session, review_requested_by_session, closed_by_session,
+			created_at, updated_at, reviewed_at, closed_at, deleted_at,
 			minor, created_branch, defer_until, due_date, defer_count
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type,
 		issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance,
 		issue.Sprint, issue.ImplementerSession, issue.CreatorSession,
-		issue.ReviewerSession, issue.CreatedAt, issue.UpdatedAt,
+		issue.ReviewerSession, issue.ReviewRequestedBySession, issue.ClosedBySession,
+		issue.CreatedAt, issue.UpdatedAt, issue.ReviewedAt,
 		issue.ClosedAt, issue.DeletedAt, issue.Minor, issue.CreatedBranch,
 		deferUntil, dueDate, issue.DeferCount)
 	return err
@@ -75,10 +77,22 @@ func insertIssueFileExec(e execer, file *models.IssueFile) error {
 
 // UpsertIssueRaw inserts or replaces an issue with all fields as-is.
 // No ID generation, no status defaulting, no action_log entry.
+//
+// Batch 1c: when the incoming issue differs from the existing row in a
+// review-invalidating way (see internal/reviewpolicy.IsReviewInvalidatingMutation)
+// the active approval review is superseded. This keeps sync-imported
+// mutations from silently carrying a stale approval through a remote edit.
 func (db *DB) UpsertIssueRaw(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
 		issue.ID = NormalizeIssueID(issue.ID)
-		return upsertIssueExec(db.conn, issue)
+		prev, _ := db.scanIssueRow(issue.ID) // may be nil when inserting a new issue
+		if err := upsertIssueExec(db.conn, issue); err != nil {
+			return err
+		}
+		if prev != nil {
+			db.supersedeIfReviewInvalidating(prev, issue)
+		}
+		return nil
 	})
 }
 
@@ -117,10 +131,19 @@ func (db *DB) ReplaceIssueRaw(issue *models.Issue) error {
 // ImportItemRaw atomically imports an issue with all associated data in a single
 // transaction. When replace is true, existing associated data is deleted first.
 // No action_log entries are created.
+//
+// Review invalidation: when the incoming issue differs from the existing row
+// in a review-invalidating way, or when the import brings new deps/files/tags
+// onto an existing issue (replace=false with any non-empty slice) or wipes
+// them (replace=true), the active approval is superseded post-commit. This
+// covers the LinkedFilesChanged/DependenciesChanged invariants for the sync
+// import path. The base-issue field diff is still handled by
+// supersedeIfReviewInvalidating below.
 func (db *DB) ImportItemRaw(issue *models.Issue, logs []models.Log, handoffs []models.Handoff, deps []models.IssueDependency, files []models.IssueFile, replace bool) error {
-	return db.withWriteLock(func() error {
-		issue.ID = NormalizeIssueID(issue.ID)
+	issue.ID = NormalizeIssueID(issue.ID)
+	var prevBeforeImport *models.Issue
 
+	err := db.withWriteLock(func() error {
 		// td import can legitimately reference sibling issues whose rows
 		// will arrive in a later ImportItemRaw call (e.g. issue A depends
 		// on issue B, but B appears later in the JSON). FK enforcement
@@ -131,6 +154,9 @@ func (db *DB) ImportItemRaw(issue *models.Issue, logs []models.Log, handoffs []m
 			return fmt.Errorf("disable foreign_keys for import: %w", err)
 		}
 		defer func() { _, _ = db.conn.Exec("PRAGMA foreign_keys = ON") }()
+
+		// Capture prev state so we can run reviewInvalidatingDiff post-commit.
+		prevBeforeImport, _ = db.scanIssueRow(issue.ID) // nil when new issue
 
 		tx, err := db.conn.Begin()
 		if err != nil {
@@ -176,4 +202,21 @@ func (db *DB) ImportItemRaw(issue *models.Issue, logs []models.Log, handoffs []m
 
 		return tx.Commit()
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Post-commit review invalidation. Only runs when the import actually
+	// touched an already-existing issue (prev != nil).
+	if prevBeforeImport != nil {
+		db.supersedeIfReviewInvalidating(prevBeforeImport, issue)
+		// Side-table mutations: any new dep/file push onto an existing
+		// issue, or a replace that wiped them, counts as
+		// DependenciesChanged/LinkedFilesChanged for invalidation.
+		if replace || len(deps) > 0 || len(files) > 0 {
+			db.supersedeApprovalIfLinked(issue.ID)
+		}
+	}
+	return nil
 }

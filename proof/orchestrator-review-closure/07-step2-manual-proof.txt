@@ -1,0 +1,101 @@
+2026/04/21 19:41:20 [migration 30] fk-cleanup: parent_id_nullified=0 handoffs_deleted=0 git_snapshots_deleted=0 issue_dependencies_deleted=0 issue_session_history_deleted=0
+INITIALIZED /tmp/step2-manual/.todos
+Session: ses_6d91ea
+
+=== Step 0: Create issue (implementer session) ===
+CREATED td-9a7a41
+STARTED td-9a7a41 (session: ses_9e46d5)
+LOGGED td-9a7a41
+HANDOFF RECORDED td-9a7a41
+
+Next: `td review td-9a7a41` to submit for review
+REVIEW REQUESTED td-9a7a41 (session: ses_9e46d5)
+
+=== Step 1: Reviewer records approval without closing ===
+REVIEW RECORDED td-9a7a41 (decision: approved, reviewer: ses_c39f2a)
+
+=== Step 2: td show reveals reviewer of record ===
+td-9a7a41: Step 2 delegated flow demo
+Status: [in_review]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_9e46d5, just now):
+  Done:
+    - feature implemented
+  Remaining:
+    - review
+
+SESSION LOG:
+  [19:41] Started work
+  [19:41] did the work
+  [19:41] Submitted for review
+  [19:41] Review recorded (approved): looks good, ship it
+
+AWAITING REVIEW - requires different session to approve/reject
+
+REVIEW / CLOSE:
+  Reviewer of record: ses_c39f2a (reviewed just now)
+  Review requested by: ses_9e46d5
+
+RECENT REVIEWS:
+  [2026-04-21 19:41] approved by ses_c39f2a: looks good, ship it
+
+SESSIONS INVOLVED:
+  ses_9e46d5 (implementer)
+  ses_c39f2a (reviewer)
+
+=== Step 3: Implementer closes using the recorded approval ===
+APPROVED td-9a7a41 (closed by ses_9e46d5 using review by ses_c39f2a)
+
+=== Step 4: td show after close ===
+td-9a7a41: Step 2 delegated flow demo
+Status: [closed]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_9e46d5, just now):
+  Done:
+    - feature implemented
+  Remaining:
+    - review
+
+SESSION LOG:
+  [19:41] Started work
+  [19:41] did the work
+  [19:41] Submitted for review
+  [19:41] Review recorded (approved): looks good, ship it
+  [19:41] Closed after review rv-8388230a (by ses_c39f2a): closing after review
+
+REVIEW / CLOSE:
+  Reviewer of record: ses_c39f2a (reviewed just now)
+  Review requested by: ses_9e46d5
+  Closed by: ses_9e46d5 (closed just now)
+
+RECENT REVIEWS:
+  [2026-04-21 19:41] approved by ses_c39f2a: looks good, ship it
+
+SESSIONS INVOLVED:
+  ses_9e46d5 (implementer)
+  ses_c39f2a (reviewer)
+
+=== Step 5: Undo the close ===
+UNDONE: close_after_review issue td-9a7a41
+td-9a7a41: Step 2 delegated flow demo
+Status: [in_review]
+Type: task | Priority: P2
+
+CURRENT HANDOFF (ses_9e46d5, just now):
+  Done:
+    - feature implemented
+  Remaining:
+    - review
+
+SESSION LOG:
+  [19:41] Started work
+  [19:41] did the work
+  [19:41] Submitted for review
+  [19:41] Review recorded (approved): looks good, ship it
+  [19:41] Closed after review rv-8388230a (by ses_c39f2a): closing after review
+
+AWAITING REVIEW - requires different session to approve/reject
+
+REVIEW / CLOSE:

@@ -264,7 +264,7 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 
 	// Review status
 	if issue.Status == models.StatusInReview {
-		sb.WriteString("\nAWAITING REVIEW - requires different session to approve/reject\n")
+		sb.WriteString("\nAWAITING REVIEW - requires an implementation-independent session to approve/reject\n")
 	}
 
 	return sb.String()

@@ -95,6 +95,16 @@ type Model struct {
 	CloseConfirmModal        *modal.Modal   // Declarative modal instance
 	CloseConfirmMouseHandler *mouse.Handler // Mouse handler for close confirmation modal
 
+	// Record-review (delegated-mode) reason prompt. Reused pattern from
+	// CloseConfirm — a single-line text input with confirm/cancel buttons.
+	RecordReviewOpen         bool
+	RecordReviewIssueID      string
+	RecordReviewTitle        string
+	RecordReviewInput        textinput.Model
+	RecordReviewDecision     string // "approved" | "changes_requested"
+	RecordReviewModal        *modal.Modal
+	RecordReviewMouseHandler *mouse.Handler
+
 	// Stats modal state
 	StatsOpen         bool
 	StatsLoading      bool
@@ -116,7 +126,7 @@ type Model struct {
 
 	// Activity detail modal state
 	ActivityDetailOpen         bool
-	ActivityDetailItem         *ActivityItem  // The selected activity item
+	ActivityDetailItem         *ActivityItem // The selected activity item
 	ActivityDetailScroll       int
 	ActivityDetailModal        *modal.Modal   // Declarative modal instance
 	ActivityDetailMouseHandler *mouse.Handler // Mouse handler for activity detail modal
@@ -128,8 +138,8 @@ type Model struct {
 	NotesMouseHandler *mouse.Handler // Mouse handler for notes modal
 
 	// Form modal state
-	FormOpen        bool
-	FormState       *FormState
+	FormOpen         bool
+	FormState        *FormState
 	FormScrollOffset int // Scroll offset for form modal when content overflows
 
 	// Getting Started modal state
@@ -524,6 +534,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
 			var inputCmd tea.Cmd
 			m.CloseConfirmInput, inputCmd = m.CloseConfirmInput.Update(msg)
+			if inputCmd != nil {
+				return m, inputCmd
+			}
+		}
+	}
+
+	// Record-review mode: forward non-key messages to textinput (cursor blink).
+	// Key messages are handled in handleKey() via the declarative modal.
+	if m.RecordReviewOpen {
+		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var inputCmd tea.Cmd
+			m.RecordReviewInput, inputCmd = m.RecordReviewInput.Update(msg)
 			if inputCmd != nil {
 				return m, inputCmd
 			}

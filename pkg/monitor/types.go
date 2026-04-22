@@ -245,6 +245,18 @@ const (
 	CategoryPendingReview TaskListCategory = "PENDING_REVIEW"
 	CategoryBlocked       TaskListCategory = "BLOCKED"
 	CategoryClosed        TaskListCategory = "CLOSED"
+	// CategoryReadyToClose is the delegated-mode-only bucket for in_review
+	// issues that already carry an active approval and the current session is
+	// an allowed closer (creator, implementer, reviewer-of-record, or
+	// review-requester). Step 3 split: under strict/balanced this stays empty
+	// because those modes don't have the record-only/close-after-review flow.
+	CategoryReadyToClose TaskListCategory = "READY_TO_CLOSE"
+	// CategoryPendingOther is the non-empty counterpart to CategoryPendingReview
+	// under delegated mode: an in_review issue where the current session has
+	// no role and the issue is waiting on an eligible reviewer who is not me.
+	// Kept separate from CategoryPendingReview so the monitor can show "my
+	// awaiting-review work" vs "peer awaiting-review work" as different groups.
+	CategoryPendingOther TaskListCategory = "PENDING_OTHER"
 )
 
 // ActivityItem represents a unified activity item (log, action, or comment)
@@ -270,8 +282,17 @@ type TaskListData struct {
 	InProgress    []models.Issue // in_progress, not rejected
 	Ready         []models.Issue // open, not blocked
 	PendingReview []models.Issue // in_review, own implementation
-	Blocked       []models.Issue
-	Closed        []models.Issue
+	// ReadyToClose holds in_review issues that have an active approval and
+	// where the current session is an allowed closer. Only populated under
+	// review_policy_mode=delegated.
+	ReadyToClose []models.Issue
+	// PendingOther holds in_review issues that are waiting on an independent
+	// reviewer who is not the current session. Populated under all modes so
+	// the UI can distinguish "pending from my own impl" vs "pending from
+	// somebody else's impl".
+	PendingOther []models.Issue
+	Blocked      []models.Issue
+	Closed       []models.Issue
 }
 
 // TaskListRow represents a single selectable row in the task list panel
@@ -428,9 +449,9 @@ type boardEditorDebounceMsg struct {
 
 // BoardEditorSaveResultMsg carries the result of saving a board
 type BoardEditorSaveResultMsg struct {
-	Board   *models.Board
-	IsNew   bool // true if newly created, false if updated
-	Error   error
+	Board *models.Board
+	IsNew bool // true if newly created, false if updated
+	Error error
 }
 
 // BoardEditorDeleteResultMsg carries the result of deleting a board
@@ -441,10 +462,10 @@ type BoardEditorDeleteResultMsg struct {
 
 // BoardEditorQueryPreviewMsg carries live query preview results
 type BoardEditorQueryPreviewMsg struct {
-	Query    string // Query that was executed (for staleness check)
-	Count    int
-	Titles   []string // First 5 issue titles
-	Error    error
+	Query  string // Query that was executed (for staleness check)
+	Count  int
+	Titles []string // First 5 issue titles
+	Error  error
 }
 
 // boardEditorPreviewData holds live query preview state.
@@ -470,10 +491,10 @@ type BoardMode struct {
 	ViewMode BoardViewMode // Current view mode
 
 	// Swimlanes view state (separate cursor/scroll from backlog)
-	SwimlaneData   TaskListData   // Categorized data for swimlanes view
-	SwimlaneRows   []TaskListRow  // Flattened rows for swimlanes view
-	SwimlaneCursor int            // Cursor position in swimlanes view
-	SwimlaneScroll int            // Scroll offset in swimlanes view
+	SwimlaneData   TaskListData  // Categorized data for swimlanes view
+	SwimlaneRows   []TaskListRow // Flattened rows for swimlanes view
+	SwimlaneCursor int           // Cursor position in swimlanes view
+	SwimlaneScroll int           // Scroll offset in swimlanes view
 
 	// Selection restoration after move operations
 	PendingSelectionID string // Issue ID to select after refresh (cleared after use)
@@ -494,13 +515,13 @@ func DefaultBoardStatusFilter() map[models.Status]bool {
 type StatusFilterPreset int
 
 const (
-	StatusPresetDefault StatusFilterPreset = iota // open/in_progress/blocked/in_review
-	StatusPresetAll                               // all statuses
-	StatusPresetOpen                              // only open
-	StatusPresetInProgress                        // only in_progress
-	StatusPresetBlocked                           // only blocked
-	StatusPresetInReview                          // only in_review
-	StatusPresetClosed                            // only closed
+	StatusPresetDefault    StatusFilterPreset = iota // open/in_progress/blocked/in_review
+	StatusPresetAll                                  // all statuses
+	StatusPresetOpen                                 // only open
+	StatusPresetInProgress                           // only in_progress
+	StatusPresetBlocked                              // only blocked
+	StatusPresetInReview                             // only in_review
+	StatusPresetClosed                               // only closed
 )
 
 // StatusFilterPresetName returns the display name for a preset

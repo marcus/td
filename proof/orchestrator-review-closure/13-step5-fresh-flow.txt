@@ -1,0 +1,113 @@
+=== 1. Fresh project: td usage ===
+You have access to `td`, a local task management CLI.
+
+NEW SESSION: ses_ae1038 on branch: default
+
+CURRENT SESSION: ses_ae1038 [explicit_ses-creator] on branch: default
+
+
+=== 2. Create an issue (as creator session) ===
+CREATED td-6d10ad
+
+=== 3. List issues ===
+[
+  {
+    "id": "td-6d10ad",
+    "title": "Step 5 delegated flow test",
+    "description": "proof",
+    "status": "open",
+    "type": "task",
+    "priority": "P2",
+    "points": 0,
+    "implementer_session": "",
+=== 4. Implementer starts and reviews (separate session) ===
+STARTED td-6d10ad (session: ses_9ef052)
+LOGGED td-6d10ad
+HANDOFF RECORDED td-6d10ad
+
+Next: `td review td-6d10ad` to submit for review
+REVIEW REQUESTED td-6d10ad (session: ses_9ef052)
+
+=== 5. Reviewer approves with --record-only (delegated flow) ===
+REVIEW RECORDED td-6d10ad (decision: approved, reviewer: ses_6b9f45)
+
+=== 6. Creator (orchestrator) closes ===
+ERROR: close-using-recorded-approval requires --reason when closer (ses_ae1038) != reviewer (ses_6b9f45) for td-6d10ad
+
+=== 7. Show result ===
+td-6d10ad: Step 5 delegated flow test
+Status: [in_review]
+Type: task | Priority: P2
+
+Description:
+proof
+
+CURRENT HANDOFF (ses_9ef052, just now):
+  Done:
+    - done, ready for review
+
+SESSION LOG:
+  [20:49] Started work
+  [20:49] did the thing
+  [20:49] Submitted for review
+  [20:49] Review recorded (approved): LGTM, tests pass
+
+AWAITING REVIEW - requires an implementation-independent session to approve/reject
+
+REVIEW / CLOSE:
+  Reviewer of record: ses_6b9f45 (reviewed just now)
+  Review requested by: ses_9ef052
+
+RECENT REVIEWS:
+  [2026-04-21 20:49] approved by ses_6b9f45: LGTM, tests pass
+
+SESSIONS INVOLVED:
+  ses_9ef052 (implementer)
+  ses_6b9f45 (reviewer)
+=== 8. Creator closes with --reason ===
+APPROVED td-6d10ad (closed by ses_ae1038 using review by ses_6b9f45)
+
+=== 9. Final show ===
+td-6d10ad: Step 5 delegated flow test
+Status: [closed]
+Type: task | Priority: P2
+
+Description:
+proof
+
+CURRENT HANDOFF (ses_9ef052, just now):
+  Done:
+    - done, ready for review
+
+SESSION LOG:
+  [20:49] Started work
+  [20:49] did the thing
+  [20:49] Submitted for review
+  [20:49] Review recorded (approved): LGTM, tests pass
+  [20:49] Closed after review rv-c0e3e782 (by ses_6b9f45): orchestrator closing after sub-agent review
+
+REVIEW / CLOSE:
+  Reviewer of record: ses_6b9f45 (reviewed just now)
+  Review requested by: ses_9ef052
+  Closed by: ses_ae1038 (closed just now)
+
+RECENT REVIEWS:
+  [2026-04-21 20:49] approved by ses_6b9f45: LGTM, tests pass
+
+SESSIONS INVOLVED:
+  ses_9ef052 (implementer)
+  ses_6b9f45 (reviewer)
+  ses_ae1038
+=== 10. Direct reviewer-close (fast path) ===
+CREATED td-726ff2
+new ID: td-726ff2
+STARTED td-726ff2 (session: ses_1f4e47)
+HANDOFF RECORDED td-726ff2
+
+REVIEW REQUESTED td-726ff2 (session: ses_1f4e47)
+
+--- Independent reviewer approves and closes in one shot ---
+APPROVED td-726ff2 (reviewer: ses_5a0f44)
+
+=== Deprecation warning check: explicit legacy flag ===
+No issues found

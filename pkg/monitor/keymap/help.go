@@ -113,7 +113,8 @@ func (r *Registry) GenerateHelp() string {
 	sb.WriteString("\nACTIONS:\n")
 	actionBindings := []HelpBinding{
 		{Keys: "r", Description: "Mark for review (Current Work) / Refresh"},
-		{Keys: "a", Description: "Approve issue (Task List reviewable)"},
+		{Keys: "a", Description: "Approve issue (review + close, or close using recorded approval)"},
+		{Keys: "V", Description: "Record approval review without closing (delegated mode)"},
 		{Keys: "s", Description: "Show statistics dashboard"},
 		{Keys: "h", Description: "Show handoffs modal"},
 		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
@@ -124,6 +125,16 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "q / Ctrl+C", Description: "Quit"},
 	}
 	for _, b := range actionBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nREVIEW BUCKETS (Task List):\n")
+	reviewBucketLines := []HelpBinding{
+		{Keys: "Reviewable", Description: "You can review these (independent session, no active approval)"},
+		{Keys: "Ready to Close", Description: "Approval already recorded; you are an allowed closer"},
+		{Keys: "Pending Review", Description: "Your implementations waiting on someone else to review"},
+	}
+	for _, b := range reviewBucketLines {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
@@ -299,7 +310,7 @@ func (r *Registry) GenerateTDQHelp() string {
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
 	// Grouped: actions | view controls | search/nav
-	return "n:new e:edit x:del a:approve r:review  S:sort T:type c:closed b:boards  /:search s:stats tab:panel ?:help"
+	return "n:new e:edit x:del a:approve r:review V:record  S:sort T:type c:closed b:boards  /:search s:stats tab:panel ?:help"
 }
 
 // BoardFooterHelp generates help text for board mode footer
@@ -364,7 +375,9 @@ func CommandHelp(cmd Command) string {
 	case CmdMarkForReview:
 		return "Mark issue for review"
 	case CmdApprove:
-		return "Approve a reviewable issue"
+		return "Approve: review + close, or close using a recorded approval"
+	case CmdRecordReview:
+		return "Record an approval review without closing (delegated mode)"
 	case CmdDelete:
 		return "Delete an issue"
 	case CmdFocusTaskSection:
@@ -478,7 +491,7 @@ func AllCommands() []Command {
 		CmdScrollDown, CmdScrollUp, CmdSelect, CmdBack, CmdClose,
 		CmdNavigatePrev, CmdNavigateNext,
 		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode, CmdCycleTypeFilter,
-		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
+		CmdMarkForReview, CmdApprove, CmdRecordReview, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
 		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard, CmdCopyIDToClipboard,
 		CmdNewIssue, CmdEditIssue, CmdFormSubmit, CmdFormCancel, CmdFormToggleExtend, CmdFormOpenEditor,

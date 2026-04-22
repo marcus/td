@@ -1,0 +1,43 @@
+?   	github.com/marcus/td	[no test files]
+ok  	github.com/marcus/td/cmd	(cached)
+?   	github.com/marcus/td/cmd/td-sync	[no test files]
+ok  	github.com/marcus/td/internal/agent	(cached)
+ok  	github.com/marcus/td/internal/api	(cached)
+ok  	github.com/marcus/td/internal/config	(cached)
+ok  	github.com/marcus/td/internal/crypto	(cached)
+ok  	github.com/marcus/td/internal/dateparse	(cached)
+ok  	github.com/marcus/td/internal/db	(cached)
+ok  	github.com/marcus/td/internal/dependency	(cached)
+ok  	github.com/marcus/td/internal/events	(cached)
+--- FAIL: TestKnownFeatureDefaults (0.00s)
+    features_test.go:13: default mismatch for sync_autosync
+--- FAIL: TestIsEnabledForProcess_EnableDisableLists (0.00s)
+    features_test.go:41: TD_DISABLE_FEATURE should take precedence and disable sync_cli
+--- FAIL: TestIsEnabled_ProjectConfigAndEnvPrecedence (0.00s)
+    features_test.go:53: expected config=true, got enabled=true source="env"
+2026/04/21 20:51:41 WARN balanced_review_policy is deprecated; use review_policy_mode=balanced instead. This flag will be removed in a future release. mapped_to=balanced
+FAIL
+FAIL	github.com/marcus/td/internal/features	0.433s
+ok  	github.com/marcus/td/internal/git	(cached)
+ok  	github.com/marcus/td/internal/input	(cached)
+ok  	github.com/marcus/td/internal/models	(cached)
+ok  	github.com/marcus/td/internal/output	(cached)
+ok  	github.com/marcus/td/internal/query	(cached)
+ok  	github.com/marcus/td/internal/reviewpolicy	(cached)
+ok  	github.com/marcus/td/internal/serve	(cached)
+ok  	github.com/marcus/td/internal/serverdb	(cached)
+ok  	github.com/marcus/td/internal/session	(cached)
+ok  	github.com/marcus/td/internal/suggest	(cached)
+ok  	github.com/marcus/td/internal/sync	(cached)
+?   	github.com/marcus/td/internal/syncclient	[no test files]
+ok  	github.com/marcus/td/internal/syncconfig	(cached)
+ok  	github.com/marcus/td/internal/version	(cached)
+ok  	github.com/marcus/td/internal/workdir	(cached)
+ok  	github.com/marcus/td/internal/workflow	(cached)
+ok  	github.com/marcus/td/pkg/monitor	(cached)
+ok  	github.com/marcus/td/pkg/monitor/keymap	(cached)
+ok  	github.com/marcus/td/pkg/monitor/modal	(cached)
+ok  	github.com/marcus/td/pkg/monitor/mouse	(cached)
+ok  	github.com/marcus/td/test/e2e	109.314s
+ok  	github.com/marcus/td/test/syncharness	(cached)
+FAIL

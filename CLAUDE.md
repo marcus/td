@@ -18,9 +18,48 @@ Sessions are automatic (based on your terminal/agent context). Optional:
 - `td session "name"` to label the current session
 - `td session --new` to force a new session in the same context
 
-**Do NOT start a new session mid-work.** Sessions track implementers—new session = bypass review.
+**Do NOT start a new session mid-work.** Sessions track implementers. A new session mid-task looks like a bypass of the review guardrails and breaks audit trails.
 
 Use `td usage -q` after first read.
+
+## Review Model (Delegated Review)
+
+td's review guardrail protects against unchecked self-review, not against delegated closure. The rules:
+
+- **Review must come from a session that did not participate in implementation.** You cannot review your own implementation, but you *can* close an issue after an independent review has been recorded.
+- **Any involved session may perform the final close.** Once an independent review exists, the creator, implementer, review-requester, or reviewer-of-record may run `td approve` to close. An independent review is required; the close itself may be delegated to any involved session.
+- **Do NOT start a new session mid-work just to satisfy the review rules.** Use a real reviewer sub-agent or a separate agent context.
+
+### Modes (`review_policy_mode`)
+
+- `strict` — no prior involvement allowed; current default for existing installs.
+- `balanced` — strict, plus a creator-approval exception with `--reason`. Legacy default for projects that set `balanced_review_policy=true`.
+- `delegated` — review attestations + delegated close (opt-in now via `TD_FEATURE_REVIEW_POLICY_MODE=delegated` or `td feature set review_policy_mode delegated`; will become the default in a future release).
+
+### Orchestrator / Sub-Agent Flow
+
+Under `delegated` mode, the orchestrator submits the issue for review itself, delegates the review to a reviewer sub-agent, then closes once the approval is recorded:
+
+```bash
+# Orchestrator creates work
+td add "Refactor auth" --type feature
+
+# Implementer sub-agent (separate session) does the work
+td start td-a1b2
+td log "implemented auth refactor"
+td handoff td-a1b2 --done "refactor" --remaining "none"
+
+# Orchestrator submits for review (this sets review_requested_by_session)
+td review td-a1b2
+
+# Reviewer sub-agent (separate session) records approval without closing
+td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
+
+# Orchestrator (or implementer) closes using the recorded approval
+td approve td-a1b2
+```
+
+The orchestrator must own at least one explicit role on the issue (creator, implementer, reviewer-of-record, or the session that ran `td review`). If every step is delegated and the orchestrator never calls `td review`, it will not match any allowed-closer role.
 
 ## Build & Install
 
@@ -62,6 +101,7 @@ td version
 - `internal/db/` - SQLite (schema.go). DB stored at `<project>/.todos/issues.db`
 - `internal/models/` - Issue, Log, Handoff, WorkSession
 - `internal/session/` - Session management (DB-backed, scoped by branch + agent)
+- `internal/reviewpolicy/` - Shared review / close eligibility policy
 - `pkg/monitor/` - TUI monitor (see [docs/modal-system.md](docs/modal-system.md) for modal architecture)
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)

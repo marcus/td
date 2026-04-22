@@ -296,8 +296,27 @@ func HandleGetIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 		handoffDTO = &h
 	}
 
+	issueDTO := IssueToDTO(issue)
+	// Always populate active_review on the single-issue read so clients can
+	// immediately tell "reviewed, awaiting close" from "not yet reviewed".
+	if summary := activeReviewSummary(ctx, issue.ID); summary != nil {
+		issueDTO.ActiveReview = summary
+	}
+	// Opt-in full review history via ?with=reviews. Split on ',' to allow
+	// future composition (e.g. ?with=reviews,logs) while avoiding accidental
+	// matches against stray query params that contain the substring "with=".
+	if hasWithValue(r.URL.Query().Get("with"), "reviews") {
+		if reviews, err := ctx.DB.ListIssueReviews(issue.ID); err == nil {
+			dtos := make([]IssueReviewDTO, 0, len(reviews))
+			for _, r := range reviews {
+				dtos = append(dtos, IssueReviewToDTO(r))
+			}
+			issueDTO.Reviews = dtos
+		}
+	}
+
 	WriteSuccess(w, map[string]interface{}{
-		"issue":          IssueToDTO(issue),
+		"issue":          issueDTO,
 		"logs":           logsToDTOsNonNil(logs),
 		"comments":       commentsToDTOsNonNil(comments),
 		"latest_handoff": handoffDTO,
@@ -753,4 +772,20 @@ func boardsToDTOsNonNil(boards []models.Board) []BoardDTO {
 		return []BoardDTO{}
 	}
 	return BoardsToDTOs(boards)
+}
+
+// hasWithValue reports whether `want` appears in the comma-separated list of
+// values supplied via the ?with=... query param. Trims whitespace on each
+// split token. Used so ?with=reviews,logs can opt into multiple includes
+// without falling for substring collisions on the raw query.
+func hasWithValue(raw, want string) bool {
+	if raw == "" || want == "" {
+		return false
+	}
+	for _, v := range strings.Split(raw, ",") {
+		if strings.TrimSpace(v) == want {
+			return true
+		}
+	}
+	return false
 }

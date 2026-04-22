@@ -61,7 +61,13 @@ const (
 	ActionSessionCreated   IssueSessionAction = "created"
 	ActionSessionStarted   IssueSessionAction = "started"
 	ActionSessionUnstarted IssueSessionAction = "unstarted"
-	ActionSessionReviewed  IssueSessionAction = "reviewed"
+	// ActionSessionReviewed is deprecated: new writers should use the split
+	// ActionSessionReviewApproved / ActionSessionReviewChangesRequested pair.
+	// It remains a valid enum value so existing rows continue to scan cleanly.
+	ActionSessionReviewed               IssueSessionAction = "reviewed"
+	ActionSessionReviewApproved         IssueSessionAction = "review_approved"
+	ActionSessionReviewChangesRequested IssueSessionAction = "review_changes_requested"
+	ActionSessionClosed                 IssueSessionAction = "closed"
 )
 
 // FileRole represents the role of a linked file
@@ -76,29 +82,32 @@ const (
 
 // Issue represents a task/issue in the system
 type Issue struct {
-	ID                 string     `json:"id"`
-	Title              string     `json:"title"`
-	Description        string     `json:"description,omitempty"`
-	Status             Status     `json:"status"`
-	Type               Type       `json:"type"`
-	Priority           Priority   `json:"priority"`
-	Points             int        `json:"points"`
-	Labels             []string   `json:"labels,omitempty"`
-	ParentID           string     `json:"parent_id,omitempty"`
-	Acceptance         string     `json:"acceptance,omitempty"`
-	Sprint             string     `json:"sprint,omitempty"`
-	ImplementerSession string     `json:"implementer_session"`
-	CreatorSession     string     `json:"creator_session"`
-	ReviewerSession    string     `json:"reviewer_session"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	ClosedAt           *time.Time `json:"closed_at,omitempty"`
-	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
-	Minor              bool       `json:"minor"`
-	CreatedBranch      string     `json:"created_branch,omitempty"`
-	DeferUntil         *string    `json:"defer_until,omitempty"`
-	DueDate            *string    `json:"due_date,omitempty"`
-	DeferCount         int        `json:"defer_count"`
+	ID                       string     `json:"id"`
+	Title                    string     `json:"title"`
+	Description              string     `json:"description,omitempty"`
+	Status                   Status     `json:"status"`
+	Type                     Type       `json:"type"`
+	Priority                 Priority   `json:"priority"`
+	Points                   int        `json:"points"`
+	Labels                   []string   `json:"labels,omitempty"`
+	ParentID                 string     `json:"parent_id,omitempty"`
+	Acceptance               string     `json:"acceptance,omitempty"`
+	Sprint                   string     `json:"sprint,omitempty"`
+	ImplementerSession       string     `json:"implementer_session"`
+	CreatorSession           string     `json:"creator_session"`
+	ReviewerSession          string     `json:"reviewer_session"`
+	ReviewRequestedBySession string     `json:"review_requested_by_session,omitempty"`
+	ClosedBySession          string     `json:"closed_by_session,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+	ReviewedAt               *time.Time `json:"reviewed_at,omitempty"`
+	ClosedAt                 *time.Time `json:"closed_at,omitempty"`
+	DeletedAt                *time.Time `json:"deleted_at,omitempty"`
+	Minor                    bool       `json:"minor"`
+	CreatedBranch            string     `json:"created_branch,omitempty"`
+	DeferUntil               *string    `json:"defer_until,omitempty"`
+	DueDate                  *string    `json:"due_date,omitempty"`
+	DeferCount               int        `json:"defer_count"`
 }
 
 // Log represents a session log entry
@@ -161,6 +170,20 @@ type WorkSession struct {
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 	StartSHA  string     `json:"start_sha,omitempty"`
 	EndSHA    string     `json:"end_sha,omitempty"`
+}
+
+// IssueReview represents a recorded review event against an issue.
+// Reviews are append-only: a new decision supersedes the prior active review
+// row by setting SupersededAt rather than mutating an existing entry.
+type IssueReview struct {
+	ID                 string     `json:"id"`
+	IssueID            string     `json:"issue_id"`
+	ReviewerSession    string     `json:"reviewer_session"`
+	Decision           string     `json:"decision"` // approved | changes_requested | approved_by_parent_cascade
+	Summary            string     `json:"summary,omitempty"`
+	RequestedBySession string     `json:"requested_by_session,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
 }
 
 // IssueSessionHistory tracks all sessions that touched an issue
@@ -235,6 +258,11 @@ type Config struct {
 	ActiveWorkSession string          `json:"active_work_session,omitempty"`
 	PaneHeights       [3]float64      `json:"pane_heights,omitempty"`  // Ratios for 3 horizontal panes (sum=1.0)
 	FeatureFlags      map[string]bool `json:"feature_flags,omitempty"` // Experimental feature gates
+	// FeatureStringFlags holds string-valued feature settings (e.g.
+	// review_policy_mode = "strict"|"balanced"|"delegated"). Kept separate
+	// from FeatureFlags so the bool-feature code paths stay simple and
+	// string features are opt-in on a per-name basis.
+	FeatureStringFlags map[string]string `json:"feature_string_flags,omitempty"`
 	// Filter state for monitor
 	SearchQuery   string `json:"search_query,omitempty"`
 	SortMode      string `json:"sort_mode,omitempty"`   // "priority", "created", "updated"
@@ -249,33 +277,36 @@ type Config struct {
 type ActionType string
 
 const (
-	ActionCreate           ActionType = "create"
-	ActionUpdate           ActionType = "update"
-	ActionDelete           ActionType = "delete"
-	ActionRestore          ActionType = "restore"
-	ActionStart            ActionType = "start"
-	ActionReview           ActionType = "review"
-	ActionApprove          ActionType = "approve"
-	ActionReject           ActionType = "reject"
-	ActionBlock            ActionType = "block"
-	ActionUnblock          ActionType = "unblock"
-	ActionClose            ActionType = "close"
-	ActionReopen           ActionType = "reopen"
-	ActionAddDep           ActionType = "add_dependency"
-	ActionRemoveDep        ActionType = "remove_dependency"
-	ActionLinkFile         ActionType = "link_file"
-	ActionUnlinkFile       ActionType = "unlink_file"
-	ActionHandoff          ActionType = "handoff"
-	ActionBoardCreate      ActionType = "board_create"
-	ActionBoardDelete      ActionType = "board_delete"
-	ActionBoardUpdate      ActionType = "board_update"
-	ActionBoardAddIssue    ActionType = "board_add_issue"
-	ActionBoardRemoveIssue ActionType = "board_remove_issue"
-	ActionBoardMoveIssue   ActionType = "board_move_issue"
-	ActionBoardSetPosition ActionType = "board_set_position"
-	ActionBoardUnposition  ActionType = "board_unposition"
-	ActionWorkSessionTag   ActionType = "work_session_tag"
-	ActionWorkSessionUntag ActionType = "work_session_untag"
+	ActionCreate                 ActionType = "create"
+	ActionUpdate                 ActionType = "update"
+	ActionDelete                 ActionType = "delete"
+	ActionRestore                ActionType = "restore"
+	ActionStart                  ActionType = "start"
+	ActionReview                 ActionType = "review"
+	ActionReviewApprove          ActionType = "review_approve"
+	ActionReviewChangesRequested ActionType = "review_changes_requested"
+	ActionCloseAfterReview       ActionType = "close_after_review"
+	ActionApprove                ActionType = "approve"
+	ActionReject                 ActionType = "reject"
+	ActionBlock                  ActionType = "block"
+	ActionUnblock                ActionType = "unblock"
+	ActionClose                  ActionType = "close"
+	ActionReopen                 ActionType = "reopen"
+	ActionAddDep                 ActionType = "add_dependency"
+	ActionRemoveDep              ActionType = "remove_dependency"
+	ActionLinkFile               ActionType = "link_file"
+	ActionUnlinkFile             ActionType = "unlink_file"
+	ActionHandoff                ActionType = "handoff"
+	ActionBoardCreate            ActionType = "board_create"
+	ActionBoardDelete            ActionType = "board_delete"
+	ActionBoardUpdate            ActionType = "board_update"
+	ActionBoardAddIssue          ActionType = "board_add_issue"
+	ActionBoardRemoveIssue       ActionType = "board_remove_issue"
+	ActionBoardMoveIssue         ActionType = "board_move_issue"
+	ActionBoardSetPosition       ActionType = "board_set_position"
+	ActionBoardUnposition        ActionType = "board_unposition"
+	ActionWorkSessionTag         ActionType = "work_session_tag"
+	ActionWorkSessionUntag       ActionType = "work_session_untag"
 )
 
 // ActionLog represents a logged action that can be undone
@@ -289,6 +320,30 @@ type ActionLog struct {
 	NewData      string     `json:"new_data"`      // JSON snapshot after action
 	Timestamp    time.Time  `json:"timestamp"`
 	Undone       bool       `json:"undone"`
+}
+
+// ReviewUndoPayload is the extended JSON shape used by review-aware action log
+// entries (ActionReviewApprove, ActionReviewChangesRequested,
+// ActionApprove, ActionCloseAfterReview). Stored in NewData alongside the
+// serialized issue so the undo path can:
+//   - delete or supersede the issue_reviews row that the action created
+//   - restore a prior active approval review that was superseded by this action
+//
+// Backward compat: when a consumer reads NewData expecting a bare Issue JSON,
+// it can either ignore the extra fields (JSON decoders ignore unknown fields
+// by default) or look for the "issue" sub-object. The undo path calls
+// UnmarshalReviewUndoPayload which accepts both the extended shape and the
+// legacy bare-Issue shape.
+type ReviewUndoPayload struct {
+	// Issue is the post-action issue snapshot. When parsed from a legacy bare
+	// Issue JSON (action pre-dates Step 2), Issue holds the whole object.
+	Issue *Issue `json:"issue,omitempty"`
+	// CreatedReviewID is the issue_reviews.id inserted by this action (if any).
+	// Empty for actions that didn't create a review row.
+	CreatedReviewID string `json:"created_review_id,omitempty"`
+	// PriorActiveReviewID is the id of the review row that was active before
+	// this action superseded it. Empty if no prior approval was superseded.
+	PriorActiveReviewID string `json:"prior_active_review_id,omitempty"`
 }
 
 // ValidPoints returns valid Fibonacci story points

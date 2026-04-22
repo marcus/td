@@ -126,10 +126,20 @@ func TestReviewableByOptions_UsesBalancedReviewPolicyFlag(t *testing.T) {
 	baseDir := t.TempDir()
 	sessionID := "ses_test"
 
-	// Default is ON.
+	// Step 5 default: delegated mode, so BalancedReviewPolicy flag in the
+	// legacy ListIssuesOptions struct is OFF for a fresh project.
 	opts := reviewableByOptions(baseDir, sessionID)
+	if opts.BalancedReviewPolicy {
+		t.Fatalf("BalancedReviewPolicy should default to false (Step 5: delegated is the default mode)")
+	}
+
+	// Explicit legacy balanced_review_policy=true opts into balanced mode.
+	if err := config.SetFeatureFlag(baseDir, features.BalancedReviewPolicy.Name, true); err != nil {
+		t.Fatalf("SetFeatureFlag failed: %v", err)
+	}
+	opts = reviewableByOptions(baseDir, sessionID)
 	if !opts.BalancedReviewPolicy {
-		t.Fatalf("BalancedReviewPolicy should default to true")
+		t.Fatalf("BalancedReviewPolicy should be true when legacy flag explicitly opts in")
 	}
 
 	// Local config override OFF.

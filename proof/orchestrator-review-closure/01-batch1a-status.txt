@@ -1,0 +1,35 @@
+ M .gitignore
+ M cmd/sync.go
+ M internal/api/snapshot_query_source.go
+ M internal/db/import.go
+ M internal/db/issues.go
+ M internal/db/issues_logged.go
+ M internal/db/migrations.go
+ M internal/db/schema.go
+ M internal/db/stats.go
+ M internal/events/taxonomy.go
+ M internal/events/taxonomy_test.go
+ M internal/models/models.go
+?? .agents/
+?? .claude/agents/
+?? AGENTS.md
+?? internal/db/reviews.go
+?? internal/db/reviews_migration.go
+?? internal/db/reviews_test.go
+?? internal/db/schema_test.go
+?? proof/orchestrator-review-closure/
+?? proof/td-2b41b2/delete-temp-issues.txt
+?? proof/td-2b41b2/focus-epic.txt
+?? proof/td-2b41b2/handoff.txt
+?? proof/td-2b41b2/list-epic-dot-focused.txt
+?? proof/td-2b41b2/showproof-approve-no-args.txt
+?? proof/td-2b41b2/showproof-create.txt
+?? proof/td-2b41b2/showproof-init.txt
+?? proof/td-2b41b2/showproof-review.txt
+?? proof/td-2b41b2/showproof-show-approved.txt
+?? proof/td-2b41b2/showproof-show-no-args.txt
+?? proof/td-2b41b2/unfocus.txt
+?? proof/td-2b41b2/ws-end.txt
+?? proof/td-a7ff5e/
+?? td-2fb148-0009
+?? td-release-notes-review-bin

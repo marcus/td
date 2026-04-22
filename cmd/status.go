@@ -15,7 +15,13 @@ import (
 var statusCmd = &cobra.Command{
 	Use:     "status",
 	Aliases: []string{"current"},
-	Short:   "Show dashboard: session, focus, reviews, blocked, ready issues",
+	Short:   "Show dashboard: session, focus, review buckets (awaiting/ready-to-close/pending), blocked, ready",
+	Long: `Shows a dashboard of the current session state.
+
+Review buckets:
+  AWAITING YOUR REVIEW    Issues in_review that you can independently review
+  READY TO CLOSE          Issues with a recorded approval that you are allowed to close
+  PENDING REVIEW          Issues you implemented that are still waiting on review`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -79,17 +85,48 @@ func outputStatusDashboard(database *db.DB, baseDir, sessionID string) error {
 	}
 
 	if len(inReview) > 0 {
-		fmt.Printf("IN REVIEW (%d):\n", len(inReview))
+		awaitingReview := make([]models.Issue, 0)
+		readyToClose := make([]models.Issue, 0)
+		pendingMine := make([]models.Issue, 0)
+		readyReviews := make(map[string]*models.IssueReview)
 		for _, issue := range inReview {
-			reviewable := ""
-			if reviewableByMeMap[issue.ID] {
-				reviewable = " (reviewable by you)"
-			} else {
-				reviewable = " (not reviewable by you)"
+			rev, _ := database.GetActiveApprovalReview(issue.ID)
+			if rev != nil && closerAllowed(&issue, sessionID, rev) {
+				readyToClose = append(readyToClose, issue)
+				readyReviews[issue.ID] = rev
+				continue
 			}
-			fmt.Printf("  %s \"%s\"%s\n", issue.ID, issue.Title, reviewable)
+			if reviewableByMeMap[issue.ID] && rev == nil {
+				awaitingReview = append(awaitingReview, issue)
+				continue
+			}
+			if issue.ImplementerSession == sessionID {
+				pendingMine = append(pendingMine, issue)
+				continue
+			}
 		}
-		fmt.Println()
+		if len(awaitingReview) > 0 {
+			fmt.Printf("AWAITING YOUR REVIEW (%d):\n", len(awaitingReview))
+			for _, issue := range awaitingReview {
+				fmt.Printf("  %s \"%s\"\n", issue.ID, issue.Title)
+			}
+			fmt.Println()
+		}
+		if len(readyToClose) > 0 {
+			fmt.Printf("READY TO CLOSE (%d):\n", len(readyToClose))
+			for _, issue := range readyToClose {
+				rev := readyReviews[issue.ID]
+				fmt.Printf("  %s \"%s\" (reviewed by %s)\n", issue.ID, issue.Title, rev.ReviewerSession)
+			}
+			fmt.Println()
+		}
+		if len(pendingMine) > 0 {
+			fmt.Printf("PENDING REVIEW (your implementation, %d):\n", len(pendingMine))
+			for _, issue := range pendingMine {
+				fmt.Printf("  %s \"%s\"\n", issue.ID, issue.Title)
+			}
+			fmt.Println()
+		}
 	}
 
 	// Get blocked issues
@@ -168,16 +205,23 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
 
 	reviewableByMe := []models.Issue{}
 	implementedByMe := []models.Issue{}
+	readyToClose := []models.Issue{}
 	for _, issue := range inReview {
-		if reviewableByMeMap[issue.ID] {
-			reviewableByMe = append(reviewableByMe, issue)
-		} else {
-			implementedByMe = append(implementedByMe, issue)
+		rev, _ := database.GetActiveApprovalReview(issue.ID)
+		if rev != nil && closerAllowed(&issue, sessionID, rev) {
+			readyToClose = append(readyToClose, issue)
+			continue
 		}
+		if reviewableByMeMap[issue.ID] && rev == nil {
+			reviewableByMe = append(reviewableByMe, issue)
+			continue
+		}
+		implementedByMe = append(implementedByMe, issue)
 	}
 
 	result["in_review"] = map[string]interface{}{
 		"reviewable_by_you":  reviewableByMe,
+		"ready_to_close":     readyToClose,
 		"implemented_by_you": implementedByMe,
 		"total":              len(inReview),
 	}

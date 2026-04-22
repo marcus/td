@@ -276,6 +276,33 @@ func SetFeatureFlag(baseDir, name string, enabled bool) error {
 	return Save(baseDir, cfg)
 }
 
+// GetFeatureStringFlag returns a string-valued feature flag from local config.
+// The second return value indicates whether the flag is explicitly set.
+func GetFeatureStringFlag(baseDir, name string) (string, bool, error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return "", false, err
+	}
+	if cfg.FeatureStringFlags == nil {
+		return "", false, nil
+	}
+	value, ok := cfg.FeatureStringFlags[name]
+	return value, ok, nil
+}
+
+// SetFeatureStringFlag persists a string-valued feature flag in local config.
+func SetFeatureStringFlag(baseDir, name, value string) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+	if cfg.FeatureStringFlags == nil {
+		cfg.FeatureStringFlags = make(map[string]string)
+	}
+	cfg.FeatureStringFlags[name] = value
+	return Save(baseDir, cfg)
+}
+
 // UnsetFeatureFlag removes an explicitly-set feature flag from local config.
 func UnsetFeatureFlag(baseDir, name string) error {
 	cfg, err := Load(baseDir)

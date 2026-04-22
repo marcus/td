@@ -16,7 +16,8 @@ const (
 	commentIDPrefix  = "cm-"
 	snapshotIDPrefix = "gs-"
 	noteIDPrefix     = "nt-"
-	actionIDPrefix = "al-"
+	actionIDPrefix   = "al-"
+	reviewIDPrefix   = "rv-"
 
 	// Deterministic ID prefixes for composite-key tables
 	boardIssuePosIDPrefix = "bip_"

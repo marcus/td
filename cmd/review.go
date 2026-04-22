@@ -10,6 +10,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
@@ -77,11 +78,15 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 		}
 	}
 
-	// Update issue (atomic update + action log)
+	// Update issue (atomic update + action log).
+	// Batch 1c stamps review_requested_by_session so delegated-mode closers
+	// (Step 2) can verify the caller is the orchestrator that submitted this
+	// review cycle.
 	issue.Status = models.StatusInReview
 	if issue.ImplementerSession == "" {
 		issue.ImplementerSession = sess.ID
 	}
+	issue.ReviewRequestedBySession = sess.ID
 
 	if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionReview); err != nil {
 		return SubmitReviewResult{
@@ -188,6 +193,11 @@ var reviewCmd = &cobra.Command{
 	Short:   "Submit one or more issues for review",
 	Long: `Submits the issue(s) for review. If no handoff exists, a minimal one is
 auto-created (consider using 'td handoff' for better documentation).
+
+The submitting session is recorded as 'review_requested_by_session' on the
+issue. Under review_policy_mode=delegated, that role is one of the allowed
+closer roles, so an orchestrator that runs 'td review' on behalf of a sub-agent
+retains permission to close after an independent reviewer records approval.
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -484,12 +494,42 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
-	Short: "Approve and close one or more issues",
-	Long: `Approves and closes the issue(s). Must be a different session than the implementer.
+	Short: "Approve and close one or more issues, or record a review",
+	Long: `Approves the issue(s). You cannot review your own implementation, but you
+can close after an independent review has been recorded. 'td approve' operates
+in one of three modes:
 
-Supports bulk operations:
-  td approve td-abc1 td-abc2 td-abc3    # Approve multiple issues
-  td approve --all                      # Approve all reviewable issues`,
+  Mode A: Review + close (default)
+    Caller is an eligible reviewer and no active approval exists.
+    Records the approval AND closes the issue in one transaction.
+
+  Mode B: Record-only approval (--record-only, delegated mode only)
+    Caller is an eligible reviewer. Records an approval review without
+    closing. Requires --reason. Use this when a reviewer sub-agent should
+    attest the work and the orchestrator / implementer / review-requester
+    closes later. Pass --decision changes_requested to record a non-approving
+    review instead of an approval.
+
+  Mode C: Close using recorded approval (delegated mode only)
+    An active approval review already exists. Any involved session
+    (creator, implementer, review-requester, or reviewer-of-record) may
+    close. --reason is required if the closing session is not the same as
+    the reviewer-of-record.
+
+Flag summary:
+  --record-only                       record an approval review without closing
+  --decision approved|changes_requested  review decision (use with --record-only)
+  --reason "..."                      required for --record-only and delegated close
+  --all                               approve all reviewable issues for this session
+
+Examples:
+  td approve td-abc1 td-abc2 td-abc3                       # Approve multiple
+  td approve --all                                         # Approve all reviewable
+  td approve td-abc1 --record-only --reason "looks good"   # Record approval only
+  td approve td-abc1 --record-only --decision changes_requested --reason "fix X"
+
+To surface issues reviewed by a sub-agent that you are allowed to close, use
+  td reviewable --include-approved`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -510,7 +550,53 @@ Supports bulk operations:
 
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		all, _ := cmd.Flags().GetBool("all")
+		recordOnly, _ := cmd.Flags().GetBool("record-only")
+		decisionFlag, _ := cmd.Flags().GetString("decision")
 		balancedPolicy := balancedReviewPolicyEnabled(baseDir)
+		mode, err := resolveReviewPolicyMode(baseDir)
+		if err != nil {
+			output.Error("review_policy_mode: %v", err)
+			return err
+		}
+
+		// Record-only is only meaningful under delegated mode.
+		if recordOnly && mode != reviewpolicy.ModeDelegated {
+			msg := "--record-only requires review_policy_mode=delegated"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+
+		// Validate --decision value when set.
+		decision := reviewpolicy.DecisionApproved
+		if decisionFlag != "" {
+			switch decisionFlag {
+			case reviewpolicy.DecisionApproved:
+				decision = reviewpolicy.DecisionApproved
+			case reviewpolicy.DecisionChangesRequested:
+				decision = reviewpolicy.DecisionChangesRequested
+			default:
+				msg := fmt.Sprintf("invalid --decision %q (want approved|changes_requested)", decisionFlag)
+				if jsonOutput {
+					output.JSONError(output.ErrCodeInvalidInput, msg)
+				} else {
+					output.Error("%s", msg)
+				}
+				return fmt.Errorf("%s", msg)
+			}
+		}
+		if decision == reviewpolicy.DecisionChangesRequested && !recordOnly {
+			msg := "--decision changes_requested requires --record-only"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
 
 		// Build list of issue IDs to approve
 		var issueIDs []string
@@ -588,6 +674,244 @@ Supports bulk operations:
 				skipped++
 				continue
 			}
+
+			// Look up active approval (delegated-mode routing input).
+			var activeApproval *models.IssueReview
+			if mode == reviewpolicy.ModeDelegated {
+				activeApproval, _ = database.GetActiveApprovalReview(issueID)
+			}
+
+			// Record-only path (Mode B): do NOT transition status.
+			if recordOnly {
+				reason := approvalReason(cmd)
+				if reason == "" {
+					msg := fmt.Sprintf("--record-only requires --reason for %s", issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeInvalidInput, msg)
+					} else if !all {
+						output.Error("%s", msg)
+					}
+					skipped++
+					continue
+				}
+				// Minor issues bypass review entirely — they self-review and close in
+				// one step. Record-only reviews on minor issues are semantically
+				// meaningless and would leave orphan review rows, so reject up-front.
+				if issue.Minor {
+					msg := fmt.Sprintf("minor issues do not require reviews: %s", issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeInvalidInput, msg)
+					} else if !all {
+						output.Warning("%s", msg)
+					}
+					skipped++
+					continue
+				}
+				if issue.Status != models.StatusInReview {
+					msg := fmt.Sprintf("cannot record review: %s is not in review (currently %s)", issueID, issue.Status)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeDatabaseError, msg)
+					} else if !all {
+						output.Warning("%s", msg)
+					}
+					skipped++
+					continue
+				}
+				if approvedDec := reviewpolicy.DecisionApproved; decision == approvedDec && activeApproval != nil {
+					msg := fmt.Sprintf("cannot record approval: %s already has an active approval (review %s by %s) — close it with `td approve %s`", issueID, activeApproval.ID, activeApproval.ReviewerSession, issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeDatabaseError, msg)
+					} else if !all {
+						output.Warning("%s", msg)
+					}
+					skipped++
+					continue
+				}
+
+				wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
+				if err != nil {
+					output.Warning("failed to check session history for %s: %v", issueID, err)
+					wasInvolved = true
+				}
+				wasImplInvolved, implErr := database.WasSessionImplementationInvolved(issueID, sess.ID)
+				if implErr != nil {
+					output.Warning("failed to check implementation history for %s: %v", issueID, implErr)
+					wasImplInvolved = true
+				}
+
+				// Record-only is delegated-mode-only (gated above), so pass mode
+				// directly instead of hardcoding balanced. Under delegated a prior
+				// reviewer may re-review after a reject/re-review cycle; the
+				// balanced fallback would incorrectly block via WasAnyInvolved.
+				eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplInvolved, mode)
+				if !eligibility.Allowed {
+					if !all {
+						if jsonOutput {
+							output.JSONError(output.ErrCodeCannotSelfApprove, eligibility.RejectionMessage)
+						} else {
+							output.Error("%s", eligibility.RejectionMessage)
+						}
+					}
+					skipped++
+					continue
+				}
+
+				// Supersede any existing non-superseded review rows before
+				// we insert a new row so audit history always has at most
+				// one active row per issue.
+				priorActive := ""
+				if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
+					priorActive = pa.ID
+				}
+				if err := database.SupersedeActiveReviews(issueID); err != nil {
+					output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
+				}
+
+				reviewID, err := database.CreateIssueReview(issueID, sess.ID, decision, reason, issue.ReviewRequestedBySession)
+				if err != nil {
+					output.Error("failed to record review: %v", err)
+					skipped++
+					continue
+				}
+
+				// For approved decisions, stamp reviewer_session/reviewed_at
+				// on the issue so status/reviewable surfaces pick it up.
+				// For changes_requested, do NOT stamp — that would masquerade
+				// as a real approval.
+				actionType := models.ActionReviewApprove
+				if decision == reviewpolicy.DecisionChangesRequested {
+					actionType = models.ActionReviewChangesRequested
+				} else {
+					now := time.Now()
+					issue.ReviewerSession = sess.ID
+					issue.ReviewedAt = &now
+				}
+
+				if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, actionType, reviewID, priorActive); err != nil {
+					output.Warning("%s", describeStaleTransitionUpdate(database, "record review", issueID, err, approveFollowupGuidance))
+					skipped++
+					continue
+				}
+
+				sessionAction := models.ActionSessionReviewApproved
+				if decision == reviewpolicy.DecisionChangesRequested {
+					sessionAction = models.ActionSessionReviewChangesRequested
+				}
+				if err := database.RecordSessionAction(issueID, sess.ID, sessionAction); err != nil {
+					output.Warning("failed to record session history: %v", err)
+				}
+
+				logMsg := fmt.Sprintf("Review recorded (%s): %s", decision, reason)
+				if err := database.AddLog(&models.Log{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					Message:   logMsg,
+					Type:      models.LogTypeProgress,
+				}); err != nil {
+					output.Warning("add log failed: %v", err)
+				}
+
+				fmt.Printf("REVIEW RECORDED %s (decision: %s, reviewer: %s)\n", issueID, decision, sess.ID)
+				approved++
+				continue
+			}
+
+			// Mode C: close using recorded approval (delegated mode only).
+			if mode == reviewpolicy.ModeDelegated && activeApproval != nil {
+				wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
+				if err != nil {
+					output.Warning("failed to check session history for %s: %v", issueID, err)
+					wasInvolved = true
+				}
+				wasImplInvolved, implErr := database.WasSessionImplementationInvolved(issueID, sess.ID)
+				if implErr != nil {
+					output.Warning("failed to check implementation history for %s: %v", issueID, implErr)
+					wasImplInvolved = true
+				}
+				hasImplHistoryForIssue, histErr := database.HasImplementationHistory(issueID)
+				if histErr != nil {
+					output.Warning("failed to check issue impl history for %s: %v", issueID, histErr)
+					hasImplHistoryForIssue = true
+				}
+
+				closeDec := evaluateCloseEligibilityForBaseDir(baseDir, issue, sess.ID, wasInvolved, wasImplInvolved, hasImplHistoryForIssue, true /*hasActiveApproval*/)
+				if !closeDec.Allowed {
+					msg := closeDec.RejectionMessage
+					if msg == "" {
+						msg = fmt.Sprintf("cannot close %s: you are not an allowed closer", issueID)
+					}
+					if jsonOutput {
+						output.JSONError(output.ErrCodeCannotSelfApprove, msg)
+					} else if !all {
+						output.Error("%s", msg)
+						output.Error("  The issue has a recorded approval by %s (review %s).", activeApproval.ReviewerSession, activeApproval.ID)
+						output.Error("  Only creator, implementer, review-requester, or reviewer-of-record may close.")
+					}
+					skipped++
+					continue
+				}
+
+				reason := approvalReason(cmd)
+				closerIsReviewer := activeApproval.ReviewerSession == sess.ID
+				if !closerIsReviewer && reason == "" {
+					msg := fmt.Sprintf("close-using-recorded-approval requires --reason when closer (%s) != reviewer (%s) for %s", sess.ID, activeApproval.ReviewerSession, issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeInvalidInput, msg)
+					} else if !all {
+						output.Error("%s", msg)
+					}
+					skipped++
+					continue
+				}
+
+				// Close: status -> closed, stamp closed_by_session/closed_at.
+				// Do NOT overwrite reviewer_session / reviewed_at.
+				issue.Status = models.StatusClosed
+				issue.ClosedBySession = sess.ID
+				now := time.Now()
+				issue.ClosedAt = &now
+
+				if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, models.ActionCloseAfterReview, "", ""); err != nil {
+					output.Warning("%s", describeStaleTransitionUpdate(database, "approve", issueID, err, approveFollowupGuidance))
+					skipped++
+					continue
+				}
+
+				if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionClosed); err != nil {
+					output.Warning("failed to record session history: %v", err)
+				}
+
+				logMsg := fmt.Sprintf("Closed after review %s (by %s)", activeApproval.ID, activeApproval.ReviewerSession)
+				if reason != "" {
+					logMsg = logMsg + ": " + reason
+				}
+				if err := database.AddLog(&models.Log{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					Message:   logMsg,
+					Type:      models.LogTypeProgress,
+				}); err != nil {
+					output.Warning("add log failed: %v", err)
+				}
+
+				clearFocusIfNeeded(baseDir, issueID)
+				fmt.Printf("APPROVED %s (closed by %s using review by %s)\n", issueID, sess.ID, activeApproval.ReviewerSession)
+
+				if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
+					for _, id := range ids {
+						fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+					}
+				}
+				if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
+					for _, id := range ids {
+						fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+					}
+				}
+				approved++
+				continue
+			}
+
+			// Mode A (fall-through): direct reviewer + close.
 			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
 				if !all {
 					if jsonOutput {
@@ -620,8 +944,20 @@ Supports bulk operations:
 					wasImplementationInvolved = implInvolved
 				}
 			}
+			if mode == reviewpolicy.ModeDelegated && !issue.Minor {
+				implInvolved, implErr := database.WasSessionImplementationInvolved(issueID, sess.ID)
+				if implErr != nil {
+					output.Warning("failed to check implementation history for %s: %v", issueID, implErr)
+					wasImplementationInvolved = true
+				} else {
+					wasImplementationInvolved = implInvolved
+				}
+			}
 
-			eligibility := evaluateApproveEligibility(issue, sess.ID, wasInvolved, wasImplementationInvolved, balancedPolicy)
+			// Route through mode-aware wrapper so delegated mode honors the
+			// "prior reviewers may re-review" rule rather than falling into
+			// balanced's WasAnyInvolved block.
+			eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplementationInvolved, mode)
 			if !eligibility.Allowed {
 				if !all { // Only show error for explicit requests
 					if jsonOutput {
@@ -647,13 +983,34 @@ Supports bulk operations:
 				continue
 			}
 
-			// Update issue (atomic update + action log)
+			// Direct reviewer-close: one transaction for approve+close.
 			issue.Status = models.StatusClosed
 			issue.ReviewerSession = sess.ID
+			issue.ClosedBySession = sess.ID
 			now := time.Now()
+			issue.ReviewedAt = &now
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionApprove); err != nil {
+			// Supersede any stale (changes_requested) rows and snapshot the
+			// prior-active review id for undo.
+			priorActive := ""
+			if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
+				priorActive = pa.ID
+			}
+			if err := database.SupersedeActiveReviews(issueID); err != nil {
+				output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
+			}
+
+			// Create the approval row first so we can record its id in
+			// the action_log payload via UpdateIssueLoggedWithReviewMeta.
+			reviewID, err := database.CreateIssueReview(
+				issueID, sess.ID, reviewpolicy.DecisionApproved, reason, issue.ReviewRequestedBySession,
+			)
+			if err != nil {
+				output.Warning("failed to record issue review: %v", err)
+			}
+
+			if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, models.ActionApprove, reviewID, priorActive); err != nil {
 				output.Warning("%s", describeStaleTransitionUpdate(database, "approve", issueID, err, approveFollowupGuidance))
 				skipped++
 				continue
@@ -804,9 +1161,19 @@ Supports bulk operations:
 				continue
 			}
 
-			// Update issue: reset to open so td next can pick it up again
+			// Update issue: reset to open so td next can pick it up again.
+			// Step 2 clears reviewer_session / reviewed_at / review_requested_by_session
+			// and supersedes any active approval review so a later re-review
+			// cycle does not inherit a stale approval or requester stamp.
 			issue.Status = models.StatusOpen
 			issue.ImplementerSession = ""
+			issue.ReviewerSession = ""
+			issue.ReviewedAt = nil
+			issue.ReviewRequestedBySession = ""
+
+			if err := database.SupersedeActiveReviews(issueID); err != nil {
+				output.Warning("failed to supersede active reviews for %s: %v", issueID, err)
+			}
 
 			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
@@ -861,16 +1228,27 @@ Supports bulk operations:
 var closeCmd = &cobra.Command{
 	Use:     "close [issue-id...]",
 	Aliases: []string{"done", "complete"},
-	Short:   "Close one or more issues without review",
-	Long: `Closes the issue(s) directly. For administrative use: duplicates, won't-fix, or cleanup.
+	Short:   "Admin close: duplicates, won't-fix, cleanup (NOT for reviewed work)",
+	Long: `Closes the issue(s) directly. Admin-only scope: duplicates, won't-fix,
+or cleanup of never-implemented issues.
 
-IMPORTANT: Agents should use 'td review' + 'td approve' for completed work.
+DO NOT use 'td close' to finish reviewed implementation work. Reviewed work
+must flow through 'td review' -> 'td approve' so an independent review is
+recorded. An independent review is required; the close may be delegated to
+any involved session via 'td approve'.
+
+Under review_policy_mode=delegated:
+  - in_review issues cannot be closed via 'td close'; use 'td approve' instead.
+  - non-minor open|in_progress|blocked issues with implementation history
+    require --admin (or --self-close-exception) to close.
+
 Self-closing issues you implemented requires --self-close-exception "reason".
 
 Examples:
   td close td-abc1                                       # Close (fails if you implemented it)
   td close td-abc1 -m "duplicate of td-xyz"              # Close unworked issue with reason
   td close td-abc1 --self-close-exception "trivial fix"  # Override for implemented work
+  td close td-abc1 --admin "duplicate"                   # Admin close (delegated mode)
   td done                                                # Close focused issue (if set)`,
 	GroupID: "workflow",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -903,6 +1281,8 @@ Examples:
 
 		// Get self-close-exception flag once
 		selfCloseException, _ := cmd.Flags().GetString("self-close-exception")
+		adminReason, _ := cmd.Flags().GetString("admin")
+		mode, _ := resolveReviewPolicyMode(baseDir)
 
 		closed := 0
 		skipped := 0
@@ -920,6 +1300,32 @@ Examples:
 				output.Warning("cannot close %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
+			}
+
+			// Step 2 close-path hardening: reject `in_review -> closed` via
+			// td close unless the issue is minor. Non-minor review work must
+			// go through td approve so the review-attestation path records
+			// reviewer and closer separately.
+			if issue.Status == models.StatusInReview && !issue.Minor {
+				output.Error("cannot close %s: issue is in review; use 'td approve %s' to close reviewed work", issueID, issueID)
+				output.Error("  'td close' is the admin path for duplicates/won't-fix/cleanup; it cannot bypass review.")
+				skipped++
+				continue
+			}
+
+			// Delegated-mode extra gate: non-minor issues with implementation
+			// history cannot be closed via the admin path without --admin or
+			// --self-close-exception. This preserves the admin escape hatch
+			// while making the policy boundary explicit.
+			if mode == reviewpolicy.ModeDelegated && !issue.Minor &&
+				(issue.Status == models.StatusOpen || issue.Status == models.StatusInProgress || issue.Status == models.StatusBlocked) {
+				hasHist, _ := database.HasImplementationHistory(issueID)
+				if hasHist && adminReason == "" && selfCloseException == "" {
+					output.Error("cannot close %s: delegated mode requires --admin or --self-close-exception for issues with implementation history", issueID)
+					output.Error("  Use 'td review' -> 'td approve' for completed work, or pass --admin \"duplicate|won't-fix|...\"")
+					skipped++
+					continue
+				}
 			}
 
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
@@ -943,7 +1349,7 @@ Examples:
 			eligibility := evaluateCloseEligibility(issue, sess.ID, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
 
 			if !eligibility.Allowed {
-				if selfCloseException == "" {
+				if selfCloseException == "" && adminReason == "" {
 					output.Error("%s", eligibility.RejectionMessage)
 					output.Error("%s", closeFollowupGuidance(issue))
 					skipped++
@@ -956,6 +1362,7 @@ Examples:
 			// Update issue (atomic update + action log)
 			fromStatus := issue.Status
 			issue.Status = models.StatusClosed
+			issue.ClosedBySession = sess.ID
 			now := time.Now()
 			issue.ClosedAt = &now
 
@@ -985,6 +1392,8 @@ Examples:
 					AgentType: sess.AgentType,
 					Reason:    selfCloseException,
 				})
+			} else if adminReason != "" {
+				logMsg = fmt.Sprintf("Closed (ADMIN: %s)", adminReason)
 			} else if reason != "" {
 				logMsg = "Closed: " + reason
 			}
@@ -1051,6 +1460,8 @@ func init() {
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
+	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated mode)")
+	approveCmd.Flags().String("decision", "", "Review decision: approved (default) | changes_requested (use with --record-only)")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")
 	rejectCmd.Flags().StringP("comment", "c", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("message", "", "Reason for rejection (alias for --reason)")
@@ -1063,4 +1474,5 @@ func init() {
 	closeCmd.Flags().StringP("note", "n", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("notes", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("self-close-exception", "", "Override review requirement when closing own work (requires reason)")
+	closeCmd.Flags().String("admin", "", "Admin close: override delegated-mode impl-history gate for duplicates/won't-fix/cleanup (requires reason)")
 }

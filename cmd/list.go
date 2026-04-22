@@ -198,6 +198,9 @@ var listCmd = &cobra.Command{
 		}
 
 		// Reviewable filter
+		var reviewableMode bool
+		var reviewableIncludeApproved bool
+		var reviewableSessionID string
 		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
 			sess, err := session.GetOrCreate(database)
 			if err != nil {
@@ -207,7 +210,13 @@ var listCmd = &cobra.Command{
 			reviewOpts := reviewableByOptions(getBaseDir(), sess.ID)
 			opts.ReviewableBy = reviewOpts.ReviewableBy
 			opts.BalancedReviewPolicy = reviewOpts.BalancedReviewPolicy
+			reviewableMode = true
+			reviewableIncludeApproved, _ = cmd.Flags().GetBool("include-approved")
+			reviewableSessionID = sess.ID
 		}
+		_ = reviewableMode
+		_ = reviewableIncludeApproved
+		_ = reviewableSessionID
 
 		// Mine filter (issues where current session is implementer)
 		if mine, _ := cmd.Flags().GetBool("mine"); mine {
@@ -287,7 +296,45 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		// Short format (default)
+		// Short format (default). Under --reviewable split into awaiting/
+		// ready-to-close buckets.
+		if reviewableMode {
+			awaiting := make([]models.Issue, 0, len(issues))
+			ready := make([]models.Issue, 0)
+			readyReviews := make(map[string]*models.IssueReview)
+			for _, issue := range issues {
+				rev, _ := database.GetActiveApprovalReview(issue.ID)
+				if rev == nil {
+					awaiting = append(awaiting, issue)
+					continue
+				}
+				if reviewableIncludeApproved && closerAllowed(&issue, reviewableSessionID, rev) {
+					ready = append(ready, issue)
+					readyReviews[issue.ID] = rev
+				}
+			}
+			if len(awaiting) > 0 {
+				fmt.Printf("AWAITING YOUR REVIEW (%d):\n", len(awaiting))
+				for _, issue := range awaiting {
+					fmt.Printf("  %s\n", output.FormatIssueShort(&issue))
+				}
+			}
+			if reviewableIncludeApproved && len(ready) > 0 {
+				if len(awaiting) > 0 {
+					fmt.Println()
+				}
+				fmt.Printf("READY TO CLOSE (%d) — approval already recorded:\n", len(ready))
+				for _, issue := range ready {
+					rev := readyReviews[issue.ID]
+					fmt.Printf("  %s  (reviewed by: %s)\n", output.FormatIssueShort(&issue), rev.ReviewerSession)
+				}
+			}
+			if len(awaiting) == 0 && len(ready) == 0 {
+				fmt.Println("No issues found")
+			}
+			return nil
+		}
+
 		for _, issue := range issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
@@ -326,11 +373,27 @@ func runListShortcut(opts db.ListIssuesOptions) (*listShortcutResult, error) {
 }
 
 var reviewableCmd = &cobra.Command{
-	Use:     "reviewable",
-	Short:   "Show issues awaiting review that you can review",
+	Use:   "reviewable",
+	Short: "Show issues awaiting review that you can review",
+	Long: `Show issues the current session can independently review.
+
+An issue is reviewable by the current session when the issue is in_review and
+the session has no implementation involvement on it (no 'started' / 'unstarted'
+history, and it isn't the current implementer).
+
+By default this EXCLUDES issues that already have a recorded approval review —
+those belong in a separate "ready to close" bucket. Pass --include-approved to
+also surface reviewed issues the current session is allowed to close. Allowed
+closers under review_policy_mode=delegated are the creator, implementer,
+review-requester, and reviewer-of-record.
+
+Examples:
+  td reviewable                       # Issues you can review now
+  td reviewable --include-approved    # Also show reviewed issues you can close`,
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		database, err := db.Open(getBaseDir())
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -343,20 +406,88 @@ var reviewableCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := runListShortcut(reviewableByOptions(getBaseDir(), sess.ID))
+		includeApproved, _ := cmd.Flags().GetBool("include-approved")
+
+		result, err := runListShortcut(reviewableByOptions(baseDir, sess.ID))
 		if err != nil {
 			return err
 		}
 
+		// Split issues into two buckets: awaiting review (no active approval)
+		// and ready to close (active approval + caller is allowed closer).
+		awaiting := make([]models.Issue, 0, len(result.issues))
+		readyToClose := make([]models.Issue, 0)
+		readyReviews := make(map[string]*models.IssueReview)
 		for _, issue := range result.issues {
-			fmt.Printf("%s  (impl: %s)\n", output.FormatIssueShort(&issue), issue.ImplementerSession)
+			rev, _ := database.GetActiveApprovalReview(issue.ID)
+			if rev == nil {
+				awaiting = append(awaiting, issue)
+				continue
+			}
+			// Issue has active approval — only surface in ready-to-close
+			// bucket when the session is an allowed closer.
+			if !includeApproved {
+				continue
+			}
+			if closerAllowed(&issue, sess.ID, rev) {
+				readyToClose = append(readyToClose, issue)
+				readyReviews[issue.ID] = rev
+			}
 		}
 
-		if len(result.issues) == 0 {
-			fmt.Println("No issues awaiting your review")
+		if len(awaiting) > 0 {
+			fmt.Printf("AWAITING YOUR REVIEW (%d):\n", len(awaiting))
+			for _, issue := range awaiting {
+				fmt.Printf("  %s  (impl: %s)\n", output.FormatIssueShort(&issue), issue.ImplementerSession)
+			}
+		}
+
+		if includeApproved && len(readyToClose) > 0 {
+			if len(awaiting) > 0 {
+				fmt.Println()
+			}
+			fmt.Printf("READY TO CLOSE (%d) — approval already recorded:\n", len(readyToClose))
+			for _, issue := range readyToClose {
+				rev := readyReviews[issue.ID]
+				fmt.Printf("  %s  (impl: %s, reviewed by: %s)\n", output.FormatIssueShort(&issue), issue.ImplementerSession, rev.ReviewerSession)
+			}
+		}
+
+		if len(awaiting) == 0 && len(readyToClose) == 0 {
+			if includeApproved {
+				fmt.Println("No issues awaiting your review or ready to close")
+			} else {
+				fmt.Println("No issues awaiting your review (try --include-approved for reviewed issues you can close)")
+			}
 		}
 		return nil
 	},
+}
+
+// closerAllowed reports whether sessionID holds one of the four delegated-mode
+// close roles for the issue. This is a lightweight local check used by
+// reviewable / status / context surfaces; the authoritative decision lives
+// in reviewpolicy.EvaluateCloseEligibility.
+func closerAllowed(issue *models.Issue, sessionID string, rev *models.IssueReview) bool {
+	if sessionID == "" {
+		return false
+	}
+	if issue.CreatorSession == sessionID {
+		return true
+	}
+	if issue.ImplementerSession == sessionID {
+		return true
+	}
+	if issue.ReviewRequestedBySession == sessionID {
+		return true
+	}
+	if rev != nil && rev.ReviewerSession == sessionID {
+		return true
+	}
+	if issue.ReviewerSession == sessionID {
+		return true
+	}
+	return false
 }
 
 var blockedListCmd = &cobra.Command{
@@ -746,6 +877,8 @@ func init() {
 	listCmd.Flags().String("implementer", "", "Filter by implementer session")
 	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
+	listCmd.Flags().Bool("include-approved", false, "With --reviewable: also show issues with recorded approval that you can close")
+	reviewableCmd.Flags().Bool("include-approved", false, "Also show issues with recorded approval that you can close")
 	listCmd.Flags().String("parent", "", "Filter by parent issue ID")
 	listCmd.Flags().String("epic", "", "Filter by epic (shows all tasks within epic)")
 	listCmd.Flags().BoolP("mine", "m", false, "Show issues where you are the implementer")

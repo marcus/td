@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 30
+const SchemaVersion = 31
 
 const schema = `
 -- Issues table
@@ -484,6 +484,13 @@ CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 		Version:     30,
 		Description: "FK orphan cleanup + ON DELETE CASCADE for FK enforcement (td-4846e6)",
 		// Handled by custom Go code in migration_fk_enforcement.go (migrateEnableFKEnforcement)
+		SQL: "",
+	},
+	{
+		Version:     31,
+		Description: "Add review-attestation columns to issues and issue_reviews table",
+		// Handled by custom Go code in reviews_migration.go (migrateReviewAttestations)
+		// so that re-running is safe even if some columns already exist.
 		SQL: "",
 	},
 }

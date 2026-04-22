@@ -8,10 +8,99 @@ import (
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/session"
 )
+
+// resolveMonitorPolicyMode resolves the project review policy mode, returning
+// strict as the fail-closed default when the config isn't readable. Exported
+// wrapper so tests can drive categorization deterministically.
+func resolveMonitorPolicyMode(baseDir string) reviewpolicy.Mode {
+	if baseDir == "" {
+		return reviewpolicy.ModeStrict
+	}
+	if m, err := features.ResolveReviewPolicyMode(baseDir); err == nil {
+		return m
+	}
+	return reviewpolicy.ModeStrict
+}
+
+// categorizeInReviewIssue returns the monitor task-list category for an
+// in_review issue given the current session's role, impl involvement, and
+// whether the issue carries an active approval. The decision routes through
+// reviewpolicy so CLI / monitor / serve stay aligned.
+//
+// Buckets under delegated mode:
+//   - CategoryReviewable — session is eligible reviewer, no active approval
+//   - CategoryReadyToClose — active approval exists, session is allowed closer
+//   - CategoryPendingReview — session implemented / participated; waiting on reviewer
+//   - CategoryPendingOther — uninvolved session; waiting on some other reviewer
+//
+// Under strict/balanced the plan's two new buckets collapse back to the
+// existing Reviewable / PendingReview pair so the default UX is unchanged.
+func categorizeInReviewIssue(
+	issue *models.Issue,
+	sessionID string,
+	mode reviewpolicy.Mode,
+	hasImplHistory, wasAnyInvolved, hasActiveApproval bool,
+) TaskListCategory {
+	isImpl := issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
+	isCreator := issue.CreatorSession != "" && issue.CreatorSession == sessionID
+	isReviewerOfRecord := issue.ReviewerSession != "" && issue.ReviewerSession == sessionID
+	isReviewRequester := issue.ReviewRequestedBySession != "" && issue.ReviewRequestedBySession == sessionID
+
+	// Delegated mode split: distinguish ready-to-close from reviewable.
+	if mode == reviewpolicy.ModeDelegated {
+		if hasActiveApproval {
+			closeDec := reviewpolicy.EvaluateCloseEligibility(reviewpolicy.CloseEligibilityInput{
+				Mode:                      reviewpolicy.ModeDelegated,
+				Issue:                     issue,
+				SessionID:                 sessionID,
+				SessionIsImplementer:      isImpl,
+				SessionIsCreator:          isCreator,
+				SessionIsReviewerOfRecord: isReviewerOfRecord,
+				SessionIsReviewRequester:  isReviewRequester,
+				HasImplementationHistory:  hasImplHistory,
+				WasAnyInvolved:            wasAnyInvolved,
+				HasActiveApproval:         hasActiveApproval,
+			})
+			if closeDec.Allowed {
+				return CategoryReadyToClose
+			}
+			// Session not an allowed closer for an already-approved issue →
+			// audit bucket: it's not actionable by me.
+			return CategoryPendingOther
+		}
+		// No active approval yet: reviewer eligibility rules.
+		revDec := reviewpolicy.EvaluateReviewerEligibility(reviewpolicy.ReviewerEligibilityInput{
+			Mode:                     reviewpolicy.ModeDelegated,
+			Issue:                    issue,
+			SessionID:                sessionID,
+			SessionIsImplementer:     isImpl,
+			SessionIsCreator:         isCreator,
+			HasImplementationHistory: hasImplHistory,
+			HasActiveApproval:        false,
+			WasAnyInvolved:           wasAnyInvolved,
+		})
+		if revDec.Allowed {
+			return CategoryReviewable
+		}
+		if isImpl || hasImplHistory {
+			return CategoryPendingReview
+		}
+		return CategoryPendingOther
+	}
+
+	// Strict/balanced: preserve the existing two-bucket split so the default
+	// UI doesn't change.
+	if isImpl {
+		return CategoryPendingReview
+	}
+	return CategoryReviewable
+}
 
 // StatsData holds statistics for the stats modal
 type StatsData struct {
@@ -45,6 +134,10 @@ func FetchDataWithSearchMode(database *db.DB, sessionID string, startedAt time.T
 		currentSessionID = sess.ID
 	}
 
+	// Resolve policy mode for the session's project so the categorization
+	// matches CLI / serve decisions. Falls back to strict on error.
+	mode := resolveMonitorPolicyMode(database.BaseDir())
+
 	// Get focused issue
 	focusedID, _ := config.GetFocus(database.BaseDir())
 	if focusedID != "" {
@@ -64,7 +157,7 @@ func FetchDataWithSearchMode(database *db.DB, sessionID string, startedAt time.T
 	msg.Activity = fetchActivity(database, 50)
 
 	// Get task list (uses current session for reviewable calculation)
-	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, searchMode, includeClosed, sortMode)
+	msg.TaskList = fetchTaskListWithMode(database, currentSessionID, searchQuery, searchMode, includeClosed, sortMode, mode)
 
 	// Get recent handoffs since monitor started
 	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
@@ -181,8 +274,43 @@ func isTDQQuery(q string) bool {
 	return spacelessPattern.MatchString(q)
 }
 
-// fetchTaskList retrieves categorized issues for the task list panel
+// classifyInReviewForData is a thin wrapper that loads involvement facts from
+// the DB and routes the decision through categorizeInReviewIssue. On DB
+// errors it falls back to the pre-Step-3 behavior (reviewable vs pending
+// based on implementer) so transient failures never silently "promote" an
+// issue into the ReadyToClose bucket.
+func classifyInReviewForData(database *db.DB, issue *models.Issue, sessionID string, mode reviewpolicy.Mode) TaskListCategory {
+	if issue == nil || database == nil {
+		return CategoryReviewable
+	}
+	hasImpl := false
+	if v, err := database.WasSessionImplementationInvolved(issue.ID, sessionID); err == nil {
+		hasImpl = v
+	}
+	wasAny := false
+	if v, err := database.WasSessionInvolved(issue.ID, sessionID); err == nil {
+		wasAny = v
+	}
+	hasActiveApproval := false
+	if mode == reviewpolicy.ModeDelegated {
+		if rev, err := database.GetActiveApprovalReview(issue.ID); err == nil && rev != nil {
+			hasActiveApproval = true
+		}
+	}
+	return categorizeInReviewIssue(issue, sessionID, mode, hasImpl, wasAny, hasActiveApproval)
+}
+
+// fetchTaskList retrieves categorized issues for the task list panel, using
+// the resolved policy mode for the database's baseDir. Kept for tests that
+// exercise the default resolution path.
 func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode string, includeClosed bool, sortMode SortMode) TaskListData {
+	return fetchTaskListWithMode(database, sessionID, searchQuery, searchMode, includeClosed, sortMode, resolveMonitorPolicyMode(database.BaseDir()))
+}
+
+// fetchTaskListWithMode is the mode-aware variant. It is called from
+// FetchDataWithSearchMode and is safe to call directly from tests that want
+// to pin the policy mode.
+func fetchTaskListWithMode(database *db.DB, sessionID string, searchQuery, searchMode string, includeClosed bool, sortMode SortMode, mode reviewpolicy.Mode) TaskListData {
 	var data TaskListData
 
 	// Get default sort from SortMode (used for non-TDQ queries)
@@ -226,10 +354,10 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode st
 	// - tdq: always attempt TDQ execution (when query is non-empty)
 	// - text: never attempt TDQ execution
 	// - auto/empty/unknown: TDQ auto-detection with fallback to text search
-	mode := strings.ToLower(strings.TrimSpace(searchMode))
+	searchModeNorm := strings.ToLower(strings.TrimSpace(searchMode))
 	useTDQ := false
 	if searchQuery != "" {
-		switch mode {
+		switch searchModeNorm {
 		case "tdq":
 			useTDQ = true
 		case "text":
@@ -264,10 +392,18 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode st
 				case models.StatusBlocked:
 					data.Blocked = append(data.Blocked, issue)
 				case models.StatusInReview:
-					if issue.ImplementerSession != sessionID {
+					cat := classifyInReviewForData(database, &issue, sessionID, mode)
+					switch cat {
+					case CategoryReviewable:
 						data.Reviewable = append(data.Reviewable, issue)
-					} else {
+					case CategoryReadyToClose:
+						data.ReadyToClose = append(data.ReadyToClose, issue)
+					case CategoryPendingReview:
 						data.PendingReview = append(data.PendingReview, issue)
+					case CategoryPendingOther:
+						data.PendingOther = append(data.PendingOther, issue)
+					default:
+						data.PendingOther = append(data.PendingOther, issue)
 					}
 				case models.StatusClosed:
 					if includeClosed {
@@ -327,21 +463,12 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode st
 		}
 	}
 
-	// Reviewable issues: in_review status, different implementer than current session
-	if searchQuery != "" && !useTDQ {
-		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
-			ReviewableBy: sessionID,
-		})
-		data.Reviewable = extractIssues(results)
-	} else if searchQuery == "" {
-		data.Reviewable, _ = database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sessionID,
-			SortBy:       sortBy,
-			SortDesc:     sortDesc,
-		})
-	}
-
-	// Pending review: in_review status, own implementation (implementer is current session)
+	// In-review issues: fetch all, then partition into the four delegated-mode
+	// buckets (Reviewable, ReadyToClose, PendingReview, PendingOther). The
+	// ReviewableBy SQL filter is not used here because the delegated split
+	// needs more per-issue facts than the composer can express; falling back
+	// to a single in_review read + per-issue classification keeps CLI / monitor
+	// policy aligned via reviewpolicy instead of parallel SQL.
 	var inReviewIssues []models.Issue
 	if searchQuery != "" && !useTDQ {
 		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
@@ -356,8 +483,16 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode st
 		})
 	}
 	for _, issue := range inReviewIssues {
-		if issue.ImplementerSession == sessionID {
+		issue := issue
+		switch classifyInReviewForData(database, &issue, sessionID, mode) {
+		case CategoryReviewable:
+			data.Reviewable = append(data.Reviewable, issue)
+		case CategoryReadyToClose:
+			data.ReadyToClose = append(data.ReadyToClose, issue)
+		case CategoryPendingReview:
 			data.PendingReview = append(data.PendingReview, issue)
+		case CategoryPendingOther:
+			data.PendingOther = append(data.PendingOther, issue)
 		}
 	}
 
@@ -540,11 +675,10 @@ func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView
 		case models.StatusBlocked:
 			category = CategoryBlocked
 		case models.StatusInReview:
-			if issue.ImplementerSession != sessionID {
-				category = CategoryReviewable
-			} else {
-				category = CategoryPendingReview
-			}
+			// Route through reviewpolicy so monitor board view aligns with
+			// CLI / serve decisions. Uses the session's project mode.
+			mode := resolveMonitorPolicyMode(database.BaseDir())
+			category = classifyInReviewForData(database, issue, sessionID, mode)
 		case models.StatusClosed:
 			category = CategoryClosed
 		default:
@@ -573,10 +707,12 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	// Group by category (preserve BoardIssueView for position-aware sorting)
 	categories := map[TaskListCategory][]models.BoardIssueView{
 		CategoryReviewable:    {},
+		CategoryReadyToClose:  {},
 		CategoryNeedsRework:   {},
 		CategoryInProgress:    {},
 		CategoryReady:         {},
 		CategoryPendingReview: {},
+		CategoryPendingOther:  {},
 		CategoryBlocked:       {},
 		CategoryClosed:        {},
 	}
@@ -595,6 +731,9 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	for _, biv := range categories[CategoryReviewable] {
 		data.Reviewable = append(data.Reviewable, biv.Issue)
 	}
+	for _, biv := range categories[CategoryReadyToClose] {
+		data.ReadyToClose = append(data.ReadyToClose, biv.Issue)
+	}
 	for _, biv := range categories[CategoryNeedsRework] {
 		data.NeedsRework = append(data.NeedsRework, biv.Issue)
 	}
@@ -606,6 +745,9 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	}
 	for _, biv := range categories[CategoryPendingReview] {
 		data.PendingReview = append(data.PendingReview, biv.Issue)
+	}
+	for _, biv := range categories[CategoryPendingOther] {
+		data.PendingOther = append(data.PendingOther, biv.Issue)
 	}
 	for _, biv := range categories[CategoryBlocked] {
 		data.Blocked = append(data.Blocked, biv.Issue)
@@ -710,6 +852,11 @@ func BuildSwimlaneRows(data TaskListData) []TaskListRow {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReviewable})
 	}
 
+	// Add ready-to-close issues (delegated mode only; empty otherwise)
+	for _, issue := range data.ReadyToClose {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReadyToClose})
+	}
+
 	// Add needs rework issues
 	for _, issue := range data.NeedsRework {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryNeedsRework})
@@ -725,9 +872,14 @@ func BuildSwimlaneRows(data TaskListData) []TaskListRow {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReady})
 	}
 
-	// Add pending review issues
+	// Add pending review issues (my own implementation)
 	for _, issue := range data.PendingReview {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryPendingReview})
+	}
+
+	// Add pending-other issues (peer's impl, waiting on a different reviewer)
+	for _, issue := range data.PendingOther {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryPendingOther})
 	}
 
 	// Add blocked issues

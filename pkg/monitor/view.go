@@ -76,6 +76,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
+	// Overlay record-review dialog if open (declarative modal)
+	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
+		rr := m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+		return OverlayModal(base, rr, m.Width, m.Height)
+	}
+
 	// Overlay activity detail modal if open
 	if m.ActivityDetailOpen && m.ActivityDetailModal != nil && m.ActivityDetailMouseHandler != nil {
 		detail := m.ActivityDetailModal.Render(m.Width, m.Height, m.ActivityDetailMouseHandler)
@@ -1103,7 +1109,48 @@ func (m Model) renderModal() string {
 		lines = append(lines, subtleStyle.Render("Impl: ")+truncateSession(issue.ImplementerSession))
 	}
 	if issue.ReviewerSession != "" {
-		lines = append(lines, subtleStyle.Render("Review: ")+truncateSession(issue.ReviewerSession))
+		reviewerLine := subtleStyle.Render("Reviewer: ") + truncateSession(issue.ReviewerSession)
+		if issue.ReviewedAt != nil {
+			reviewerLine += subtleStyle.Render("  at ") + issue.ReviewedAt.Format("2006-01-02 15:04")
+		}
+		// Freshness: only emit (fresh) when an active (non-superseded)
+		// approval row exists. Relying on ReviewerSession alone is lossy once
+		// changes_requested reviews (which don't clear ReviewerSession) are
+		// recordable from the TUI. GetActiveApprovalReview is the true
+		// predicate.
+		if issue.Status == models.StatusInReview && m.DB != nil {
+			if active, _ := m.DB.GetActiveApprovalReview(issue.ID); active != nil {
+				reviewerLine += subtleStyle.Render("  (fresh)")
+			}
+		}
+		lines = append(lines, reviewerLine)
+	}
+	if issue.ClosedBySession != "" && issue.Status == models.StatusClosed {
+		lines = append(lines, subtleStyle.Render("Closed by: ")+truncateSession(issue.ClosedBySession))
+	}
+	// Recent review history (last 3) from issue_reviews, best-effort DB read.
+	// Guarded on m.DB being non-nil for tests that render without a DB.
+	var reviewsList []*models.IssueReview
+	if m.DB != nil {
+		if r, err := m.DB.ListIssueReviews(issue.ID); err == nil {
+			reviewsList = r
+		}
+	}
+	if reviews := reviewsList; len(reviews) > 0 {
+		// Take last 3 in reverse chronological order.
+		start := 0
+		if len(reviews) > 3 {
+			start = len(reviews) - 3
+		}
+		lines = append(lines, subtleStyle.Render("Recent reviews:"))
+		for i := len(reviews) - 1; i >= start; i-- {
+			r := reviews[i]
+			status := ""
+			if r.SupersededAt != nil {
+				status = " (superseded)"
+			}
+			lines = append(lines, "  "+truncateSession(r.ReviewerSession)+" "+r.Decision+status+" "+r.CreatedAt.Format("2006-01-02 15:04"))
+		}
 	}
 
 	// Defer/Due fields

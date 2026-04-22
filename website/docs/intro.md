@@ -17,7 +17,7 @@ There's no structured way to say "here's what's done, here's what remains, here'
 Three mechanisms eliminate context loss:
 
 - **Structured handoffs** -- Each session records what's done, what remains, decisions made, and uncertainties. The next session reads this instead of guessing.
-- **Session isolation** -- The session that did the work can't approve its own output. A different session must review, catching errors the implementer is blind to.
+- **Independent review** -- You cannot review your own implementation, but you can close after an independent review has been recorded. An independent review is required; the close itself may be delegated to any involved session (creator, implementer, review-requester, or reviewer-of-record). This catches errors the implementer is blind to without forcing artificial session rotation.
 - **Single-command context** -- `td usage` gives the incoming session everything it needs: current issues, recent logs, pending handoffs, and what to work on next.
 
 ## Installation
@@ -70,7 +70,7 @@ td log "OAuth callback working"
 # Hand off before context ends
 td handoff td-a1b2 --done "OAuth flow" --remaining "Token refresh"
 
-# Submit for review (different session approves)
+# Submit for review (an independent session records the review)
 td review td-a1b2
 ```
 

@@ -165,6 +165,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /v1/issues/{id}/start", s.handleStart)
 	s.mux.HandleFunc("POST /v1/issues/{id}/review", s.handleReview)
 	s.mux.HandleFunc("POST /v1/issues/{id}/approve", s.handleApprove)
+	s.mux.HandleFunc("POST /v1/issues/{id}/reviews", s.handleRecordReview)
 	s.mux.HandleFunc("POST /v1/issues/{id}/reject", s.handleReject)
 	s.mux.HandleFunc("POST /v1/issues/{id}/block", s.handleBlock)
 	s.mux.HandleFunc("POST /v1/issues/{id}/unblock", s.handleUnblock)

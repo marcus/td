@@ -1,0 +1,51 @@
+ M .gitignore
+ M cmd/review.go
+ M cmd/review_policy.go
+ M cmd/sync.go
+ M internal/api/snapshot_query_source.go
+ M internal/config/config.go
+ M internal/db/ids.go
+ M internal/db/import.go
+ M internal/db/issues.go
+ M internal/db/issues_logged.go
+ M internal/db/migrations.go
+ M internal/db/relations_logged.go
+ M internal/db/schema.go
+ M internal/db/stats.go
+ M internal/db/work_sessions.go
+ M internal/events/taxonomy.go
+ M internal/events/taxonomy_test.go
+ M internal/features/features.go
+ M internal/features/features_test.go
+ M internal/models/models.go
+ M internal/serve/handlers_transitions.go
+ M internal/serve/integration_test.go
+ M internal/serve/response.go
+ M pkg/monitor/actions.go
+?? .agents/
+?? .claude/agents/
+?? AGENTS.md
+?? cmd/parity_runtime_mode_test.go
+?? cmd/parity_surface_shim_test.go
+?? cmd/parity_surface_test.go
+?? internal/db/reviews.go
+?? internal/db/reviews_migration.go
+?? internal/db/reviews_test.go
+?? internal/db/schema_test.go
+?? internal/reviewpolicy/
+?? proof/orchestrator-review-closure/
+?? proof/td-2b41b2/delete-temp-issues.txt
+?? proof/td-2b41b2/focus-epic.txt
+?? proof/td-2b41b2/handoff.txt
+?? proof/td-2b41b2/list-epic-dot-focused.txt
+?? proof/td-2b41b2/showproof-approve-no-args.txt
+?? proof/td-2b41b2/showproof-create.txt
+?? proof/td-2b41b2/showproof-init.txt
+?? proof/td-2b41b2/showproof-review.txt
+?? proof/td-2b41b2/showproof-show-approved.txt
+?? proof/td-2b41b2/showproof-show-no-args.txt
+?? proof/td-2b41b2/unfocus.txt
+?? proof/td-2b41b2/ws-end.txt
+?? proof/td-a7ff5e/
+?? td-2fb148-0009
+?? td-release-notes-review-bin

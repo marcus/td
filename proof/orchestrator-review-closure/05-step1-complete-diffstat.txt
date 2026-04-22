@@ -1,0 +1,25 @@
+ .gitignore                             |   1 +
+ cmd/review.go                          |  39 +++++-
+ cmd/review_policy.go                   | 239 ++++++++++++++++++++++++---------
+ cmd/sync.go                            |   8 ++
+ internal/api/snapshot_query_source.go  |  43 +++++-
+ internal/config/config.go              |  27 ++++
+ internal/db/ids.go                     |   1 +
+ internal/db/import.go                  |  55 +++++++-
+ internal/db/issues.go                  | 217 ++++++++++++++++++++++++------
+ internal/db/issues_logged.go           |  86 +++++++++++-
+ internal/db/migrations.go              |  10 ++
+ internal/db/relations_logged.go        |  35 ++++-
+ internal/db/schema.go                  |   9 +-
+ internal/db/stats.go                   |  46 +++++--
+ internal/db/work_sessions.go           |  16 ++-
+ internal/events/taxonomy.go            |  18 +++
+ internal/events/taxonomy_test.go       |   4 +-
+ internal/features/features.go          | 151 +++++++++++++++++++++
+ internal/features/features_test.go     | 116 ++++++++++++++++
+ internal/models/models.go              |  55 ++++++--
+ internal/serve/handlers_transitions.go | 236 +++++++++++++++++++++++++++++++-
+ internal/serve/integration_test.go     |  16 ++-
+ internal/serve/response.go             |  52 +++----
+ pkg/monitor/actions.go                 | 139 ++++++++++++++++++-
+ 24 files changed, 1434 insertions(+), 185 deletions(-)

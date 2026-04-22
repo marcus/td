@@ -22,26 +22,36 @@ type ListIssuesOptions struct {
 	Reviewer             string
 	ReviewableBy         string // Issues that this session can review
 	BalancedReviewPolicy bool   // Allow creator-only approvals/reviews when externally implemented
-	ParentID             string
-	EpicID               string // Filter by epic (parent_id matches epic, recursively)
-	PointsMin            int
-	PointsMax            int
-	CreatedAfter         time.Time
-	CreatedBefore        time.Time
-	UpdatedAfter         time.Time
-	UpdatedBefore        time.Time
-	ClosedAfter          time.Time
-	ClosedBefore         time.Time
-	SortBy               string
-	SortDesc             bool
-	Limit                int
-	IDs                  []string
-	ExcludeDeferred      bool // Hide issues where defer_until > today
-	DeferredOnly         bool // Show ONLY deferred issues (defer_until > today)
-	OverdueOnly          bool // Show ONLY overdue issues (due_date < today, not closed)
-	SurfacingOnly        bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
-	DueSoonDays          int  // Show issues due within N days (0 = disabled)
-	ExcludeHasOpenDeps   bool // Hide issues that have unresolved (non-closed) dependencies
+	// ReviewPolicyMode overrides the mode used by ReviewableBy/ReadyToCloseBy
+	// filter composition. When empty, falls back to strict (or balanced when
+	// BalancedReviewPolicy is true). Step 2 flips delegated-mode callers.
+	ReviewPolicyMode string
+	// ReadyToCloseBy returns issues where an active approval review exists
+	// and the given session is an allowed closer under the current mode.
+	// Empty under strict/balanced; populated under delegated. Safe to set
+	// regardless of mode; the SQL composer short-circuits to `0=1` when not
+	// applicable.
+	ReadyToCloseBy     string
+	ParentID           string
+	EpicID             string // Filter by epic (parent_id matches epic, recursively)
+	PointsMin          int
+	PointsMax          int
+	CreatedAfter       time.Time
+	CreatedBefore      time.Time
+	UpdatedAfter       time.Time
+	UpdatedBefore      time.Time
+	ClosedAfter        time.Time
+	ClosedBefore       time.Time
+	SortBy             string
+	SortDesc           bool
+	Limit              int
+	IDs                []string
+	ExcludeDeferred    bool // Hide issues where defer_until > today
+	DeferredOnly       bool // Show ONLY deferred issues (defer_until > today)
+	OverdueOnly        bool // Show ONLY overdue issues (due_date < today, not closed)
+	SurfacingOnly      bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
+	DueSoonDays        int  // Show issues due within N days (0 = disabled)
+	ExcludeHasOpenDeps bool // Hide issues that have unresolved (non-closed) dependencies
 }
 
 // CreateIssue creates a new issue WITHOUT logging to action_log.
@@ -109,22 +119,25 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	// with NULL (old data, or sync payloads that pre-dated the fix in
 	// internal/sync/events.go).
 	var description, labels sql.NullString
-	var closedAt, deletedAt sql.NullTime
+	var closedAt, deletedAt, reviewedAt sql.NullTime
 	var parentID, acceptance, sprint sql.NullString
 	var implSession, creatorSession, reviewerSession sql.NullString
+	var reviewRequestedBy, closedBy sql.NullString
 	var createdBranch sql.NullString
 	var pointsNull sql.NullInt64
 	var deferUntil, dueDate sql.NullString
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       implementer_session, creator_session, reviewer_session, review_requested_by_session, closed_by_session,
+		       created_at, updated_at, reviewed_at, closed_at, deleted_at, minor, created_branch,
 		       defer_until, due_date, defer_count
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 		&pointsNull, &labels, &parentID, &acceptance, &sprint,
-		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+		&implSession, &creatorSession, &reviewerSession, &reviewRequestedBy, &closedBy,
+		&issue.CreatedAt, &issue.UpdatedAt, &reviewedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		&deferUntil, &dueDate, &issue.DeferCount,
 	)
 
@@ -140,6 +153,9 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	if labels.Valid && labels.String != "" {
 		issue.Labels = strings.Split(labels.String, ",")
 	}
+	if reviewedAt.Valid {
+		issue.ReviewedAt = &reviewedAt.Time
+	}
 	if closedAt.Valid {
 		issue.ClosedAt = &closedAt.Time
 	}
@@ -152,6 +168,8 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	issue.ImplementerSession = implSession.String
 	issue.CreatorSession = creatorSession.String
 	issue.ReviewerSession = reviewerSession.String
+	issue.ReviewRequestedBySession = reviewRequestedBy.String
+	issue.ClosedBySession = closedBy.String
 	issue.CreatedBranch = createdBranch.String
 	if deferUntil.Valid {
 		issue.DeferUntil = &deferUntil.String
@@ -189,7 +207,8 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 
 	query := fmt.Sprintf(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+		       implementer_session, creator_session, reviewer_session, review_requested_by_session, closed_by_session,
+		       created_at, updated_at, reviewed_at, closed_at, deleted_at, minor, created_branch,
 		       defer_until, due_date, defer_count
 		FROM issues WHERE id IN (%s)
 	`, strings.Join(placeholders, ","))
@@ -205,16 +224,18 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		var issue models.Issue
 		// NullString for every TEXT DEFAULT '' column — see GetIssue.
 		var description, labels sql.NullString
-		var closedAt, deletedAt sql.NullTime
+		var closedAt, deletedAt, reviewedAt sql.NullTime
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
+		var reviewRequestedBy, closedBy sql.NullString
 		var createdBranch sql.NullString
 		var pointsNull sql.NullInt64
 		var deferUntil, dueDate sql.NullString
 		if err := rows.Scan(
 			&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
-			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+			&implSession, &creatorSession, &reviewerSession, &reviewRequestedBy, &closedBy,
+			&issue.CreatedAt, &issue.UpdatedAt, &reviewedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 			&deferUntil, &dueDate, &issue.DeferCount,
 		); err != nil {
 			return nil, err
@@ -222,6 +243,9 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		issue.Description = description.String
 		if labels.Valid && labels.String != "" {
 			issue.Labels = strings.Split(labels.String, ",")
+		}
+		if reviewedAt.Valid {
+			issue.ReviewedAt = &reviewedAt.Time
 		}
 		if closedAt.Valid {
 			issue.ClosedAt = &closedAt.Time
@@ -236,6 +260,8 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		issue.ImplementerSession = implSession.String
 		issue.CreatorSession = creatorSession.String
 		issue.ReviewerSession = reviewerSession.String
+		issue.ReviewRequestedBySession = reviewRequestedBy.String
+		issue.ClosedBySession = closedBy.String
 		issue.CreatedBranch = createdBranch.String
 		if deferUntil.Valid {
 			issue.DeferUntil = &deferUntil.String
@@ -319,14 +345,18 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 		_, err := db.conn.Exec(`
 			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
 			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
-			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
+			                  implementer_session = ?, reviewer_session = ?,
+			                  review_requested_by_session = ?, closed_by_session = ?,
+			                  updated_at = ?, reviewed_at = ?,
 			                  closed_at = ?, deleted_at = ?,
 			                  defer_until = ?, due_date = ?, defer_count = ?,
 			                  creator_session = ?, minor = ?, created_branch = ?
 			WHERE id = ?
 		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
 			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
-			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
+			issue.ImplementerSession, issue.ReviewerSession,
+			issue.ReviewRequestedBySession, issue.ClosedBySession,
+			issue.UpdatedAt, issue.ReviewedAt,
 			issue.ClosedAt, issue.DeletedAt,
 			deferUntil, dueDate, issue.DeferCount,
 			issue.CreatorSession, issue.Minor, issue.CreatedBranch, issue.ID)
@@ -356,39 +386,44 @@ func (db *DB) RestoreIssue(id string) error {
 
 // ReviewableByFilter returns the SQL fragment and args for the ReviewableBy filter.
 // It is exported so that other packages (e.g. internal/api) can reuse the same policy logic.
+//
+// Mode mapping (Batch 1c):
+//   - balanced=false -> strict SQL
+//   - balanced=true  -> balanced SQL
+//
+// Delegated mode is driven by ReviewableByFilterForMode. The boolean signature
+// is kept for backward compatibility; ListIssuesOptions still passes a bool so
+// existing callers do not have to be rewritten. A delegated-mode caller (Step 2)
+// uses ReviewableByFilterForMode directly.
 func ReviewableByFilter(sessionID string, balanced bool) (string, []interface{}) {
 	if balanced {
-		sql := ` AND status = ? AND implementer_session != '' AND (
-			minor = 1 OR (
-				implementer_session != ?
-				AND (
-					(
-						(creator_session = '' OR creator_session != ?)
-						AND NOT EXISTS (
-							SELECT 1 FROM issue_session_history
-							WHERE issue_id = issues.id AND session_id = ?
-						)
-					)
-					OR
-					(
-						creator_session = ?
-						AND implementer_session != ?
-						AND NOT EXISTS (
-							SELECT 1 FROM issue_session_history
-							WHERE issue_id = issues.id
-							  AND session_id = ?
-							  AND action IN ('started', 'unstarted')
-						)
-					)
-				)
-			)
-		)`
-		return sql, []interface{}{
-			models.StatusInReview,
-			sessionID, sessionID, sessionID,
-			sessionID, sessionID, sessionID,
-		}
+		return reviewableByFilterBalanced(sessionID)
 	}
+	return reviewableByFilterStrict(sessionID)
+}
+
+// ReviewableByFilterForMode composes the reviewable-by SQL fragment for the
+// supplied mode string. Exported so other surfaces (monitor list helpers,
+// snapshot query source, Step-2 CLI callers) can route through the same
+// policy-aware composer as the primary list path.
+//
+// For "delegated" the filter is equivalent to balanced for the
+// "can-I-review-this-issue" question (session independent of implementation;
+// creator ok; not self-implementer). The delegated semantic difference for
+// closers is expressed by ReadyToCloseByFilter instead.
+func ReviewableByFilterForMode(sessionID, mode string) (string, []interface{}) {
+	switch mode {
+	case "balanced":
+		return reviewableByFilterBalanced(sessionID)
+	case "delegated":
+		// Delegated reviewer eligibility = balanced reviewer eligibility.
+		return reviewableByFilterBalanced(sessionID)
+	default:
+		return reviewableByFilterStrict(sessionID)
+	}
+}
+
+func reviewableByFilterStrict(sessionID string) (string, []interface{}) {
 	sql := ` AND status = ? AND implementer_session != '' AND (
 		minor = 1 OR (
 			implementer_session != ?
@@ -400,6 +435,71 @@ func ReviewableByFilter(sessionID string, balanced bool) (string, []interface{})
 		)
 	)`
 	return sql, []interface{}{models.StatusInReview, sessionID, sessionID, sessionID}
+}
+
+func reviewableByFilterBalanced(sessionID string) (string, []interface{}) {
+	sql := ` AND status = ? AND implementer_session != '' AND (
+		minor = 1 OR (
+			implementer_session != ?
+			AND (
+				(
+					(creator_session = '' OR creator_session != ?)
+					AND NOT EXISTS (
+						SELECT 1 FROM issue_session_history
+						WHERE issue_id = issues.id AND session_id = ?
+					)
+				)
+				OR
+				(
+					creator_session = ?
+					AND implementer_session != ?
+					AND NOT EXISTS (
+						SELECT 1 FROM issue_session_history
+						WHERE issue_id = issues.id
+						  AND session_id = ?
+						  AND action IN ('started', 'unstarted')
+					)
+				)
+			)
+		)
+	)`
+	return sql, []interface{}{
+		models.StatusInReview,
+		sessionID, sessionID, sessionID,
+		sessionID, sessionID, sessionID,
+	}
+}
+
+// ReadyToCloseByFilter returns the SQL fragment and args for "issues the
+// given session is an allowed closer for AND an active approval review
+// already exists". Under strict and balanced modes there is no
+// close-after-recorded-review path, so the filter returns an always-false
+// clause. Under delegated mode it matches in_review issues with a non-
+// superseded approval in issue_reviews and a session that matches one of
+// the allowed closer roles.
+//
+// Step 2 wires the CLI / monitor / snapshot-query-source callers; Batch 1c
+// only ships the composer so it is ready.
+func ReadyToCloseByFilter(sessionID, mode string) (string, []interface{}) {
+	if mode != "delegated" {
+		// Empty category under strict/balanced: no close-after-review flow.
+		return " AND 0=1", nil
+	}
+	sql := ` AND status = ? AND EXISTS (
+		SELECT 1 FROM issue_reviews
+		WHERE issue_reviews.issue_id = issues.id
+		  AND issue_reviews.superseded_at IS NULL
+		  AND issue_reviews.decision IN ('approved', 'approved_by_parent_cascade')
+	) AND (
+		creator_session = ?
+		OR implementer_session = ?
+		OR reviewer_session = ?
+		OR review_requested_by_session = ?
+	)`
+	return sql, []interface{}{
+		models.StatusInReview,
+		sessionID, sessionID, sessionID, sessionID,
+	}
 }
 
 // ListIssues returns issues matching the filter
@@ -425,7 +525,8 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	}
 
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
-                 implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
+                 implementer_session, creator_session, reviewer_session, review_requested_by_session, closed_by_session,
+                 created_at, updated_at, reviewed_at, closed_at, deleted_at, minor, created_branch,
                  defer_until, due_date, defer_count
           FROM issues WHERE 1=1`
 	var args []interface{}
@@ -517,7 +618,32 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	// - Balanced mode: strict mode OR creator-only exception
 	//   (creator can review if someone else implemented and creator never started/unstarted it)
 	if opts.ReviewableBy != "" {
-		fragment, fargs := ReviewableByFilter(opts.ReviewableBy, opts.BalancedReviewPolicy)
+		mode := opts.ReviewPolicyMode
+		if mode == "" {
+			if opts.BalancedReviewPolicy {
+				mode = "balanced"
+			} else {
+				mode = "strict"
+			}
+		}
+		fragment, fargs := ReviewableByFilterForMode(opts.ReviewableBy, mode)
+		query += fragment
+		args = append(args, fargs...)
+	}
+
+	// ReadyToCloseBy: Step-2 caller path. Under strict/balanced modes the
+	// composer short-circuits to `0=1`, so this is a no-op for Batch 1c
+	// default wiring; it is exercised by the parity suite.
+	if opts.ReadyToCloseBy != "" {
+		mode := opts.ReviewPolicyMode
+		if mode == "" {
+			if opts.BalancedReviewPolicy {
+				mode = "balanced"
+			} else {
+				mode = "strict"
+			}
+		}
+		fragment, fargs := ReadyToCloseByFilter(opts.ReadyToCloseBy, mode)
 		query += fragment
 		args = append(args, fargs...)
 	}
@@ -645,9 +771,10 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		var issue models.Issue
 		// NullString for every TEXT DEFAULT '' column — see GetIssue.
 		var description, labels sql.NullString
-		var closedAt, deletedAt sql.NullTime
+		var closedAt, deletedAt, reviewedAt sql.NullTime
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
+		var reviewRequestedBy, closedBy sql.NullString
 		var createdBranch sql.NullString
 		var pointsNull sql.NullInt64
 		var deferUntil, dueDate sql.NullString
@@ -655,7 +782,8 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &description, &issue.Status, &issue.Type, &issue.Priority,
 			&pointsNull, &labels, &parentID, &acceptance, &sprint,
-			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
+			&implSession, &creatorSession, &reviewerSession, &reviewRequestedBy, &closedBy,
+			&issue.CreatedAt, &issue.UpdatedAt, &reviewedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 			&deferUntil, &dueDate, &issue.DeferCount,
 		)
 		if err != nil {
@@ -665,6 +793,9 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		issue.Description = description.String
 		if labels.Valid && labels.String != "" {
 			issue.Labels = strings.Split(labels.String, ",")
+		}
+		if reviewedAt.Valid {
+			issue.ReviewedAt = &reviewedAt.Time
 		}
 		if closedAt.Valid {
 			issue.ClosedAt = &closedAt.Time
@@ -679,6 +810,8 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		issue.ImplementerSession = implSession.String
 		issue.CreatorSession = creatorSession.String
 		issue.ReviewerSession = reviewerSession.String
+		issue.ReviewRequestedBySession = reviewRequestedBy.String
+		issue.ClosedBySession = closedBy.String
 		issue.CreatedBranch = createdBranch.String
 		if deferUntil.Valid {
 			issue.DeferUntil = &deferUntil.String

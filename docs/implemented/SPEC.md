@@ -1007,7 +1007,9 @@ td usage
 #   td ws handoff           Capture state, end session
 #   td approve/reject <id>  Complete review
 #
-# IMPORTANT: You cannot approve issues you implemented.
+# IMPORTANT: You cannot review your own implementation, but you can close
+# after an independent review has been recorded. An independent review is
+# required; the close may be delegated to any involved session.
 # Use `td handoff` or `td ws handoff` before stopping work.
 ```
 

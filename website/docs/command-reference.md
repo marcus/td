@@ -25,13 +25,13 @@ Complete reference for all `td` commands.
 | `td unstart <id>` | Revert to open |
 | `td log "message" [flags]` | Log progress. Flags: `--decision`, `--blocker`, `--hypothesis`, `--tried`, `--result` |
 | `td handoff <id> [flags]` | Capture state. Flags: `--done`, `--remaining`, `--decision`, `--uncertain` |
-| `td review <id>` | Submit for review |
-| `td reviewable` | Show reviewable issues |
-| `td approve <id> [--reason "..."]` | Approve and close. Reason required for creator-exception approvals |
-| `td reject <id> --reason "..."` | Reject back to in_progress |
+| `td review <id>` | Submit for review. Submitting session is recorded as `review_requested_by_session` |
+| `td reviewable [--include-approved]` | Show issues you can review; with `--include-approved`, also show reviewed issues you can close |
+| `td approve <id> [flags]` | Approve and close, record-only review, or close using a recorded approval. Flags: `--reason`, `--record-only`, `--decision approved\|changes_requested`, `--all` |
+| `td reject <id> --reason "..."` | Reject back to open. Supersedes any active approval review |
 | `td block <id>` | Mark as blocked |
 | `td unblock <id>` | Unblock to open |
-| `td close <id>` | Admin close (not for completed work) |
+| `td close <id>` | Admin close only (duplicates, won't-fix, cleanup). Use `td approve` for reviewed work |
 | `td reopen <id>` | Reopen closed issue |
 | `td comment <id> "text"` | Add comment |
 
@@ -49,6 +49,21 @@ Date formats: `+7d`, `+2w`, `+1m`, `monday`, `tomorrow`, `next-week`, `next-mont
 The `--defer` and `--due` flags are also available on `td create` and `td update`.
 
 **List filters:** `--all` (include deferred), `--deferred`, `--surfacing`, `--overdue`, `--due-soon`
+
+## Review Flag Details
+
+`td approve` operates in three modes under `review_policy_mode=delegated`:
+
+| Invocation | Effect |
+|------------|--------|
+| `td approve <id>` | Direct reviewer-close: caller must be an eligible reviewer with no active approval recorded |
+| `td approve <id> --record-only --reason "..."` | Record an approval review without closing. Caller must be an eligible reviewer |
+| `td approve <id> --record-only --decision changes_requested --reason "..."` | Record a non-approving review |
+| `td approve <id>` (with existing approval) | Close using a recorded approval. Caller must be an allowed closer (creator, implementer, review-requester, or reviewer-of-record) |
+
+`td reviewable --include-approved` surfaces reviewed issues the current session is allowed to close — useful for orchestrators that delegated review to a sub-agent.
+
+Under `strict` and `balanced` modes, `--record-only` and `--decision` are unavailable; `td approve` performs a review-and-close in one step.
 
 ## Agent-Safe Rich Text Input
 

@@ -1031,6 +1031,21 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+
+	// Handle Record-review modal mouse events (declarative modal)
+	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.RecordReviewModal.HandleMouse(msg, m.RecordReviewMouseHandler)
+			if action != "" {
+				return m.handleRecordReviewAction(action)
+			}
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.RecordReviewModal.HandleMouse(msg, m.RecordReviewMouseHandler)
+			return m, nil
+		}
+	}
 	if m.FormOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleFormDialogClick(msg.X, msg.Y)
 	}
@@ -1074,7 +1089,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.ActivityDetailOpen || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
+	if m.ModalOpen() || m.ActivityDetailOpen || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.RecordReviewOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
 		return m, nil
 	}
 
@@ -1554,4 +1569,3 @@ func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
 
 	return m, nil
 }
-

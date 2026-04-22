@@ -21,6 +21,13 @@ import (
 )
 
 // baseSyncableEntities are always eligible for sync.
+//
+// issue_reviews is registered at the same time the table is introduced so
+// that recorded approvals (and supersede events, delivered as UPDATE events
+// that carry superseded_at) cross machines from the first release. The sync
+// engine applies UPDATEs for any registered table via the partial-update
+// path (see internal/sync/events.go), so the superseded_at stamp propagates
+// without a dedicated sync mechanism.
 var baseSyncableEntities = map[string]bool{
 	"issues":                true,
 	"logs":                  true,
@@ -32,6 +39,7 @@ var baseSyncableEntities = map[string]bool{
 	"issue_dependencies":    true,
 	"issue_files":           true,
 	"work_session_issues":   true,
+	"issue_reviews":         true,
 }
 
 const syncNotesEntity = "notes"

@@ -48,8 +48,20 @@ var infoCmd = &cobra.Command{
 		// Get project name from directory
 		projectName := filepath.Base(baseDir)
 
-		// Review queue
-		reviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+		// Review queue: split into awaiting vs ready-to-close buckets.
+		allReviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+		reviewable := make([]models.Issue, 0, len(allReviewable))
+		readyToClose := make([]models.Issue, 0)
+		for _, issue := range allReviewable {
+			rev, _ := database.GetActiveApprovalReview(issue.ID)
+			if rev == nil {
+				reviewable = append(reviewable, issue)
+				continue
+			}
+			if closerAllowed(&issue, sess.ID, rev) {
+				readyToClose = append(readyToClose, issue)
+			}
+		}
 		inReview, _ := database.ListIssues(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusInReview},
 		})
@@ -69,8 +81,9 @@ var infoCmd = &cobra.Command{
 					"closed":      stats["closed"],
 				},
 				"review_queue": map[string]interface{}{
-					"awaiting_review": len(inReview),
-					"you_can_review":  len(reviewable),
+					"awaiting_review":     len(inReview),
+					"you_can_review":      len(reviewable),
+					"you_can_close_after": len(readyToClose),
 				},
 				"by_type": map[string]interface{}{
 					"bug":     stats["type_bug"],
@@ -97,8 +110,9 @@ var infoCmd = &cobra.Command{
 		fmt.Println()
 
 		fmt.Println("Review Queue:")
-		fmt.Printf("  Awaiting review: %d\n", len(inReview))
-		fmt.Printf("  You can review:  %d\n", len(reviewable))
+		fmt.Printf("  Awaiting review:     %d\n", len(inReview))
+		fmt.Printf("  You can review:      %d\n", len(reviewable))
+		fmt.Printf("  You can close after: %d\n", len(readyToClose))
 		fmt.Println()
 
 		fmt.Println("By Type:")
@@ -557,11 +571,11 @@ var importCmd = &cobra.Command{
 
 // exportedItem matches the JSON structure produced by the export command.
 type exportedItem struct {
-	Issue        models.Issue              `json:"issue"`
-	Logs         []models.Log              `json:"logs"`
-	Handoffs     []models.Handoff          `json:"handoffs"`
-	Dependencies []models.IssueDependency  `json:"dependencies"`
-	Files        []models.IssueFile        `json:"files"`
+	Issue        models.Issue             `json:"issue"`
+	Logs         []models.Log             `json:"logs"`
+	Handoffs     []models.Handoff         `json:"handoffs"`
+	Dependencies []models.IssueDependency `json:"dependencies"`
+	Files        []models.IssueFile       `json:"files"`
 }
 
 // UnmarshalJSON supports backward-compatible deserialization:

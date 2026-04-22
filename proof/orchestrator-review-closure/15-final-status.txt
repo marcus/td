@@ -1,0 +1,90 @@
+ M .gitignore
+ M CLAUDE.md
+ M cmd/context.go
+ M cmd/list.go
+ M cmd/review.go
+ M cmd/review_policy.go
+ M cmd/review_policy_test.go
+ M cmd/root.go
+ M cmd/show.go
+ M cmd/status.go
+ M cmd/sync.go
+ M cmd/system.go
+ M cmd/undo.go
+ M docs/implemented/SPEC.md
+ M docs/implemented/spec-agent-review-bypass-prevention.md
+ M docs/implemented/spec-balanced-review-policy.md
+ M docs/primer.md
+ M internal/agent/instructions.go
+ M internal/api/snapshot_query_source.go
+ M internal/config/config.go
+ M internal/db/ids.go
+ M internal/db/import.go
+ M internal/db/issues.go
+ M internal/db/issues_logged.go
+ M internal/db/migrations.go
+ M internal/db/relations_logged.go
+ M internal/db/schema.go
+ M internal/db/stats.go
+ M internal/db/work_sessions.go
+ M internal/events/taxonomy.go
+ M internal/events/taxonomy_test.go
+ M internal/features/features.go
+ M internal/features/features_test.go
+ M internal/models/models.go
+ M internal/output/output.go
+ M internal/serve/handlers_read.go
+ M internal/serve/handlers_transitions.go
+ M internal/serve/integration_test.go
+ M internal/serve/response.go
+ M internal/serve/server.go
+ M pkg/monitor/actions.go
+ M pkg/monitor/commands.go
+ M pkg/monitor/data.go
+ M pkg/monitor/input.go
+ M pkg/monitor/keymap/bindings.go
+ M pkg/monitor/keymap/export.go
+ M pkg/monitor/keymap/help.go
+ M pkg/monitor/keymap/registry.go
+ M pkg/monitor/modal.go
+ M pkg/monitor/model.go
+ M pkg/monitor/types.go
+ M pkg/monitor/view.go
+ M website/docs/ai-integration.md
+ M website/docs/command-reference.md
+ M website/docs/core-workflow.md
+ M website/docs/intro.md
+?? .agents/
+?? .claude/agents/
+?? AGENTS.md
+?? cmd/approve_record_only_test.go
+?? cmd/parity_runtime_mode_test.go
+?? cmd/parity_surface_shim_test.go
+?? cmd/parity_surface_test.go
+?? docs/implemented/spec-delegated-review-closure.md
+?? internal/db/reviews.go
+?? internal/db/reviews_filter_test.go
+?? internal/db/reviews_migration.go
+?? internal/db/reviews_test.go
+?? internal/db/schema_test.go
+?? internal/reviewpolicy/
+?? internal/serve/handlers_reviews.go
+?? internal/serve/handlers_reviews_test.go
+?? pkg/monitor/review_buckets_test.go
+?? proof/orchestrator-review-closure/
+?? proof/td-2b41b2/delete-temp-issues.txt
+?? proof/td-2b41b2/focus-epic.txt
+?? proof/td-2b41b2/handoff.txt
+?? proof/td-2b41b2/list-epic-dot-focused.txt
+?? proof/td-2b41b2/showproof-approve-no-args.txt
+?? proof/td-2b41b2/showproof-create.txt
+?? proof/td-2b41b2/showproof-init.txt
+?? proof/td-2b41b2/showproof-review.txt
+?? proof/td-2b41b2/showproof-show-approved.txt
+?? proof/td-2b41b2/showproof-show-no-args.txt
+?? proof/td-2b41b2/unfocus.txt
+?? proof/td-2b41b2/ws-end.txt
+?? proof/td-a7ff5e/
+?? proof/td-step5/
+?? td-2fb148-0009
+?? td-release-notes-review-bin

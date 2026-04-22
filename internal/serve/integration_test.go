@@ -1210,7 +1210,14 @@ func TestIntegration_Approve_ClosesIssue(t *testing.T) {
 	baseURL, _, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 
-	id := iCreateIssue(t, baseURL, "To be approved integration")
+	// Mark the test issue as minor so it bypasses the review-policy gate;
+	// this test verifies the state-machine transition + DTO shape, not the
+	// reviewer-independence rule. Non-minor coverage of the policy lives in
+	// cmd/parity_surface_test.go.
+	id := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title": "To be approved integration",
+		"minor": true,
+	})
 
 	// Move to in_review first
 	iDoJSON(t, "POST", baseURL+"/v1/issues/"+id+"/review", nil)
@@ -1458,14 +1465,19 @@ func TestIntegration_Approve_ParentCascade(t *testing.T) {
 		"type":  "epic",
 	})
 
-	// Create two child issues
+	// Create two child issues. Mark them minor so the parity-aligned
+	// review-policy gate doesn't block the single-session
+	// review+approve flow this cascade test exercises; the cascade
+	// behavior is independent of the reviewer-independence rule.
 	child1 := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
 		"title":     "Child 1 for cascade",
 		"parent_id": parentID,
+		"minor":     true,
 	})
 	child2 := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
 		"title":     "Child 2 for cascade",
 		"parent_id": parentID,
+		"minor":     true,
 	})
 
 	// Move both children to in_review

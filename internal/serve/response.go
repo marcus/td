@@ -111,29 +111,42 @@ func WriteValidation(w http.ResponseWriter, fields []FieldError) {
 // Nullable fields use *string so they serialize as JSON null when nil.
 // Collections serialize as [] when empty, never null.
 type IssueDTO struct {
-	ID                 string   `json:"id"`
-	Title              string   `json:"title"`
-	Description        string   `json:"description"`
-	Status             string   `json:"status"`
-	Type               string   `json:"type"`
-	Priority           string   `json:"priority"`
-	Points             int      `json:"points"`
-	Labels             []string `json:"labels"`
-	ParentID           *string  `json:"parent_id"`
-	Acceptance         string   `json:"acceptance"`
-	Sprint             string   `json:"sprint"`
-	ImplementerSession *string  `json:"implementer_session"`
-	CreatorSession     *string  `json:"creator_session"`
-	ReviewerSession    *string  `json:"reviewer_session"`
-	CreatedAt          string   `json:"created_at"`
-	UpdatedAt          string   `json:"updated_at"`
-	ClosedAt           *string  `json:"closed_at"`
-	DeletedAt          *string  `json:"deleted_at"`
-	Minor              bool     `json:"minor"`
-	CreatedBranch      *string  `json:"created_branch"`
-	DeferUntil         *string  `json:"defer_until"`
-	DueDate            *string  `json:"due_date"`
-	DeferCount         int      `json:"defer_count"`
+	ID                       string   `json:"id"`
+	Title                    string   `json:"title"`
+	Description              string   `json:"description"`
+	Status                   string   `json:"status"`
+	Type                     string   `json:"type"`
+	Priority                 string   `json:"priority"`
+	Points                   int      `json:"points"`
+	Labels                   []string `json:"labels"`
+	ParentID                 *string  `json:"parent_id"`
+	Acceptance               string   `json:"acceptance"`
+	Sprint                   string   `json:"sprint"`
+	ImplementerSession       *string  `json:"implementer_session"`
+	CreatorSession           *string  `json:"creator_session"`
+	ReviewerSession          *string  `json:"reviewer_session"`
+	ReviewRequestedBySession *string  `json:"review_requested_by_session"`
+	ClosedBySession          *string  `json:"closed_by_session"`
+	CreatedAt                string   `json:"created_at"`
+	UpdatedAt                string   `json:"updated_at"`
+	ReviewedAt               *string  `json:"reviewed_at"`
+	ClosedAt                 *string  `json:"closed_at"`
+	DeletedAt                *string  `json:"deleted_at"`
+	Minor                    bool     `json:"minor"`
+	CreatedBranch            *string  `json:"created_branch"`
+	DeferUntil               *string  `json:"defer_until"`
+	DueDate                  *string  `json:"due_date"`
+	DeferCount               int      `json:"defer_count"`
+
+	// ActiveReview is populated by GET /v1/issues/{id} and transition-response
+	// payloads when the issue carries a non-superseded approval. Clients can
+	// key off this field to distinguish "reviewed, awaiting close" from
+	// "not yet reviewed". Omitted for issues without an active approval.
+	ActiveReview *IssueReviewSummary `json:"active_review,omitempty"`
+
+	// Reviews is populated by GET /v1/issues/{id}?with=reviews only. Kept
+	// off the default response to keep list payloads compact.
+	Reviews []IssueReviewDTO `json:"reviews,omitempty"`
 }
 
 // IssueToDTO converts a models.Issue to an IssueDTO with proper null/empty
@@ -166,6 +179,8 @@ func IssueToDTO(issue *models.Issue) IssueDTO {
 	dto.ImplementerSession = nullableString(issue.ImplementerSession)
 	dto.CreatorSession = nullableString(issue.CreatorSession)
 	dto.ReviewerSession = nullableString(issue.ReviewerSession)
+	dto.ReviewRequestedBySession = nullableString(issue.ReviewRequestedBySession)
+	dto.ClosedBySession = nullableString(issue.ClosedBySession)
 	dto.CreatedBranch = nullableString(issue.CreatedBranch)
 
 	// Nullable *string fields (already pointers in model)
@@ -173,6 +188,7 @@ func IssueToDTO(issue *models.Issue) IssueDTO {
 	dto.DueDate = issue.DueDate
 
 	// Nullable *time.Time fields
+	dto.ReviewedAt = nullableTime(issue.ReviewedAt)
 	dto.ClosedAt = nullableTime(issue.ClosedAt)
 	dto.DeletedAt = nullableTime(issue.DeletedAt)
 
