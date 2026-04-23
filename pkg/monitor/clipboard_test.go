@@ -338,8 +338,8 @@ func TestStatusIcon(t *testing.T) {
 // TestFormatIssueAsMarkdownEdgeCases tests edge cases in formatting
 func TestFormatIssueAsMarkdownEdgeCases(t *testing.T) {
 	tests := []struct {
-		name      string
-		issue     *models.Issue
+		name     string
+		issue    *models.Issue
 		validates func(string) error
 	}{
 		{

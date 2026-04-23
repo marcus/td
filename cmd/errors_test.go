@@ -96,9 +96,9 @@ func TestErrorsCommandCount(t *testing.T) {
 	defer database.Close()
 
 	tests := []struct {
-		name    string
-		numErrs int
-		wantCnt int
+		name     string
+		numErrs  int
+		wantCnt  int
 	}{
 		{
 			name:    "no errors",

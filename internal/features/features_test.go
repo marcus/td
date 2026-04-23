@@ -6,27 +6,7 @@ import (
 	"github.com/marcus/td/internal/config"
 )
 
-func resetFeatureEnv(t *testing.T) {
-	t.Helper()
-
-	for _, feature := range ListAll() {
-		t.Setenv("TD_FEATURE_"+normalizeForEnvKey(feature.Name), "")
-	}
-
-	for _, key := range []string{
-		"TD_ENABLE_FEATURE",
-		"TD_ENABLE_FEATURES",
-		"TD_DISABLE_FEATURE",
-		"TD_DISABLE_FEATURES",
-		"TD_DISABLE_EXPERIMENTAL",
-	} {
-		t.Setenv(key, "")
-	}
-}
-
 func TestKnownFeatureDefaults(t *testing.T) {
-	resetFeatureEnv(t)
-
 	for _, feature := range ListAll() {
 		if IsEnabledForProcess(feature.Name) != feature.Default {
 			t.Fatalf("default mismatch for %s", feature.Name)
@@ -35,8 +15,6 @@ func TestKnownFeatureDefaults(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
-	resetFeatureEnv(t)
-
 	t.Setenv("TD_FEATURE_SYNC_CLI", "true")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_FEATURE_SYNC_CLI=true should enable sync_cli")
@@ -49,8 +27,6 @@ func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
-	resetFeatureEnv(t)
-
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli,sync_monitor_prompt")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_ENABLE_FEATURE should enable sync_cli")
@@ -66,8 +42,6 @@ func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
 }
 
 func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
-	resetFeatureEnv(t)
-
 	dir := t.TempDir()
 
 	if err := config.SetFeatureFlag(dir, SyncCLI.Name, true); err != nil {
@@ -86,8 +60,6 @@ func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
 }
 
 func TestDisableExperimentalKillSwitch(t *testing.T) {
-	resetFeatureEnv(t)
-
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("expected sync_cli enabled before kill-switch")
@@ -103,8 +75,6 @@ func TestDisableExperimentalKillSwitch(t *testing.T) {
 }
 
 func TestSyncGateMapReferencesKnownFeatures(t *testing.T) {
-	resetFeatureEnv(t)
-
 	if len(SyncGateMap) == 0 {
 		t.Fatal("SyncGateMap should not be empty")
 	}

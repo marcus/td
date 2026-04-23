@@ -109,51 +109,51 @@ func TestRectContains(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "point inside rectangle",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    20, y: 30,
+			name:     "point inside rectangle",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        20, y: 30,
 			expected: true,
 		},
 		{
-			name: "point at left boundary (inclusive)",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    10, y: 30,
+			name:     "point at left boundary (inclusive)",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        10, y: 30,
 			expected: true,
 		},
 		{
-			name: "point at top boundary (inclusive)",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    20, y: 20,
+			name:     "point at top boundary (inclusive)",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        20, y: 20,
 			expected: true,
 		},
 		{
-			name: "point at right boundary (exclusive)",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    40, y: 30,
+			name:     "point at right boundary (exclusive)",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        40, y: 30,
 			expected: false,
 		},
 		{
-			name: "point at bottom boundary (exclusive)",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    20, y: 60,
+			name:     "point at bottom boundary (exclusive)",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        20, y: 60,
 			expected: false,
 		},
 		{
-			name: "point outside left",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    9, y: 30,
+			name:     "point outside left",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        9, y: 30,
 			expected: false,
 		},
 		{
-			name: "point outside top",
-			rect: Rect{X: 10, Y: 20, W: 30, H: 40},
-			x:    20, y: 19,
+			name:     "point outside top",
+			rect:     Rect{X: 10, Y: 20, W: 30, H: 40},
+			x:        20, y: 19,
 			expected: false,
 		},
 		{
-			name: "zero-sized rectangle",
-			rect: Rect{X: 10, Y: 20, W: 0, H: 0},
-			x:    10, y: 20,
+			name:     "zero-sized rectangle",
+			rect:     Rect{X: 10, Y: 20, W: 0, H: 0},
+			x:        10, y: 20,
 			expected: false,
 		},
 	}
@@ -257,8 +257,8 @@ func TestHitTestRow_EmptyPanel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{
-				PanelBounds:     map[Panel]Rect{tt.panel: {X: 0, Y: 0, W: 100, H: 20}},
-				ScrollOffset:    map[Panel]int{tt.panel: 0},
+				PanelBounds:    map[Panel]Rect{tt.panel: {X: 0, Y: 0, W: 100, H: 20}},
+				ScrollOffset:   map[Panel]int{tt.panel: 0},
 				CurrentWorkRows: []string{},
 				TaskListRows:    []TaskListRow{},
 				Activity:        []ActivityItem{},
@@ -379,8 +379,8 @@ func TestHandleMouseWheel(t *testing.T) {
 		description    string
 	}{
 		{
-			name: "scroll down within bounds",
-			x:    50, y: 15,
+			name:           "scroll down within bounds",
+			x:              50, y: 15,
 			delta:          3,
 			initialOffset:  0,
 			rowCount:       20,
@@ -388,8 +388,8 @@ func TestHandleMouseWheel(t *testing.T) {
 			description:    "scrolling down by 3",
 		},
 		{
-			name: "scroll up from offset",
-			x:    50, y: 15,
+			name:           "scroll up from offset",
+			x:              50, y: 15,
 			delta:          -3,
 			initialOffset:  5,
 			rowCount:       20,
@@ -397,8 +397,8 @@ func TestHandleMouseWheel(t *testing.T) {
 			description:    "scrolling up by 3",
 		},
 		{
-			name: "scroll up clamps at 0",
-			x:    50, y: 15,
+			name:           "scroll up clamps at 0",
+			x:              50, y: 15,
 			delta:          -5,
 			initialOffset:  2,
 			rowCount:       20,
@@ -406,8 +406,8 @@ func TestHandleMouseWheel(t *testing.T) {
 			description:    "scrolling up past top clamps to 0",
 		},
 		{
-			name: "scroll outside panel",
-			x:    200, y: 15,
+			name:           "scroll outside panel",
+			x:              200, y: 15,
 			delta:          3,
 			initialOffset:  0,
 			rowCount:       20,
@@ -419,14 +419,14 @@ func TestHandleMouseWheel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{
-				Height:            30,
-				Width:             100,
-				ActivePanel:       PanelTaskList,
-				PaneHeights:       config.DefaultPaneHeights(),
-				PanelBounds:       map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
-				ScrollOffset:      map[Panel]int{PanelTaskList: tt.initialOffset},
+				Height:          30,
+				Width:           100,
+				ActivePanel:     PanelTaskList,
+				PaneHeights:     config.DefaultPaneHeights(),
+				PanelBounds:     map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
+				ScrollOffset:    map[Panel]int{PanelTaskList: tt.initialOffset},
 				ScrollIndependent: map[Panel]bool{PanelTaskList: false},
-				TaskListRows:      make([]TaskListRow, tt.rowCount),
+				TaskListRows:    make([]TaskListRow, tt.rowCount),
 			}
 
 			updated, _ := m.handleMouseWheel(tt.x, tt.y, tt.delta)
@@ -444,18 +444,18 @@ func TestHandleMouseWheel(t *testing.T) {
 // TestHandleMouseClick_ActivatesPanel tests panel activation on click
 func TestHandleMouseClick_ActivatesPanel(t *testing.T) {
 	tests := []struct {
-		name           string
-		x, y           int
-		initialActive  Panel
-		clickBounds    map[Panel]Rect
-		expectedActive Panel
-		expectedRow    int
-		description    string
+		name              string
+		x, y              int
+		initialActive     Panel
+		clickBounds       map[Panel]Rect
+		expectedActive    Panel
+		expectedRow       int
+		description       string
 	}{
 		{
-			name: "click on different panel activates it",
-			x:    50, y: 15,
-			initialActive: PanelCurrentWork,
+			name:           "click on different panel activates it",
+			x:              50, y: 15,
+			initialActive:  PanelCurrentWork,
 			clickBounds: map[Panel]Rect{
 				PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 10},
 				PanelTaskList:    {X: 0, Y: 10, W: 100, H: 10},
@@ -466,9 +466,9 @@ func TestHandleMouseClick_ActivatesPanel(t *testing.T) {
 			description:    "clicking TaskList activates it",
 		},
 		{
-			name: "click on active panel keeps focus",
-			x:    50, y: 5,
-			initialActive: PanelCurrentWork,
+			name:           "click on active panel keeps focus",
+			x:              50, y: 5,
+			initialActive:  PanelCurrentWork,
 			clickBounds: map[Panel]Rect{
 				PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 10},
 				PanelTaskList:    {X: 0, Y: 10, W: 100, H: 10},
@@ -511,49 +511,49 @@ func TestHandleMouseClick_DoubleClick(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name                string
-		x, y                int
-		lastClickTime       time.Time
-		lastClickPanel      Panel
-		lastClickRow        int
+		name              string
+		x, y              int
+		lastClickTime     time.Time
+		lastClickPanel    Panel
+		lastClickRow      int
 		expectedDoubleClick bool
-		description         string
+		description       string
 	}{
 		{
-			name: "same panel/row within 400ms is double-click",
-			x:    50, y: 15,
-			lastClickTime:       now.Add(-100 * time.Millisecond),
-			lastClickPanel:      PanelTaskList,
-			lastClickRow:        1,
+			name:              "same panel/row within 400ms is double-click",
+			x:                 50, y: 15,
+			lastClickTime:     now.Add(-100 * time.Millisecond),
+			lastClickPanel:    PanelTaskList,
+			lastClickRow:      1,
 			expectedDoubleClick: true,
-			description:         "double-click detected",
+			description:       "double-click detected",
 		},
 		{
-			name: "different row is not double-click",
-			x:    50, y: 16,
-			lastClickTime:       now.Add(-100 * time.Millisecond),
-			lastClickPanel:      PanelTaskList,
-			lastClickRow:        5, // Previous click was on row 5, current click assumed on row 1
+			name:              "different row is not double-click",
+			x:                 50, y: 16,
+			lastClickTime:     now.Add(-100 * time.Millisecond),
+			lastClickPanel:    PanelTaskList,
+			lastClickRow:      5, // Previous click was on row 5, current click assumed on row 1
 			expectedDoubleClick: false,
-			description:         "different row, not double-click",
+			description:       "different row, not double-click",
 		},
 		{
-			name: "different panel is not double-click",
-			x:    50, y: 15,
-			lastClickTime:       now.Add(-100 * time.Millisecond),
-			lastClickPanel:      PanelCurrentWork,
-			lastClickRow:        1,
+			name:              "different panel is not double-click",
+			x:                 50, y: 15,
+			lastClickTime:     now.Add(-100 * time.Millisecond),
+			lastClickPanel:    PanelCurrentWork,
+			lastClickRow:      1,
 			expectedDoubleClick: false,
-			description:         "different panel, not double-click",
+			description:       "different panel, not double-click",
 		},
 		{
-			name: "timeout > 400ms is not double-click",
-			x:    50, y: 15,
-			lastClickTime:       now.Add(-500 * time.Millisecond),
-			lastClickPanel:      PanelTaskList,
-			lastClickRow:        1,
+			name:              "timeout > 400ms is not double-click",
+			x:                 50, y: 15,
+			lastClickTime:     now.Add(-500 * time.Millisecond),
+			lastClickPanel:    PanelTaskList,
+			lastClickRow:      1,
 			expectedDoubleClick: false,
-			description:         "timeout exceeded, not double-click",
+			description:       "timeout exceeded, not double-click",
 		},
 	}
 
@@ -570,9 +570,9 @@ func TestHandleMouseClick_DoubleClick(t *testing.T) {
 					{Issue: models.Issue{ID: "t1"}},
 					{Issue: models.Issue{ID: "t2"}},
 				},
-				LastClickTime:  tt.lastClickTime,
-				LastClickPanel: tt.lastClickPanel,
-				LastClickRow:   tt.lastClickRow,
+				LastClickTime:   tt.lastClickTime,
+				LastClickPanel:  tt.lastClickPanel,
+				LastClickRow:    tt.lastClickRow,
 			}
 
 			// Simulate time passage
@@ -599,7 +599,7 @@ func TestHandleMouseClick_DoubleClick(t *testing.T) {
 // TestStartDividerDrag tests beginning of divider drag operation
 func TestStartDividerDrag(t *testing.T) {
 	m := Model{
-		PaneHeights:     [3]float64{0.3, 0.3, 0.4},
+		PaneHeights:    [3]float64{0.3, 0.3, 0.4},
 		DraggingDivider: -1,
 		DragStartY:      0,
 	}
@@ -699,45 +699,45 @@ func TestEndDividerDrag(t *testing.T) {
 // TestHandleMouseMsg_WheelScroll tests mouse wheel scroll message handling
 func TestHandleMouseMsg_WheelScroll(t *testing.T) {
 	tests := []struct {
-		name                string
-		button              tea.MouseButton
-		action              tea.MouseAction
+		name              string
+		button            tea.MouseButton
+		action            tea.MouseAction
 		expectedScrollDelta int
-		description         string
+		description       string
 	}{
 		{
-			name:                "wheel up scrolls up",
-			button:              tea.MouseButtonWheelUp,
-			action:              tea.MouseActionPress,
+			name:              "wheel up scrolls up",
+			button:            tea.MouseButtonWheelUp,
+			action:            tea.MouseActionPress,
 			expectedScrollDelta: -3,
-			description:         "scroll up by 3",
+			description:       "scroll up by 3",
 		},
 		{
-			name:                "wheel down scrolls down",
-			button:              tea.MouseButtonWheelDown,
-			action:              tea.MouseActionPress,
+			name:              "wheel down scrolls down",
+			button:            tea.MouseButtonWheelDown,
+			action:            tea.MouseActionPress,
 			expectedScrollDelta: 3,
-			description:         "scroll down by 3",
+			description:       "scroll down by 3",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{
-				Height:            30,
-				Width:             100,
-				ActivePanel:       PanelTaskList,
-				PaneHeights:       config.DefaultPaneHeights(),
-				PanelBounds:       map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
-				ScrollOffset:      map[Panel]int{PanelTaskList: 0},
+				Height:          30,
+				Width:           100,
+				ActivePanel:     PanelTaskList,
+				PaneHeights:     config.DefaultPaneHeights(),
+				PanelBounds:     map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
+				ScrollOffset:    map[Panel]int{PanelTaskList: 0},
 				ScrollIndependent: map[Panel]bool{PanelTaskList: false},
-				TaskListRows:      make([]TaskListRow, 20),
-				ModalStack:        []ModalEntry{},
-				StatsOpen:         false,
-				HandoffsOpen:      false,
-				ConfirmOpen:       false,
-				HelpOpen:          false,
-				ShowTDQHelp:       false,
+				TaskListRows:    make([]TaskListRow, 20),
+				ModalStack:      []ModalEntry{},
+				StatsOpen:       false,
+				HandoffsOpen:    false,
+				ConfirmOpen:     false,
+				HelpOpen:        false,
+				ShowTDQHelp:     false,
 			}
 
 			msg := tea.MouseMsg{
@@ -809,9 +809,9 @@ func TestMouseCoordinateConversion(t *testing.T) {
 	taskListBounds := m.PanelBounds[PanelTaskList]
 
 	tests := []struct {
-		name         string
-		absX         int
-		absY         int
+		name        string
+		absX        int
+		absY        int
 		expectedRelY int
 	}{
 		{
@@ -841,14 +841,14 @@ func TestMouseCoordinateConversion(t *testing.T) {
 // TestMouseClickWithScrolling tests mouse clicks while panel is scrolled
 func TestMouseClickWithScrolling(t *testing.T) {
 	m := Model{
-		Height:            30,
-		Width:             100,
-		ActivePanel:       PanelTaskList,
-		PaneHeights:       config.DefaultPaneHeights(),
-		PanelBounds:       map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
-		Cursor:            map[Panel]int{PanelTaskList: 0},
-		SelectedID:        map[Panel]string{},
-		ScrollOffset:      map[Panel]int{PanelTaskList: 5}, // Scrolled down
+		Height:          30,
+		Width:           100,
+		ActivePanel:     PanelTaskList,
+		PaneHeights:     config.DefaultPaneHeights(),
+		PanelBounds:     map[Panel]Rect{PanelTaskList: {X: 0, Y: 10, W: 100, H: 15}},
+		Cursor:          map[Panel]int{PanelTaskList: 0},
+		SelectedID:      map[Panel]string{},
+		ScrollOffset:    map[Panel]int{PanelTaskList: 5}, // Scrolled down
 		ScrollIndependent: map[Panel]bool{},
 		TaskListRows: []TaskListRow{
 			{Issue: models.Issue{ID: "t1"}},
@@ -887,35 +887,35 @@ func TestMouseClickWithScrolling(t *testing.T) {
 // TestUpdatePanelBounds tests panel bounds recalculation on window resize
 func TestUpdatePanelBounds(t *testing.T) {
 	tests := []struct {
-		name              string
-		width             int
-		height            int
-		searchMode        bool
-		embedded          bool
+		name           string
+		width          int
+		height         int
+		searchMode     bool
+		embedded       bool
 		expectedHeightSum int
 	}{
 		{
-			name:              "normal 3-panel layout",
-			width:             100,
-			height:            30,
-			searchMode:        false,
-			embedded:          false,
+			name:           "normal 3-panel layout",
+			width:          100,
+			height:         30,
+			searchMode:     false,
+			embedded:       false,
 			expectedHeightSum: 24, // 30 - 3 (footer) - 3 borders/titles
 		},
 		{
-			name:              "with search bar",
-			width:             100,
-			height:            30,
-			searchMode:        true,
-			embedded:          false,
+			name:           "with search bar",
+			width:          100,
+			height:         30,
+			searchMode:     true,
+			embedded:       false,
 			expectedHeightSum: 22, // 30 - 2 (search) - 3 (footer) - 3 borders/titles
 		},
 		{
-			name:              "embedded mode (no footer)",
-			width:             100,
-			height:            30,
-			searchMode:        false,
-			embedded:          true,
+			name:           "embedded mode (no footer)",
+			width:          100,
+			height:         30,
+			searchMode:     false,
+			embedded:       true,
 			expectedHeightSum: 27, // 30 - 3 borders/titles
 		},
 	}
@@ -1007,11 +1007,11 @@ func TestMaxScrollOffsetActivityPanel(t *testing.T) {
 // TestConfirmDialogButtonNavigation tests Tab navigation in delete confirmation dialog
 func TestConfirmDialogButtonNavigation(t *testing.T) {
 	tests := []struct {
-		name          string
-		initialFocus  int
-		key           string
-		expectedFocus int
-		description   string
+		name           string
+		initialFocus   int
+		key            string
+		expectedFocus  int
+		description    string
 	}{
 		{
 			name:          "tab from yes to no",
@@ -1069,11 +1069,11 @@ func TestConfirmDialogButtonNavigation(t *testing.T) {
 // TestCloseConfirmDialogButtonNavigation tests Tab navigation in close confirmation dialog
 func TestCloseConfirmDialogButtonNavigation(t *testing.T) {
 	tests := []struct {
-		name          string
-		initialFocus  int
-		key           string
-		expectedFocus int
-		description   string
+		name           string
+		initialFocus   int
+		key            string
+		expectedFocus  int
+		description    string
 	}{
 		{
 			name:          "tab from input to confirm",
@@ -1213,8 +1213,8 @@ func TestMouseClickEdgeCases(t *testing.T) {
 		description string
 	}{
 		{
-			name: "click at exact boundary",
-			x:    0, y: 0,
+			name:     "click at exact boundary",
+			x:        0, y: 0,
 			panelBounds: map[Panel]Rect{
 				PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 10},
 			},
@@ -1222,8 +1222,8 @@ func TestMouseClickEdgeCases(t *testing.T) {
 			description: "click at exact (0,0)",
 		},
 		{
-			name: "click at negative coordinates",
-			x:    -1, y: -1,
+			name:     "click at negative coordinates",
+			x:        -1, y: -1,
 			panelBounds: map[Panel]Rect{
 				PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 10},
 			},
@@ -1231,8 +1231,8 @@ func TestMouseClickEdgeCases(t *testing.T) {
 			description: "negative coordinates out of bounds",
 		},
 		{
-			name: "click at very large coordinates",
-			x:    9999, y: 9999,
+			name:     "click at very large coordinates",
+			x:        9999, y: 9999,
 			panelBounds: map[Panel]Rect{
 				PanelCurrentWork: {X: 0, Y: 0, W: 100, H: 10},
 			},

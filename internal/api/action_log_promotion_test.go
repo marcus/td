@@ -454,3 +454,4 @@ func TestPromote_RecoveryAfterError(t *testing.T) {
 		t.Errorf("events count = %d, want 1", len(events))
 	}
 }
+

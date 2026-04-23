@@ -95,9 +95,9 @@ func TestExecute(t *testing.T) {
 			wantCount: 2,
 		},
 		{
-			name:    "invalid query",
-			query:   "status = ",
-			wantErr: true,
+			name:      "invalid query",
+			query:     "status = ",
+			wantErr:   true,
 		},
 	}
 

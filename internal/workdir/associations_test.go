@@ -26,8 +26,8 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	input := map[string]string{
-		"/Users/alice/code/repo-one": "/Users/alice/notes/vault-one",
-		"/Users/alice/code/repo-two": "/Users/alice/notes/vault-two",
+		"/Users/alice/code/repo-one":   "/Users/alice/notes/vault-one",
+		"/Users/alice/code/repo-two":   "/Users/alice/notes/vault-two",
 	}
 
 	if err := SaveAssociations(input); err != nil {

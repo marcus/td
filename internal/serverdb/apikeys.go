@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	apiKeyPrefix           = "td_live_"
-	impersonationKeyPrefix = "td_ipk_"
-	keyLength              = 32
+	apiKeyPrefix             = "td_live_"
+	impersonationKeyPrefix   = "td_ipk_"
+	keyLength                = 32
 )
 
 var base62Chars = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")

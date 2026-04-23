@@ -1731,6 +1731,7 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 	}
 }
 
+
 func TestGetIssueDependencyRelations(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)

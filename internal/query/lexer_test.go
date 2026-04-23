@@ -993,8 +993,8 @@ func TestLexerPositionTracking(t *testing.T) {
 				line   int
 				column int
 			}{
-				{TokenIdent, 0, 1, 1},  // "status"
-				{TokenEq, 7, 1, 8},     // "="
+				{TokenIdent, 0, 1, 1}, // "status"
+				{TokenEq, 7, 1, 8},    // "="
 				{TokenIdent, 10, 2, 2}, // "open"
 			},
 		},

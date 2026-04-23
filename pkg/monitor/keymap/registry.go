@@ -29,13 +29,13 @@ const (
 	ContextHelp              Context = "help"                // When help modal is open
 	ContextBoardPicker       Context = "board-picker"        // When board picker is open
 	ContextBoard             Context = "board"               // When board mode is active
-	ContextGettingStarted    Context = "getting-started"     // When getting started modal is open
-	ContextTDQHelp           Context = "tdq-help"            // When TDQ help modal is open
-	ContextBoardEditor       Context = "board-editor"        // When board edit/create modal is open
-	ContextCloseConfirm      Context = "close-confirm"       // When close confirmation modal is open (has text input)
-	ContextSyncPrompt        Context = "td-sync-prompt"      // When sync prompt modal is open
-	ContextKanban            Context = "kanban"              // When kanban view modal is open
-	ContextNotes             Context = "notes"               // When notes modal is open
+	ContextGettingStarted    Context = "getting-started"    // When getting started modal is open
+	ContextTDQHelp           Context = "tdq-help"           // When TDQ help modal is open
+	ContextBoardEditor       Context = "board-editor"       // When board edit/create modal is open
+	ContextCloseConfirm      Context = "close-confirm"      // When close confirmation modal is open (has text input)
+	ContextSyncPrompt        Context = "td-sync-prompt"    // When sync prompt modal is open
+	ContextKanban            Context = "kanban"            // When kanban view modal is open
+	ContextNotes             Context = "notes"             // When notes modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -52,32 +52,32 @@ const (
 	CmdNextPanel    Command = "next-panel"
 	CmdPrevPanel    Command = "prev-panel"
 	CmdCursorDown   Command = "cursor-down"
-	CmdCursorUp     Command = "cursor-up"
-	CmdCursorTop    Command = "cursor-top"
-	CmdCursorBottom Command = "cursor-bottom"
-	CmdHalfPageDown Command = "half-page-down"
-	CmdHalfPageUp   Command = "half-page-up"
-	CmdFullPageDown Command = "full-page-down"
-	CmdFullPageUp   Command = "full-page-up"
-	CmdScrollDown   Command = "scroll-down"
-	CmdScrollUp     Command = "scroll-up"
-	CmdSelect       Command = "select"
-	CmdBack         Command = "back"
-	CmdClose        Command = "close"
-	CmdNavigatePrev Command = "navigate-prev"
-	CmdNavigateNext Command = "navigate-next"
+	CmdCursorUp      Command = "cursor-up"
+	CmdCursorTop     Command = "cursor-top"
+	CmdCursorBottom  Command = "cursor-bottom"
+	CmdHalfPageDown  Command = "half-page-down"
+	CmdHalfPageUp    Command = "half-page-up"
+	CmdFullPageDown  Command = "full-page-down"
+	CmdFullPageUp    Command = "full-page-up"
+	CmdScrollDown    Command = "scroll-down"
+	CmdScrollUp      Command = "scroll-up"
+	CmdSelect        Command = "select"
+	CmdBack          Command = "back"
+	CmdClose         Command = "close"
+	CmdNavigatePrev  Command = "navigate-prev"
+	CmdNavigateNext  Command = "navigate-next"
 
 	// Action commands
-	CmdOpenDetails   Command = "open-details"
-	CmdOpenStats     Command = "open-stats"
-	CmdSearch        Command = "search"
-	CmdToggleClosed  Command = "toggle-closed"
-	CmdMarkForReview Command = "mark-for-review"
-	CmdApprove       Command = "approve"
-	CmdDelete        Command = "delete"
-	CmdConfirm       Command = "confirm"
-	CmdCancel        Command = "cancel"
-	CmdCycleSortMode Command = "cycle-sort-mode"
+	CmdOpenDetails    Command = "open-details"
+	CmdOpenStats      Command = "open-stats"
+	CmdSearch         Command = "search"
+	CmdToggleClosed   Command = "toggle-closed"
+	CmdMarkForReview  Command = "mark-for-review"
+	CmdApprove        Command = "approve"
+	CmdDelete         Command = "delete"
+	CmdConfirm        Command = "confirm"
+	CmdCancel         Command = "cancel"
+	CmdCycleSortMode  Command = "cycle-sort-mode"
 
 	// Search-specific commands
 	CmdSearchConfirm   Command = "search-confirm"
@@ -143,19 +143,19 @@ const (
 	CmdSendToWorktree Command = "send-to-worktree"
 
 	// Board editor commands
-	CmdEditBoard         Command = "edit-board"
-	CmdNewBoard          Command = "new-board"
-	CmdBoardEditorSave   Command = "board-editor-save"
-	CmdBoardEditorCancel Command = "board-editor-cancel"
-	CmdBoardEditorDelete Command = "board-editor-delete"
+	CmdEditBoard          Command = "edit-board"
+	CmdNewBoard           Command = "new-board"
+	CmdBoardEditorSave    Command = "board-editor-save"
+	CmdBoardEditorCancel  Command = "board-editor-cancel"
+	CmdBoardEditorDelete  Command = "board-editor-delete"
 
 	// Getting started commands
 	CmdOpenGettingStarted  Command = "open-getting-started"
 	CmdInstallInstructions Command = "install-instructions"
 
 	// Kanban view commands
-	CmdOpenKanban             Command = "open-kanban"
-	CmdCloseKanban            Command = "close-kanban"
+	CmdOpenKanban            Command = "open-kanban"
+	CmdCloseKanban           Command = "close-kanban"
 	CmdToggleKanbanFullscreen Command = "toggle-kanban-fullscreen"
 )
 

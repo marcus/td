@@ -32,8 +32,8 @@ type IssueState struct {
 
 // ActionStats tracks per-action-type outcomes.
 type ActionStats struct {
-	OK        int
-	ExpFail   int
+	OK      int
+	ExpFail int
 	UnexpFail int
 }
 
@@ -62,10 +62,10 @@ type ChaosEngine struct {
 	Issues      map[string]*IssueState // id -> state
 	IssueOrder  []string               // ordered list of all created issue IDs
 	Boards      []string
-	DepPairs    map[string]bool            // "from_to" -> true
-	ParentChild map[string]string          // childID -> parentID
-	IssueFiles  map[string]string          // "issueID~filePath" -> role
-	ActiveWS    map[string]string          // actor -> ws name
+	DepPairs    map[string]bool   // "from_to" -> true
+	ParentChild map[string]string // childID -> parentID
+	IssueFiles  map[string]string // "issueID~filePath" -> role
+	ActiveWS    map[string]string // actor -> ws name
 	WSTagged    map[string]map[string]bool // actor -> set of tagged issue IDs
 
 	Stats ChaosStats

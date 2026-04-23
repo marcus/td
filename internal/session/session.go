@@ -27,10 +27,10 @@ var getOrCreateMu sync.Mutex
 type Session struct {
 	ID                string    `json:"id"`
 	Name              string    `json:"name,omitempty"`
-	Branch            string    `json:"branch,omitempty"`     // git branch for session scoping
-	AgentType         string    `json:"agent_type,omitempty"` // agent type (claude-code, cursor, terminal, etc.)
-	AgentPID          int       `json:"agent_pid,omitempty"`  // stable parent agent process ID
-	ContextID         string    `json:"context_id,omitempty"` // audit only, not used for matching
+	Branch            string    `json:"branch,omitempty"`            // git branch for session scoping
+	AgentType         string    `json:"agent_type,omitempty"`        // agent type (claude-code, cursor, terminal, etc.)
+	AgentPID          int       `json:"agent_pid,omitempty"`         // stable parent agent process ID
+	ContextID         string    `json:"context_id,omitempty"`        // audit only, not used for matching
 	PreviousSessionID string    `json:"previous_session_id,omitempty"`
 	StartedAt         time.Time `json:"started_at"`
 	LastActivity      time.Time `json:"last_activity,omitempty"` // heartbeat for session liveness

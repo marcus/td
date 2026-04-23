@@ -327,8 +327,8 @@ func (v *Verifier) VerifyCausalOrdering(actor string) []VerifyResult {
 	}
 
 	// Track first-seen action per entity
-	created := make(map[string]int) // entity_id -> server_seq of create
-	started := make(map[string]int) // issue_id -> server_seq of start
+	created := make(map[string]int)   // entity_id -> server_seq of create
+	started := make(map[string]int)   // issue_id -> server_seq of start
 	violations := 0
 	var details []string
 
@@ -616,3 +616,5 @@ func sqlInClause(ids []string) string {
 	}
 	return strings.Join(quoted, ",")
 }
+
+

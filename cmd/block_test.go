@@ -84,8 +84,8 @@ func TestBlockFromDifferentStatuses(t *testing.T) {
 	defer database.Close()
 
 	testCases := []struct {
-		name             string
-		initialStatus    models.Status
+		name           string
+		initialStatus  models.Status
 		shouldTransition bool
 	}{
 		{"from open", models.StatusOpen, true},

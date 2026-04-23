@@ -342,3 +342,4 @@ func TestIsFirstRunInit_Guards_SyncPrompt(t *testing.T) {
 		}
 	})
 }
+

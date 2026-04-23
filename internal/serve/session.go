@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	webAgentType      = "web"
-	webAgentPID       = 0
-	webBranch         = "default"
-	webSessionName    = "td-serve-web"
-	heartbeatInterval = 60 * time.Second
+	webAgentType       = "web"
+	webAgentPID        = 0
+	webBranch          = "default"
+	webSessionName     = "td-serve-web"
+	heartbeatInterval  = 60 * time.Second
 )
 
 // GetOrCreateWebSession finds or creates the shared web session used by

@@ -4,24 +4,24 @@ import "time"
 
 // ChaosReport is the JSON-serializable report for CI integration.
 type ChaosReport struct {
-	Seed          int64                        `json:"seed"`
-	Actions       int                          `json:"actions"`
-	Duration      int64                        `json:"duration_ms"`
-	Actors        int                          `json:"actors"`
-	Results       ReportResults                `json:"results"`
-	PerAction     map[string]ReportActionStats `json:"per_action"`
-	Verifications []ReportVerification         `json:"verifications"`
-	SyncStats     ReportSyncStats              `json:"sync_stats"`
-	Pass          bool                         `json:"pass"`
+	Seed     int64           `json:"seed"`
+	Actions  int             `json:"actions"`
+	Duration int64           `json:"duration_ms"`
+	Actors   int             `json:"actors"`
+	Results  ReportResults   `json:"results"`
+	PerAction map[string]ReportActionStats `json:"per_action"`
+	Verifications []ReportVerification `json:"verifications"`
+	SyncStats ReportSyncStats `json:"sync_stats"`
+	Pass      bool           `json:"pass"`
 }
 
 // ReportResults aggregates action outcomes.
 type ReportResults struct {
-	Total     int `json:"total"`
-	OK        int `json:"ok"`
-	ExpFail   int `json:"expected_fail"`
-	UnexpFail int `json:"unexpected_fail"`
-	Skipped   int `json:"skipped"`
+	Total      int `json:"total"`
+	OK         int `json:"ok"`
+	ExpFail    int `json:"expected_fail"`
+	UnexpFail  int `json:"unexpected_fail"`
+	Skipped    int `json:"skipped"`
 }
 
 // ReportActionStats tracks per-action-type outcomes.

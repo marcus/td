@@ -423,3 +423,4 @@ func TestPoolSnapshot_NoDeadlock(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+

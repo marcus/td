@@ -90,7 +90,7 @@ func TestIsNewer(t *testing.T) {
 		// Prerelease handling (same core version, ignoring prerelease)
 		// When core versions are the same, neither is "newer"
 		{"v1.0.0-beta", "v1.0.0", false}, // prerelease vs final (same core)
-		{"v1.0.0", "v1.0.0-beta", false}, // final vs prerelease (same core - not newer)
+		{"v1.0.0", "v1.0.0-beta", false},  // final vs prerelease (same core - not newer)
 		{"v2.0.0-rc.1", "v1.9.9", true},
 
 		// Build metadata handling (build metadata ignored)
@@ -170,9 +170,9 @@ func TestParseSemverEdgeCases(t *testing.T) {
 // TestIsNewerSymmetry tests that isNewer maintains logical consistency
 func TestIsNewerSymmetry(t *testing.T) {
 	tests := []struct {
-		name string
-		v1   string
-		v2   string
+		name    string
+		v1      string
+		v2      string
 	}{
 		{"major-diff", "v2.0.0", "v1.0.0"},
 		{"minor-diff", "v1.5.0", "v1.0.0"},

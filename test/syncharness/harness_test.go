@@ -802,7 +802,7 @@ func TestSchemaVersionMismatch(t *testing.T) {
 		EntityType:      "issues",
 		EntityID:        "td-SV1",
 		Payload:         []byte(payload),
-		ClientTimestamp: time.Now(),
+		ClientTimestamp:  time.Now(),
 	}
 
 	// Insert directly into server
@@ -861,7 +861,7 @@ func TestPartialBatchFailure(t *testing.T) {
 			EntityType:      "issues",
 			EntityID:        fmt.Sprintf("td-PB%d", i),
 			Payload:         []byte(payload),
-			ClientTimestamp: now,
+			ClientTimestamp:  now,
 		})
 	}
 
@@ -874,7 +874,7 @@ func TestPartialBatchFailure(t *testing.T) {
 		EntityType:      "nonexistent_table",
 		EntityID:        "td-BAD",
 		Payload:         []byte(`{"schema_version":1,"new_data":{"name":"bad"},"previous_data":{}}`),
-		ClientTimestamp: now,
+		ClientTimestamp:  now,
 	})
 
 	for i := 5; i <= 7; i++ {
@@ -887,7 +887,7 @@ func TestPartialBatchFailure(t *testing.T) {
 			EntityType:      "issues",
 			EntityID:        fmt.Sprintf("td-PB%d", i),
 			Payload:         []byte(payload),
-			ClientTimestamp: now,
+			ClientTimestamp:  now,
 		})
 	}
 

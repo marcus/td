@@ -26,14 +26,14 @@ type OperationRecord struct {
 
 // HistorySummary holds aggregate stats over recorded operations.
 type HistorySummary struct {
-	TotalOps      int            `json:"total_ops"`
-	ByResult      map[string]int `json:"by_result"`
-	ByAction      map[string]int `json:"by_action"`
-	ByActor       map[string]int `json:"by_actor"`
-	AvgDuration   time.Duration  `json:"avg_duration_ns"`
-	MaxDuration   time.Duration  `json:"max_duration_ns"`
-	TotalDuration time.Duration  `json:"total_duration_ns"`
-	UniqueIssues  int            `json:"unique_issues"`
+	TotalOps      int               `json:"total_ops"`
+	ByResult      map[string]int    `json:"by_result"`
+	ByAction      map[string]int    `json:"by_action"`
+	ByActor       map[string]int    `json:"by_actor"`
+	AvgDuration   time.Duration     `json:"avg_duration_ns"`
+	MaxDuration   time.Duration     `json:"max_duration_ns"`
+	TotalDuration time.Duration     `json:"total_duration_ns"`
+	UniqueIssues  int               `json:"unique_issues"`
 }
 
 // OperationHistory records all operations performed during a chaos run.

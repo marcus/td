@@ -160,7 +160,7 @@ func TestGetSortFuncWithPosition(t *testing.T) {
 			name:     "mixed - positioned come before unpositioned",
 			sortMode: SortByPriority,
 			issues: []models.BoardIssueView{
-				{Issue: models.Issue{ID: "unpos-p0", Priority: models.PriorityP0, UpdatedAt: now}},               // high priority but unpositioned
+				{Issue: models.Issue{ID: "unpos-p0", Priority: models.PriorityP0, UpdatedAt: now}}, // high priority but unpositioned
 				{Issue: models.Issue{ID: "pos-p3", Priority: models.PriorityP3}, Position: 1, HasPosition: true}, // low priority but positioned
 				{Issue: models.Issue{ID: "unpos-p1", Priority: models.PriorityP1, UpdatedAt: now}},
 			},
