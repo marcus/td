@@ -157,6 +157,7 @@ Migration status for legacy in-repo guides is tracked in `docs/guides/README.md`
 td/
 ├── cmd/              # Cobra CLI commands (create, start, handoff, review, etc.)
 ├── internal/
+│   ├── changelog/   # Commit-to-markdown changelog synthesis
 │   ├── db/          # SQLite persistence layer (schema.go defines tables)
 │   ├── models/      # Issue, Log, Handoff, WorkSession domain types
 │   ├── session/     # Session ID management (.todos/session file)
@@ -215,6 +216,9 @@ make fmt
 Releases are automated via GoReleaser. Pushing a version tag triggers GitHub Actions to build binaries and update the Homebrew formula.
 
 ```bash
+# Preview the next release notes from the nearest reachable tag to HEAD
+td changelog --version v0.2.0 --date 2026-04-23
+
 # Create and push an annotated tag (triggers automated release)
 make release VERSION=v0.2.0
 
@@ -460,6 +464,17 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | ------------ | ----------------------- |
 | Query issues | `td query "expression"` |
 | Search text  | `td search "keyword"`   |
+
+### System
+
+| Action                  | Command                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| Generate changelog      | `td changelog [--from <ref>] [--to <ref>] [--version vX.Y.Z] [--date YYYY-MM-DD]` |
+| Initialize project      | `td init`                                                                        |
+| Show version            | `td version`                                                                     |
+| Export data             | `td export`                                                                      |
+| Import data             | `td import`                                                                      |
+| Show usage statistics   | `td stats [subcommand]`                                                          |
 
 ## Live Monitor
 

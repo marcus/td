@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // State represents the current git state
@@ -19,6 +21,16 @@ type State struct {
 	Untracked  int
 	DirtyFiles int
 }
+
+// Commit represents a git commit returned from a ref range query.
+type Commit struct {
+	SHA        string
+	Subject    string
+	Body       string
+	CommitDate time.Time
+}
+
+var semverTagPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 
 // GetState returns the current git state
 func GetState() (*State, error) {
@@ -192,8 +204,85 @@ func GetRootDir() (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
+// ResolveRefInDir resolves a commit-ish within the given repository directory.
+func ResolveRefInDir(dir, ref string) (string, error) {
+	output, err := runGitInDir(dir, "rev-parse", "--verify", ref+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
+// GetLatestReleaseTagInDir returns the nearest semver tag reachable from HEAD.
+func GetLatestReleaseTagInDir(dir string) (string, error) {
+	output, err := runGitInDir(
+		dir,
+		"describe",
+		"--tags",
+		"--abbrev=0",
+		"--match",
+		"v[0-9]*.[0-9]*.[0-9]*",
+		"--match",
+		"[0-9]*.[0-9]*.[0-9]*",
+		"HEAD",
+	)
+	if err != nil {
+		return "", fmt.Errorf("no semver tags found")
+	}
+
+	tag := strings.TrimSpace(output)
+	if tag == "" || !semverTagPattern.MatchString(tag) {
+		return "", fmt.Errorf("no semver tags found")
+	}
+
+	return tag, nil
+}
+
+// ListCommitsInRangeInDir returns commits between from..to in oldest-first order.
+func ListCommitsInRangeInDir(dir, from, to string) ([]Commit, error) {
+	rangeSpec := strings.TrimSpace(from) + ".." + strings.TrimSpace(to)
+	output, err := runGitInDir(dir, "log", "--reverse", "--format=%H%x1f%s%x1f%b%x1f%cI%x1e", rangeSpec)
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []Commit
+	for _, rawEntry := range strings.Split(output, "\x1e") {
+		rawEntry = strings.TrimSpace(rawEntry)
+		if rawEntry == "" {
+			continue
+		}
+
+		fields := strings.SplitN(rawEntry, "\x1f", 4)
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("unexpected git log format for range %s", rangeSpec)
+		}
+
+		commitDate, err := time.Parse(time.RFC3339, strings.TrimSpace(fields[3]))
+		if err != nil {
+			return nil, fmt.Errorf("parse commit date: %w", err)
+		}
+
+		commits = append(commits, Commit{
+			SHA:        strings.TrimSpace(fields[0]),
+			Subject:    strings.TrimSpace(fields[1]),
+			Body:       strings.TrimSpace(fields[2]),
+			CommitDate: commitDate,
+		})
+	}
+
+	return commits, nil
+}
+
 func runGit(args ...string) (string, error) {
+	return runGitInDir("", args...)
+}
+
+func runGitInDir(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
