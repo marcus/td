@@ -190,4 +190,3 @@ func countIssues(h *Harness, actor string) int {
 	}
 	return count
 }
-
