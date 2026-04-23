@@ -124,12 +124,12 @@ func classifyCommit(commit gitutil.Commit) (section, string, bool) {
 
 	lower := strings.ToLower(normalized)
 	switch {
-	case isDocumentationSummary(lower):
-		return sectionDocumentation, normalized, true
 	case isFeatureSummary(lower):
 		return sectionFeatures, normalized, true
 	case isBugFixSummary(lower):
 		return sectionBugFixes, normalized, true
+	case isDocumentationSummary(lower):
+		return sectionDocumentation, normalized, true
 	default:
 		return sectionImprovements, normalized, true
 	}

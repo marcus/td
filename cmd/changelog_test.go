@@ -196,6 +196,30 @@ func TestChangelogCommandIgnoresAutosquashCommits(t *testing.T) {
 	}
 }
 
+func TestChangelogCommandPrefersFeatureAndBugHeuristicsOverDocKeywords(t *testing.T) {
+	dir := initChangelogRepo(t)
+	runGitCommand(t, dir, "tag", "v0.1.0")
+	commitRepoFile(t, dir, "README.md", "# test\n\nExamples\n", "add README examples for changelog command")
+	commitRepoFile(t, dir, "README.md", "# test\n\nExamples fixed\n", "fix changelog heading in README")
+	commitRepoFile(t, dir, "docs/release.md", "workflow\n", "document release workflow")
+
+	output, err := runChangelogCommand(t, dir)
+	if err != nil {
+		t.Fatalf("runChangelogCommand failed: %v", err)
+	}
+
+	wantParts := []string{
+		"### Features\n- Add README examples for changelog command",
+		"### Bug Fixes\n- Fix changelog heading in README",
+		"### Documentation\n- Document release workflow",
+	}
+	for _, part := range wantParts {
+		if !strings.Contains(output, part) {
+			t.Fatalf("expected output to contain %q, got:\n%s", part, output)
+		}
+	}
+}
+
 func TestChangelogCommandErrorsOnEmptyRange(t *testing.T) {
 	dir := initChangelogRepo(t)
 	runGitCommand(t, dir, "tag", "v0.1.0")

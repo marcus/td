@@ -89,3 +89,27 @@ func TestRenderMarkdownIgnoresAutosquashCommits(t *testing.T) {
 		t.Fatalf("expected squash commit to be ignored, got:\n%s", got)
 	}
 }
+
+func TestRenderMarkdownPrefersFeatureAndBugHeuristicsOverDocKeywords(t *testing.T) {
+	commits := []gitutil.Commit{
+		{Subject: "add README examples for changelog command"},
+		{Subject: "fix changelog heading in release output"},
+		{Subject: "document README release workflow"},
+	}
+
+	got, err := RenderMarkdown(commits, Options{})
+	if err != nil {
+		t.Fatalf("RenderMarkdown failed: %v", err)
+	}
+
+	wantParts := []string{
+		"### Features\n- Add README examples for changelog command",
+		"### Bug Fixes\n- Fix changelog heading in release output",
+		"### Documentation\n- Document README release workflow",
+	}
+	for _, part := range wantParts {
+		if !strings.Contains(got, part) {
+			t.Fatalf("expected output to contain %q, got:\n%s", part, got)
+		}
+	}
+}
