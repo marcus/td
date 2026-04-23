@@ -8,9 +8,9 @@ import (
 // OrphanCount reports the number of rows in a child table whose foreign-key
 // column points at a non-existent row in the parent table.
 //
-// Count = number of child rows where child.col NOT NULL / NOT '' AND no
+// Count = number of child rows where child.col NOT NULL / NOT ” AND no
 // matching parent row exists. We treat empty-string and NULL as "no link"
-// to match td's mixed-sentinel convention (many FK columns default to '').
+// to match td's mixed-sentinel convention (many FK columns default to ”).
 type OrphanCount struct {
 	Relation     string // e.g. "handoffs.issue_id -> issues.id"
 	ChildTable   string
