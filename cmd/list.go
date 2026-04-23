@@ -210,6 +210,7 @@ var listCmd = &cobra.Command{
 			reviewOpts := reviewableByOptions(getBaseDir(), sess.ID)
 			opts.ReviewableBy = reviewOpts.ReviewableBy
 			opts.BalancedReviewPolicy = reviewOpts.BalancedReviewPolicy
+			opts.ReviewPolicyMode = reviewOpts.ReviewPolicyMode
 			reviewableMode = true
 			reviewableIncludeApproved, _ = cmd.Flags().GetBool("include-approved")
 			reviewableSessionID = sess.ID
@@ -313,6 +314,32 @@ var listCmd = &cobra.Command{
 					readyReviews[issue.ID] = rev
 				}
 			}
+			if reviewableIncludeApproved {
+				readyOpts := opts
+				readyOpts.ReviewableBy = ""
+				readyOpts.ReadyToCloseBy = reviewableSessionID
+				readyIssues, err := database.ListIssues(readyOpts)
+				if err != nil {
+					output.Error("failed to list ready-to-close issues: %v", err)
+					return err
+				}
+				seenReady := make(map[string]bool, len(ready))
+				for _, issue := range ready {
+					seenReady[issue.ID] = true
+				}
+				for _, issue := range readyIssues {
+					if seenReady[issue.ID] {
+						continue
+					}
+					rev, _ := database.GetActiveApprovalReview(issue.ID)
+					if rev == nil {
+						continue
+					}
+					ready = append(ready, issue)
+					readyReviews[issue.ID] = rev
+					seenReady[issue.ID] = true
+				}
+			}
 			if len(awaiting) > 0 {
 				fmt.Printf("AWAITING YOUR REVIEW (%d):\n", len(awaiting))
 				for _, issue := range awaiting {
@@ -413,23 +440,30 @@ Examples:
 			return err
 		}
 
-		// Split issues into two buckets: awaiting review (no active approval)
-		// and ready to close (active approval + caller is allowed closer).
+		// Split reviewable issues into "awaiting review"; ready-to-close has
+		// its own query because implementers and review-requesters can be valid
+		// closers even though they are not reviewable reviewers.
 		awaiting := make([]models.Issue, 0, len(result.issues))
-		readyToClose := make([]models.Issue, 0)
-		readyReviews := make(map[string]*models.IssueReview)
 		for _, issue := range result.issues {
 			rev, _ := database.GetActiveApprovalReview(issue.ID)
 			if rev == nil {
 				awaiting = append(awaiting, issue)
 				continue
 			}
-			// Issue has active approval — only surface in ready-to-close
-			// bucket when the session is an allowed closer.
-			if !includeApproved {
-				continue
+		}
+
+		readyToClose := make([]models.Issue, 0)
+		readyReviews := make(map[string]*models.IssueReview)
+		if includeApproved {
+			readyResult, err := runListShortcut(readyToCloseByOptions(baseDir, sess.ID))
+			if err != nil {
+				return err
 			}
-			if closerAllowed(&issue, sess.ID, rev) {
+			for _, issue := range readyResult.issues {
+				rev, _ := database.GetActiveApprovalReview(issue.ID)
+				if rev == nil {
+					continue
+				}
 				readyToClose = append(readyToClose, issue)
 				readyReviews[issue.ID] = rev
 			}

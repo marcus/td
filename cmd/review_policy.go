@@ -54,10 +54,61 @@ func resolveReviewPolicyMode(baseDir string) (reviewpolicy.Mode, error) {
 }
 
 func reviewableByOptions(baseDir, sessionID string) db.ListIssuesOptions {
+	mode, err := resolveReviewPolicyMode(baseDir)
+	modeString := ""
+	balanced := false
+	if err == nil {
+		modeString = string(mode)
+		balanced = mode == reviewpolicy.ModeBalanced
+	}
 	return db.ListIssuesOptions{
 		ReviewableBy:         sessionID,
-		BalancedReviewPolicy: balancedReviewPolicyEnabled(baseDir),
+		BalancedReviewPolicy: balanced,
+		ReviewPolicyMode:     modeString,
 	}
+}
+
+func readyToCloseByOptions(baseDir, sessionID string) db.ListIssuesOptions {
+	mode, err := resolveReviewPolicyMode(baseDir)
+	modeString := ""
+	balanced := false
+	if err == nil {
+		modeString = string(mode)
+		balanced = mode == reviewpolicy.ModeBalanced
+	}
+	return db.ListIssuesOptions{
+		ReadyToCloseBy:       sessionID,
+		BalancedReviewPolicy: balanced,
+		ReviewPolicyMode:     modeString,
+	}
+}
+
+func approvalCandidateIssues(database *db.DB, baseDir, sessionID string, includeReadyToClose bool) ([]models.Issue, error) {
+	reviewable, err := database.ListIssues(reviewableByOptions(baseDir, sessionID))
+	if err != nil {
+		return nil, err
+	}
+	if !includeReadyToClose {
+		return reviewable, nil
+	}
+
+	seen := make(map[string]bool, len(reviewable))
+	for _, issue := range reviewable {
+		seen[issue.ID] = true
+	}
+
+	ready, err := database.ListIssues(readyToCloseByOptions(baseDir, sessionID))
+	if err != nil {
+		return nil, err
+	}
+	for _, issue := range ready {
+		if seen[issue.ID] {
+			continue
+		}
+		reviewable = append(reviewable, issue)
+		seen[issue.ID] = true
+	}
+	return reviewable, nil
 }
 
 // evaluateApproveEligibility is the cmd-layer wrapper that routes through

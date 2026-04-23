@@ -120,3 +120,71 @@ func TestReadyToCloseByFilter_StrictIsEmpty(t *testing.T) {
 		t.Fatalf("strict mode returned %d ready-to-close rows, want 0", len(results))
 	}
 }
+
+func TestReviewableByFilter_DelegatedIgnoresNonImplementationHistory(t *testing.T) {
+	database, err := Initialize(t.TempDir())
+	if err != nil {
+		t.Fatalf("db init: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:              "Delegated reviewer can review again",
+		Type:               models.TypeTask,
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses-impl",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("persist review fields: %v", err)
+	}
+	if err := database.RecordSessionAction(issue.ID, "ses-reviewer", models.ActionSessionReviewApproved); err != nil {
+		t.Fatalf("record review history: %v", err)
+	}
+
+	delegated, err := database.ListIssues(ListIssuesOptions{
+		ReviewableBy:     "ses-reviewer",
+		ReviewPolicyMode: "delegated",
+	})
+	if err != nil {
+		t.Fatalf("delegated list: %v", err)
+	}
+	if len(delegated) != 1 || delegated[0].ID != issue.ID {
+		t.Fatalf("delegated reviewable = %v, want only %s", idsForTest(delegated), issue.ID)
+	}
+
+	balanced, err := database.ListIssues(ListIssuesOptions{
+		ReviewableBy:     "ses-reviewer",
+		ReviewPolicyMode: "balanced",
+	})
+	if err != nil {
+		t.Fatalf("balanced list: %v", err)
+	}
+	if len(balanced) != 0 {
+		t.Fatalf("balanced reviewable = %v, want empty because prior non-creator history still blocks", idsForTest(balanced))
+	}
+
+	if err := database.RecordSessionAction(issue.ID, "ses-reviewer", models.ActionSessionStarted); err != nil {
+		t.Fatalf("record implementation history: %v", err)
+	}
+	delegated, err = database.ListIssues(ListIssuesOptions{
+		ReviewableBy:     "ses-reviewer",
+		ReviewPolicyMode: "delegated",
+	})
+	if err != nil {
+		t.Fatalf("delegated list after impl history: %v", err)
+	}
+	if len(delegated) != 0 {
+		t.Fatalf("delegated reviewable after implementation history = %v, want empty", idsForTest(delegated))
+	}
+}
+
+func idsForTest(issues []models.Issue) []string {
+	ids := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		ids = append(ids, issue.ID)
+	}
+	return ids
+}

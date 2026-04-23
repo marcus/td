@@ -164,6 +164,66 @@ func TestApproveRecordOnlyRecordsReviewWithoutClosing(t *testing.T) {
 	}
 }
 
+func TestApproveNoArgsClosesReadyToCloseIssueForImplementer(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setDelegatedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-noargs")
+	implSession := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implSession)
+	issue.ReviewRequestedBySession = implSession
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue requester: %v", err)
+	}
+
+	t.Setenv("TD_SESSION_ID", "reviewer-noargs")
+	reviewerSession := currentSessionID(t, database)
+	if reviewerSession == implSession {
+		t.Fatal("test expected distinct sessions")
+	}
+	if _, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "reviewed diff and tests",
+	}); err != nil {
+		t.Fatalf("record-only approval: %v", err)
+	}
+
+	t.Setenv("TD_SESSION_ID", "impl-noargs")
+	out, err := runApproveCmd(t, nil, map[string]string{
+		"reason": "closing after independent review",
+	})
+	if err != nil {
+		t.Fatalf("approve no-args close-after-review: %v\n%s", err, out)
+	}
+
+	final, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue final: %v", err)
+	}
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%s want closed", final.Status)
+	}
+	if final.ClosedBySession != implSession {
+		t.Fatalf("closed_by_session=%q want %q", final.ClosedBySession, implSession)
+	}
+	if final.ReviewerSession != reviewerSession {
+		t.Fatalf("reviewer_session=%q want %q", final.ReviewerSession, reviewerSession)
+	}
+	if !strings.Contains(out, "using review by "+reviewerSession) {
+		t.Fatalf("output %q does not mention recorded review by %s", out, reviewerSession)
+	}
+}
+
 func TestApproveRecordOnlyWithoutReasonFails(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	setDelegatedMode(t)

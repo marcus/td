@@ -601,8 +601,9 @@ To surface issues reviewed by a sub-agent that you are allowed to close, use
 		// Build list of issue IDs to approve
 		var issueIDs []string
 		if all {
-			// Get all issues reviewable by current policy.
-			issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+			// Get all issues the current session can act on: reviewable work,
+			// plus delegated-mode ready-to-close work when not recording a review.
+			issues, err := approvalCandidateIssues(database, baseDir, sess.ID, !recordOnly)
 			if err != nil {
 				output.Error("failed to list reviewable issues: %v", err)
 				return err
@@ -613,7 +614,7 @@ To surface issues reviewed by a sub-agent that you are allowed to close, use
 		} else {
 			issueIDs = args
 			if len(issueIDs) == 0 {
-				issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+				issues, err := approvalCandidateIssues(database, baseDir, sess.ID, !recordOnly)
 				if err != nil {
 					output.Error("failed to list reviewable issues: %v", err)
 					return err

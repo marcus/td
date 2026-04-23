@@ -407,17 +407,16 @@ func ReviewableByFilter(sessionID string, balanced bool) (string, []interface{})
 // snapshot query source, Step-2 CLI callers) can route through the same
 // policy-aware composer as the primary list path.
 //
-// For "delegated" the filter is equivalent to balanced for the
-// "can-I-review-this-issue" question (session independent of implementation;
-// creator ok; not self-implementer). The delegated semantic difference for
-// closers is expressed by ReadyToCloseByFilter instead.
+// For "delegated" the filter is based only on implementation independence:
+// a session may review when it is not the current implementer and it has no
+// started/unstarted history. Prior review/log/history involvement is not a
+// review disqualifier in delegated mode.
 func ReviewableByFilterForMode(sessionID, mode string) (string, []interface{}) {
 	switch mode {
 	case "balanced":
 		return reviewableByFilterBalanced(sessionID)
 	case "delegated":
-		// Delegated reviewer eligibility = balanced reviewer eligibility.
-		return reviewableByFilterBalanced(sessionID)
+		return reviewableByFilterDelegated(sessionID)
 	default:
 		return reviewableByFilterStrict(sessionID)
 	}
@@ -468,6 +467,21 @@ func reviewableByFilterBalanced(sessionID string) (string, []interface{}) {
 		sessionID, sessionID, sessionID,
 		sessionID, sessionID, sessionID,
 	}
+}
+
+func reviewableByFilterDelegated(sessionID string) (string, []interface{}) {
+	sql := ` AND status = ? AND implementer_session != '' AND (
+		minor = 1 OR (
+			implementer_session != ?
+			AND NOT EXISTS (
+				SELECT 1 FROM issue_session_history
+				WHERE issue_id = issues.id
+				  AND session_id = ?
+				  AND action IN ('started', 'unstarted')
+			)
+		)
+	)`
+	return sql, []interface{}{models.StatusInReview, sessionID, sessionID}
 }
 
 // ReadyToCloseByFilter returns the SQL fragment and args for "issues the

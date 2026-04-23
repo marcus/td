@@ -132,6 +132,9 @@ func TestReviewableByOptions_UsesBalancedReviewPolicyFlag(t *testing.T) {
 	if opts.BalancedReviewPolicy {
 		t.Fatalf("BalancedReviewPolicy should default to false (Step 5: delegated is the default mode)")
 	}
+	if opts.ReviewPolicyMode != "delegated" {
+		t.Fatalf("ReviewPolicyMode should default to delegated, got %q", opts.ReviewPolicyMode)
+	}
 
 	// Explicit legacy balanced_review_policy=true opts into balanced mode.
 	if err := config.SetFeatureFlag(baseDir, features.BalancedReviewPolicy.Name, true); err != nil {
@@ -140,6 +143,9 @@ func TestReviewableByOptions_UsesBalancedReviewPolicyFlag(t *testing.T) {
 	opts = reviewableByOptions(baseDir, sessionID)
 	if !opts.BalancedReviewPolicy {
 		t.Fatalf("BalancedReviewPolicy should be true when legacy flag explicitly opts in")
+	}
+	if opts.ReviewPolicyMode != "balanced" {
+		t.Fatalf("ReviewPolicyMode should be balanced when legacy flag opts in, got %q", opts.ReviewPolicyMode)
 	}
 
 	// Local config override OFF.
@@ -150,12 +156,18 @@ func TestReviewableByOptions_UsesBalancedReviewPolicyFlag(t *testing.T) {
 	if opts.BalancedReviewPolicy {
 		t.Fatalf("BalancedReviewPolicy should be false when overridden in config")
 	}
+	if opts.ReviewPolicyMode != "strict" {
+		t.Fatalf("ReviewPolicyMode should be strict when legacy flag is explicitly false, got %q", opts.ReviewPolicyMode)
+	}
 
 	// Env override ON should win over config OFF.
 	t.Setenv("TD_FEATURE_BALANCED_REVIEW_POLICY", "true")
 	opts = reviewableByOptions(baseDir, sessionID)
 	if !opts.BalancedReviewPolicy {
 		t.Fatalf("BalancedReviewPolicy should be true when env override is set")
+	}
+	if opts.ReviewPolicyMode != "balanced" {
+		t.Fatalf("ReviewPolicyMode should be balanced when env override is set, got %q", opts.ReviewPolicyMode)
 	}
 }
 
