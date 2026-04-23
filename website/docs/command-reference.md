@@ -138,6 +138,7 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 
 | Command | Description |
 |---------|-------------|
+| `td changelog [flags]` | Generate changelog markdown from git commits. Flags: `--from`, `--to`, `--version`, `--date` |
 | `td init` | Initialize project |
 | `td monitor` | Live TUI dashboard |
 | `td undo` | Undo last action |
@@ -145,3 +146,5 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | `td export` | Export database |
 | `td import` | Import issues |
 | `td stats [subcommand]` | Usage statistics |
+
+`td changelog` defaults to commits from the latest reachable semver tag through `HEAD` and prints markdown to stdout. Use `--version vX.Y.Z --date YYYY-MM-DD` when generating a release entry for `CHANGELOG.md`, or pass `--from` / `--to` for an explicit ref range.
