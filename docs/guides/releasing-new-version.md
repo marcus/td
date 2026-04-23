@@ -33,22 +33,21 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Generate and Review the Changelog
 
-Add entry at the top of `CHANGELOG.md`:
+Generate markdown from commits since the nearest reachable semver tag:
 
-```markdown
-## [vX.Y.Z] - YYYY-MM-DD
-
-### Features
-- New feature description
-
-### Bug Fixes
-- Fix description
-
-### Documentation
-- Doc change description
+```bash
+td changelog --version vX.Y.Z --date YYYY-MM-DD > /tmp/td-changelog.md
 ```
+
+If you need a custom range, pass explicit refs:
+
+```bash
+td changelog --from vX.Y.Z --to HEAD
+```
+
+Review `/tmp/td-changelog.md`, then prepend the generated entry to `CHANGELOG.md`.
 
 Commit the changelog:
 ```bash
@@ -134,8 +133,9 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Generate and review changelog
+td changelog --version vX.Y.Z --date YYYY-MM-DD > /tmp/td-changelog.md
+# (Prepend reviewed output from /tmp/td-changelog.md to CHANGELOG.md)
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,7 +154,8 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
-- [ ] CHANGELOG.md updated with new version entry
+- [ ] `td changelog --version vX.Y.Z --date YYYY-MM-DD` reviewed
+- [ ] CHANGELOG.md updated with generated release entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
