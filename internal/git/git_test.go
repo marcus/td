@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,31 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func runCmdOutput(t *testing.T, dir string, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %v failed: %v (%s)", name, args, err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func commitFile(t *testing.T, dir, fileName, content, message string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", fileName); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", message); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+	return runCmdOutput(t, dir, "git", "rev-parse", "HEAD")
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +493,121 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestResolveRefInDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	head := runCmdOutput(t, dir, "git", "rev-parse", "HEAD")
+	got, err := ResolveRefInDir(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRefInDir failed: %v", err)
+	}
+
+	if got != head {
+		t.Fatalf("resolved ref = %q, want %q", got, head)
+	}
+}
+
+func TestGetLatestReleaseTagInDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "preview-build"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create v0.1.0 tag: %v", err)
+	}
+
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add feature")
+
+	if err := runCmd(dir, "git", "tag", "v0.2.0"); err != nil {
+		t.Fatalf("Failed to create v0.2.0 tag: %v", err)
+	}
+
+	tag, err := GetLatestReleaseTagInDir(dir)
+	if err != nil {
+		t.Fatalf("GetLatestReleaseTagInDir failed: %v", err)
+	}
+
+	if tag != "v0.2.0" {
+		t.Fatalf("latest tag = %q, want %q", tag, "v0.2.0")
+	}
+}
+
+func TestGetLatestReleaseTagInDirPrefersNearestAncestorTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "v2.0.0"); err != nil {
+		t.Fatalf("Failed to create v2.0.0 tag: %v", err)
+	}
+
+	commitFile(t, dir, "mid.txt", "mid\n", "feat: intermediate release prep")
+
+	if err := runCmd(dir, "git", "tag", "v1.5.0"); err != nil {
+		t.Fatalf("Failed to create v1.5.0 tag: %v", err)
+	}
+
+	commitFile(t, dir, "after.txt", "after\n", "feat: final release work")
+
+	tag, err := GetLatestReleaseTagInDir(dir)
+	if err != nil {
+		t.Fatalf("GetLatestReleaseTagInDir failed: %v", err)
+	}
+
+	if tag != "v1.5.0" {
+		t.Fatalf("latest tag = %q, want %q", tag, "v1.5.0")
+	}
+}
+
+func TestGetLatestReleaseTagInDirRequiresSemverTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "preview-build"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+
+	_, err := GetLatestReleaseTagInDir(dir)
+	if err == nil {
+		t.Fatal("expected error when no semver tags exist")
+	}
+	if !strings.Contains(err.Error(), "no semver tags found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListCommitsInRangeInDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	firstSHA := commitFile(t, dir, "feature.txt", "feature\n", "feat(cli): add changelog command")
+	secondSHA := commitFile(t, dir, "docs.md", "docs\n", "docs: update release guide")
+
+	commits, err := ListCommitsInRangeInDir(dir, "v0.1.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRangeInDir failed: %v", err)
+	}
+
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+	if commits[0].SHA != firstSHA {
+		t.Fatalf("first commit sha = %q, want %q", commits[0].SHA, firstSHA)
+	}
+	if commits[0].Subject != "feat(cli): add changelog command" {
+		t.Fatalf("first commit subject = %q", commits[0].Subject)
+	}
+	if commits[1].SHA != secondSHA {
+		t.Fatalf("second commit sha = %q, want %q", commits[1].SHA, secondSHA)
+	}
+	if commits[1].Subject != "docs: update release guide" {
+		t.Fatalf("second commit subject = %q", commits[1].Subject)
+	}
+	if commits[0].CommitDate.IsZero() || commits[1].CommitDate.IsZero() {
+		t.Fatal("expected commit dates to be populated")
 	}
 }
