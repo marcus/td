@@ -18,12 +18,12 @@ Sessions are automatic (based on terminal/agent context). Optional:
 
 Do NOT start a new session mid-work to satisfy td review rules. Use a real
 reviewer sub-agent or separate agent context. An independent review is required;
-the close may be delegated to any involved session.
+the close may be delegated to any session.
 
 You cannot review your own implementation, but you can close after an
 independent review has been recorded. Under review_policy_mode=delegated:
   td approve <id> --record-only --reason "..."   # reviewer records approval
-  td approve <id>                                 # any involved session closes
+  td approve <id> --reason "using recorded approval"  # any session closes
 
 Use td usage -q after first read.
 `

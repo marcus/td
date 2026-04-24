@@ -35,7 +35,7 @@ func resolveMonitorPolicyMode(baseDir string) reviewpolicy.Mode {
 //
 // Buckets under delegated mode:
 //   - CategoryReviewable — session is eligible reviewer, no active approval
-//   - CategoryReadyToClose — active approval exists, session is allowed closer
+//   - CategoryReadyToClose — active approval exists and can be closed
 //   - CategoryPendingReview — session implemented / participated; waiting on reviewer
 //   - CategoryPendingOther — uninvolved session; waiting on some other reviewer
 //
@@ -70,8 +70,8 @@ func categorizeInReviewIssue(
 			if closeDec.Allowed {
 				return CategoryReadyToClose
 			}
-			// Session not an allowed closer for an already-approved issue →
-			// audit bucket: it's not actionable by me.
+			// No active close eligibility despite the approval, so keep it in
+			// the non-actionable audit bucket.
 			return CategoryPendingOther
 		}
 		// No active approval yet: reviewer eligibility rules.

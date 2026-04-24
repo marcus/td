@@ -1009,7 +1009,7 @@ td usage
 #
 # IMPORTANT: You cannot review your own implementation, but you can close
 # after an independent review has been recorded. An independent review is
-# required; the close may be delegated to any involved session.
+# required; the close may be delegated to any session.
 # Use `td handoff` or `td ws handoff` before stopping work.
 ```
 

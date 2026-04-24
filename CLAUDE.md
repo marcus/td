@@ -27,7 +27,7 @@ Use `td usage -q` after first read.
 td's review guardrail protects against unchecked self-review, not against delegated closure. The rules:
 
 - **Review must come from a session that did not participate in implementation.** You cannot review your own implementation, but you *can* close an issue after an independent review has been recorded.
-- **Any involved session may perform the final close.** Once an independent review exists, the creator, implementer, review-requester, or reviewer-of-record may run `td approve` to close. An independent review is required; the close itself may be delegated to any involved session.
+- **Any session may perform the final close after approval.** Once an independent review exists, any session may run `td approve --reason "..."` to close. An independent review is required; the close itself may be delegated and is audited via `closed_by_session`.
 - **Do NOT start a new session mid-work just to satisfy the review rules.** Use a real reviewer sub-agent or a separate agent context.
 
 ### Modes (`review_policy_mode`)
@@ -55,11 +55,11 @@ td review td-a1b2
 # Reviewer sub-agent (separate session) records approval without closing
 td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
 
-# Orchestrator (or implementer) closes using the recorded approval
-td approve td-a1b2
+# Orchestrator, implementer, or another session closes using the recorded approval
+td approve td-a1b2 --reason "Closing after recorded independent approval"
 ```
 
-The orchestrator must own at least one explicit role on the issue (creator, implementer, reviewer-of-record, or the session that ran `td review`). If every step is delegated and the orchestrator never calls `td review`, it will not match any allowed-closer role.
+The orchestrator does not need to own an issue role to close after approval. The reviewer must be independent; the closer is recorded separately for audit. If the closer is not the reviewer-of-record, pass `--reason`.
 
 ## Build & Install
 

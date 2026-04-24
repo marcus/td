@@ -27,7 +27,9 @@ type ListIssuesOptions struct {
 	// BalancedReviewPolicy is true). Step 2 flips delegated-mode callers.
 	ReviewPolicyMode string
 	// ReadyToCloseBy returns issues where an active approval review exists
-	// and the given session is an allowed closer under the current mode.
+	// and the current mode allows close-after-review. In delegated mode any
+	// session may close after independent approval; the session value is kept
+	// for API symmetry but is not part of the SQL predicate.
 	// Empty under strict/balanced; populated under delegated. Safe to set
 	// regardless of mode; the SQL composer short-circuits to `0=1` when not
 	// applicable.
@@ -484,13 +486,12 @@ func reviewableByFilterDelegated(sessionID string) (string, []interface{}) {
 	return sql, []interface{}{models.StatusInReview, sessionID, sessionID}
 }
 
-// ReadyToCloseByFilter returns the SQL fragment and args for "issues the
-// given session is an allowed closer for AND an active approval review
-// already exists". Under strict and balanced modes there is no
-// close-after-recorded-review path, so the filter returns an always-false
-// clause. Under delegated mode it matches in_review issues with a non-
-// superseded approval in issue_reviews and a session that matches one of
-// the allowed closer roles.
+// ReadyToCloseByFilter returns the SQL fragment and args for issues that are
+// ready to close because an active approval review already exists. Under
+// strict and balanced modes there is no close-after-recorded-review path, so
+// the filter returns an always-false clause. Under delegated mode it matches
+// in_review issues with a non-superseded approval in issue_reviews; the
+// closing session is recorded for audit but does not gate the close.
 //
 // Step 2 wires the CLI / monitor / snapshot-query-source callers; Batch 1c
 // only ships the composer so it is ready.
@@ -504,16 +505,8 @@ func ReadyToCloseByFilter(sessionID, mode string) (string, []interface{}) {
 		WHERE issue_reviews.issue_id = issues.id
 		  AND issue_reviews.superseded_at IS NULL
 		  AND issue_reviews.decision IN ('approved', 'approved_by_parent_cascade')
-	) AND (
-		creator_session = ?
-		OR implementer_session = ?
-		OR reviewer_session = ?
-		OR review_requested_by_session = ?
 	)`
-	return sql, []interface{}{
-		models.StatusInReview,
-		sessionID, sessionID, sessionID, sessionID,
-	}
+	return sql, []interface{}{models.StatusInReview}
 }
 
 // ListIssues returns issues matching the filter

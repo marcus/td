@@ -32,7 +32,8 @@ func TestReadyToCloseByFilter_DelegatedMode(t *testing.T) {
 		t.Fatalf("create review for A: %v", err)
 	}
 
-	// Fixture: issue B — in_review, active approval, but caller has no role.
+	// Fixture: issue B — in_review, active approval, caller has no role, but
+	// delegated close is gated by approval rather than caller role.
 	b := &models.Issue{Title: "B: approved, caller has no role", Type: models.TypeTask, Status: models.StatusOpen}
 	if err := database.CreateIssue(b); err != nil {
 		t.Fatalf("create B: %v", err)
@@ -77,8 +78,8 @@ func TestReadyToCloseByFilter_DelegatedMode(t *testing.T) {
 	if !found[a.ID] {
 		t.Errorf("expected issue A in ready-to-close bucket (requester role)")
 	}
-	if found[b.ID] {
-		t.Errorf("issue B should NOT be in ready-to-close bucket (session has no role)")
+	if !found[b.ID] {
+		t.Errorf("expected issue B in ready-to-close bucket (approval gates delegated close)")
 	}
 	if found[c.ID] {
 		t.Errorf("issue C should NOT be in ready-to-close bucket (no active approval)")

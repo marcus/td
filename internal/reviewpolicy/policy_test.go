@@ -392,7 +392,7 @@ func TestEvaluateCloseEligibility_Delegated_WithActiveApproval(t *testing.T) {
 		{"implementer allowed", true, false, false, false, true, true},
 		{"reviewer-of-record allowed", false, false, true, false, false, true},
 		{"review-requester allowed", false, false, false, true, false, true},
-		{"arbitrary session rejected", false, false, false, false, false, false},
+		{"arbitrary session allowed", false, false, false, false, false, true},
 	}
 
 	for _, c := range cases {

@@ -52,10 +52,10 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 			want:                 CategoryReadyToClose,
 		},
 		{
-			name:      "delegated: has active approval + unrelated session → pending_other",
+			name:      "delegated: has active approval + unrelated session → ready to close",
 			sessionID: "ses-bystander", mode: reviewpolicy.ModeDelegated,
 			hasActiveApproval: true,
-			want:              CategoryPendingOther,
+			want:              CategoryReadyToClose,
 		},
 		{
 			name:      "strict: uninvolved → reviewable (legacy behavior)",

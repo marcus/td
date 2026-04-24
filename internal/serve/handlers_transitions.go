@@ -435,12 +435,11 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 // Pure-function form of (s *Server).handleApprove.
 //
 // Step 3: under delegated mode, if an active approval review exists and the
-// caller is an allowed closer but NOT the eligible reviewer, the handler
-// performs a close-after-review (Mode C). The existing reviewer_session /
-// reviewed_at are preserved; only closed_by_session and closed_at are
-// stamped. When closer != reviewer_of_record, the request must include a
-// reason in the body — otherwise the handler returns 400 so CLI and API
-// enforce the same rule.
+// caller is NOT the eligible reviewer, the handler performs a close-after-
+// review (Mode C). The existing reviewer_session / reviewed_at are preserved;
+// only closed_by_session and closed_at are stamped. When closer !=
+// reviewer_of_record, the request must include a reason in the body —
+// otherwise the handler returns 400 so CLI and API enforce the same rule.
 func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	// Pre-inspect the issue for the Mode-C branch decision. We still
 	// delegate most work to handleTransition for consistency with other
@@ -507,10 +506,9 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 }
 
 // handledCloseAfterReview performs the delegated-mode Mode-C close when the
-// issue carries an active approval and the caller is an allowed closer but
-// not the reviewer. Returns true when the request was handled (response
-// written) and the caller should return. Returns false to let the standard
-// HandleApprove path run.
+// issue carries an active approval and the caller is not the reviewer. Returns
+// true when the request was handled (response written) and the caller should
+// return. Returns false to let the standard HandleApprove path run.
 func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.Request, issue *models.Issue) bool {
 	if issue.Status != models.StatusInReview {
 		return false

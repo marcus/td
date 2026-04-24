@@ -72,8 +72,7 @@ var (
 // flipped BalancedReviewPolicy.Default to false AND the resolver default to
 // delegated — a fresh install with no explicit configuration now runs the
 // review-attestation flow, where reviewer-independence is the core rule and
-// creator/implementer/reviewer/review-requester roles may all close once an
-// independent review has been recorded.
+// any session may close once an independent approval has been recorded.
 //
 // Implementation note (Option B): the existing Feature struct is boolean-
 // typed, and retrofitting it with a union type would ripple through

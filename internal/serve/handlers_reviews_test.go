@@ -219,8 +219,8 @@ func TestIntegration_Approve_CloseAfterReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get session: %v", err)
 	}
-	// Create an issue where the web session is the review-requester (so it
-	// becomes an allowed closer). Another session plays reviewer.
+	// Create an issue reviewed by another session. The web session does not
+	// need a close role once the independent approval exists.
 	issueID := seedInReviewIssue(t, database, "ses-other-impl")
 	issue, _ := database.GetIssue(issueID)
 	issue.ReviewRequestedBySession = sess.ID

@@ -453,7 +453,7 @@ func TestApproveCloseAfterRecordedApproval(t *testing.T) {
 	}
 }
 
-func TestApproveCloseAfterRecordedApproval_DisallowedSession(t *testing.T) {
+func TestApproveCloseAfterRecordedApproval_AnySessionWithReason(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	setDelegatedMode(t)
 
@@ -473,6 +473,7 @@ func TestApproveCloseAfterRecordedApproval_DisallowedSession(t *testing.T) {
 
 	// Reviewer records approval.
 	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	reviewerID := currentSessionID(t, database)
 	if _, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
 		"record-only": "true",
 		"reason":      "LGTM",
@@ -480,17 +481,29 @@ func TestApproveCloseAfterRecordedApproval_DisallowedSession(t *testing.T) {
 		t.Fatalf("record-only approval: %v", err)
 	}
 
-	// A random unrelated session tries to close.
+	// A random unrelated session can close after an independent approval, as
+	// long as it supplies the audit reason required for non-reviewer closes.
 	t.Setenv("TD_SESSION_ID", "stranger-agent")
-	out, _ := runApproveCmd(t, []string{issue.ID}, nil)
-	if !strings.Contains(strings.ToLower(out), "not an allowed closer") &&
-		!strings.Contains(strings.ToLower(out), "cannot close") {
-		t.Fatalf("expected not-allowed-closer rejection, got %q", out)
+	strangerID := currentSessionID(t, database)
+	out, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"reason": "closing after independent approval",
+	})
+	if err != nil {
+		t.Fatalf("close-after-review from unrelated session: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "APPROVED "+issue.ID) {
+		t.Fatalf("expected APPROVED output, got %q", out)
 	}
 
 	got, _ := database.GetIssue(issue.ID)
-	if got.Status != models.StatusInReview {
-		t.Fatalf("status = %s, want in_review (close should be rejected)", got.Status)
+	if got.Status != models.StatusClosed {
+		t.Fatalf("status = %s, want closed", got.Status)
+	}
+	if got.ClosedBySession != strangerID {
+		t.Fatalf("ClosedBySession = %q, want %q", got.ClosedBySession, strangerID)
+	}
+	if got.ReviewerSession != reviewerID {
+		t.Fatalf("ReviewerSession = %q, want %q", got.ReviewerSession, reviewerID)
 	}
 }
 

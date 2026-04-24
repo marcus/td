@@ -95,7 +95,7 @@ td approve td-a1b2    # or: td reject td-a1b2 --reason "needs fix"
 
 td supports three review policy modes via `review_policy_mode`:
 
-- `delegated` — **default for new installs.** Review attestations; any involved session may close after an independent review is recorded.
+- `delegated` — **default for new installs.** Review attestations; any session may close after an independent review is recorded.
 - `strict` — no prior involvement allowed on the reviewer.
 - `balanced` — strict, plus a creator-approval exception. Retained for projects that explicitly opt in.
 
@@ -111,7 +111,7 @@ TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 
 ### Delegated Review: Orchestrator + Sub-Agents
 
-Under `delegated`, an orchestrator coordinates work across sub-agents. The review must come from a session that did not participate in implementation, but the close may be performed by any involved session — so the orchestrator can finish the task once a reviewer sub-agent records approval.
+Under `delegated`, an orchestrator coordinates work across sub-agents. The review must come from a session that did not participate in implementation, but the close may be performed by any session — so the orchestrator can finish the task once a reviewer sub-agent records approval.
 
 ```bash
 # Orchestrator creates work
@@ -122,23 +122,22 @@ td start td-c3d4
 td log "refactored auth module"
 td handoff td-c3d4 --done "refactor" --remaining "none"
 
-# Orchestrator submits for review — this sets review_requested_by_session,
-# which is one of the allowed-closer roles under delegated mode.
+# Orchestrator submits for review.
 td review td-c3d4
 
 # Reviewer sub-agent (separate session) records an approval without closing
 td approve td-c3d4 --record-only --reason "Reviewed diff, tests pass"
 
-# Orchestrator (or the implementer) closes using the recorded approval
-td approve td-c3d4
+# Orchestrator, implementer, or another session closes using the recorded approval
+td approve td-c3d4 --reason "Closing after recorded independent approval"
 ```
 
 Important details for orchestrators:
 
-- The orchestrator must own at least one explicit role on the issue (creator, implementer, reviewer-of-record, or the session that ran `td review`). Running `td review` from the orchestrator is the simplest way to reserve close permission.
+- The orchestrator does not need to own an issue role to close after approval. The reviewer must be independent; the closer is recorded separately for audit.
 - The reviewer sub-agent cannot have implementation history on the issue. Fresh reviewer sessions are the safest choice.
 - A reviewer can also record a non-approving decision: `td approve <id> --record-only --decision changes_requested --reason "fix X"`.
-- Use `td reviewable --include-approved` to surface reviewed issues the current session is allowed to close.
+- Use `td reviewable --include-approved` to surface reviewed issues the current session can close.
 
 ### Balanced (Legacy): Creator Exception
 

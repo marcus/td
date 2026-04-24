@@ -402,9 +402,9 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 
 // approveIssue approves/closes the selected reviewable issue.
 // Under delegated mode, if an active approval already exists and the session
-// is an allowed closer, this acts as a close-after-review (Mode C) — the
-// existing reviewer_session / reviewed_at fields are preserved and
-// closed_by_session is stamped to the caller.
+// closes, this acts as a close-after-review (Mode C) — the existing
+// reviewer_session / reviewed_at fields are preserved and closed_by_session is
+// stamped to the caller.
 func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	// Must be in Task List panel
 	if m.ActivePanel != PanelTaskList {
@@ -435,8 +435,7 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
 
 	// Close-after-review (Mode C, delegated only): if an active approval
-	// already exists and the session is an allowed closer, close preserving
-	// the prior reviewer_session/reviewed_at.
+	// already exists, close preserving the prior reviewer_session/reviewed_at.
 	if inputs.Mode == reviewpolicy.ModeDelegated && inputs.HasActiveApproval {
 		closeIn := reviewpolicy.CloseEligibilityInput{
 			Mode:                      reviewpolicy.ModeDelegated,

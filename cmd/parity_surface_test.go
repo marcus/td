@@ -239,11 +239,11 @@ func parityMatrix() []parityRow {
 			hasActiveApproval:        true,
 			wantReviewerAllowed:      true, wantCloseAllowed: true,
 		},
-		parityRow{name: "delegated: active approval + arbitrary session blocked", mode: reviewpolicy.ModeDelegated,
+		parityRow{name: "delegated: active approval + arbitrary session closes", mode: reviewpolicy.ModeDelegated,
 			issueStatus: models.StatusInReview, sessionID: "ses-other",
 			creatorSession: "ses-c", implementerSession: "ses-impl",
 			hasActiveApproval:   true,
-			wantReviewerAllowed: true, wantCloseAllowed: false,
+			wantReviewerAllowed: true, wantCloseAllowed: true,
 		},
 		parityRow{name: "delegated: minor bypass", mode: reviewpolicy.ModeDelegated,
 			issueStatus: models.StatusInReview, minor: true, sessionID: "ses-impl",
@@ -251,14 +251,13 @@ func parityMatrix() []parityRow {
 			hasImplementationHistory: true, wasAnyInvolved: true,
 			wantReviewerAllowed: true, wantCloseAllowed: true,
 		},
-		parityRow{name: "delegated: non-in_review still-open issue + uninvolved blocked", mode: reviewpolicy.ModeDelegated,
+		parityRow{name: "delegated: non-in_review still-open issue + uninvolved direct-close fallback", mode: reviewpolicy.ModeDelegated,
 			issueStatus: models.StatusOpen, sessionID: "ses-fresh",
 			creatorSession: "ses-c", implementerSession: "ses-impl",
 			// Uninvolved session with no impl history — reviewer check
 			// allows (delegated rule looks only at implementation
-			// independence); close blocked because the issue is not
-			// in_review and the session does not hold any of the four
-			// allowed closer roles.
+			// independence); close falls through to the direct-close policy
+			// because there is no active approval review.
 			wantReviewerAllowed: true,
 			wantCloseAllowed:    true, // under strict/balanced fallback (see evaluateCloseStrictBalanced)
 		},
@@ -447,15 +446,15 @@ func parityMatrix() []parityRow {
 			wantReviewerAllowed: true,
 			wantCloseAllowed:    true,
 		},
-		// Log-only closer-rejection parity row (reviewer flagged this path).
-		// Session has no explicit role — not creator, implementer, reviewer,
-		// or requester. Even with active approval, the close must be rejected.
-		parityRow{name: "step3-log-only: delegated non-role session cannot close approved issue",
+		// Log-only closer parity row (reviewer flagged this path). Session
+		// has no explicit role, but active approval is the delegated close
+		// gate.
+		parityRow{name: "step3-log-only: delegated non-role session can close approved issue",
 			mode: reviewpolicy.ModeDelegated, issueStatus: models.StatusInReview,
 			sessionID: "ses-log-only", creatorSession: "ses-c", implementerSession: "ses-impl",
 			hasActiveApproval:   true,
 			wantReviewerAllowed: true, // reviewer eligibility is independent
-			wantCloseAllowed:    false,
+			wantCloseAllowed:    true,
 		},
 	)
 

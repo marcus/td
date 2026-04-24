@@ -195,9 +195,8 @@ var reviewCmd = &cobra.Command{
 auto-created (consider using 'td handoff' for better documentation).
 
 The submitting session is recorded as 'review_requested_by_session' on the
-issue. Under review_policy_mode=delegated, that role is one of the allowed
-closer roles, so an orchestrator that runs 'td review' on behalf of a sub-agent
-retains permission to close after an independent reviewer records approval.
+issue. Under review_policy_mode=delegated, an active independent approval is
+the close gate, so any session may close after a reviewer records approval.
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -511,10 +510,9 @@ in one of three modes:
     review instead of an approval.
 
   Mode C: Close using recorded approval (delegated mode only)
-    An active approval review already exists. Any involved session
-    (creator, implementer, review-requester, or reviewer-of-record) may
-    close. --reason is required if the closing session is not the same as
-    the reviewer-of-record.
+    An active approval review already exists. Any session may close.
+    --reason is required if the closing session is not the same as the
+    reviewer-of-record.
 
 Flag summary:
   --record-only                       record an approval review without closing
@@ -528,7 +526,7 @@ Examples:
   td approve td-abc1 --record-only --reason "looks good"   # Record approval only
   td approve td-abc1 --record-only --decision changes_requested --reason "fix X"
 
-To surface issues reviewed by a sub-agent that you are allowed to close, use
+To surface issues reviewed by a sub-agent that you can close, use
   td reviewable --include-approved`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(0),
@@ -839,14 +837,14 @@ To surface issues reviewed by a sub-agent that you are allowed to close, use
 				if !closeDec.Allowed {
 					msg := closeDec.RejectionMessage
 					if msg == "" {
-						msg = fmt.Sprintf("cannot close %s: you are not an allowed closer", issueID)
+						msg = fmt.Sprintf("cannot close %s: no active independent approval review exists", issueID)
 					}
 					if jsonOutput {
 						output.JSONError(output.ErrCodeCannotSelfApprove, msg)
 					} else if !all {
 						output.Error("%s", msg)
 						output.Error("  The issue has a recorded approval by %s (review %s).", activeApproval.ReviewerSession, activeApproval.ID)
-						output.Error("  Only creator, implementer, review-requester, or reviewer-of-record may close.")
+						output.Error("  Delegated mode allows any session to close after that approval; missing or stale approval records block close.")
 					}
 					skipped++
 					continue
@@ -1236,7 +1234,7 @@ or cleanup of never-implemented issues.
 DO NOT use 'td close' to finish reviewed implementation work. Reviewed work
 must flow through 'td review' -> 'td approve' so an independent review is
 recorded. An independent review is required; the close may be delegated to
-any involved session via 'td approve'.
+any session via 'td approve'.
 
 Under review_policy_mode=delegated:
   - in_review issues cannot be closed via 'td close'; use 'td approve' instead.

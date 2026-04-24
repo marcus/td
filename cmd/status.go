@@ -20,7 +20,7 @@ var statusCmd = &cobra.Command{
 
 Review buckets:
   AWAITING YOUR REVIEW    Issues in_review that you can independently review
-  READY TO CLOSE          Issues with a recorded approval that you are allowed to close
+  READY TO CLOSE          Issues with a recorded approval that you can close
   PENDING REVIEW          Issues you implemented that are still waiting on review`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {

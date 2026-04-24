@@ -59,9 +59,9 @@ The `--defer` and `--due` flags are also available on `td create` and `td update
 | `td approve <id>` | Direct reviewer-close: caller must be an eligible reviewer with no active approval recorded |
 | `td approve <id> --record-only --reason "..."` | Record an approval review without closing. Caller must be an eligible reviewer |
 | `td approve <id> --record-only --decision changes_requested --reason "..."` | Record a non-approving review |
-| `td approve <id>` (with existing approval) | Close using a recorded approval. Caller must be an allowed closer (creator, implementer, review-requester, or reviewer-of-record) |
+| `td approve <id> --reason "..."` (with existing approval) | Close using a recorded approval. Any session may close; non-reviewer closes require `--reason` |
 
-`td reviewable --include-approved` surfaces reviewed issues the current session is allowed to close — useful for orchestrators that delegated review to a sub-agent.
+`td reviewable --include-approved` surfaces reviewed issues the current session can close — useful for orchestrators that delegated review to a sub-agent.
 
 Under `strict` and `balanced` modes, `--record-only` and `--decision` are unavailable; `td approve` performs a review-and-close in one step.
 

@@ -17,7 +17,7 @@ There's no structured way to say "here's what's done, here's what remains, here'
 Three mechanisms eliminate context loss:
 
 - **Structured handoffs** -- Each session records what's done, what remains, decisions made, and uncertainties. The next session reads this instead of guessing.
-- **Independent review** -- You cannot review your own implementation, but you can close after an independent review has been recorded. An independent review is required; the close itself may be delegated to any involved session (creator, implementer, review-requester, or reviewer-of-record). This catches errors the implementer is blind to without forcing artificial session rotation.
+- **Independent review** -- You cannot review your own implementation, but you can close after an independent review has been recorded. An independent review is required; the close itself may be delegated to any session. This catches errors the implementer is blind to without forcing artificial session rotation.
 - **Single-command context** -- `td usage` gives the incoming session everything it needs: current issues, recent logs, pending handoffs, and what to work on next.
 
 ## Installation

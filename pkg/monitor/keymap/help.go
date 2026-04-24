@@ -131,7 +131,7 @@ func (r *Registry) GenerateHelp() string {
 	sb.WriteString("\nREVIEW BUCKETS (Task List):\n")
 	reviewBucketLines := []HelpBinding{
 		{Keys: "Reviewable", Description: "You can review these (independent session, no active approval)"},
-		{Keys: "Ready to Close", Description: "Approval already recorded; you are an allowed closer"},
+		{Keys: "Ready to Close", Description: "Approval already recorded; ready for delegated close"},
 		{Keys: "Pending Review", Description: "Your implementations waiting on someone else to review"},
 	}
 	for _, b := range reviewBucketLines {

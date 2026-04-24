@@ -2,9 +2,9 @@
 
 ## Summary
 
-td now supports a **delegated review** policy that separates the "review was recorded" event from the "issue was closed" event. Review must come from a session that did not participate in implementation, but once an independent review has been recorded, any involved session (creator, implementer, review-requester, reviewer-of-record) may close the issue.
+td now supports a **delegated review** policy that separates the "review was recorded" event from the "issue was closed" event. Review must come from a session that did not participate in implementation, but once an independent review has been recorded, any session may close the issue.
 
-This replaces the earlier "the closing session must be different from the implementer" framing with a stronger, more useful invariant: an independent review is required; the close itself may be delegated to any involved session.
+This replaces the earlier "the closing session must be different from the implementer" framing with a stronger, more useful invariant: an independent review is required; the close itself may be delegated to any session and is audited separately.
 
 - Feature flag: `review_policy_mode` with values `strict` | `balanced` | `delegated`.
 - Current default (Step 5): `delegated` for new installs. Projects that previously relied on the legacy `balanced_review_policy=true` flag continue to resolve to `balanced` (with a one-time deprecation warning). Projects that explicitly set `review_policy_mode=strict` keep the original close-time session lock.
@@ -27,7 +27,7 @@ The delegated-review model keeps the important guardrail (no self-review) while 
 ### New / updated fields on `issues`
 
 - `reviewed_at DATETIME` — when the active approval review was recorded.
-- `review_requested_by_session TEXT` — session that last submitted the issue via `td review`. One of the allowed-closer roles under delegated mode.
+- `review_requested_by_session TEXT` — session that last submitted the issue via `td review`.
 - `closed_by_session TEXT` — session that performed the final close (may differ from `reviewer_session` under delegated mode).
 
 ### New `issue_reviews` table
@@ -66,7 +66,7 @@ Review rows are synced as a first-class entity. Implementation-relevant mutation
 |------|---------------|------------|
 | `strict` | No prior involvement allowed | Same session reviews and closes |
 | `balanced` | Strict, plus creator-approval exception with `--reason` | Same session reviews and closes (creator may close own created, not implemented, work) |
-| `delegated` | Session must not have implementation history (`started` / `unstarted`); `created` and `reviewed` do NOT count | An active approval review enables close by creator, implementer, review-requester, or reviewer-of-record |
+| `delegated` | Session must not have implementation history (`started` / `unstarted`); `created` and `reviewed` do NOT count | An active approval review enables close by any session; non-reviewer closes require `--reason` |
 
 Minor tasks (`--minor`) continue to bypass review requirements entirely in all modes.
 
@@ -101,7 +101,7 @@ The following wording changes ship across docs, inline help, and agent instructi
 - New: "you cannot review your own implementation, but you can close after an independent review has been recorded"
 
 - Old: "a different closing session is required"
-- New: "an independent review is required; the close may be delegated to any involved session"
+- New: "an independent review is required; the close may be delegated to any session"
 
 ## Rollout
 
@@ -136,7 +136,7 @@ Do **not** hand-delete rows from `issue_reviews`, `closed_by_session`, or relate
 If your project ran td prior to Step 5 without setting any flag, it was resolving to `balanced` via the legacy `balanced_review_policy` default (`true`). After Step 5, that same project resolves to `delegated`. The practical differences:
 
 - **Reviewer eligibility broadens**: any session without implementation history may review (balanced also allowed the creator via the creator-exception path, which delegated preserves via the "no implementation history" rule).
-- **Close eligibility is now split from review eligibility**: once an independent approval is recorded, any involved session (creator, implementer, review-requester, reviewer-of-record) may close. Previously only a non-implementer session could close in the same step as approving.
+- **Close eligibility is now split from review eligibility**: once an independent approval is recorded, any session may close. Previously only a non-implementer session could close in the same step as approving.
 - **`td reviewable` output splits**: issues with an active recorded approval no longer appear under "awaiting review" — pass `--include-approved` to also see the "ready to close" bucket.
 - **`td approve --record-only`** is the new way to record an approval without closing; it is delegated-only.
 

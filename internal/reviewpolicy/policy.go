@@ -85,7 +85,7 @@ const (
 	ReasonPriorInvolvement        = "you were involved with this issue (created, started, or previously worked on)"
 	ReasonIssueNotInReview        = "issue is not in review"
 	ReasonNoActiveReview          = "no active approval review exists yet for this issue"
-	ReasonNotAllowedCloser        = "you are not an allowed closer for this issue (must be creator, implementer, reviewer, or review-requester)"
+	ReasonNotAllowedCloser        = "no active independent approval review exists for this issue"
 	ReasonIssueNotFound           = "issue not found"
 )
 
@@ -217,9 +217,9 @@ func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility 
 }
 
 // CloseEligibilityInput is the full set of facts the policy layer needs to
-// decide whether a session may close an issue. The four "SessionIs*" role
-// booleans correspond to the four allowed closer roles in the plan:
-// creator, implementer, review-requester, reviewer-of-record.
+// decide whether a session may close an issue. In delegated mode, the active
+// approval record is the safety gate; the caller's role is audit metadata,
+// not a close permission.
 type CloseEligibilityInput struct {
 	Mode                      Mode
 	Issue                     *models.Issue
@@ -312,16 +312,12 @@ func evaluateCloseStrictBalanced(in CloseEligibilityInput) CloseEligibility {
 // Batch 1b treats this as defining the predicate, not activating it — no
 // caller routes through delegated mode yet.
 func evaluateCloseDelegated(in CloseEligibilityInput) CloseEligibility {
-	// Case 1: issue is in_review with an active approval review. Any of the
-	// four allowed roles may close.
+	// Case 1: issue is in_review with an active approval review. Any session
+	// may close because reviewer independence was already enforced when the
+	// approval was recorded. If the closer differs from the reviewer, callers
+	// require --reason and stamp closed_by_session for audit.
 	if in.Issue.Status == models.StatusInReview && in.HasActiveApproval {
-		if in.SessionIsCreator || in.SessionIsImplementer ||
-			in.SessionIsReviewerOfRecord || in.SessionIsReviewRequester {
-			return CloseEligibility{Allowed: true}
-		}
-		return CloseEligibility{
-			RejectionMessage: fmt.Sprintf("cannot close: %s (%s)", ReasonNotAllowedCloser, in.Issue.ID),
-		}
+		return CloseEligibility{Allowed: true}
 	}
 
 	// Case 2: issue is in_review without an active approval. This is the

@@ -111,20 +111,18 @@ This is simpler and better aligned with the real safety goal than the current "n
 For non-minor issues, a session may close an issue if either:
 
 - it is an eligible reviewer closing directly in the same action, or
-- the issue already has an active qualifying approval review and the closing session has legitimate involvement with the issue
+- the issue already has an active qualifying approval review
 
-For the first rollout, "legitimate involvement" should be defined by explicit issue roles, not inferred from `issue_session_history`.
+The active independent approval review is the close gate. The closer's session is still important audit metadata via `closed_by_session`, but it is not a permission predicate once the approval exists.
 
-Allowed closers should be one of:
+Earlier drafts considered limiting delegated close to explicit issue roles:
 
 - creator session
 - implementer session
 - review-requesting session
 - reviewer of record
 
-This allows orchestrators and implementers to finish work after review, while avoiding arbitrary unrelated sessions closing reviewed issues.
-
-**Orchestrator closer gap**: if an orchestrator neither created, implemented, reviewed, nor directly submitted the issue for review (common when the orchestrator delegates every step to sub-agents), none of the four roles match and the close will be rejected. The first-pass answer is that the orchestrator must be the session that ran `td review <id>` — i.e. it owns the `review_requested_by_session` slot even when a sub-agent produced the work. Document this requirement explicitly in the orchestrator workflow; do not silently fall back to `issue_session_history`.
+Implementation feedback showed that role-based close still forced orchestrators into brittle session ownership patterns. The final policy should allow any session to close after the independent approval, requiring `--reason` when the closer differs from the reviewer-of-record.
 
 The plan should not use `issue_session_history` as the proxy for orchestrator involvement in the first pass because that table currently records only a narrow action set and will miss sessions that coordinated work through logs, handoffs, or work-session metadata.
 
@@ -353,7 +351,8 @@ Extend approve to support three explicit paths:
 
 3. `close using recorded approval`
    - issue already has an active approval review
-   - current session is an allowed closer
+   - any current session may close
+   - if current session is not the reviewer-of-record, `--reason` is required
    - td sets `closed_by_session` and `closed_at`
 
 Recommended guardrails:
@@ -441,7 +440,7 @@ Update modal/detail rendering so users can see:
 
 - who reviewed
 - whether the review is still fresh
-- who is allowed to close
+- whether an active approval makes the issue ready to close
 
 ## Serve / HTTP API Changes
 
@@ -487,7 +486,7 @@ Add DB helpers for:
 - list review history for an issue
 - fetch active approval review
 - supersede stale reviews
-- determine whether a session is an allowed closer
+- determine whether a recorded approval makes the issue ready to close
 
 ### Schema consumers and sync rollout checklist
 
@@ -617,7 +616,7 @@ to verify:
 - reviewable filtering
 - ready-to-close filtering
 - implementation-history checks still block self-review
-- involved closers are allowed only when approval review exists
+- any closer is allowed only when approval review exists
 
 ### Monitor tests
 

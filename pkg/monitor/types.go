@@ -246,10 +246,9 @@ const (
 	CategoryBlocked       TaskListCategory = "BLOCKED"
 	CategoryClosed        TaskListCategory = "CLOSED"
 	// CategoryReadyToClose is the delegated-mode-only bucket for in_review
-	// issues that already carry an active approval and the current session is
-	// an allowed closer (creator, implementer, reviewer-of-record, or
-	// review-requester). Step 3 split: under strict/balanced this stays empty
-	// because those modes don't have the record-only/close-after-review flow.
+	// issues that already carry an active approval. Step 3 split: under
+	// strict/balanced this stays empty because those modes don't have the
+	// record-only/close-after-review flow.
 	CategoryReadyToClose TaskListCategory = "READY_TO_CLOSE"
 	// CategoryPendingOther is the non-empty counterpart to CategoryPendingReview
 	// under delegated mode: an in_review issue where the current session has
@@ -282,9 +281,8 @@ type TaskListData struct {
 	InProgress    []models.Issue // in_progress, not rejected
 	Ready         []models.Issue // open, not blocked
 	PendingReview []models.Issue // in_review, own implementation
-	// ReadyToClose holds in_review issues that have an active approval and
-	// where the current session is an allowed closer. Only populated under
-	// review_policy_mode=delegated.
+	// ReadyToClose holds in_review issues that have an active approval. Only
+	// populated under review_policy_mode=delegated.
 	ReadyToClose []models.Issue
 	// PendingOther holds in_review issues that are waiting on an independent
 	// reviewer who is not the current session. Populated under all modes so

@@ -410,9 +410,9 @@ history, and it isn't the current implementer).
 
 By default this EXCLUDES issues that already have a recorded approval review —
 those belong in a separate "ready to close" bucket. Pass --include-approved to
-also surface reviewed issues the current session is allowed to close. Allowed
-closers under review_policy_mode=delegated are the creator, implementer,
-review-requester, and reviewer-of-record.
+also surface reviewed issues the current session can close. Under
+review_policy_mode=delegated, any session can close after an independent
+approval exists; non-reviewer closes require --reason.
 
 Examples:
   td reviewable                       # Issues you can review now
@@ -498,30 +498,12 @@ Examples:
 	},
 }
 
-// closerAllowed reports whether sessionID holds one of the four delegated-mode
-// close roles for the issue. This is a lightweight local check used by
-// reviewable / status / context surfaces; the authoritative decision lives
-// in reviewpolicy.EvaluateCloseEligibility.
+// closerAllowed reports whether the issue has the active approval needed for
+// delegated close. This is a lightweight local check used by reviewable /
+// status / context surfaces; the authoritative decision lives in
+// reviewpolicy.EvaluateCloseEligibility.
 func closerAllowed(issue *models.Issue, sessionID string, rev *models.IssueReview) bool {
-	if sessionID == "" {
-		return false
-	}
-	if issue.CreatorSession == sessionID {
-		return true
-	}
-	if issue.ImplementerSession == sessionID {
-		return true
-	}
-	if issue.ReviewRequestedBySession == sessionID {
-		return true
-	}
-	if rev != nil && rev.ReviewerSession == sessionID {
-		return true
-	}
-	if issue.ReviewerSession == sessionID {
-		return true
-	}
-	return false
+	return sessionID != "" && issue != nil && rev != nil
 }
 
 var blockedListCmd = &cobra.Command{
