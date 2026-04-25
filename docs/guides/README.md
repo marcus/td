@@ -2,7 +2,7 @@
 
 This directory contains legacy and in-repo implementation guides.
 
-The long-term direction is to keep **task workflow guidance** in skills and keep **project-specific architecture/design docs** in `docs/`.
+The long-term direction is to keep **task workflow guidance** in skills, user-facing guides in the Docusaurus site under `website/docs/`, and project-specific architecture/design docs in `docs/`.
 
 ## Where Skills Live
 
@@ -38,6 +38,12 @@ None yet.
 | `docs/guides/deprecated/modal-system-guide.md` | `td-task-management/*` | Not covered (legacy modal architecture reference) |
 
 ## How To Use Skills (Quick Tutorial)
+
+User-facing sync and notes documentation now lives in:
+
+- `website/docs/sync-collaboration.md`
+- `website/docs/notes.md`
+- `website/docs/system-diagnostics.md`
 
 1. Open the skill metadata and instructions:
    - `td-task-management/SKILL.md`

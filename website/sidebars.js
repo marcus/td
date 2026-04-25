@@ -12,6 +12,8 @@ const sidebars = {
         'epics',
         'work-sessions',
         'deferral',
+        'notes',
+        'sync-collaboration',
         'file-tracking',
       ],
     },
@@ -38,6 +40,7 @@ const sidebars = {
       label: 'Reference',
       items: [
         'command-reference',
+        'system-diagnostics',
         'analytics',
       ],
     },
