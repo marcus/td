@@ -10,7 +10,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 **Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
 
-![td](docs/td.png)
+![td](docs/td-logo.png)
 
 ## Table of Contents
 
@@ -172,7 +172,7 @@ td/
 2. Git integration captures snapshots at start/handoff
 3. Session manager auto-rotates context IDs based on terminal/agent identity
 
-See [SPEC.md](./SPEC.md) for detailed schemas and workflows.
+See [SPEC.md](./docs/implemented/SPEC.md) for detailed schemas and workflows.
 
 ## Development
 
@@ -521,12 +521,13 @@ Full documentation is available at [marcus.github.io/td](https://marcus.github.i
 - [Getting Started](https://marcus.github.io/td/docs/intro)
 - [Core Workflow](https://marcus.github.io/td/docs/core-workflow)
 - [AI Agent Integration](https://marcus.github.io/td/docs/ai-integration)
+- [Sync and Collaboration](https://marcus.github.io/td/docs/sync-collaboration)
 - [Command Reference](https://marcus.github.io/td/docs/command-reference)
 
 ## Design Philosophy
 
 - **Minimal** — Does one thing. Not a project management suite.
-- **Local** — SQLite in `.todos/`. No server, no sync, no account.
+- **Local-first** — SQLite in `.todos/` by default, with optional sync when teams need collaboration.
 - **Portable** — Works with any AI tool that can run shell commands.
 - **Opinionated** — Enforces handoffs. That's the point.
 
