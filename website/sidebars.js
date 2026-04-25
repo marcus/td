@@ -13,6 +13,8 @@ const sidebars = {
         'work-sessions',
         'deferral',
         'file-tracking',
+        'notes',
+        'sync-collaboration',
       ],
     },
     {
@@ -39,6 +41,7 @@ const sidebars = {
       items: [
         'command-reference',
         'analytics',
+        'system-diagnostics',
       ],
     },
   ],

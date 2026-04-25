@@ -10,7 +10,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 **Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
 
-![td](docs/td.png)
+![td](website/static/img/td.png)
 
 ## Table of Contents
 
@@ -172,7 +172,7 @@ td/
 2. Git integration captures snapshots at start/handoff
 3. Session manager auto-rotates context IDs based on terminal/agent identity
 
-See [SPEC.md](./SPEC.md) for detailed schemas and workflows.
+See [SPEC.md](./docs/implemented/SPEC.md) for detailed schemas and workflows.
 
 ## Development
 
@@ -477,8 +477,6 @@ Shows current focus, activity log across sessions, and ready tasks. Useful for k
 
 **Statistics Dashboard** — Press `s` to open the stats modal and see key metrics:
 
-![td stats modal](docs/stats-modal.png)
-
 The dashboard displays:
 
 - **Status Breakdown** — Visual bar chart showing task distribution across statuses (open, in_progress, blocked, in_review, closed)
@@ -521,12 +519,14 @@ Full documentation is available at [marcus.github.io/td](https://marcus.github.i
 - [Getting Started](https://marcus.github.io/td/docs/intro)
 - [Core Workflow](https://marcus.github.io/td/docs/core-workflow)
 - [AI Agent Integration](https://marcus.github.io/td/docs/ai-integration)
+- [Notes](https://marcus.github.io/td/docs/notes)
+- [Sync and Collaboration](https://marcus.github.io/td/docs/sync-collaboration)
 - [Command Reference](https://marcus.github.io/td/docs/command-reference)
 
 ## Design Philosophy
 
 - **Minimal** — Does one thing. Not a project management suite.
-- **Local** — SQLite in `.todos/`. No server, no sync, no account.
+- **Local-first** — SQLite in `.todos/` by default, with optional sync when teams need collaboration.
 - **Portable** — Works with any AI tool that can run shell commands.
 - **Opinionated** — Enforces handoffs. That's the point.
 

@@ -2,7 +2,7 @@
 
 This directory contains legacy and in-repo implementation guides.
 
-The long-term direction is to keep **task workflow guidance** in skills and keep **project-specific architecture/design docs** in `docs/`.
+The long-term direction is to keep **task workflow guidance** in skills, **user-facing guides** in the Docusaurus site under `website/docs/`, and **project-specific architecture/design docs** in `docs/`.
 
 ## Where Skills Live
 
@@ -52,5 +52,6 @@ None yet.
 ## Link Policy During Migration
 
 - Active, authoritative workflow guidance should point to skill paths when a skill fully replaces a guide.
+- User-facing notes, sync/collaboration, and system diagnostics guidance should point to `website/docs/notes.md`, `website/docs/sync-collaboration.md`, and `website/docs/system-diagnostics.md`.
 - Historical/spec references should point to `docs/deprecated/guides/` **after** a covered guide is moved there.
 - If a guide is not fully covered, keep links pointed at `docs/guides/`.
