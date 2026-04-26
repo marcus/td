@@ -93,6 +93,8 @@ td approve td-a1b2    # or: td reject td-a1b2 --reason "needs fix"
 
 Because each agent context gets a different session ID, the system prevents the same agent from both implementing and approving a change.
 
+When agents move between machines or shared environments, [Sync and Collaboration](./sync.md) covers the commands for linking a project, inviting teammates, and pulling remote updates.
+
 ### Balanced Review Policy
 
 By default, td uses a **balanced review policy** that makes lead/worker patterns smoother. If your orchestrator session *created* a task but a sub-agent *implemented* it, the orchestrator can approve with a reason:
