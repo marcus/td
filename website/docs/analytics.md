@@ -30,6 +30,8 @@ td stats errors
 
 Shows failed command attempts - useful for debugging agent issues.
 
+For filters and cleanup commands, see [Troubleshooting](./troubleshooting.md#command-error-logs).
+
 ## Monitor Stats
 
 Press `s` in the monitor to view:

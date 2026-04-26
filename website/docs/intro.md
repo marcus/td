@@ -78,6 +78,15 @@ td review td-a1b2
 Issue IDs like `td-a1b2` are generated automatically when you create an issue. Use `td list` to see your current issues and their IDs.
 :::
 
+## Project Memory
+
+Use issues for reviewed work and handoffs. Use [notes](./notes.md) for freeform project memory that should survive across sessions but does not need status, priority, or review.
+
+```bash
+td note add "Release runbook" --content "Test, build, tag, publish."
+td note pin nt-abc123
+```
+
 ## Setting Up with AI Agents
 
 Add this to your `CLAUDE.md`, system prompt, or agent instructions:
@@ -94,4 +103,6 @@ Works with Claude Code, Cursor, Codex, Copilot, and Gemini CLI.
 
 - [Core Workflow](./core-workflow.md) -- Issue lifecycle, logging, handoffs, and reviews in depth
 - [Boards](./boards.md) -- Visual overview of issue status across your project
+- [Sync and Collaboration](./sync.md) -- Share a td project across machines or teammates
+- [Configuration](./configuration.md) -- Config files, feature flags, environment variables
 - [Query Language](./query-language.md) -- Filter and search issues with structured queries
