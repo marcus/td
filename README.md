@@ -23,6 +23,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [Query Language (TDQ)](#query-language-tdq)
 - [Epics](#epics)
 - [Multi-Issue Work Sessions](#multi-issue-work-sessions)
+- [Deferral & Due Dates](#deferral--due-dates)
 - [File Tracking](#file-tracking)
 - [Minor Tasks](#minor-tasks)
 - [Analytics & Stats](#analytics--stats)
@@ -350,6 +351,31 @@ td ws log "Shared token storage"    # Log fans out to all tagged issues
 td ws handoff                       # Capture state for all, end session
 ```
 
+## Deferral & Due Dates
+
+Keep the default backlog focused on work that is actionable now:
+
+```bash
+# Create with scheduling metadata
+td create "Review vendor contract" --defer next-week --due 2026-05-15
+
+# Add or change dates later
+td defer td-a1b2 +7d          # Hide until seven days from now
+td due td-a1b2 friday         # Keep visible, but mark with a deadline
+td defer td-a1b2 --clear      # Make actionable again
+td due td-a1b2 --clear        # Remove the deadline
+
+# Scheduling-aware list filters
+td list                       # Hides future-deferred issues by default
+td list --all                 # Includes all statuses and deferred issues
+td list --deferred            # Only future-deferred issues
+td list --surfacing           # Deferred issues now actionable again
+td list --overdue             # Open issues past their due date
+td list --due-soon            # Issues due within the next 3 days
+```
+
+`defer_until` is a snooze date: future-deferred issues are hidden from `td list` until the date arrives. `due_date` is a deadline: it stays visible and is highlighted when due soon or overdue. Date fields accept `today`, `tomorrow`, weekday names, `next-week`, `next-month`, relative offsets like `+7d`, `+2w`, `+1m`, and exact `YYYY-MM-DD` dates.
+
 ## File Tracking
 
 Know exactly what changed:
@@ -402,8 +428,14 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | See current state                | `td usage`                                       |
 | Compact state (after first read) | `td usage -q`                                    |
 | Create issue                     | `td create "title" --type feature --priority P1` |
+| Create with scheduling           | `td create "title" --defer next-week --due +2w`  |
 | Create minor task                | `td add "title" --minor`                         |
 | List all issues                  | `td list`                                        |
+| List including deferred/closed    | `td list --all`                                  |
+| List deferred issues             | `td list --deferred`                             |
+| List surfacing issues            | `td list --surfacing`                            |
+| List overdue issues              | `td list --overdue`                              |
+| List due-soon issues             | `td list --due-soon`                             |
 | List by status                   | `td list --status in_progress`                   |
 | What should I work on?           | `td next`                                        |
 | Start work                       | `td start <id>`                                  |
@@ -412,6 +444,11 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Log a decision                   | `td log --decision "chose X because Y"`          |
 | Log a blocker                    | `td log --blocker "stuck on X"`                  |
 | View issue details               | `td show <id>`                                   |
+| Defer issue                      | `td defer <id> +7d`                              |
+| Clear deferral                   | `td defer <id> --clear`                          |
+| Set due date                     | `td due <id> friday`                             |
+| Clear due date                   | `td due <id> --clear`                            |
+| Update scheduling                | `td update <id> --defer "" --due 2026-05-15`     |
 | Capture handoff state            | `td handoff <id> --done "..." --remaining "..."` |
 | Submit for review                | `td review <id>`                                 |
 | See reviewable issues            | `td reviewable`                                  |

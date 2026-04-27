@@ -10,10 +10,10 @@ Complete reference for all `td` commands.
 
 | Command | Description |
 |---------|-------------|
-| `td create "title" [flags]` | Create issue. Flags: `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--parent`, `--epic`, `--minor` |
-| `td list [flags]` | List issues. Flags: `--status`, `--type`, `--priority`, `--epic` |
+| `td create "title" [flags]` | Create issue. Flags: `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--parent`, `--epic`, `--minor`, `--defer`, `--due` |
+| `td list [flags]` | List issues. Flags: `--status`, `--type`, `--priority`, `--epic`, `--all`, `--deferred`, `--surfacing`, `--overdue`, `--due-soon` |
 | `td show <id>` | Display full issue details |
-| `td update <id> [flags]` | Update fields. Flags: `--title`, `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--labels` |
+| `td update <id> [flags]` | Update fields. Flags: `--title`, `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--labels`, `--defer`, `--due` |
 | `td delete <id>` | Soft-delete issue |
 | `td restore <id>` | Restore soft-deleted issue |
 
@@ -48,7 +48,7 @@ Date formats: `+7d`, `+2w`, `+1m`, `monday`, `tomorrow`, `next-week`, `next-mont
 
 The `--defer` and `--due` flags are also available on `td create` and `td update`.
 
-**List filters:** `--all` (include deferred), `--deferred`, `--surfacing`, `--overdue`, `--due-soon`
+**List filters:** `--all` (include all statuses and deferred issues), `--deferred` (future-deferred only), `--surfacing` (previously deferred and now actionable), `--overdue`, `--due-soon`
 
 ## Agent-Safe Rich Text Input
 
