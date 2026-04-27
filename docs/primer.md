@@ -39,6 +39,7 @@ Each issue has:
 - **Type** — `bug`, `feature`, `task`, `chore`, or `epic`
 - **Priority** — `P0` (critical) through `P4` (none), defaulting to `P2`
 - **Labels** — freeform tags for categorization
+- **Deferral and due dates** — optional scheduling fields for hiding future work and tracking deadlines
 
 ### Issue Lifecycle
 
@@ -64,6 +65,26 @@ An important rule: the session that implemented an issue cannot approve it. A di
 A session represents a single agent or terminal context. Sessions are created automatically — each terminal window or AI agent context gets a unique ID like `claude-7f3a`.
 
 Sessions matter because td tracks *who* did *what*. The implementer session, creator session, and reviewer session are all recorded on each issue. This is what enforces the rule that you can't review your own work.
+
+### Deferral and Due Dates
+
+td has two scheduling fields because "not actionable yet" and "has a deadline" are different concepts:
+
+- `defer_until` is a snooze date. It hides an issue from the default `td list` output while the date is in the future, then the issue resurfaces automatically when the date arrives.
+- `due_date` is a deadline. It does not hide the issue; it marks when the work is expected to be done so overdue and due-soon filters can find it.
+
+You can set either date while creating work, update dates later, or use dedicated commands:
+
+```bash
+td create "Renew certificate" --defer next-week --due 2026-05-01
+td update td-a1b2 --defer +3d --due friday
+td defer td-a1b2 tomorrow
+td due td-a1b2 +1w
+```
+
+Date values can be exact dates (`2026-05-01`), relative offsets (`+7d`, `+2w`, `+1m`), weekdays (`monday`, `friday`), or keywords (`today`, `tomorrow`, `next-week`, `next-month`). Passing an empty value to `td update --defer ""` or `td update --due ""` clears that field; `td defer --clear` and `td due --clear` do the same through the dedicated commands.
+
+By default, `td list` shows actionable non-closed work and excludes future-deferred issues. Use `td list --all` to include closed and deferred issues, `td list --deferred` to inspect snoozed work, `td list --surfacing` for re-deferred tasks whose deferral date has arrived, `td list --overdue` for missed deadlines, and `td list --due-soon` for tasks due within 3 days.
 
 ### Epics
 

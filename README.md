@@ -8,7 +8,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 `td` is a lightweight CLI for tracking tasks across AI coding sessions. It provides structured handoffs (done/remaining/decisions/uncertain) so new sessions continue from accurate state instead of guessing. Session-based review workflows prevent "works on my context" bugs. Works with Claude Code, Cursor, Copilot, and any AI that runs shell commands.
 
-**Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
+**Key Features**: Query-based boards, dependency graphs, epic tracking, deferral and due dates, powerful query language (TDQ), session analytics, and state machine workflows.
 
 ![td](docs/td.png)
 
@@ -25,6 +25,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [Multi-Issue Work Sessions](#multi-issue-work-sessions)
 - [File Tracking](#file-tracking)
 - [Minor Tasks](#minor-tasks)
+- [Deferral & Due Dates](#deferral--due-dates)
 - [Analytics & Stats](#analytics--stats)
 - [Full Command Reference](#full-command-reference)
 - [Live Monitor](#live-monitor)
@@ -376,6 +377,31 @@ Minor tasks bypass session-based review—you can approve your own work. Use spa
 
 For non-minor tasks, td now supports a balanced review policy (on by default): the creator can approve only if a different session implemented the issue, and the approval must include a reason. Implementers still cannot approve their own implementation.
 
+## Deferral & Due Dates
+
+> Full documentation: [Deferral & Due Dates](https://marcus.github.io/td/docs/deferral)
+
+Use deferral dates to hide work that is not actionable yet, and due dates to mark deadlines that should stay visible.
+
+```bash
+# Snooze work until it is actionable
+td defer td-a1b2 +7d
+td defer td-a1b2 next-week
+td defer td-a1b2 --clear
+
+# Track deadlines
+td due td-a1b2 friday
+td due td-a1b2 2026-04-01
+td due td-a1b2 --clear
+
+# Set dates while creating or updating work
+td create "Write release notes" --defer tomorrow --due friday
+td update td-a1b2 --defer +3d --due 2026-04-01
+td update td-a1b2 --defer "" --due ""   # Clear both dates
+```
+
+Default `td list` output hides tasks deferred into the future, so your backlog stays focused on work that can be done now. Use `td list --all` to include closed and deferred issues, `td list --deferred` for snoozed work, `td list --surfacing` for re-deferred tasks whose deferral date has arrived, `td list --overdue` for missed deadlines, and `td list --due-soon` for tasks due within 3 days.
+
 ## Analytics & Stats
 
 Track usage patterns and system health:
@@ -402,9 +428,15 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | See current state                | `td usage`                                       |
 | Compact state (after first read) | `td usage -q`                                    |
 | Create issue                     | `td create "title" --type feature --priority P1` |
+| Create with dates                | `td create "title" --defer tomorrow --due friday` |
 | Create minor task                | `td add "title" --minor`                         |
-| List all issues                  | `td list`                                        |
+| List actionable issues           | `td list`                                        |
 | List by status                   | `td list --status in_progress`                   |
+| Include closed/deferred issues   | `td list --all`                                  |
+| List deferred issues             | `td list --deferred`                             |
+| List surfacing issues            | `td list --surfacing`                            |
+| List overdue issues              | `td list --overdue`                              |
+| List issues due soon             | `td list --due-soon`                             |
 | What should I work on?           | `td next`                                        |
 | Start work                       | `td start <id>`                                  |
 | Revert to open                   | `td unstart <id>`                                |
@@ -412,6 +444,11 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Log a decision                   | `td log --decision "chose X because Y"`          |
 | Log a blocker                    | `td log --blocker "stuck on X"`                  |
 | View issue details               | `td show <id>`                                   |
+| Update dates                     | `td update <id> --defer +3d --due 2026-04-01`    |
+| Defer issue                      | `td defer <id> next-week`                        |
+| Clear deferral                   | `td defer <id> --clear`                          |
+| Set due date                     | `td due <id> friday`                             |
+| Clear due date                   | `td due <id> --clear`                            |
 | Capture handoff state            | `td handoff <id> --done "..." --remaining "..."` |
 | Submit for review                | `td review <id>`                                 |
 | See reviewable issues            | `td reviewable`                                  |

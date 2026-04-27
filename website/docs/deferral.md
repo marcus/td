@@ -83,19 +83,19 @@ By default, `td list` **hides deferred tasks** — tasks whose `defer_until` is 
 
 ```bash
 td list                  # Actionable tasks only (deferred hidden)
-td list --all            # Everything, including deferred
+td list --all            # Everything, including closed and deferred
 td list --deferred       # Only deferred tasks
-td list --surfacing      # Tasks whose deferral expires today
+td list --surfacing      # Re-deferred tasks whose deferral date has arrived
 td list --overdue        # Tasks past their due date
 td list --due-soon       # Tasks due within 3 days
 ```
 
-These filters are mutually exclusive — use one at a time.
+Use one temporal filter at a time. If more than one is combined, td applies the first matching filter in command precedence.
 
 ## Monitor Display
 
-In `td monitor`, the task detail modal shows defer and due dates when set:
+In `td monitor`, issue detail views show defer and due dates when set:
 
-- **Deferred until** — the date with relative context (e.g., "2026-02-21 (in 7 days)")
-- **Due date** — with warning styling for due-soon and error styling for overdue
+- **Deferred** — the date with relative context (e.g., "2026-02-21 (in 7 days)")
+- **Due** — with warning styling for due-soon and error styling for overdue
 - **Defer count** — shown when greater than 0, indicating how many times the task has been re-deferred
