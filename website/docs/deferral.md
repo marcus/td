@@ -83,9 +83,9 @@ By default, `td list` **hides deferred tasks** — tasks whose `defer_until` is 
 
 ```bash
 td list                  # Actionable tasks only (deferred hidden)
-td list --all            # Everything, including deferred
+td list --all            # All statuses, including deferred and closed
 td list --deferred       # Only deferred tasks
-td list --surfacing      # Tasks whose deferral expires today
+td list --surfacing      # Previously deferred tasks now actionable again
 td list --overdue        # Tasks past their due date
 td list --due-soon       # Tasks due within 3 days
 ```
