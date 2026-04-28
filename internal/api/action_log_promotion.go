@@ -238,4 +238,3 @@ func shouldPromote(method string) bool {
 	}
 	return true
 }
-
