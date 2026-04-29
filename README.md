@@ -215,6 +215,9 @@ make fmt
 Releases are automated via GoReleaser. Pushing a version tag triggers GitHub Actions to build binaries and update the Homebrew formula.
 
 ```bash
+# Preview release notes from commits since the nearest semver tag
+td release-notes --version v0.2.0 --date 2026-04-29
+
 # Create and push an annotated tag (triggers automated release)
 make release VERSION=v0.2.0
 
@@ -422,6 +425,7 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Undo last action                 | `td undo`                                        |
 | New named session                | `td session --new "feature-work"`                |
 | Live dashboard                   | `td monitor`                                     |
+| Draft release notes              | `td release-notes --version vX.Y.Z --date YYYY-MM-DD` |
 
 ### Boards
 
