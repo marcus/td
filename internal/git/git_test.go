@@ -469,3 +469,108 @@ func TestStateBranchName(t *testing.T) {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
 	}
 }
+
+func TestResolveRefInRepoDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	sha, err := ResolveRef(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef failed: %v", err)
+	}
+	if len(sha) != 40 {
+		t.Fatalf("expected full SHA, got %q", sha)
+	}
+
+	if _, err := ResolveRef(dir, "missing-ref"); err == nil {
+		t.Fatal("expected missing ref error")
+	}
+}
+
+func TestNearestSemverTag(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := runCmd(dir, "git", "tag", "v1.0.0"); err != nil {
+		t.Fatalf("Failed to tag v1.0.0: %v", err)
+	}
+
+	commitFile(t, dir, "one.txt", "one", "feat: first change")
+	if err := runCmd(dir, "git", "tag", "not-a-version"); err != nil {
+		t.Fatalf("Failed to tag non-semver: %v", err)
+	}
+
+	commitFile(t, dir, "two.txt", "two", "fix: second change")
+	if err := runCmd(dir, "git", "tag", "v1.1.0"); err != nil {
+		t.Fatalf("Failed to tag v1.1.0: %v", err)
+	}
+
+	commitFile(t, dir, "three.txt", "three", "docs: third change")
+
+	tag, err := NearestSemverTag(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("NearestSemverTag failed: %v", err)
+	}
+	if tag != "v1.1.0" {
+		t.Fatalf("expected v1.1.0, got %q", tag)
+	}
+}
+
+func TestNearestSemverTagNotFound(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := runCmd(dir, "git", "tag", "latest"); err != nil {
+		t.Fatalf("Failed to tag latest: %v", err)
+	}
+
+	if _, err := NearestSemverTag(dir, "HEAD"); err == nil {
+		t.Fatal("expected no reachable semver tag error")
+	}
+}
+
+func TestListCommitsOldestFirstWithBody(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := runCmd(dir, "git", "tag", "v1.0.0"); err != nil {
+		t.Fatalf("Failed to tag v1.0.0: %v", err)
+	}
+
+	commitFile(t, dir, "feature.txt", "feature", "feat: add feature")
+	if err := os.WriteFile(filepath.Join(dir, "bug.txt"), []byte("bug"), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", "fix: repair bug", "-m", "Body details"); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+
+	commits, err := ListCommits(dir, "v1.0.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommits failed: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+	if commits[0].Subject != "feat: add feature" {
+		t.Fatalf("expected oldest commit first, got %q", commits[0].Subject)
+	}
+	if commits[1].Subject != "fix: repair bug" {
+		t.Fatalf("expected second commit subject, got %q", commits[1].Subject)
+	}
+	if commits[1].Body != "Body details" {
+		t.Fatalf("expected body details, got %q", commits[1].Body)
+	}
+	if commits[0].SHA == "" || commits[0].ShortSHA == "" || commits[0].Date == "" {
+		t.Fatalf("expected commit metadata: %#v", commits[0])
+	}
+}
+
+func commitFile(t *testing.T, dir, name, content, subject string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", subject); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+}
