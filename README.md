@@ -189,9 +189,20 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks
 make install-hooks
 ```
+
+`make install-hooks` installs:
+
+- `pre-commit`: runs gofmt, go vet, and go build against staged Go changes.
+- `commit-msg`: normalizes the first line of regular commits to
+  Conventional Commit format while preserving the body and trailers.
+
+Commit subjects should use `type: subject` or `type(scope): subject`.
+Allowed types are `feat`, `fix`, `docs`, `test`, `refactor`, `chore`,
+`ci`, `build`, `perf`, `style`, and `td`. Merge, revert, fixup, and squash
+messages are passed through unchanged.
 
 ## Tests & Quality Checks
 
@@ -208,6 +219,9 @@ make test
 make fmt
 
 # No linter configured yet — clean gofmt is current quality bar
+
+# Verify the commit-msg hook
+scripts/test-commit-msg-hook.sh
 ```
 
 ## Release
