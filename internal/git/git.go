@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -18,6 +19,15 @@ type State struct {
 	Modified   int
 	Untracked  int
 	DirtyFiles int
+}
+
+// Commit represents a commit selected from local git history.
+type Commit struct {
+	SHA      string
+	ShortSHA string
+	Subject  string
+	Body     string
+	Date     string
 }
 
 // GetState returns the current git state
@@ -192,8 +202,107 @@ func GetRootDir() (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
+// ResolveRef resolves ref to a full commit SHA in repoDir.
+func ResolveRef(repoDir, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", fmt.Errorf("ref is required")
+	}
+	output, err := runGitInDir(repoDir, "rev-parse", "--verify", ref+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("invalid git ref %q: %w", ref, err)
+	}
+	return strings.TrimSpace(output), nil
+}
+
+// NearestSemverTag returns the nearest reachable semver tag from ref.
+func NearestSemverTag(repoDir, ref string) (string, error) {
+	toSHA, err := ResolveRef(repoDir, ref)
+	if err != nil {
+		return "", err
+	}
+
+	output, err := runGitInDir(repoDir, "tag", "--merged", toSHA, "--list")
+	if err != nil {
+		return "", err
+	}
+
+	tags := strings.Fields(output)
+	var bestTag string
+	bestDistance := -1
+	for _, tag := range tags {
+		if !isSemverTag(tag) {
+			continue
+		}
+		countOutput, err := runGitInDir(repoDir, "rev-list", "--count", tag+".."+toSHA)
+		if err != nil {
+			continue
+		}
+		distance, err := strconv.Atoi(strings.TrimSpace(countOutput))
+		if err != nil {
+			continue
+		}
+		if bestTag == "" || distance < bestDistance || distance == bestDistance && tag > bestTag {
+			bestTag = tag
+			bestDistance = distance
+		}
+	}
+	if bestTag == "" {
+		return "", fmt.Errorf("no reachable semver tag found from %s", ref)
+	}
+	return bestTag, nil
+}
+
+// ListCommits returns commits in from..to in oldest-first order.
+func ListCommits(repoDir, from, to string) ([]Commit, error) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("from and to refs are required")
+	}
+
+	format := "%H%x1f%h%x1f%ad%x1f%s%x1f%b%x1e"
+	output, err := runGitInDir(repoDir, "log", "--reverse", "--date=short", "--format="+format, from+".."+to)
+	if err != nil {
+		return nil, err
+	}
+
+	var commits []Commit
+	for _, record := range strings.Split(output, "\x1e") {
+		record = strings.Trim(record, "\n")
+		if strings.TrimSpace(record) == "" {
+			continue
+		}
+		parts := strings.SplitN(record, "\x1f", 5)
+		if len(parts) != 5 {
+			continue
+		}
+		commits = append(commits, Commit{
+			SHA:      strings.TrimSpace(parts[0]),
+			ShortSHA: strings.TrimSpace(parts[1]),
+			Date:     strings.TrimSpace(parts[2]),
+			Subject:  strings.TrimSpace(parts[3]),
+			Body:     strings.TrimSpace(parts[4]),
+		})
+	}
+	return commits, nil
+}
+
+func isSemverTag(tag string) bool {
+	return semverTagPattern.MatchString(tag)
+}
+
+var semverTagPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
+
 func runGit(args ...string) (string, error) {
+	return runGitInDir("", args...)
+}
+
+func runGitInDir(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

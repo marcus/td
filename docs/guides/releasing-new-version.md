@@ -33,22 +33,25 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Draft and Review Release Notes
 
-Add entry at the top of `CHANGELOG.md`:
+Preview deterministic markdown from the local commit range. By default,
+`td release-notes` uses commits from the nearest reachable semver tag through
+`HEAD`.
 
-```markdown
-## [vX.Y.Z] - YYYY-MM-DD
-
-### Features
-- New feature description
-
-### Bug Fixes
-- Fix description
-
-### Documentation
-- Doc change description
+```bash
+td release-notes --version vX.Y.Z --date YYYY-MM-DD
 ```
+
+For an explicit range:
+
+```bash
+td release-notes --from vX.Y.W --to HEAD --version vX.Y.Z --date YYYY-MM-DD
+```
+
+Review the output, adjust wording as needed, then add the entry at the top of
+`CHANGELOG.md`. The command intentionally uses local git history only; it does
+not call GitHub or generate AI-authored prose.
 
 Commit the changelog:
 ```bash
@@ -134,8 +137,9 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Draft release notes and update changelog
+td release-notes --version vX.Y.Z --date YYYY-MM-DD
+# Review output, edit CHANGELOG.md, add entry at top
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,7 +158,8 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
-- [ ] CHANGELOG.md updated with new version entry
+- [ ] Release notes previewed with `td release-notes`
+- [ ] CHANGELOG.md updated with reviewed release-note entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
