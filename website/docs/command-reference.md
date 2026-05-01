@@ -156,6 +156,7 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | `td init` | Initialize project |
 | `td monitor` | Live TUI dashboard |
 | `td undo` | Undo last action |
+| `td changelog [flags]` | Generate markdown changelog from git commits. Flags: `--from`, `--to`, `--version`, `--date` |
 | `td version` | Show version |
 | `td export` | Export database |
 | `td import` | Import issues |

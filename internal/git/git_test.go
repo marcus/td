@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,30 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func commitFile(t *testing.T, dir, file, content, subject string, body ...string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", "."); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+	args := []string{"commit", "-m", subject}
+	for _, part := range body {
+		args = append(args, "-m", part)
+	}
+	if err := runCmd(dir, "git", args...); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to read HEAD: %v", err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +492,146 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestNearestReachableSemverTagDetection(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := runCmd(dir, "git", "tag", "release-candidate"); err != nil {
+		t.Fatalf("Failed to tag non-semver: %v", err)
+	}
+	if err := runCmd(dir, "git", "tag", "v1.2.3"); err != nil {
+		t.Fatalf("Failed to tag semver: %v", err)
+	}
+	commitFile(t, dir, "feature.txt", "feature", "feat: add feature")
+
+	tag, err := NearestReachableSemverTag("HEAD")
+	if err != nil {
+		t.Fatalf("NearestReachableSemverTag failed: %v", err)
+	}
+	if tag != "v1.2.3" {
+		t.Fatalf("got %q, want v1.2.3", tag)
+	}
+}
+
+func TestNearestReachableSemverTagBehavior(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := runCmd(dir, "git", "tag", "v1.0.0"); err != nil {
+		t.Fatalf("Failed to tag v1.0.0: %v", err)
+	}
+	commitFile(t, dir, "one.txt", "one", "feat: one")
+	if err := runCmd(dir, "git", "tag", "v1.1.0"); err != nil {
+		t.Fatalf("Failed to tag v1.1.0: %v", err)
+	}
+	commitFile(t, dir, "two.txt", "two", "feat: two")
+
+	tag, err := NearestReachableSemverTag("HEAD")
+	if err != nil {
+		t.Fatalf("NearestReachableSemverTag failed: %v", err)
+	}
+	if tag != "v1.1.0" {
+		t.Fatalf("got %q, want v1.1.0", tag)
+	}
+}
+
+func TestListCommitsOrder(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := runCmd(dir, "git", "tag", "v1.0.0"); err != nil {
+		t.Fatalf("Failed to tag: %v", err)
+	}
+	commitFile(t, dir, "one.txt", "one", "feat: first")
+	commitFile(t, dir, "two.txt", "two", "fix: second")
+
+	commits, err := ListCommits("v1.0.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommits failed: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("got %d commits, want 2", len(commits))
+	}
+	if commits[0].Subject != "feat: first" || commits[1].Subject != "fix: second" {
+		t.Fatalf("commits out of order: %#v", commits)
+	}
+}
+
+func TestListCommitsParsesSubjectsBodiesAndDates(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if err := runCmd(dir, "git", "tag", "v1.0.0"); err != nil {
+		t.Fatalf("Failed to tag: %v", err)
+	}
+	sha := commitFile(t, dir, "body.txt", "body", "feat: parse body", "Line one\n\nLine two")
+
+	commits, err := ListCommits("v1.0.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommits failed: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(commits))
+	}
+	if commits[0].SHA != sha {
+		t.Fatalf("SHA = %q, want %q", commits[0].SHA, sha)
+	}
+	if commits[0].Subject != "feat: parse body" {
+		t.Fatalf("Subject = %q", commits[0].Subject)
+	}
+	if commits[0].Body != "Line one\n\nLine two" {
+		t.Fatalf("Body = %q", commits[0].Body)
+	}
+	if commits[0].Date.IsZero() {
+		t.Fatal("Date should be parsed")
+	}
+}
+
+func TestResolveRefInvalidRef(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if _, err := ResolveRef("not-a-real-ref"); err == nil {
+		t.Fatal("expected invalid ref error")
+	}
+}
+
+func TestListCommitsEmptyRange(t *testing.T) {
+	dir := initTestRepo(t)
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Failed to chdir: %v", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	commits, err := ListCommits("HEAD", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommits failed: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("got %d commits, want 0", len(commits))
 	}
 }

@@ -33,9 +33,21 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Preview or Update Release Notes
 
-Add entry at the top of `CHANGELOG.md`:
+Generate markdown from commits since the latest reachable semver tag:
+
+```bash
+td changelog --version vX.Y.Z --date YYYY-MM-DD
+```
+
+To inspect a specific range:
+
+```bash
+td changelog --from vA.B.C --to HEAD --version vX.Y.Z --date YYYY-MM-DD
+```
+
+If maintaining `CHANGELOG.md`, add the generated entry at the top:
 
 ```markdown
 ## [vX.Y.Z] - YYYY-MM-DD
@@ -134,8 +146,9 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Preview/update release notes
+td changelog --version vX.Y.Z --date YYYY-MM-DD
+# If maintaining CHANGELOG.md, add the generated entry at top
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,8 +167,8 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
-- [ ] CHANGELOG.md updated with new version entry
-- [ ] Changelog committed to git
+- [ ] Release notes previewed with `td changelog`
+- [ ] CHANGELOG.md updated and committed if maintained
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
 - [ ] Tag created with `-a` (annotated)
