@@ -161,6 +161,7 @@ td/
 │   ├── models/      # Issue, Log, Handoff, WorkSession domain types
 │   ├── session/     # Session ID management (.todos/session file)
 │   ├── git/         # Git state tracking (SHA, branch, dirty files)
+│   ├── changelog/   # Markdown release-note rendering from git commits
 │   ├── output/      # Formatters for terminal output
 │   └── tui/         # Bubble Tea monitor dashboard
 └── .todos/          # Local SQLite database + session state
@@ -422,6 +423,7 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Undo last action                 | `td undo`                                        |
 | New named session                | `td session --new "feature-work"`                |
 | Live dashboard                   | `td monitor`                                     |
+| Generate changelog               | `td changelog --from v0.4.0 --to HEAD`           |
 
 ### Boards
 
