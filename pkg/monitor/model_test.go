@@ -4312,10 +4312,10 @@ func TestSwimlaneLinesFromOffset(t *testing.T) {
 	}{
 		// Note: at offset 0, currentCategory starts as zero-value, so the first
 		// category always triggers a header (matching rendering behavior).
-		{"all from start", 0, 5, 10},      // header(ready)+2items + sep+header(blocked)+2items + sep+header(closed)+1item = 1+2+2+2+2+1=10
-		{"single category", 0, 2, 3},      // header(ready) + 2 items = 3
-		{"across boundary", 1, 4, 5},      // item2 + sep+header(blocked) + item3 + item4 = 5
-		{"from second cat", 2, 5, 6},      // header(blocked)+item3+item4 + sep+header(closed)+item5 = 1+2+2+1=6
+		{"all from start", 0, 5, 10}, // header(ready)+2items + sep+header(blocked)+2items + sep+header(closed)+1item = 1+2+2+2+2+1=10
+		{"single category", 0, 2, 3}, // header(ready) + 2 items = 3
+		{"across boundary", 1, 4, 5}, // item2 + sep+header(blocked) + item3 + item4 = 5
+		{"from second cat", 2, 5, 6}, // header(blocked)+item3+item4 + sep+header(closed)+item5 = 1+2+2+1=6
 		{"empty range", 3, 3, 0},
 		{"single item last cat", 4, 5, 2}, // header(closed) + item5 = 2
 		{"single item same cat", 1, 2, 1}, // just item2, same category as item1 before it
