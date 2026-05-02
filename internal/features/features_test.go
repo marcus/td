@@ -7,7 +7,21 @@ import (
 	"github.com/marcus/td/internal/reviewpolicy"
 )
 
+func clearFeatureEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("TD_DISABLE_EXPERIMENTAL", "")
+	t.Setenv("TD_ENABLE_FEATURE", "")
+	t.Setenv("TD_ENABLE_FEATURES", "")
+	t.Setenv("TD_DISABLE_FEATURE", "")
+	t.Setenv("TD_DISABLE_FEATURES", "")
+	for _, feature := range ListAll() {
+		t.Setenv("TD_FEATURE_"+normalizeForEnvKey(feature.Name), "")
+	}
+	t.Setenv("TD_FEATURE_"+normalizeForEnvKey(ReviewPolicyMode), "")
+}
+
 func TestKnownFeatureDefaults(t *testing.T) {
+	clearFeatureEnv(t)
 	for _, feature := range ListAll() {
 		if IsEnabledForProcess(feature.Name) != feature.Default {
 			t.Fatalf("default mismatch for %s", feature.Name)
@@ -16,6 +30,7 @@ func TestKnownFeatureDefaults(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
+	clearFeatureEnv(t)
 	t.Setenv("TD_FEATURE_SYNC_CLI", "true")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_FEATURE_SYNC_CLI=true should enable sync_cli")
@@ -28,6 +43,7 @@ func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
+	clearFeatureEnv(t)
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli,sync_monitor_prompt")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_ENABLE_FEATURE should enable sync_cli")
@@ -43,6 +59,7 @@ func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
 }
 
 func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
+	clearFeatureEnv(t)
 	dir := t.TempDir()
 
 	if err := config.SetFeatureFlag(dir, SyncCLI.Name, true); err != nil {
@@ -61,6 +78,7 @@ func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
 }
 
 func TestDisableExperimentalKillSwitch(t *testing.T) {
+	clearFeatureEnv(t)
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("expected sync_cli enabled before kill-switch")
@@ -80,6 +98,7 @@ func TestResolveReviewPolicyMode_DefaultsToDelegated(t *testing.T) {
 	// balanced_review_policy set), the resolver returns ModeDelegated.
 	// BalancedReviewPolicy.Default is now false and the legacy flag is
 	// only honored when explicitly opted into.
+	clearFeatureEnv(t)
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 	mode, err := ResolveReviewPolicyMode(dir)
@@ -92,6 +111,7 @@ func TestResolveReviewPolicyMode_DefaultsToDelegated(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_EnvOverride(t *testing.T) {
+	clearFeatureEnv(t)
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -111,6 +131,7 @@ func TestResolveReviewPolicyMode_EnvOverride(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_ConfigValue(t *testing.T) {
+	clearFeatureEnv(t)
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -128,6 +149,7 @@ func TestResolveReviewPolicyMode_ConfigValue(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_LegacyBalancedMapping(t *testing.T) {
+	clearFeatureEnv(t)
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -158,6 +180,7 @@ func TestResolveReviewPolicyMode_LegacyBalancedMapping(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_ConflictingFlags(t *testing.T) {
+	clearFeatureEnv(t)
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
