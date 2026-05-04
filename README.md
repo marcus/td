@@ -189,8 +189,30 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks
 make install-hooks
+```
+
+`make install-hooks` installs:
+
+- `pre-commit`: runs gofmt on staged Go files, `go vet ./...`, and `go build ./...`
+- `commit-msg`: normalizes regular commit subjects to Conventional Commit format
+
+Accepted regular commit subjects use one of these forms:
+
+```text
+type: subject
+type(scope): subject
+type!: subject
+type(scope)!: subject
+```
+
+Allowed types are `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`, `build`, `perf`, `style`, and `td`. The hook lowercases the type and trims/collapses whitespace in the subject line while preserving the body and trailers. Merge, Revert, fixup!, and squash! commits pass through unchanged.
+
+Run the hook tests with:
+
+```bash
+bash scripts/test-commit-msg-hook.sh
 ```
 
 ## Tests & Quality Checks
