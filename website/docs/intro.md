@@ -94,4 +94,6 @@ Works with Claude Code, Cursor, Codex, Copilot, and Gemini CLI.
 
 - [Core Workflow](./core-workflow.md) -- Issue lifecycle, logging, handoffs, and reviews in depth
 - [Boards](./boards.md) -- Visual overview of issue status across your project
+- [Notes](./notes.md) -- Freeform project memory for durable context that is not an issue
 - [Query Language](./query-language.md) -- Filter and search issues with structured queries
+- [Command Reference](./command-reference.md) -- Complete CLI surface, including sync, config, and diagnostic commands
