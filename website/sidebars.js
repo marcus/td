@@ -13,6 +13,8 @@ const sidebars = {
         'work-sessions',
         'deferral',
         'file-tracking',
+        'notes',
+        'directory-associations',
       ],
     },
     {
@@ -22,6 +24,7 @@ const sidebars = {
         'monitor',
         'kanban',
         'ai-integration',
+        'sync-cli',
       ],
     },
     {
@@ -38,6 +41,7 @@ const sidebars = {
       label: 'Reference',
       items: [
         'command-reference',
+        'configuration',
         'analytics',
       ],
     },

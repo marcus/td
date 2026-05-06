@@ -53,6 +53,8 @@ Flags:
 - `--new-session` -- start a fresh session (use at conversation start)
 - `-q` -- quiet mode, shorter output (use after first read)
 
+For durable context that is useful across issues, agents can also use [notes](./notes.md). Keep issue-specific progress in `td log` and `td handoff`.
+
 ## Recommended Agent Workflow
 
 ```bash
@@ -104,10 +106,10 @@ The legacy `balanced_review_policy` flag is deprecated; prefer `review_policy_mo
 Pin or change the mode:
 
 ```bash
-td feature set review_policy_mode strict     # or balanced, or delegated
-# or, one-off:
 TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 ```
+
+For a persistent project setting, store `review_policy_mode` in `.todos/config.json` under `feature_string_flags`. See [Configuration](./configuration.md) for the current config shape.
 
 ### Delegated Review: Orchestrator + Sub-Agents
 
