@@ -7,12 +7,12 @@ sidebar_position: 4
 td has two user-facing configuration surfaces:
 
 - `td config` manages sync settings stored in `~/.config/td/config.json`.
-- `td feature` manages project-local feature flags and string feature settings.
+- `td feature` manages project-local boolean feature flags. String-valued settings such as `review_policy_mode` are stored in `.todos/config.json`.
 
-Some sync commands are rollout-gated. If `td auth`, `td config`, or `td sync` is unavailable in your install, enable the CLI surface from the project:
+Some sync commands are rollout-gated. If `td auth`, `td config`, or `td sync` is unavailable in your install, enable the process-level CLI surface in the shell that runs td:
 
 ```bash
-td feature set sync_cli true
+export TD_FEATURE_SYNC_CLI=true
 ```
 
 ## Sync Config
@@ -22,7 +22,6 @@ Inspect current sync configuration:
 ```bash
 td config list
 td config get sync.url
-td config get sync.enabled
 td config get sync.auto.interval
 ```
 
@@ -30,7 +29,6 @@ Set supported keys with `td config set <key> <value>`:
 
 ```bash
 td config set sync.url http://localhost:8080
-td config set sync.enabled true
 td config set sync.auto.enabled false
 td config set sync.auto.interval 10m
 td config set sync.snapshot_threshold 250
@@ -41,7 +39,7 @@ Supported keys:
 | Key | Value | Notes |
 |-----|-------|-------|
 | `sync.url` | URL | Sync server base URL. |
-| `sync.enabled` | boolean | Enables sync behavior for the project. |
+| `sync.enabled` | boolean | Stored sync preference for compatibility; command availability is controlled by `TD_FEATURE_SYNC_CLI`. |
 | `sync.auto.enabled` | boolean | Enables or disables autosync. |
 | `sync.auto.debounce` | duration | Debounce after local mutations, such as `3s`. |
 | `sync.auto.interval` | duration | Periodic autosync interval, such as `5m`. |
@@ -75,13 +73,12 @@ List feature flags and their resolved source:
 
 ```bash
 td feature list
-td feature get sync_cli
+td feature get sync_autosync
 ```
 
 Set and unset project-local overrides:
 
 ```bash
-td feature set sync_cli true
 td feature set sync_autosync false
 td feature unset sync_autosync
 ```
@@ -90,7 +87,7 @@ Known boolean flags include:
 
 | Flag | Purpose |
 |------|---------|
-| `sync_cli` | Enables end-user sync/auth/config commands. |
+| `sync_cli` | Records project opt-in for the sync CLI rollout. Hidden command registration is process-level; use `TD_FEATURE_SYNC_CLI=true` when the commands are absent. |
 | `sync_autosync` | Enables background autosync hooks. |
 | `sync_monitor_prompt` | Enables monitor sync setup prompts. |
 | `sync_notes` | Enables notes entity sync. |

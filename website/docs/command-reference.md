@@ -196,13 +196,15 @@ See [Configuration](./configuration.md) and [Directory Associations](./directory
 | `td config associations` | List directory associations. Alias: `assoc`. | `td config assoc` |
 | `td config dissociate [dir]` | Remove a directory association. | `td config dissociate ../feature-worktree` |
 | `td feature list` | List known boolean feature flags and resolved state. | `td feature list` |
-| `td feature get <name>` | Show one boolean feature state. | `td feature get sync_cli` |
-| `td feature set <name> <true\|false>` | Set a boolean feature override. | `td feature set sync_cli true` |
+| `td feature get <name>` | Show one boolean feature state. | `td feature get sync_autosync` |
+| `td feature set <name> <true\|false>` | Set a boolean feature override. | `td feature set sync_autosync false` |
 | `td feature unset <name>` | Remove a boolean feature override. | `td feature unset sync_autosync` |
 
 ## Sync And Auth
 
 See [Sync CLI](./sync-cli.md) for the operational sync flow.
+
+If sync commands are hidden in your build, run td with `TD_FEATURE_SYNC_CLI=true` so the process registers `td auth`, `td config`, `td sync`, and `td sync-project`.
 
 | Command | Description | Example |
 |---------|-------------|---------|

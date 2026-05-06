@@ -8,10 +8,10 @@ td sync connects a local `.todos` database to a remote sync project. This page c
 
 ## Enable The Sync Commands
 
-Some builds hide sync commands until the rollout flag is enabled:
+Some builds hide sync commands unless the process-level feature flag is enabled. Enable it in the shell that runs td:
 
 ```bash
-td feature set sync_cli true
+export TD_FEATURE_SYNC_CLI=true
 ```
 
 Then confirm the commands are available:
@@ -121,7 +121,7 @@ td doctor
 ## Minimal Setup Checklist
 
 ```bash
-td feature set sync_cli true
+export TD_FEATURE_SYNC_CLI=true
 td config set sync.url http://localhost:8080
 td auth login
 td sync-project create "My project"
