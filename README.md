@@ -461,6 +461,15 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Query issues | `td query "expression"` |
 | Search text  | `td search "keyword"`   |
 
+### System Commands
+
+| Action              | Command                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| Initialize project  | `td init`                                                      |
+| Show version        | `td version`                                                   |
+| Draft release notes | `td release-notes --version vX.Y.Z [--from ref] [--to ref]`    |
+| JSON release draft  | `td release-notes --json --include-internal --version vX.Y.Z`  |
+
 ## Live Monitor
 
 > Full documentation: [Live Monitor](https://marcus.github.io/td/docs/monitor)

@@ -157,6 +157,7 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | `td monitor` | Live TUI dashboard |
 | `td undo` | Undo last action |
 | `td version` | Show version |
+| `td release-notes [flags]` | Draft local Markdown or JSON release notes from git commits. Defaults `--from` to the latest `v*` tag before `--to`. Flags: `--from`, `--to`, `--version`, `--date`, `--json`, `--include-internal` |
 | `td export` | Export database |
 | `td import` | Import issues |
 | `td stats [subcommand]` | Usage statistics |

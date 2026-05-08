@@ -33,7 +33,16 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Draft and Update CHANGELOG.md
+
+Draft release notes from commits since the latest `v*` tag before the target release:
+
+```bash
+td release-notes --version vX.Y.Z
+# Optional: add --to vX.Y.Z, --date YYYY-MM-DD, or --json for structured review
+```
+
+Review and curate the generated notes, then paste the result into the top of `CHANGELOG.md` or into GitHub release notes. The drafter is local-only: it reads git commits and does not edit the changelog, create tags, publish releases, or call external services.
 
 Add entry at the top of `CHANGELOG.md`:
 
@@ -135,7 +144,8 @@ git status
 go test ./...
 
 # Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Draft notes, then edit CHANGELOG.md and add the curated entry at top
+td release-notes --version vX.Y.Z
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,6 +164,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] Release notes drafted with `td release-notes --version vX.Y.Z`
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
