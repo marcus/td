@@ -42,7 +42,7 @@ func newReleaseNotesCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.From, "from", "", "Base git ref (default: latest v* tag)")
+	cmd.Flags().StringVar(&opts.From, "from", "", "Base git ref (default: latest v* tag before --to)")
 	cmd.Flags().StringVar(&opts.To, "to", "HEAD", "Target git ref")
 	cmd.Flags().StringVar(&opts.Version, "version", "", "Release version heading, for example v0.5.0")
 	cmd.Flags().StringVar(&opts.Date, "date", "", "Release date in YYYY-MM-DD format")

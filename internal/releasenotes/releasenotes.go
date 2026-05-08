@@ -106,8 +106,12 @@ func DraftFromGit(ctx context.Context, opts Options) (*Draft, error) {
 		return nil, err
 	}
 
+	if err := VerifyCommitRef(ctx, repo, opts.To); err != nil {
+		return nil, fmt.Errorf("invalid --to ref %q: %w", opts.To, err)
+	}
+
 	if strings.TrimSpace(opts.From) == "" {
-		tag, err := LatestVersionTag(ctx, repo)
+		tag, err := DefaultBaseRef(ctx, repo, opts.To)
 		if err != nil {
 			return nil, err
 		}
@@ -116,9 +120,6 @@ func DraftFromGit(ctx context.Context, opts Options) (*Draft, error) {
 
 	if err := VerifyCommitRef(ctx, repo, opts.From); err != nil {
 		return nil, fmt.Errorf("invalid --from ref %q: %w", opts.From, err)
-	}
-	if err := VerifyCommitRef(ctx, repo, opts.To); err != nil {
-		return nil, fmt.Errorf("invalid --to ref %q: %w", opts.To, err)
 	}
 
 	commits, err := CollectCommits(ctx, repo, opts.From, opts.To)
@@ -156,12 +157,22 @@ func GitRoot(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func LatestVersionTag(ctx context.Context, repoDir string) (string, error) {
-	out, err := runGit(ctx, repoDir, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*")
+func DefaultBaseRef(ctx context.Context, repoDir, toRef string) (string, error) {
+	describeRef := toRef
+	if pointsAtVersionTag(ctx, repoDir, toRef) {
+		describeRef = toRef + "^"
+	}
+
+	out, err := runGit(ctx, repoDir, "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", describeRef)
 	if err != nil {
 		return "", fmt.Errorf("no v* tags found; pass --from to choose a base ref")
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func pointsAtVersionTag(ctx context.Context, repoDir, ref string) bool {
+	out, err := runGit(ctx, repoDir, "describe", "--exact-match", "--tags", "--match", "v[0-9]*", ref)
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 func VerifyCommitRef(ctx context.Context, repoDir, ref string) error {

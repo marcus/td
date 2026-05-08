@@ -65,6 +65,65 @@ func TestReleaseNotesExplicitFromTo(t *testing.T) {
 	}
 }
 
+func TestReleaseNotesDefaultRangeUsesHistoricalToRef(t *testing.T) {
+	repo := newReleaseNotesRepo(t)
+	commitFile(t, repo, "README.md", "initial\n", "feat: initial release")
+	runGit(t, repo, "tag", "v0.1.0")
+	historicalSHA := commitFile(t, repo, "feature.txt", "feature\n", "feat: add historical feature")
+	commitFile(t, repo, "fix.txt", "fix\n", "fix: handle later bug")
+	runGit(t, repo, "tag", "v0.2.0")
+	commitFile(t, repo, "future.txt", "future\n", "feat: add future feature")
+	runGit(t, repo, "tag", "v0.3.0")
+
+	out, err := runReleaseNotesCommand(t, repo, "--to", historicalSHA, "--version", "v0.2.0")
+	if err != nil {
+		t.Fatalf("release-notes failed: %v", err)
+	}
+
+	for _, want := range []string{
+		"_Range: `v0.1.0.." + historicalSHA + "` (1 commits)_",
+		"- add historical feature (" + historicalSHA + ")",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"handle later bug", "add future feature"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("historical --to should exclude %q:\n%s", unwanted, out)
+		}
+	}
+}
+
+func TestReleaseNotesDefaultRangeForTaggedToUsesPreviousVersionTag(t *testing.T) {
+	repo := newReleaseNotesRepo(t)
+	commitFile(t, repo, "README.md", "initial\n", "feat: initial release")
+	runGit(t, repo, "tag", "v0.1.0")
+	featureSHA := commitFile(t, repo, "feature.txt", "feature\n", "feat: add tagged release feature")
+	fixSHA := commitFile(t, repo, "fix.txt", "fix\n", "fix: handle tagged release bug")
+	runGit(t, repo, "tag", "v0.2.0")
+	commitFile(t, repo, "future.txt", "future\n", "feat: add future feature")
+	runGit(t, repo, "tag", "v0.3.0")
+
+	out, err := runReleaseNotesCommand(t, repo, "--to", "v0.2.0", "--version", "v0.2.0")
+	if err != nil {
+		t.Fatalf("release-notes failed: %v", err)
+	}
+
+	for _, want := range []string{
+		"_Range: `v0.1.0..v0.2.0` (2 commits)_",
+		"- add tagged release feature (" + featureSHA + ")",
+		"- handle tagged release bug (" + fixSHA + ")",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "add future feature") {
+		t.Fatalf("tagged --to should exclude future commits:\n%s", out)
+	}
+}
+
 func TestReleaseNotesJSONOutput(t *testing.T) {
 	repo := newReleaseNotesRepo(t)
 	commitFile(t, repo, "README.md", "initial\n", "feat: initial release")
