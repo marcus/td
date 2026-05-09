@@ -1,9 +1,11 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,49 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func runCmdOutput(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func commitGitFile(t *testing.T, dir, path, content, subject string, body ...string) string {
+	t.Helper()
+
+	fullPath := filepath.Join(dir, path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatalf("Failed to create parent dir: %v", err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", path); err != nil {
+		t.Fatalf("Failed to git add %s: %v", path, err)
+	}
+
+	args := []string{"commit", "-m", subject}
+	for _, paragraph := range body {
+		args = append(args, "-m", paragraph)
+	}
+	if out, err := runCmdOutput(dir, "git", args...); err != nil {
+		t.Fatalf("Failed to commit %q: %v\n%s", subject, err, out)
+	}
+
+	sha, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to resolve HEAD: %v", err)
+	}
+	return sha
+}
+
+func tagHead(t *testing.T, dir, tag string) {
+	t.Helper()
+	if out, err := runCmdOutput(dir, "git", "tag", "-a", tag, "-m", "Release "+tag); err != nil {
+		t.Fatalf("Failed to tag HEAD as %s: %v\n%s", tag, err, out)
+	}
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +512,173 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestGetRootDirFromReturnsErrNotRepository(t *testing.T) {
+	_, err := GetRootDirFrom(t.TempDir())
+	if !errors.Is(err, ErrNotRepository) {
+		t.Fatalf("expected ErrNotRepository, got %v", err)
+	}
+}
+
+func TestNearestReachableSemverTagReturnsLatestReachableTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHead(t, dir, "v0.1.0")
+	commitGitFile(t, dir, "feature.txt", "feature\n", "feat: add feature")
+	tagHead(t, dir, "v0.2.0")
+	commitGitFile(t, dir, "fix.txt", "fix\n", "fix: patch release")
+	if out, err := runCmdOutput(dir, "git", "tag", "-a", "release-candidate", "-m", "not semver"); err != nil {
+		t.Fatalf("Failed to tag non-semver: %v\n%s", err, out)
+	}
+
+	tag, err := NearestReachableSemverTag(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("NearestReachableSemverTag failed: %v", err)
+	}
+	if tag != "v0.2.0" {
+		t.Fatalf("expected v0.2.0, got %q", tag)
+	}
+}
+
+func TestNearestReachableSemverTagReturnsErrNoSemverTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	_, err := NearestReachableSemverTag(dir, "HEAD")
+	if !errors.Is(err, ErrNoSemverTag) {
+		t.Fatalf("expected ErrNoSemverTag, got %v", err)
+	}
+}
+
+func TestNearestReachableSemverTagExcludesUnreachableSideBranchTags(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHead(t, dir, "v0.1.0")
+	mainHead, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to resolve main HEAD: %v", err)
+	}
+	if out, err := runCmdOutput(dir, "git", "checkout", "-b", "side"); err != nil {
+		t.Fatalf("Failed to create side branch: %v\n%s", err, out)
+	}
+	commitGitFile(t, dir, "side.txt", "side\n", "feat: side-only feature")
+	tagHead(t, dir, "v9.9.9")
+	if out, err := runCmdOutput(dir, "git", "checkout", "-B", "main", mainHead); err != nil {
+		t.Fatalf("Failed to return to main: %v\n%s", err, out)
+	}
+	commitGitFile(t, dir, "main.txt", "main\n", "fix: main patch")
+
+	tag, err := NearestReachableSemverTag(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("NearestReachableSemverTag failed: %v", err)
+	}
+	if tag != "v0.1.0" {
+		t.Fatalf("expected v0.1.0, got %q", tag)
+	}
+}
+
+func TestResolveRefRejectsEmptyAndInvalidRefs(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if _, err := ResolveRef(dir, " "); err == nil || !strings.Contains(err.Error(), "git ref is required") {
+		t.Fatalf("expected empty ref error, got %v", err)
+	}
+	if _, err := ResolveRef(dir, "missing-ref"); err == nil || !strings.Contains(err.Error(), "invalid git ref") {
+		t.Fatalf("expected invalid ref error, got %v", err)
+	}
+}
+
+func TestListCommitsInRangeReturnsOldestFirst(t *testing.T) {
+	dir := initTestRepo(t)
+	base, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to resolve base: %v", err)
+	}
+
+	commitGitFile(t, dir, "one.txt", "one\n", "feat: add one")
+	commitGitFile(t, dir, "two.txt", "two\n", "fix: add two")
+
+	commits, err := ListCommitsInRange(dir, base, "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+	if commits[0].Subject != "feat: add one" || commits[1].Subject != "fix: add two" {
+		t.Fatalf("commits not oldest-first: %+v", commits)
+	}
+}
+
+func TestListCommitsInRangeReturnsEmptyRange(t *testing.T) {
+	dir := initTestRepo(t)
+
+	commits, err := ListCommitsInRange(dir, "HEAD", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("expected empty range, got %+v", commits)
+	}
+}
+
+func TestListCommitsInRangeParsesSubjectBodyAndDate(t *testing.T) {
+	dir := initTestRepo(t)
+	base, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to resolve base: %v", err)
+	}
+
+	sha := commitGitFile(t, dir, "feature.txt", "feature\n", "feat(parser): add parsing", "Body line one\nBody line two")
+
+	commits, err := ListCommitsInRange(dir, base, "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(commits))
+	}
+	commit := commits[0]
+	if commit.SHA != sha {
+		t.Fatalf("SHA = %q, want %q", commit.SHA, sha)
+	}
+	if commit.ShortSHA != sha[:7] {
+		t.Fatalf("ShortSHA = %q, want %q", commit.ShortSHA, sha[:7])
+	}
+	if commit.Subject != "feat(parser): add parsing" {
+		t.Fatalf("Subject = %q", commit.Subject)
+	}
+	if !strings.Contains(commit.Body, "Body line one\nBody line two") {
+		t.Fatalf("Body not parsed correctly: %q", commit.Body)
+	}
+	if commit.Date.IsZero() {
+		t.Fatal("Date should not be zero")
+	}
+}
+
+func TestListCommitsInRangeUsesNULDelimiters(t *testing.T) {
+	dir := initTestRepo(t)
+	base, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to resolve base: %v", err)
+	}
+
+	subject := "feat: add parser | with pipes and %% markers"
+	body := "Body with newlines\n---\nand punctuation | that should stay intact"
+	commitGitFile(t, dir, "feature.txt", "feature\n", subject, body)
+
+	commits, err := ListCommitsInRange(dir, base, "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(commits))
+	}
+	if commits[0].Subject != subject {
+		t.Fatalf("Subject = %q, want %q", commits[0].Subject, subject)
+	}
+	if commits[0].Body != body {
+		t.Fatalf("Body = %q, want %q", commits[0].Body, body)
 	}
 }
