@@ -33,7 +33,20 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Update CHANGELOG.md
+### 2. Preview and Update CHANGELOG.md
+
+Generate a draft entry from commits since the nearest reachable semver tag:
+
+```bash
+td changelog --version vX.Y.Z --date YYYY-MM-DD
+```
+
+Review the stdout carefully, edit wording as needed, then manually add the
+entry at the top of `CHANGELOG.md`. To override the detected range:
+
+```bash
+td changelog --from vA.B.C --to HEAD --version vX.Y.Z --date YYYY-MM-DD
+```
 
 Add entry at the top of `CHANGELOG.md`:
 
@@ -134,8 +147,8 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
-# Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# Preview changelog, then edit CHANGELOG.md and add entry at top
+td changelog --version vX.Y.Z --date YYYY-MM-DD
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,6 +167,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] Changelog preview generated with `td changelog`
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
