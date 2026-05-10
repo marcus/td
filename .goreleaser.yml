@@ -30,10 +30,10 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - "^chore:"
+      - "^docs(\\([^)]+\\))?:"
+      - "^test(\\([^)]+\\))?:"
+      - "^ci(\\([^)]+\\))?:"
+      - "^chore(\\([^)]+\\))?:"
 
 # Note: Homebrew formula is manually maintained in marcus/homebrew-tap
 # to build from source (avoids Gatekeeper warnings on macOS)
