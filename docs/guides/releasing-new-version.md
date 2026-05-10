@@ -56,6 +56,8 @@ git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 ```
 
+That changelog subject is intentionally exempt from the local `commit-msg` hook because release bookkeeping is not tied to a single `td-...` task.
+
 ### 3. Verify Tests Pass
 
 ```bash
