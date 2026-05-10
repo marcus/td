@@ -110,7 +110,7 @@ func init() {
 	epicCreateCmd.Flags().StringArray("blocks", nil, "Issues this blocks (repeatable, comma-separated)")
 	// Hidden type flag - set programmatically to "epic"
 	epicCreateCmd.Flags().StringP("type", "t", "", "")
-	epicCreateCmd.Flags().MarkHidden("type")
+	epicCreateCmd.Flags().MarkHidden("type") //nolint:errcheck // flag was just defined above
 
 	// epicListCmd flags
 	epicListCmd.Flags().BoolP("all", "a", false, "Show all epics including closed")

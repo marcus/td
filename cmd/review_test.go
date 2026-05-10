@@ -684,7 +684,7 @@ func TestCascadeReviewNestedEpics(t *testing.T) {
 	// Mark all for review
 	for _, d := range descendants {
 		d.Status = models.StatusInReview
-		database.UpdateIssue(d)
+		database.UpdateIssue(d) //nolint:errcheck // test setup
 	}
 
 	// Verify all are in_review
@@ -750,7 +750,7 @@ func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
 
 	// Now mark child2 as in_review
 	child2.Status = models.StatusInReview
-	database.UpdateIssue(child2)
+	database.UpdateIssue(child2) //nolint:errcheck // test setup
 
 	// Cascade up should now update epic
 	cascaded, _ := database.CascadeUpParentStatus(child2.ID, models.StatusInReview, sessionID)
@@ -1048,7 +1048,7 @@ func TestReviewMinorFlag(t *testing.T) {
 	}
 
 	// Reset
-	reviewCmd.Flags().Set("minor", "false")
+	reviewCmd.Flags().Set("minor", "false") //nolint:errcheck // test setup
 }
 
 func TestReviewReasonShorthand(t *testing.T) {
@@ -1071,7 +1071,7 @@ func TestReviewReasonShorthand(t *testing.T) {
 	}
 
 	// Reset
-	reviewCmd.Flags().Set("reason", "")
+	reviewCmd.Flags().Set("reason", "") //nolint:errcheck // test setup
 }
 
 func TestApproveReasonShorthand(t *testing.T) {
@@ -1135,7 +1135,7 @@ func TestCloseSelfCloseExceptionRequiresValue(t *testing.T) {
 	}
 
 	// Reset flag to default before test
-	flag.Value.Set("")
+	flag.Value.Set("") //nolint:errcheck // test setup
 
 	// Set a test value
 	if err := flag.Value.Set("test reason"); err != nil {
@@ -1148,7 +1148,7 @@ func TestCloseSelfCloseExceptionRequiresValue(t *testing.T) {
 	}
 
 	// Reset for other tests
-	flag.Value.Set("")
+	flag.Value.Set("") //nolint:errcheck // test setup
 }
 
 func TestCloseSelfCloseScenarios(t *testing.T) {
@@ -1174,7 +1174,7 @@ func TestCloseSelfCloseScenarios(t *testing.T) {
 	if err := database.CreateIssue(issueWithImpl); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	database.UpdateIssue(issueWithImpl)
+	database.UpdateIssue(issueWithImpl) //nolint:errcheck // test setup
 
 	retrieved, _ := database.GetIssue(issueWithImpl.ID)
 	if retrieved.ImplementerSession != sessionID {
@@ -1235,13 +1235,13 @@ func TestCloseSelfCloseExceptionLogMessage(t *testing.T) {
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	database.UpdateIssue(issue)
+	database.UpdateIssue(issue) //nolint:errcheck // test setup
 
 	// Simulate closing with exception - manually add the log entry
 	exceptionReason := "trivial typo fix"
 	logMsg := "[test-agent] Closed (SELF-CLOSE EXCEPTION: " + exceptionReason + ")"
 
-	database.AddLog(&models.Log{
+	database.AddLog(&models.Log{ //nolint:errcheck // test setup
 		IssueID:   issue.ID,
 		SessionID: sessionID,
 		Message:   logMsg,
@@ -1693,19 +1693,19 @@ func TestApproveAutoUnblocksDependents(t *testing.T) {
 		Status:             models.StatusInReview,
 		ImplementerSession: "ses_impl",
 	}
-	database.CreateIssue(blocker)
+	database.CreateIssue(blocker) //nolint:errcheck // test setup
 
 	// Create dependent (blocked, depends on blocker)
 	dependent := &models.Issue{
 		Title:  "Dependent",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(dependent)
-	database.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	database.CreateIssue(dependent) //nolint:errcheck // test setup
+	database.AddDependency(dependent.ID, blocker.ID, "depends_on") //nolint:errcheck // test setup
 
 	// Simulate approve: close the blocker then cascade unblock
 	blocker.Status = models.StatusClosed
-	database.UpdateIssue(blocker)
+	database.UpdateIssue(blocker) //nolint:errcheck // test setup
 	database.CascadeUnblockDependents(blocker.ID, "ses_reviewer")
 
 	// Verify dependent is now open
@@ -1727,18 +1727,18 @@ func TestCloseAutoUnblocksDependents(t *testing.T) {
 		Title:  "Blocker",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(blocker)
+	database.CreateIssue(blocker) //nolint:errcheck // test setup
 
 	dependent := &models.Issue{
 		Title:  "Dependent",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(dependent)
-	database.AddDependency(dependent.ID, blocker.ID, "depends_on")
+	database.CreateIssue(dependent) //nolint:errcheck // test setup
+	database.AddDependency(dependent.ID, blocker.ID, "depends_on") //nolint:errcheck // test setup
 
 	// Simulate close: set closed then cascade unblock
 	blocker.Status = models.StatusClosed
-	database.UpdateIssue(blocker)
+	database.UpdateIssue(blocker) //nolint:errcheck // test setup
 	database.CascadeUnblockDependents(blocker.ID, "ses_closer")
 
 	updated, _ := database.GetIssue(dependent.ID)
@@ -1768,15 +1768,15 @@ func TestApproveAutoUnblockPartialDeps(t *testing.T) {
 		Title:  "Dependent",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(a1)
-	database.CreateIssue(a2)
-	database.CreateIssue(dependent)
-	database.AddDependency(dependent.ID, a1.ID, "depends_on")
-	database.AddDependency(dependent.ID, a2.ID, "depends_on")
+	database.CreateIssue(a1) //nolint:errcheck // test setup
+	database.CreateIssue(a2) //nolint:errcheck // test setup
+	database.CreateIssue(dependent) //nolint:errcheck // test setup
+	database.AddDependency(dependent.ID, a1.ID, "depends_on") //nolint:errcheck // test setup
+	database.AddDependency(dependent.ID, a2.ID, "depends_on") //nolint:errcheck // test setup
 
 	// Approve only A1
 	a1.Status = models.StatusClosed
-	database.UpdateIssue(a1)
+	database.UpdateIssue(a1) //nolint:errcheck // test setup
 	database.CascadeUnblockDependents(a1.ID, "ses_reviewer")
 
 	// Dependent should still be blocked (A2 not closed)

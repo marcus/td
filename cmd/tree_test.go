@@ -21,7 +21,7 @@ func TestTreeSingleIssue(t *testing.T) {
 		Type:   models.TypeEpic,
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// Retrieve and verify
 	retrieved, err := database.GetIssue(issue.ID)
@@ -46,7 +46,7 @@ func TestTreeParentChild(t *testing.T) {
 		Title: "Parent Epic",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	child1 := &models.Issue{
 		Title:    "Child Task 1",
@@ -59,8 +59,8 @@ func TestTreeParentChild(t *testing.T) {
 		Type:     models.TypeTask,
 	}
 
-	database.CreateIssue(child1)
-	database.CreateIssue(child2)
+	database.CreateIssue(child1) //nolint:errcheck // test setup
+	database.CreateIssue(child2) //nolint:errcheck // test setup
 
 	// Verify parent-child relationships
 	child1Retrieved, _ := database.GetIssue(child1.ID)
@@ -89,18 +89,18 @@ func TestTreeNestedHierarchy(t *testing.T) {
 	level2 := &models.Issue{Title: "Level 2", Type: models.TypeEpic}
 	level3 := &models.Issue{Title: "Level 3", Type: models.TypeTask}
 
-	database.CreateIssue(root)
-	database.CreateIssue(level1)
-	database.CreateIssue(level2)
-	database.CreateIssue(level3)
+	database.CreateIssue(root) //nolint:errcheck // test setup
+	database.CreateIssue(level1) //nolint:errcheck // test setup
+	database.CreateIssue(level2) //nolint:errcheck // test setup
+	database.CreateIssue(level3) //nolint:errcheck // test setup
 
 	level1.ParentID = root.ID
 	level2.ParentID = level1.ID
 	level3.ParentID = level2.ID
 
-	database.UpdateIssue(level1)
-	database.UpdateIssue(level2)
-	database.UpdateIssue(level3)
+	database.UpdateIssue(level1) //nolint:errcheck // test setup
+	database.UpdateIssue(level2) //nolint:errcheck // test setup
+	database.UpdateIssue(level3) //nolint:errcheck // test setup
 
 	// Verify hierarchy
 	l1, _ := database.GetIssue(level1.ID)
@@ -129,7 +129,7 @@ func TestTreeMultipleChildren(t *testing.T) {
 	defer database.Close()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	// Create 5 children and track their IDs
 	childCount := 5
@@ -141,7 +141,7 @@ func TestTreeMultipleChildren(t *testing.T) {
 			ParentID: parent.ID,
 			Type:     models.TypeTask,
 		}
-		database.CreateIssue(child)
+		database.CreateIssue(child) //nolint:errcheck // test setup
 		childIDs[i] = child.ID
 	}
 
@@ -172,18 +172,18 @@ func TestTreeWithDifferentTypes(t *testing.T) {
 	bug := &models.Issue{Title: "Bug", Type: models.TypeBug}
 	task := &models.Issue{Title: "Task", Type: models.TypeTask}
 
-	database.CreateIssue(epic)
-	database.CreateIssue(feature)
-	database.CreateIssue(bug)
-	database.CreateIssue(task)
+	database.CreateIssue(epic) //nolint:errcheck // test setup
+	database.CreateIssue(feature) //nolint:errcheck // test setup
+	database.CreateIssue(bug) //nolint:errcheck // test setup
+	database.CreateIssue(task) //nolint:errcheck // test setup
 
 	feature.ParentID = epic.ID
 	bug.ParentID = epic.ID
 	task.ParentID = epic.ID
 
-	database.UpdateIssue(feature)
-	database.UpdateIssue(bug)
-	database.UpdateIssue(task)
+	database.UpdateIssue(feature) //nolint:errcheck // test setup
+	database.UpdateIssue(bug) //nolint:errcheck // test setup
+	database.UpdateIssue(task) //nolint:errcheck // test setup
 
 	// Verify hierarchy
 	f, _ := database.GetIssue(feature.ID)
@@ -209,7 +209,7 @@ func TestTreeOrphanedChildren(t *testing.T) {
 		ParentID: "td-nonexistent",
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(orphan)
+	database.CreateIssue(orphan) //nolint:errcheck // test setup
 
 	// Verify orphan exists even though parent doesn't
 	retrieved, _ := database.GetIssue(orphan.ID)
@@ -235,15 +235,15 @@ func TestTreeReparenting(t *testing.T) {
 
 	parent1 := &models.Issue{Title: "Parent 1", Type: models.TypeEpic}
 	parent2 := &models.Issue{Title: "Parent 2", Type: models.TypeEpic}
-	database.CreateIssue(parent1)
-	database.CreateIssue(parent2)
+	database.CreateIssue(parent1) //nolint:errcheck // test setup
+	database.CreateIssue(parent2) //nolint:errcheck // test setup
 
 	child := &models.Issue{
 		Title:    "Child",
 		ParentID: parent1.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	database.CreateIssue(child) //nolint:errcheck // test setup
 
 	// Verify initial parent
 	c1, _ := database.GetIssue(child.ID)
@@ -253,7 +253,7 @@ func TestTreeReparenting(t *testing.T) {
 
 	// Change parent
 	child.ParentID = parent2.ID
-	database.UpdateIssue(child)
+	database.UpdateIssue(child) //nolint:errcheck // test setup
 
 	// Verify new parent
 	c2, _ := database.GetIssue(child.ID)
@@ -276,7 +276,7 @@ func TestTreeWithDifferentStatuses(t *testing.T) {
 		Type:   models.TypeEpic,
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	statuses := []models.Status{
 		models.StatusOpen,
@@ -293,7 +293,7 @@ func TestTreeWithDifferentStatuses(t *testing.T) {
 			Type:     models.TypeTask,
 			Status:   status,
 		}
-		database.CreateIssue(child)
+		database.CreateIssue(child) //nolint:errcheck // test setup
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Status != status {
@@ -315,7 +315,7 @@ func TestTreeEmptyParent(t *testing.T) {
 		Title: "Empty Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	retrieved, _ := database.GetIssue(parent.ID)
 	if retrieved.ID != parent.ID {
@@ -337,7 +337,7 @@ func TestTreeWithPriorities(t *testing.T) {
 		Type:     models.TypeEpic,
 		Priority: models.PriorityP0,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	priorities := []models.Priority{
 		models.PriorityP0,
@@ -354,7 +354,7 @@ func TestTreeWithPriorities(t *testing.T) {
 			Type:     models.TypeTask,
 			Priority: priority,
 		}
-		database.CreateIssue(child)
+		database.CreateIssue(child) //nolint:errcheck // test setup
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Priority != priority {
@@ -376,7 +376,7 @@ func TestTreeWithPoints(t *testing.T) {
 		Title: "Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	points := []int{1, 2, 3, 5, 8, 13, 21}
 
@@ -387,7 +387,7 @@ func TestTreeWithPoints(t *testing.T) {
 			Type:     models.TypeTask,
 			Points:   pts,
 		}
-		database.CreateIssue(child)
+		database.CreateIssue(child) //nolint:errcheck // test setup
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Points != pts {
@@ -409,17 +409,17 @@ func TestTreeDeleteParent(t *testing.T) {
 		Title: "Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
 
 	child := &models.Issue{
 		Title:    "Child",
 		ParentID: parent.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	database.CreateIssue(child) //nolint:errcheck // test setup
 
 	// Delete parent
-	database.DeleteIssue(parent.ID)
+	database.DeleteIssue(parent.ID) //nolint:errcheck // test setup
 
 	// Verify parent is deleted
 	pDeleted, _ := database.GetIssue(parent.ID)
@@ -460,8 +460,8 @@ func TestTreeBlockedParent(t *testing.T) {
 		Status:   models.StatusOpen,
 	}
 
-	database.CreateIssue(parent)
-	database.CreateIssue(child)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
+	database.CreateIssue(child) //nolint:errcheck // test setup
 
 	pRetrieved, _ := database.GetIssue(parent.ID)
 	if pRetrieved.Status != models.StatusBlocked {
@@ -484,7 +484,7 @@ func TestTreeLargeHierarchy(t *testing.T) {
 	defer database.Close()
 
 	root := &models.Issue{Title: "Root", Type: models.TypeEpic}
-	database.CreateIssue(root)
+	database.CreateIssue(root) //nolint:errcheck // test setup
 
 	// Create 100 child issues
 	for i := 0; i < 100; i++ {
@@ -493,7 +493,7 @@ func TestTreeLargeHierarchy(t *testing.T) {
 			ParentID: root.ID,
 			Type:     models.TypeTask,
 		}
-		database.CreateIssue(child)
+		database.CreateIssue(child) //nolint:errcheck // test setup
 	}
 
 	// Verify root exists

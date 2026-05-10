@@ -216,7 +216,7 @@ Or use flags with values, stdin (-), or file (@path):
 					}
 
 					// Add log entry for visibility
-					database.AddLog(&models.Log{
+					database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 						IssueID:   child.ID,
 						SessionID: sess.ID,
 						Message:   fmt.Sprintf("Cascaded handoff from %s", issueID),

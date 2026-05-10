@@ -58,7 +58,7 @@ func TestDeleteMultipleIssues(t *testing.T) {
 
 	issueIDs := make([]string, 0)
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		database.CreateIssue(issue) //nolint:errcheck // test setup
 		issueIDs = append(issueIDs, issue.ID)
 	}
 
@@ -95,7 +95,7 @@ func TestDeleteLogsAction(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	sessionID := "ses_test123"
 	issueData := `{"id":"` + issue.ID + `","title":"Test Issue","status":"open"}`
@@ -171,7 +171,7 @@ func TestDeleteFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			database.CreateIssue(issue) //nolint:errcheck // test setup
 
 			if err := database.DeleteIssue(issue.ID); err != nil {
 				t.Errorf("Failed to delete from %s: %v", tc.initialStatus, err)
@@ -198,10 +198,10 @@ func TestDeleteAlreadyDeletedIssue(t *testing.T) {
 		Title:  "Already Deleted",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// Delete once
-	database.DeleteIssue(issue.ID)
+	database.DeleteIssue(issue.ID) //nolint:errcheck // test setup
 
 	// Delete again (should be idempotent or still work)
 	err = database.DeleteIssue(issue.ID)
@@ -228,11 +228,11 @@ func TestDeleteWithDependencies(t *testing.T) {
 	parent := &models.Issue{Title: "Parent", Status: models.StatusOpen}
 	child := &models.Issue{Title: "Child", Status: models.StatusOpen}
 
-	database.CreateIssue(parent)
-	database.CreateIssue(child)
+	database.CreateIssue(parent) //nolint:errcheck // test setup
+	database.CreateIssue(child) //nolint:errcheck // test setup
 
 	// Add dependency
-	database.AddDependency(child.ID, parent.ID, "depends_on")
+	database.AddDependency(child.ID, parent.ID, "depends_on") //nolint:errcheck // test setup
 
 	// Delete parent
 	if err := database.DeleteIssue(parent.ID); err != nil {
@@ -271,14 +271,14 @@ func TestDeleteUpdatesTimestamp(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	if issue.DeletedAt != nil {
 		t.Error("DeletedAt should be nil before delete")
 	}
 
 	// Delete
-	database.DeleteIssue(issue.ID)
+	database.DeleteIssue(issue.ID) //nolint:errcheck // test setup
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.DeletedAt == nil {
@@ -304,12 +304,12 @@ func TestDeletePreservesIssueData(t *testing.T) {
 		Points:      8,
 		Labels:      []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	issueID := issue.ID
 
 	// Delete the issue
-	database.DeleteIssue(issueID)
+	database.DeleteIssue(issueID) //nolint:errcheck // test setup
 
 	// Retrieve and verify data is preserved
 	retrieved, _ := database.GetIssue(issueID)
@@ -356,13 +356,13 @@ func TestDeleteMultipleWithMixedStatuses(t *testing.T) {
 			Title:  string(status),
 			Status: status,
 		}
-		database.CreateIssue(issue)
+		database.CreateIssue(issue) //nolint:errcheck // test setup
 		issueIDs = append(issueIDs, issue.ID)
 	}
 
 	// Delete all
 	for _, id := range issueIDs {
-		database.DeleteIssue(id)
+		database.DeleteIssue(id) //nolint:errcheck // test setup
 	}
 
 	// Verify all deleted
@@ -386,8 +386,8 @@ func TestDeletePartialFailure(t *testing.T) {
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	database.CreateIssue(issue1) //nolint:errcheck // test setup
+	database.CreateIssue(issue2) //nolint:errcheck // test setup
 
 	// Delete first issue successfully
 	err1 := database.DeleteIssue(issue1.ID)

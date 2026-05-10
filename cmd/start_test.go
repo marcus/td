@@ -56,14 +56,14 @@ func TestStartMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		database.CreateIssue(issue) //nolint:errcheck // test setup
 	}
 
 	// Start all issues
 	for _, issue := range issues {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		database.UpdateIssue(issue) //nolint:errcheck // test setup
 	}
 
 	// Verify all started
@@ -88,7 +88,7 @@ func TestStartBlockedIssueWithoutForce(t *testing.T) {
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// Without force, blocked issues should remain blocked
 	// In the actual command this would skip, here we test the state check
@@ -113,14 +113,14 @@ func TestStartBlockedIssueWithForce(t *testing.T) {
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// With force, even blocked issues can be started
 	force := true
 	if issue.Status == models.StatusBlocked && force {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		database.UpdateIssue(issue) //nolint:errcheck // test setup
 	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -142,12 +142,12 @@ func TestStartSetsImplementerSession(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	sessionID := "ses_abc123"
 	issue.Status = models.StatusInProgress
 	issue.ImplementerSession = sessionID
-	database.UpdateIssue(issue)
+	database.UpdateIssue(issue) //nolint:errcheck // test setup
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.ImplementerSession != sessionID {
@@ -181,11 +181,11 @@ func TestStartFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			database.CreateIssue(issue) //nolint:errcheck // test setup
 
 			if tc.canStart || tc.initialStatus != models.StatusBlocked {
 				issue.Status = models.StatusInProgress
-				database.UpdateIssue(issue)
+				database.UpdateIssue(issue) //nolint:errcheck // test setup
 
 				retrieved, _ := database.GetIssue(issue.ID)
 				if retrieved.Status != models.StatusInProgress {
@@ -221,7 +221,7 @@ func TestStartRecordsGitSnapshot(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// Record a git snapshot
 	snapshot := &models.GitSnapshot{
@@ -265,7 +265,7 @@ func TestStartLogsAction(t *testing.T) {
 	}
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	sessionID := "ses_test123"
 
@@ -305,7 +305,7 @@ func TestStartAddsProgressLog(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	// Add progress log as start command would
 	log := &models.Log{
@@ -341,7 +341,7 @@ func TestStartWithReason(t *testing.T) {
 	defer database.Close()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	database.CreateIssue(issue) //nolint:errcheck // test setup
 
 	reason := "Picking up from previous session"
 	log := &models.Log{
@@ -350,7 +350,7 @@ func TestStartWithReason(t *testing.T) {
 		Message:   reason,
 		Type:      models.LogTypeProgress,
 	}
-	database.AddLog(log)
+	database.AddLog(log) //nolint:errcheck // test setup
 
 	logs, _ := database.GetLogs(issue.ID, 10)
 	if len(logs) != 1 || logs[0].Message != reason {
@@ -368,7 +368,7 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 	defer database.Close()
 
 	validIssue := &models.Issue{Title: "Valid", Status: models.StatusOpen}
-	database.CreateIssue(validIssue)
+	database.CreateIssue(validIssue) //nolint:errcheck // test setup
 
 	// Try to get a non-existent issue
 	_, err = database.GetIssue("td-invalid")
@@ -378,7 +378,7 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 
 	// Valid issue can still be started
 	validIssue.Status = models.StatusInProgress
-	database.UpdateIssue(validIssue)
+	database.UpdateIssue(validIssue) //nolint:errcheck // test setup
 
 	retrieved, _ := database.GetIssue(validIssue.ID)
 	if retrieved.Status != models.StatusInProgress {

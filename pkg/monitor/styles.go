@@ -235,12 +235,6 @@ var (
 	kanbanTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
 	kanbanHintStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 	kanbanSepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-
-	// Modal border style for simple modal frames (notes loading, error states)
-	modalBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("240")).
-				Padding(1, 2)
 )
 
 // formatStatus renders a status with color

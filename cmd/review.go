@@ -20,7 +20,7 @@ import (
 func clearFocusIfNeeded(baseDir, issueID string) {
 	focusedID, _ := config.GetFocus(baseDir)
 	if focusedID == issueID {
-		config.ClearFocus(baseDir)
+		config.ClearFocus(baseDir) //nolint:errcheck // best-effort focus clear
 	}
 }
 
@@ -1033,7 +1033,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				}
 				logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION: %s)", agentInfo, reason)
 				logType = models.LogTypeSecurity
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				db.LogSecurityEvent(baseDir, db.SecurityEvent{ //nolint:errcheck // best-effort security audit log
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,
@@ -1210,7 +1210,7 @@ Supports bulk operations:
 				if reason != "" {
 					result["reason"] = reason
 				}
-				output.JSON(result)
+				output.JSON(result) //nolint:errcheck // JSON output to stdout
 			} else {
 				fmt.Printf("REJECTED %s → open\n", issueID)
 			}
@@ -1385,7 +1385,7 @@ Examples:
 				logType = models.LogTypeSecurity
 
 				// Also log to the separate security audit file
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				db.LogSecurityEvent(baseDir, db.SecurityEvent{ //nolint:errcheck // best-effort security audit log
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,

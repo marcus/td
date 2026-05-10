@@ -75,7 +75,7 @@ var wsStartCmd = &cobra.Command{
 		}
 
 		// Set as active
-		config.SetActiveWorkSession(baseDir, ws.ID)
+		config.SetActiveWorkSession(baseDir, ws.ID) //nolint:errcheck // best-effort config update
 
 		fmt.Printf("WORK SESSION STARTED: %s\n", ws.ID)
 		fmt.Printf("Name: %s\n", name)
@@ -141,13 +141,13 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
+				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart) //nolint:errcheck // best-effort status update
 
 				// Record session action for bypass prevention
-				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
+				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted) //nolint:errcheck // best-effort session tracking
 
 				// Log the start
-				database.AddLog(&models.Log{
+				database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 					IssueID:       issueID,
 					SessionID:     sess.ID,
 					WorkSessionID: wsID,
@@ -158,7 +158,7 @@ var wsTagCmd = &cobra.Command{
 				// Capture git state
 				gitState, _ := git.GetState()
 				if gitState != nil {
-					database.AddGitSnapshot(&models.GitSnapshot{
+					database.AddGitSnapshot(&models.GitSnapshot{ //nolint:errcheck // best-effort git snapshot
 						IssueID:    issueID,
 						Event:      "start",
 						CommitSHA:  gitState.CommitSHA,
@@ -266,7 +266,7 @@ var wsLogCmd = &cobra.Command{
 		only, _ := cmd.Flags().GetString("only")
 		if only != "" {
 			// Log to specific issue only
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:       only,
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
@@ -276,7 +276,7 @@ var wsLogCmd = &cobra.Command{
 			fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, only)
 		} else {
 			// Store single log entry with work_session_id, no issue_id
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:       "",
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
@@ -489,12 +489,12 @@ Flags support values, stdin (-), or file (@path):
 				Uncertain: handoff.Uncertain,
 			}
 
-			database.AddHandoff(issueHandoff)
+			database.AddHandoff(issueHandoff) //nolint:errcheck // best-effort handoff
 
 			// Capture git state
 			gitState, _ := git.GetState()
 			if gitState != nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				database.AddGitSnapshot(&models.GitSnapshot{ //nolint:errcheck // best-effort git snapshot
 					IssueID:    issueID,
 					Event:      "handoff",
 					CommitSHA:  gitState.CommitSHA,
@@ -517,8 +517,8 @@ Flags support values, stdin (-), or file (@path):
 				ws.EndSHA = gitState.CommitSHA
 			}
 
-			database.UpdateWorkSession(ws)
-			config.ClearActiveWorkSession(baseDir)
+			database.UpdateWorkSession(ws)             //nolint:errcheck // best-effort session update
+			config.ClearActiveWorkSession(baseDir) //nolint:errcheck // best-effort config update
 		}
 
 		fmt.Printf("HANDOFF RECORDED %s\n", wsID)
@@ -588,8 +588,8 @@ var wsEndCmd = &cobra.Command{
 		// End session
 		now := time.Now()
 		ws.EndedAt = &now
-		database.UpdateWorkSession(ws)
-		config.ClearActiveWorkSession(baseDir)
+		database.UpdateWorkSession(ws)             //nolint:errcheck // best-effort session update
+		config.ClearActiveWorkSession(baseDir) //nolint:errcheck // best-effort config update
 
 		output.Warning("No handoff recorded for %s", wsID)
 		if len(issueIDs) > 0 {

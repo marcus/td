@@ -49,7 +49,7 @@ var deferCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Deferral cleared",
@@ -88,7 +88,7 @@ var deferCmd = &cobra.Command{
 			logMsg = fmt.Sprintf("Deferred until %s (deferred %d times)", dateStr, issue.DeferCount)
 		}
 
-		database.AddLog(&models.Log{
+		database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 			IssueID:   issueID,
 			SessionID: sess.ID,
 			Message:   logMsg,

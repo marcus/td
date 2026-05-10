@@ -102,7 +102,7 @@ func TestPrintSyncEntry(t *testing.T) {
 			os.Stdout = old
 
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			io.Copy(&buf, r) //nolint:errcheck // test setup
 			output := buf.String()
 
 			for _, s := range tt.contains {

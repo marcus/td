@@ -209,7 +209,7 @@ Examples:
 
 			if info.IsDir() {
 				if recursive {
-					filepath.Walk(match, func(path string, info os.FileInfo, err error) error {
+					filepath.Walk(match, func(path string, info os.FileInfo, err error) error { //nolint:errcheck // walk errors handled within callback
 						if err != nil {
 							return nil
 						}

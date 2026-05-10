@@ -47,10 +47,7 @@ func (m Model) currentContext() keymap.Context {
 	if m.FormOpen {
 		return keymap.ContextForm
 	}
-	if m.NotesOpen {
-		return keymap.ContextNotes
-	}
-	if m.HandoffsOpen {
+if m.HandoffsOpen {
 		return keymap.ContextHandoffs
 	}
 	if m.StatsOpen {

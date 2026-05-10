@@ -49,7 +49,7 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date cleared",
@@ -75,7 +75,7 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			database.AddLog(&models.Log{ //nolint:errcheck // fire-and-forget progress log
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date set: " + dateStr,
