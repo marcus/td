@@ -35,7 +35,15 @@ git tag -l | sort -V | tail -1
 
 ### 2. Update CHANGELOG.md
 
-Add entry at the top of `CHANGELOG.md`:
+Generate a starting draft from committed history:
+
+```bash
+td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
+```
+
+If you need to override the default git range, pass `--from` and `--to`.
+
+Review the draft, edit it for clarity, and then add the final entry at the top of `CHANGELOG.md`:
 
 ```markdown
 ## [vX.Y.Z] - YYYY-MM-DD
@@ -134,8 +142,11 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
+# Draft release notes
+td release-notes --version vX.Y.Z > /tmp/td-release-notes.md
+
 # Update changelog
-# (Edit CHANGELOG.md, add entry at top)
+# (Review /tmp/td-release-notes.md, then edit CHANGELOG.md and add the final entry at top)
 git add CHANGELOG.md
 git commit -m "docs: Update changelog for vX.Y.Z"
 
@@ -154,6 +165,7 @@ brew upgrade td && td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] `td release-notes --version vX.Y.Z` used to draft the changelog entry
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
 - [ ] Version number follows semver
