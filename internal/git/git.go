@@ -4,10 +4,22 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
+)
+
+var (
+	// ErrNotRepository indicates the target directory is not a git repository.
+	ErrNotRepository = errors.New("not a git repository")
+	// ErrNoSemverTags indicates no semver-compatible tags were found.
+	ErrNoSemverTags = errors.New("no semver tags found")
+
+	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 )
 
 // State represents the current git state
@@ -20,26 +32,40 @@ type State struct {
 	DirtyFiles int
 }
 
+// Commit represents structured metadata for a git commit.
+type Commit struct {
+	Hash       string
+	Subject    string
+	Body       string
+	AuthorDate time.Time
+}
+
 // GetState returns the current git state
 func GetState() (*State, error) {
+	return GetStateInDir("")
+}
+
+// GetStateInDir returns the current git state for a specific repository
+// directory. An empty dir uses the current working directory.
+func GetStateInDir(dir string) (*State, error) {
 	state := &State{}
 
 	// Get current commit SHA
-	sha, err := runGit("rev-parse", "HEAD")
+	sha, err := runGitInDir(dir, "rev-parse", "HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("not a git repository")
+		return nil, ErrNotRepository
 	}
 	state.CommitSHA = strings.TrimSpace(sha)
 
 	// Get current branch
-	branch, err := runGit("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := runGitInDir(dir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		branch = "HEAD"
 	}
 	state.Branch = strings.TrimSpace(branch)
 
 	// Get status
-	status, _ := runGit("status", "--porcelain")
+	status, _ := runGitInDir(dir, "status", "--porcelain")
 	lines := strings.Split(strings.TrimSpace(status), "\n")
 
 	if status == "" || (len(lines) == 1 && lines[0] == "") {
@@ -73,6 +99,60 @@ func GetCommitsSince(sha string) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// GetLatestSemverTag returns the latest semver-compatible tag in the current repository.
+func GetLatestSemverTag() (string, error) {
+	return GetLatestSemverTagInDir("")
+}
+
+// GetLatestSemverTagInDir returns the latest semver-compatible tag in the given repository.
+func GetLatestSemverTagInDir(dir string) (string, error) {
+	output, err := runGitInDir(dir, "tag", "--list", "--sort=-version:refname", "v*")
+	if err != nil {
+		if errors.Is(err, ErrNotRepository) {
+			return "", err
+		}
+		return "", fmt.Errorf("list git tags: %w", err)
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		tag := strings.TrimSpace(line)
+		if tag == "" {
+			continue
+		}
+		if semverTagPattern.MatchString(tag) {
+			return tag, nil
+		}
+	}
+
+	return "", ErrNoSemverTags
+}
+
+// ListCommitsInRange returns structured commits for the given revision range in
+// chronological order.
+func ListCommitsInRange(from, to string) ([]Commit, error) {
+	return ListCommitsInRangeInDir("", from, to)
+}
+
+// ListCommitsInRangeInDir returns structured commits for the given revision
+// range in chronological order from the specified repository directory.
+func ListCommitsInRangeInDir(dir, from, to string) ([]Commit, error) {
+	rangeArg := revisionRange(from, to)
+	output, err := runGitInDir(dir,
+		"log",
+		"--reverse",
+		"--format=%H%x1f%s%x1f%b%x1f%aI%x1e",
+		rangeArg,
+	)
+	if err != nil {
+		if errors.Is(err, ErrNotRepository) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("list commits for %s: %w", rangeArg, err)
+	}
+
+	return parseCommitLog(output)
 }
 
 // GetChangedFilesSince returns changed files since a given SHA
@@ -185,7 +265,12 @@ func IsRepo() bool {
 
 // GetRootDir returns the git repository root directory
 func GetRootDir() (string, error) {
-	output, err := runGit("rev-parse", "--show-toplevel")
+	return GetRootDirInDir("")
+}
+
+// GetRootDirInDir returns the git repository root directory for a specific directory.
+func GetRootDirInDir(dir string) (string, error) {
+	output, err := runGitInDir(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
@@ -193,15 +278,77 @@ func GetRootDir() (string, error) {
 }
 
 func runGit(args ...string) (string, error) {
+	return runGitInDir("", args...)
+}
+
+func runGitInDir(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("%s: %s", err, stderr.String())
+		errText := strings.TrimSpace(stderr.String())
+		if strings.Contains(errText, "not a git repository") {
+			return "", ErrNotRepository
+		}
+		if errText == "" {
+			errText = err.Error()
+		}
+		return "", fmt.Errorf("%s: %s", err, errText)
 	}
 
 	return stdout.String(), nil
+}
+
+func revisionRange(from, to string) string {
+	switch {
+	case from != "" && to != "":
+		return from + ".." + to
+	case from != "":
+		return from + "..HEAD"
+	case to != "":
+		return to
+	default:
+		return "HEAD"
+	}
+}
+
+func parseCommitLog(output string) ([]Commit, error) {
+	output = strings.TrimSuffix(output, "\x1e")
+	if strings.TrimSpace(output) == "" {
+		return nil, nil
+	}
+
+	records := strings.Split(output, "\x1e")
+	commits := make([]Commit, 0, len(records))
+	for _, record := range records {
+		record = strings.TrimSpace(record)
+		if record == "" {
+			continue
+		}
+
+		fields := strings.Split(record, "\x1f")
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("unexpected git log record: %q", record)
+		}
+
+		authorDate, err := time.Parse(time.RFC3339, strings.TrimSpace(fields[3]))
+		if err != nil {
+			return nil, fmt.Errorf("parse author date %q: %w", fields[3], err)
+		}
+
+		commits = append(commits, Commit{
+			Hash:       strings.TrimSpace(fields[0]),
+			Subject:    strings.TrimSpace(fields[1]),
+			Body:       strings.TrimSpace(fields[2]),
+			AuthorDate: authorDate,
+		})
+	}
+
+	return commits, nil
 }
