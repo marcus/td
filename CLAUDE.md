@@ -71,15 +71,14 @@ go test ./...              # Test all
 ## Version & Release
 
 ```bash
-# Commit changes with proper message
+# Commit changes with the canonical subject format
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat: normalize commit messages (td-a1b2)
 
 Details here
 
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+Nightshift-Task: commit-normalize
+Nightshift-Ref: https://github.com/marcus/nightshift"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
@@ -94,6 +93,8 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Human-authored commits should use `type: summary (td-<id>)`. The `commit-msg` hook normalizes spacing/casing automatically. Automated release bump commits may use `td: bump to vX.Y.Z`.
 
 ## Architecture
 
