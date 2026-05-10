@@ -189,8 +189,26 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit-msg normalizer)
 make install-hooks
+```
+
+## Commit Messages
+
+New commits should use `type(scope)?: summary`.
+
+- Supported types: `feat`, `fix`, `docs`, `test`, `chore`, `ci`, `perf`, `refactor`, `style`, `release`
+- Add `(td-<id>)` for task work when you have one; it is recommended, not required for every commit
+- `(#123)` PR references are also fine at the end of the subject
+- Merge, revert, fixup, squash, and release/version flows are exempt from the local normalizer
+
+Accepted examples:
+
+```text
+feat(cli): add commit message normalizer (td-a1b2c3)
+fix(review): preserve Nightshift trailers (#91)
+docs: document install-hooks behavior
+release: v0.44.0
 ```
 
 ## Tests & Quality Checks
@@ -198,6 +216,9 @@ make install-hooks
 ```bash
 # Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
 make test
+
+# Verify the commit-msg normalizer
+make test-commit-msg
 
 # Expected output: ok for each package, ~2s total runtime
 # Example:
