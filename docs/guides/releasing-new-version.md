@@ -53,7 +53,7 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs(release): update changelog for vX.Y.Z"
 ```
 
 ### 3. Verify Tests Pass
@@ -137,7 +137,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs(release): update changelog for vX.Y.Z"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
@@ -156,6 +156,7 @@ brew upgrade td && td version
 - [ ] Working tree clean
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
+- [ ] Release-related commits use `type(scope?): summary`
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
 - [ ] Tag created with `-a` (annotated)
