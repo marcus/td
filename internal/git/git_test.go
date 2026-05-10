@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,37 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func createCommit(t *testing.T, dir, fileName, contents, subject string, body ...string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(contents), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", fileName); err != nil {
+		t.Fatalf("Failed to git add: %v", err)
+	}
+
+	args := []string{"commit", "-m", subject}
+	for _, paragraph := range body {
+		args = append(args, "-m", paragraph)
+	}
+	if err := runCmd(dir, "git", args...); err != nil {
+		t.Fatalf("Failed to commit: %v", err)
+	}
+}
+
+func createCommitAndReturnSHA(t *testing.T, dir, fileName, contents, subject string, body ...string) string {
+	t.Helper()
+
+	createCommit(t, dir, fileName, contents, subject, body...)
+
+	sha, err := runGitInDir(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to read HEAD: %v", err)
+	}
+	return strings.TrimSpace(sha)
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +499,147 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestGetLatestSemverTagInDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "not-a-release"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	createCommit(t, dir, "feature.txt", "feature\n", "feat: add changelog generator")
+
+	if err := runCmd(dir, "git", "tag", "v0.2.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	got, err := GetLatestSemverTagInDir(dir)
+	if err != nil {
+		t.Fatalf("GetLatestSemverTagInDir failed: %v", err)
+	}
+	if got != "v0.2.0" {
+		t.Fatalf("GetLatestSemverTagInDir = %q, want %q", got, "v0.2.0")
+	}
+}
+
+func TestGetLatestSemverTagInDirUsesReachableTagFromHead(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create base tag: %v", err)
+	}
+
+	createCommit(t, dir, "feature-a.txt", "feature A\n", "feat: add commit on main before release branch")
+
+	currentBranch, err := runGitInDir(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to read current branch: %v", err)
+	}
+	currentBranch = strings.TrimSpace(currentBranch)
+
+	if err := runCmd(dir, "git", "checkout", "-b", "release/v0.2.0"); err != nil {
+		t.Fatalf("Failed to create release branch: %v", err)
+	}
+	createCommit(t, dir, "release.txt", "release\n", "fix: release-branch-only patch")
+	if err := runCmd(dir, "git", "tag", "v0.2.0"); err != nil {
+		t.Fatalf("Failed to create release tag: %v", err)
+	}
+	if err := runCmd(dir, "git", "checkout", currentBranch); err != nil {
+		t.Fatalf("Failed to return to %s: %v", currentBranch, err)
+	}
+
+	createCommit(t, dir, "feature-b.txt", "feature B\n", "fix: add post-release bug fix")
+
+	got, err := GetLatestSemverTagInDir(dir)
+	if err != nil {
+		t.Fatalf("GetLatestSemverTagInDir failed: %v", err)
+	}
+	if got != "v0.1.0" {
+		t.Fatalf("GetLatestSemverTagInDir = %q, want %q", got, "v0.1.0")
+	}
+}
+
+func TestGetLatestSemverTagInDirNoTags(t *testing.T) {
+	dir := initTestRepo(t)
+
+	_, err := GetLatestSemverTagInDir(dir)
+	if err != ErrNoSemverTags {
+		t.Fatalf("GetLatestSemverTagInDir error = %v, want %v", err, ErrNoSemverTags)
+	}
+}
+
+func TestListCommitsInRangeInDir(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	createCommit(t, dir, "feature.txt", "feature\n", "feat: add changelog generator", "Detailed body paragraph")
+	createCommit(t, dir, "fix.txt", "fix\n", "fix: handle explicit --to overrides")
+
+	commits, err := ListCommitsInRangeInDir(dir, "v0.1.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRangeInDir failed: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+	if commits[0].Subject != "feat: add changelog generator" {
+		t.Fatalf("first subject = %q", commits[0].Subject)
+	}
+	if !strings.Contains(commits[0].Body, "Detailed body paragraph") {
+		t.Fatalf("expected commit body to be preserved, got %q", commits[0].Body)
+	}
+	if commits[1].Subject != "fix: handle explicit --to overrides" {
+		t.Fatalf("second subject = %q", commits[1].Subject)
+	}
+	if commits[0].AuthorDate.IsZero() || commits[1].AuthorDate.IsZero() {
+		t.Fatal("expected author dates to be populated")
+	}
+}
+
+func TestGetLatestSemverTagReachableFromInDirUsesExplicitRevision(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create base tag: %v", err)
+	}
+
+	firstMainCommit := createCommitAndReturnSHA(t, dir, "feature.txt", "feature\n", "feat: add first mainline commit")
+	createCommit(t, dir, "fix.txt", "fix\n", "fix: add second mainline commit")
+
+	if err := runCmd(dir, "git", "tag", "v0.2.0"); err != nil {
+		t.Fatalf("Failed to create second tag: %v", err)
+	}
+
+	got, err := GetLatestSemverTagReachableFromInDir(dir, firstMainCommit)
+	if err != nil {
+		t.Fatalf("GetLatestSemverTagReachableFromInDir failed: %v", err)
+	}
+	if got != "v0.1.0" {
+		t.Fatalf("GetLatestSemverTagReachableFromInDir = %q, want %q", got, "v0.1.0")
+	}
+}
+
+func TestListCommitsInRangeInDirEmptyRange(t *testing.T) {
+	dir := initTestRepo(t)
+
+	head, err := runGitInDir(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD failed: %v", err)
+	}
+
+	commits, err := ListCommitsInRangeInDir(dir, strings.TrimSpace(head), "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRangeInDir failed: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("expected 0 commits, got %d", len(commits))
 	}
 }
