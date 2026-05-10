@@ -1,9 +1,11 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,31 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func commitFile(t *testing.T, dir, path, contents, message string) string {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, path)), 0755); err != nil {
+		t.Fatalf("Failed to create parent dir for %s: %v", path, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, path), []byte(contents), 0644); err != nil {
+		t.Fatalf("Failed to write file %s: %v", path, err)
+	}
+	if err := runCmd(dir, "git", "add", path); err != nil {
+		t.Fatalf("Failed to git add %s: %v", path, err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", message); err != nil {
+		t.Fatalf("Failed to commit %s: %v", message, err)
+	}
+
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to read HEAD SHA: %v", err)
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +494,96 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestRepoLatestTag(t *testing.T) {
+	dir := initTestRepo(t)
+	repo := NewRepo(dir)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+
+	tag, err := repo.LatestTag()
+	if err != nil {
+		t.Fatalf("LatestTag failed: %v", err)
+	}
+	if tag != "v0.1.0" {
+		t.Fatalf("LatestTag = %q, want %q", tag, "v0.1.0")
+	}
+}
+
+func TestRepoLatestTagNoTags(t *testing.T) {
+	dir := initTestRepo(t)
+	repo := NewRepo(dir)
+
+	_, err := repo.LatestTag()
+	if !errors.Is(err, ErrNoTagsFound) {
+		t.Fatalf("LatestTag error = %v, want %v", err, ErrNoTagsFound)
+	}
+}
+
+func TestRepoResolveRevisionRangeDefaultsToLatestTag(t *testing.T) {
+	dir := initTestRepo(t)
+	repo := NewRepo(dir)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+	commitFile(t, dir, "feature.txt", "hello\n", "feat: add release notes")
+
+	rng, err := repo.ResolveRevisionRange("", "", "")
+	if err != nil {
+		t.Fatalf("ResolveRevisionRange failed: %v", err)
+	}
+
+	if rng.From != "v0.1.0" {
+		t.Fatalf("From = %q, want %q", rng.From, "v0.1.0")
+	}
+	if rng.To != "HEAD" {
+		t.Fatalf("To = %q, want %q", rng.To, "HEAD")
+	}
+	if rng.Expr != "v0.1.0..HEAD" {
+		t.Fatalf("Expr = %q, want %q", rng.Expr, "v0.1.0..HEAD")
+	}
+}
+
+func TestRepoResolveRevisionRangeRejectsMixedFlags(t *testing.T) {
+	dir := initTestRepo(t)
+	repo := NewRepo(dir)
+
+	_, err := repo.ResolveRevisionRange("HEAD~1", "HEAD", "HEAD~1..HEAD")
+	if err == nil || !strings.Contains(err.Error(), "either --range or --from/--to") {
+		t.Fatalf("ResolveRevisionRange error = %v", err)
+	}
+}
+
+func TestRepoListCommitsIncludesChangedFiles(t *testing.T) {
+	dir := initTestRepo(t)
+	repo := NewRepo(dir)
+
+	if err := runCmd(dir, "git", "tag", "v0.1.0"); err != nil {
+		t.Fatalf("Failed to create tag: %v", err)
+	}
+	commitFile(t, dir, "docs/guide.md", "# Guide\n", "docs: add release guide")
+	commitFile(t, dir, "cmd/release_notes.go", "package cmd\n", "feat: add release notes command")
+
+	commits, err := repo.ListCommits("v0.1.0..HEAD")
+	if err != nil {
+		t.Fatalf("ListCommits failed: %v", err)
+	}
+
+	if len(commits) != 2 {
+		t.Fatalf("len(commits) = %d, want 2", len(commits))
+	}
+	if commits[0].Subject != "docs: add release guide" {
+		t.Fatalf("first subject = %q", commits[0].Subject)
+	}
+	if len(commits[0].Files) != 1 || commits[0].Files[0] != "docs/guide.md" {
+		t.Fatalf("first commit files = %#v", commits[0].Files)
+	}
+	if len(commits[1].Files) != 1 || commits[1].Files[0] != "cmd/release_notes.go" {
+		t.Fatalf("second commit files = %#v", commits[1].Files)
 	}
 }
