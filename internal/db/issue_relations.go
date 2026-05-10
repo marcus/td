@@ -610,6 +610,27 @@ func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 	return files, nil
 }
 
+// GetFileIssueMap returns a map of file paths to issue IDs for all linked files.
+func (db *DB) GetFileIssueMap() (map[string][]string, error) {
+	rows, err := db.conn.Query(`
+		SELECT file_path, issue_id FROM issue_files ORDER BY file_path
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string)
+	for rows.Next() {
+		var filePath, issueID string
+		if err := rows.Scan(&filePath, &issueID); err != nil {
+			return nil, err
+		}
+		result[filePath] = append(result[filePath], issueID)
+	}
+	return result, nil
+}
+
 // ============================================================================
 // Issue Session Functions
 // ============================================================================
