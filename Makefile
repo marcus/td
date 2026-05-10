@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version install-hooks test-hooks
 
 SHELL := /bin/sh
 
@@ -13,7 +13,8 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
-		"  make install-hooks             # install git pre-commit hook" \
+		"  make install-hooks             # install git pre-commit + commit-msg hooks" \
+		"  make test-hooks                # run hook regression tests" \
 		"  make test                      # go test ./..." \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
@@ -52,6 +53,18 @@ release: tag
 	git push origin "$(VERSION)"
 
 install-hooks:
-	@echo "Installing git pre-commit hook..."
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@echo "Done. Hook installed at .git/hooks/pre-commit"
+	@hooks_dir="$$(git rev-parse --git-path hooks)"; \
+	mkdir -p "$$hooks_dir"; \
+	for hook in pre-commit commit-msg; do \
+		printf '%s\n' \
+			'#!/bin/sh' \
+			'set -eu' \
+			'repo_root=$$(git rev-parse --show-toplevel)' \
+			"exec \"\$$repo_root/scripts/$${hook}.sh\" \"\$$@\"" \
+			> "$$hooks_dir/$$hook"; \
+		chmod +x "$$hooks_dir/$$hook"; \
+		echo "Installed $$hook hook at $$hooks_dir/$$hook"; \
+	done
+
+test-hooks:
+	./scripts/test-commit-msg.sh

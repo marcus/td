@@ -18,6 +18,7 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 - On the main branch
 - GitHub CLI authenticated (`gh auth status`)
 - `HOMEBREW_TAP_TOKEN` secret configured on the repo (for Homebrew tap push)
+- Local hooks installed with `make install-hooks` so release commits use the canonical `type: summary` or `type(scope): summary` format
 
 ## Release Process
 
@@ -53,7 +54,7 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 ```
 
 ### 3. Verify Tests Pass
@@ -137,7 +138,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
@@ -156,6 +157,7 @@ brew upgrade td && td version
 - [ ] Working tree clean
 - [ ] CHANGELOG.md updated with new version entry
 - [ ] Changelog committed to git
+- [ ] Commit subjects follow `type: summary` or `type(scope): summary`
 - [ ] Version number follows semver
 - [ ] Commits pushed to main
 - [ ] Tag created with `-a` (annotated)
