@@ -163,6 +163,7 @@ td review <id>
 ```
 
 Use `td review`, not `td close` — self-closing is blocked.
+Release and automation-only commits should use `type: <summary>` without the td suffix.
 
 ## Rules
 
@@ -174,4 +175,4 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit messages use the canonical format.** Task-linked commits: `type: <summary> (td-<id>)`; automation/release commits: `type: <summary>`
