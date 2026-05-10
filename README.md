@@ -189,7 +189,7 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks and commit message format)
 make install-hooks
 ```
 
