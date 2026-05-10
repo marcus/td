@@ -189,15 +189,22 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks:
+#   - pre-commit runs gofmt, go vet, and go build on staged files
+#   - commit-msg normalizes subjects to type: summary or type(scope): summary
 make install-hooks
 ```
+
+Commit subjects should use `type: summary` or `type(scope): summary`, with an optional trailing ` (td-<id>)`. Safe variants like `Docs - Update changelog` are rewritten automatically; malformed `td` suffixes are rejected.
 
 ## Tests & Quality Checks
 
 ```bash
 # Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
 make test
+
+# Run commit hook regression tests
+make test-hooks
 
 # Expected output: ok for each package, ~2s total runtime
 # Example:
@@ -207,7 +214,7 @@ make test
 # Format code (runs gofmt)
 make fmt
 
-# No linter configured yet — clean gofmt is current quality bar
+# No linter configured yet — clean gofmt plus the hook regression suite are the current quality bar
 ```
 
 ## Release
