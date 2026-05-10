@@ -8,6 +8,8 @@ import (
 )
 
 func TestKnownFeatureDefaults(t *testing.T) {
+	clearFeatureEnv(t)
+
 	for _, feature := range ListAll() {
 		if IsEnabledForProcess(feature.Name) != feature.Default {
 			t.Fatalf("default mismatch for %s", feature.Name)
@@ -16,6 +18,8 @@ func TestKnownFeatureDefaults(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
+	clearFeatureEnv(t)
+
 	t.Setenv("TD_FEATURE_SYNC_CLI", "true")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_FEATURE_SYNC_CLI=true should enable sync_cli")
@@ -28,6 +32,8 @@ func TestIsEnabledForProcess_EnvVarOverride(t *testing.T) {
 }
 
 func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
+	clearFeatureEnv(t)
+
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli,sync_monitor_prompt")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("TD_ENABLE_FEATURE should enable sync_cli")
@@ -43,6 +49,8 @@ func TestIsEnabledForProcess_EnableDisableLists(t *testing.T) {
 }
 
 func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
+	clearFeatureEnv(t)
+
 	dir := t.TempDir()
 
 	if err := config.SetFeatureFlag(dir, SyncCLI.Name, true); err != nil {
@@ -61,6 +69,8 @@ func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
 }
 
 func TestDisableExperimentalKillSwitch(t *testing.T) {
+	clearFeatureEnv(t)
+
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli")
 	if !IsEnabledForProcess(SyncCLI.Name) {
 		t.Fatal("expected sync_cli enabled before kill-switch")
@@ -76,6 +86,8 @@ func TestDisableExperimentalKillSwitch(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_DefaultsToDelegated(t *testing.T) {
+	clearFeatureEnv(t)
+
 	// Step 5: with no explicit config (neither review_policy_mode nor
 	// balanced_review_policy set), the resolver returns ModeDelegated.
 	// BalancedReviewPolicy.Default is now false and the legacy flag is
@@ -92,6 +104,8 @@ func TestResolveReviewPolicyMode_DefaultsToDelegated(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_EnvOverride(t *testing.T) {
+	clearFeatureEnv(t)
+
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -111,6 +125,8 @@ func TestResolveReviewPolicyMode_EnvOverride(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_ConfigValue(t *testing.T) {
+	clearFeatureEnv(t)
+
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -128,6 +144,8 @@ func TestResolveReviewPolicyMode_ConfigValue(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_LegacyBalancedMapping(t *testing.T) {
+	clearFeatureEnv(t)
+
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -158,6 +176,8 @@ func TestResolveReviewPolicyMode_LegacyBalancedMapping(t *testing.T) {
 }
 
 func TestResolveReviewPolicyMode_ConflictingFlags(t *testing.T) {
+	clearFeatureEnv(t)
+
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 
@@ -198,5 +218,25 @@ func TestSyncGateMapReferencesKnownFeatures(t *testing.T) {
 		if entry.Surface == "" {
 			t.Fatalf("empty surface for feature %s", entry.Feature)
 		}
+	}
+}
+
+func clearFeatureEnv(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{
+		"TD_DISABLE_EXPERIMENTAL",
+		"TD_DISABLE_FEATURE",
+		"TD_DISABLE_FEATURES",
+		"TD_ENABLE_FEATURE",
+		"TD_ENABLE_FEATURES",
+		"TD_FEATURE_BALANCED_REVIEW_POLICY",
+		"TD_FEATURE_REVIEW_POLICY_MODE",
+		"TD_FEATURE_SYNC_AUTOSYNC",
+		"TD_FEATURE_SYNC_CLI",
+		"TD_FEATURE_SYNC_MONITOR_PROMPT",
+		"TD_FEATURE_SYNC_NOTES",
+	} {
+		t.Setenv(key, "")
 	}
 }

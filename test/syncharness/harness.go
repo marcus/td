@@ -590,10 +590,10 @@ var softDeleteTables = map[string]bool{
 // that mapActionType() converts to hard "delete" (not "soft_delete").
 // Without this, "delete" action on these tables would become "soft_delete" and fail.
 var hardDeleteActionTypes = map[string]string{
-	"issue_dependencies":    "remove_dependency",
-	"issue_files":           "unlink_file",
-	"work_session_issues":   "work_session_untag",
-	"boards":                "board_delete",
+	"issue_dependencies":  "remove_dependency",
+	"issue_files":         "unlink_file",
+	"work_session_issues": "work_session_untag",
+	"boards":              "board_delete",
 }
 
 // dumpTable returns a deterministic string representation of all rows in a table.
