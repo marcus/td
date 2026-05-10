@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pre-commit hook for td
-# Install: make install-hooks  (or: ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit)
+# Install all git hooks: make install-hooks
 set -euo pipefail
 
 PASS=0

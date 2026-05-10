@@ -158,7 +158,10 @@ Batch review loops:
 
 ```bash
 git add <specific files>
-git commit -m "feat: <summary> (td-<id>)"
+git commit -m "feat: <summary> (td-<id>)
+
+Nightshift-Task: <task-id>
+Nightshift-Ref: https://github.com/marcus/nightshift"
 td review <id>
 ```
 
@@ -174,4 +177,4 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit messages use Conventional Commit subjects.** Format: `type: <summary>`; an optional `(td-<id>)` reference may appear in the subject or body. Nightshift-managed work includes `Nightshift-Task` and `Nightshift-Ref` trailers.
