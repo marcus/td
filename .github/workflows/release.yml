@@ -74,5 +74,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/td.rb
           git diff --cached --quiet && echo "No changes" && exit 0
+          # Allowed by scripts/commit-msg.sh as an automated release exception.
           git commit -m "td: bump to ${{ steps.version.outputs.version }}"
           git push

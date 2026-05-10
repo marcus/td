@@ -53,7 +53,7 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z (td-<id>)"
 ```
 
 ### 3. Verify Tests Pass
@@ -137,7 +137,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z (td-<id>)"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
@@ -164,3 +164,19 @@ brew upgrade td && td version
 - [ ] Homebrew tap updated in `marcus/homebrew-tap` (automated)
 - [ ] `brew install marcus/tap/td` works
 - [ ] `td version` shows correct version
+
+## Commit Message Format
+
+Human-authored task commits use `type[(scope)]: summary (td-<id>)`.
+Examples:
+
+```bash
+git commit -m "docs: update changelog for vX.Y.Z (td-a1b2)"
+git commit -m "fix(release): tighten release guide wording (td-c3d4)"
+```
+
+The automated Homebrew tap update created by `.github/workflows/release.yml` is the approved exception:
+
+```text
+td: bump to vX.Y.Z
+```

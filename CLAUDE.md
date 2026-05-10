@@ -72,14 +72,8 @@ go test ./...              # Test all
 
 ```bash
 # Commit changes with proper message
-git add .
-git commit -m "feat: description of changes
-
-Details here
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+git add <specific files>
+git commit -m "feat(scope): concise summary (td-a1b2)"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
@@ -94,6 +88,9 @@ go install -ldflags "-X main.Version=v0.3.0" ./...
 # Verify installation
 td version
 ```
+
+Human-authored task commits should use `type[(scope)]: summary (td-<id>)`.
+The automated Homebrew tap release commit is the approved exception: `td: bump to vX.Y.Z`.
 
 ## Architecture
 
