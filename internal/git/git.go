@@ -4,10 +4,24 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+)
+
+var (
+	// ErrNotRepository indicates the target directory is not inside a git repo.
+	ErrNotRepository = errors.New("not a git repository")
+	// ErrNoSemverTag indicates no reachable semver tag was found for the range.
+	ErrNoSemverTag = errors.New("no reachable semver tag found")
+	// ErrNoCommits indicates a range resolved successfully but contained no commits.
+	ErrNoCommits = errors.New("no commits found")
+
+	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 )
 
 // State represents the current git state
@@ -91,6 +105,29 @@ type FileChange struct {
 	Additions int
 	Deletions int
 	IsNew     bool
+}
+
+// ReleaseNotesOptions controls how release notes are generated from git history.
+type ReleaseNotesOptions struct {
+	FromRef string
+	ToRef   string
+}
+
+// ReleaseCommit captures a commit subject plus the files it touched.
+type ReleaseCommit struct {
+	SHA     string
+	Subject string
+	Files   []string
+}
+
+// ReleaseNotesData describes a resolved release-note range and its commits.
+type ReleaseNotesData struct {
+	RepoRoot    string
+	FromRef     string
+	ToRef       string
+	BaselineTag string
+	Commits     []ReleaseCommit
+	Files       []string
 }
 
 func parseStatOutput(output string) []FileChange {
@@ -179,21 +216,199 @@ func GetDiffStatsSince(sha string) (*DiffStats, error) {
 
 // IsRepo checks if we're in a git repository
 func IsRepo() bool {
-	_, err := runGit("rev-parse", "--git-dir")
-	return err == nil
+	return IsRepoAt("")
 }
 
 // GetRootDir returns the git repository root directory
 func GetRootDir() (string, error) {
-	output, err := runGit("rev-parse", "--show-toplevel")
+	return GetRootDirFrom("")
+}
+
+// IsRepoAt checks whether dir is inside a git repository.
+func IsRepoAt(dir string) bool {
+	_, err := runGitInDir(dir, "rev-parse", "--git-dir")
+	return err == nil
+}
+
+// GetRootDirFrom returns the git repository root for dir.
+func GetRootDirFrom(dir string) (string, error) {
+	output, err := runGitInDir(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w", ErrNotRepository)
 	}
 	return strings.TrimSpace(output), nil
 }
 
+// GetLatestSemverTag returns the latest reachable semver tag for ref.
+func GetLatestSemverTag(dir, ref string) (string, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return "", err
+	}
+
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+
+	if err := verifyCommitRef(root, ref); err != nil {
+		return "", err
+	}
+
+	output, err := runGitInDir(root, "tag", "--merged", ref, "--sort=-version:refname")
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		tag := strings.TrimSpace(line)
+		if tag == "" {
+			continue
+		}
+		if semverTagPattern.MatchString(tag) {
+			return tag, nil
+		}
+	}
+
+	return "", fmt.Errorf("%w from %s; use --from to specify a range", ErrNoSemverTag, ref)
+}
+
+// GetReleaseNotesData resolves a git range and returns commits and changed files
+// for drafting release notes.
+func GetReleaseNotesData(dir string, opts ReleaseNotesOptions) (*ReleaseNotesData, error) {
+	root, err := GetRootDirFrom(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	toRef := strings.TrimSpace(opts.ToRef)
+	if toRef == "" {
+		toRef = "HEAD"
+	}
+	if err := verifyCommitRef(root, toRef); err != nil {
+		return nil, err
+	}
+
+	fromRef := strings.TrimSpace(opts.FromRef)
+	baselineTag := ""
+	if fromRef == "" {
+		baselineTag, err = GetLatestSemverTag(root, toRef)
+		if err != nil {
+			return nil, err
+		}
+		fromRef = baselineTag
+	} else if err := verifyCommitRef(root, fromRef); err != nil {
+		return nil, err
+	}
+
+	commits, err := listReleaseCommits(root, fromRef, toRef)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := listChangedFiles(root, fromRef, toRef)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ReleaseNotesData{
+		RepoRoot:    root,
+		FromRef:     fromRef,
+		ToRef:       toRef,
+		BaselineTag: baselineTag,
+		Commits:     commits,
+		Files:       files,
+	}, nil
+}
+
+func verifyCommitRef(dir, ref string) error {
+	if _, err := runGitInDir(dir, "rev-parse", "--verify", ref+"^{commit}"); err != nil {
+		return fmt.Errorf("invalid git ref %q: %w", ref, err)
+	}
+	return nil
+}
+
+func listReleaseCommits(dir, fromRef, toRef string) ([]ReleaseCommit, error) {
+	output, err := runGitInDir(dir, "log", "--no-merges", "--reverse", "--format=%H%x00%s", fromRef+".."+toRef)
+	if err != nil {
+		return nil, err
+	}
+
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, fmt.Errorf("%w in range %s..%s", ErrNoCommits, fromRef, toRef)
+	}
+
+	lines := strings.Split(output, "\n")
+	commits := make([]ReleaseCommit, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.SplitN(line, "\x00", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		files, err := listFilesForCommit(dir, strings.TrimSpace(parts[0]))
+		if err != nil {
+			return nil, err
+		}
+
+		commits = append(commits, ReleaseCommit{
+			SHA:     strings.TrimSpace(parts[0]),
+			Subject: strings.TrimSpace(parts[1]),
+			Files:   files,
+		})
+	}
+
+	if len(commits) == 0 {
+		return nil, fmt.Errorf("%w in range %s..%s", ErrNoCommits, fromRef, toRef)
+	}
+
+	return commits, nil
+}
+
+func listFilesForCommit(dir, sha string) ([]string, error) {
+	output, err := runGitInDir(dir, "show", "--pretty=format:", "--name-only", "--diff-filter=ACDMRT", sha)
+	if err != nil {
+		return nil, err
+	}
+	return splitUniqueLines(output), nil
+}
+
+func listChangedFiles(dir, fromRef, toRef string) ([]string, error) {
+	output, err := runGitInDir(dir, "diff", "--name-only", fromRef+".."+toRef)
+	if err != nil {
+		return nil, err
+	}
+	return splitUniqueLines(output), nil
+}
+
+func splitUniqueLines(output string) []string {
+	seen := make(map[string]struct{})
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		lines = append(lines, line)
+	}
+	sort.Strings(lines)
+	return lines
+}
+
 func runGit(args ...string) (string, error) {
+	return runGitInDir("", args...)
+}
+
+func runGitInDir(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
