@@ -53,8 +53,10 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 ```
+
+If you have run `make install-hooks`, the local `commit-msg` hook will normalize obvious subject formatting issues, preserve the commit body and trailers, and reject subjects it cannot safely interpret. Use `type: summary` or `type(scope): summary`, plus an optional trailing ` (td-<id>)` when the release prep is tied to a task.
 
 ### 3. Verify Tests Pass
 
@@ -137,7 +139,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
