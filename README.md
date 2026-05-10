@@ -189,9 +189,15 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks:
+#   pre-commit -> gofmt, go vet, go build
+#   commit-msg -> normalize commit subjects
 make install-hooks
 ```
+
+`make install-hooks` installs wrappers into the repo's resolved git hooks directory, so the same setup works from linked worktrees too.
+
+Commit subjects are normalized to `type: summary` or `type(scope): summary`, with an optional trailing ` (td-<id>)`. The `commit-msg` hook rewrites obvious cases like `Docs - Update changelog` to `docs: update changelog`, preserves commit bodies and trailers, leaves Git-generated merge/fixup/squash/revert subjects alone, and stops the commit with guidance when the subject cannot be safely interpreted.
 
 ## Tests & Quality Checks
 
