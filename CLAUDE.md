@@ -73,13 +73,16 @@ go test ./...              # Test all
 ```bash
 # Commit changes with proper message
 git add .
-git commit -m "feat: description of changes
+git commit -m "feat: describe the change (td-<id>)
 
 Details here
 
 🤖 Generated with Claude Code
 
 Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+
+# Release or automation-only commits without a td task may omit the suffix:
+git commit -m "chore: update release metadata"
 
 # Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
 git tag -a v0.3.0 -m "Release v0.3.0: description"
