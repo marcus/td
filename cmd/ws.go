@@ -141,10 +141,15 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
+				if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
+					output.Warning("failed to update %s: %v", issueID, err)
+					continue
+				}
 
 				// Record session action for bypass prevention
-				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
+				if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted); err != nil {
+					output.Warning("failed to record session history: %v", err)
+				}
 
 				// Log the start
 				database.AddLog(&models.Log{

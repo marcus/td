@@ -303,7 +303,10 @@ func (db *DB) PinNote(id string) error {
 		if err != nil {
 			return err
 		}
-		rows, _ := result.RowsAffected()
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if rows == 0 {
 			return fmt.Errorf("note not found: %s", id)
 		}
@@ -320,7 +323,10 @@ func (db *DB) UnpinNote(id string) error {
 		if err != nil {
 			return err
 		}
-		rows, _ := result.RowsAffected()
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if rows == 0 {
 			return fmt.Errorf("note not found: %s", id)
 		}
@@ -337,7 +343,10 @@ func (db *DB) ArchiveNote(id string) error {
 		if err != nil {
 			return err
 		}
-		rows, _ := result.RowsAffected()
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if rows == 0 {
 			return fmt.Errorf("note not found: %s", id)
 		}
@@ -354,7 +363,10 @@ func (db *DB) UnarchiveNote(id string) error {
 		if err != nil {
 			return err
 		}
-		rows, _ := result.RowsAffected()
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected: %w", err)
+		}
 		if rows == 0 {
 			return fmt.Errorf("note not found: %s", id)
 		}

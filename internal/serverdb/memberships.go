@@ -110,7 +110,10 @@ func (db *ServerDB) UpdateMemberRole(projectID, userID, newRole string) error {
 	if err != nil {
 		return fmt.Errorf("update member role: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update member role: rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("membership not found")
 	}
