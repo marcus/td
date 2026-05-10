@@ -22,7 +22,9 @@ type syncableTable struct {
 }
 
 // syncableTables lists every table the sync engine pushes/pulls.
-// Aliases must cover both singular and plural forms used by existing code paths.
+// Aliases must cover both singular and plural forms because early code used
+// singular entity_type strings (e.g. "issue") while later code standardized on
+// plural table names (e.g. "issues"). Both forms exist in production action_logs.
 var syncableTables = []syncableTable{
 	{"issues", "issue", []string{"issue", "issues"}, []string{"create"}, false},
 	{"logs", "logs", []string{"log", "logs"}, []string{"create"}, false},
@@ -42,8 +44,9 @@ var syncableTables = []syncableTable{
 // get picked up by the normal push pipeline.
 //
 // Only runs when the client has never pulled from the server (last_pulled_server_seq == 0).
-// After the first pull, entities in the DB may have come from the server, and
-// backfilling those would create duplicate events.
+// This before-first-pull guard is critical: after pulling, entities in the DB may
+// have come from the server, and backfilling those would create duplicate events
+// that get pushed back, causing data duplication across all devices.
 //
 // Returns the total number of entities backfilled.
 func BackfillOrphanEntities(tx *sql.Tx, sessionID string) (int, error) {
@@ -130,6 +133,9 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 	}
 	defer stmt.Close()
 
+	// 1-second threshold accounts for timestamp precision differences between
+	// SQLite (second-resolution DATETIME) and Go (nanosecond time.Time). Without
+	// this margin, sub-second updates would always appear "stale" vs their action_log entry.
 	const staleThreshold = time.Second
 	count := 0
 

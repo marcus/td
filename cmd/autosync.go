@@ -70,6 +70,10 @@ func AutoSyncEnabled() bool {
 }
 
 // autoSyncOnce runs a push and optional pull silently.
+// Uses atomic CAS (not a mutex) to debounce concurrent callers without blocking:
+// if a sync is already in flight, new callers return immediately rather than
+// queueing up. This matters because multiple Cobra commands and hooks can trigger
+// sync in rapid succession.
 func autoSyncOnce() {
 	if !atomic.CompareAndSwapInt32(&autoSyncInFlight, 0, 1) {
 		slog.Debug("autosync: skipped, in flight")
@@ -129,9 +133,10 @@ func autoSyncOnce() {
 	}
 
 	if syncconfig.GetAutoSyncPull() {
-		// Reload syncState after push — push updates last_sync_at in the DB
-		// but the in-memory struct is stale. ApplyRemoteEvents uses LastSyncAt
-		// for conflict detection, so a stale value causes false conflicts.
+		// Must reload syncState between push and pull: push updates last_sync_at
+		// in the DB but the in-memory struct still has the old value.
+		// ApplyRemoteEvents uses LastSyncAt for conflict detection, so a stale
+		// value would flag every pulled event as a conflict.
 		syncState, err = database.GetSyncState()
 		if err != nil || syncState == nil {
 			slog.Debug("autosync: reload sync state", "err", err)

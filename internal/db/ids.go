@@ -42,7 +42,11 @@ func NormalizeIssueID(id string) string {
 // It can be replaced in tests to control ID generation.
 var idGenerator = defaultGenerateID
 
-// defaultGenerateID generates a unique issue ID using crypto/rand
+// defaultGenerateID generates a unique issue ID using crypto/rand.
+// 3 bytes = 16.7M keyspace. Issues and notes use short IDs (3 bytes) because
+// they're typed by humans in CLI commands; boards/logs/etc. use 4 bytes (4B
+// keyspace) since they're only referenced programmatically and collisions are
+// costlier to retry.
 func defaultGenerateID() (string, error) {
 	bytes := make([]byte, 3) // 6 hex characters - balances brevity with collision resistance
 	if _, err := rand.Read(bytes); err != nil {
@@ -110,7 +114,8 @@ func generateSnapshotID() (string, error) {
 	return snapshotIDPrefix + hex.EncodeToString(bytes), nil
 }
 
-// generateNoteID generates a unique note ID
+// generateNoteID generates a unique note ID.
+// 3 bytes like issues — notes are referenced by humans in CLI commands.
 func generateNoteID() (string, error) {
 	bytes := make([]byte, 3) // 6 hex characters
 	if _, err := rand.Read(bytes); err != nil {
@@ -129,6 +134,9 @@ func generateActionID() (string, error) {
 }
 
 // deterministicID computes prefix + sha256(input)[:16] for sync-stable IDs.
+// Uses sha256 (not a shorter hash) because these IDs must be identical across
+// devices for sync convergence — any collision would cause silent data loss.
+// Truncated to 16 hex chars as a balance between uniqueness and readability.
 func deterministicID(prefix, input string) string {
 	h := sha256.Sum256([]byte(input))
 	return prefix + hex.EncodeToString(h[:])[:16]
