@@ -53,6 +53,9 @@ release: tag
 
 install-hooks:
 	@echo "Installing git hooks..."
-	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
-	@ln -sf ../../scripts/commit-msg.sh .git/hooks/commit-msg
-	@echo "Done. Hooks installed at .git/hooks/pre-commit and .git/hooks/commit-msg"
+	@hooks_dir=$$(git rev-parse --git-path hooks); \
+	repo_root=$$(git rev-parse --show-toplevel); \
+	mkdir -p "$$hooks_dir"; \
+	ln -sf "$$repo_root/scripts/pre-commit.sh" "$$hooks_dir/pre-commit"; \
+	ln -sf "$$repo_root/scripts/commit-msg.sh" "$$hooks_dir/commit-msg"; \
+	echo "Done. Hooks installed at $$hooks_dir/pre-commit and $$hooks_dir/commit-msg"

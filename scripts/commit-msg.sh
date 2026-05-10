@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # commit-msg hook for td
-# Install: make install-hooks  (or: ln -sf ../../scripts/commit-msg.sh .git/hooks/commit-msg)
+# Install all git hooks: make install-hooks
 set -euo pipefail
 
 MSG_FILE=${1:-}
