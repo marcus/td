@@ -1,9 +1,11 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,44 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+func runCmdOutput(dir string, name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func commitFile(t *testing.T, dir, path, content, message string) string {
+	t.Helper()
+
+	fullPath := filepath.Join(dir, path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		t.Fatalf("Failed to create parent dir: %v", err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write file: %v", err)
+	}
+	if err := runCmd(dir, "git", "add", path); err != nil {
+		t.Fatalf("Failed to git add %s: %v", path, err)
+	}
+	if err := runCmd(dir, "git", "commit", "-m", message); err != nil {
+		t.Fatalf("Failed to commit %q: %v", message, err)
+	}
+
+	sha, err := runCmdOutput(dir, "git", "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("Failed to get HEAD sha: %v", err)
+	}
+	return sha
+}
+
+func tagHeadAnnotated(t *testing.T, dir, tag string) {
+	t.Helper()
+	if err := runCmd(dir, "git", "tag", "-a", tag, "-m", "Release "+tag); err != nil {
+		t.Fatalf("Failed to create annotated tag %s: %v", tag, err)
+	}
 }
 
 // TestParseStatOutputBasic tests parsing git diff --stat output
@@ -467,5 +507,166 @@ func TestStateBranchName(t *testing.T) {
 	// The branch should be either 'main', 'master', or some default
 	if state.Branch != "main" && state.Branch != "master" && state.Branch != "HEAD" {
 		t.Logf("Branch name is %q (expected main/master/HEAD)", state.Branch)
+	}
+}
+
+func TestGetRootDirFromReturnsErrNotRepository(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := GetRootDirFrom(dir)
+	if !errors.Is(err, ErrNotRepository) {
+		t.Fatalf("expected ErrNotRepository, got %v", err)
+	}
+}
+
+func TestGetLatestSemverTagSelectsLatestReachableAnnotatedTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+	commitFile(t, dir, "patch.txt", "patch\n", "fix: patch release")
+	if err := runCmd(dir, "git", "tag", "-a", "release-candidate", "-m", "non semver"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+
+	tag, err := GetLatestSemverTag(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("GetLatestSemverTag failed: %v", err)
+	}
+	if tag != "v0.2.0" {
+		t.Fatalf("expected v0.2.0, got %q", tag)
+	}
+}
+
+func TestGetLatestSemverTagReturnsErrNoSemverTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	_, err := GetLatestSemverTag(dir, "HEAD")
+	if !errors.Is(err, ErrNoSemverTag) {
+		t.Fatalf("expected ErrNoSemverTag, got %v", err)
+	}
+}
+
+func TestGetPreviousSemverTagSkipsTargetReleaseTag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+
+	tag, err := GetPreviousSemverTag(dir, "v0.2.0")
+	if err != nil {
+		t.Fatalf("GetPreviousSemverTag failed: %v", err)
+	}
+	if tag != "v0.1.0" {
+		t.Fatalf("expected v0.1.0, got %q", tag)
+	}
+}
+
+func TestGetPreviousSemverTagReturnsPreviousVersionOnRetaggedRelease(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+	tagHeadAnnotated(t, dir, "v0.2.1")
+
+	tag, err := GetPreviousSemverTag(dir, "v0.2.1")
+	if err != nil {
+		t.Fatalf("GetPreviousSemverTag failed: %v", err)
+	}
+	if tag != "v0.2.0" {
+		t.Fatalf("expected v0.2.0, got %q", tag)
+	}
+}
+
+func TestGetSemverTagsPointingAtReturnsSortedSemverTags(t *testing.T) {
+	dir := initTestRepo(t)
+
+	commitSHA := commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+	tagHeadAnnotated(t, dir, "v0.2.1")
+	if err := runCmd(dir, "git", "tag", "-a", "release-candidate", "-m", "non semver"); err != nil {
+		t.Fatalf("Failed to create non-semver tag: %v", err)
+	}
+
+	tags, err := GetSemverTagsPointingAt(dir, commitSHA)
+	if err != nil {
+		t.Fatalf("GetSemverTagsPointingAt failed: %v", err)
+	}
+
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 semver tags, got %d", len(tags))
+	}
+	if tags[0] != "v0.2.1" || tags[1] != "v0.2.0" {
+		t.Fatalf("unexpected semver tags: %v", tags)
+	}
+}
+
+func TestRefPointsToSemverTagReturnsTrueForTaggedCommit(t *testing.T) {
+	dir := initTestRepo(t)
+
+	releaseSHA := commitFile(t, dir, "feature.txt", "feature\n", "feat: add initial feature")
+	tagHeadAnnotated(t, dir, "v0.2.0")
+
+	tagged, err := RefPointsToSemverTag(dir, "v0.2.0")
+	if err != nil {
+		t.Fatalf("RefPointsToSemverTag(tag) failed: %v", err)
+	}
+	if !tagged {
+		t.Fatal("expected semver tag ref to report true")
+	}
+
+	tagged, err = RefPointsToSemverTag(dir, releaseSHA)
+	if err != nil {
+		t.Fatalf("RefPointsToSemverTag(sha) failed: %v", err)
+	}
+	if !tagged {
+		t.Fatal("expected tagged commit sha to report true")
+	}
+}
+
+func TestListCommitsInRangeReturnsCommitsWithFiles(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+	firstSHA := commitFile(t, dir, "cmd/release_notes.go", "package cmd\n", "feat: add release notes command")
+	secondSHA := commitFile(t, dir, "docs/guides/releasing-new-version.md", "# Release\n", "refresh release guide")
+
+	commits, err := ListCommitsInRange(dir, "v0.1.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(commits))
+	}
+
+	if commits[0].SHA != firstSHA || commits[0].Subject != "feat: add release notes command" {
+		t.Fatalf("unexpected first commit: %+v", commits[0])
+	}
+	if len(commits[0].Files) != 1 || commits[0].Files[0] != "cmd/release_notes.go" {
+		t.Fatalf("unexpected first commit files: %+v", commits[0].Files)
+	}
+
+	if commits[1].SHA != secondSHA || commits[1].Subject != "refresh release guide" {
+		t.Fatalf("unexpected second commit: %+v", commits[1])
+	}
+	if len(commits[1].Files) != 1 || commits[1].Files[0] != "docs/guides/releasing-new-version.md" {
+		t.Fatalf("unexpected second commit files: %+v", commits[1].Files)
+	}
+}
+
+func TestListCommitsInRangeReturnsEmptyWhenNoChanges(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tagHeadAnnotated(t, dir, "v0.1.0")
+
+	commits, err := ListCommitsInRange(dir, "v0.1.0", "HEAD")
+	if err != nil {
+		t.Fatalf("ListCommitsInRange failed: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Fatalf("expected no commits, got %d", len(commits))
 	}
 }

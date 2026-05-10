@@ -155,6 +155,7 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 |---------|-------------|
 | `td init` | Initialize project |
 | `td monitor` | Live TUI dashboard |
+| `td release-notes [flags]` | Draft markdown release notes from committed git history. Flags: `--from`, `--to`, `--version` |
 | `td undo` | Undo last action |
 | `td version` | Show version |
 | `td export` | Export database |
