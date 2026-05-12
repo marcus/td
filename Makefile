@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version install-hooks a11y-lint
 
 SHELL := /bin/sh
 
@@ -55,3 +55,8 @@ install-hooks:
 	@echo "Installing git pre-commit hook..."
 	@ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
 	@echo "Done. Hook installed at .git/hooks/pre-commit"
+
+a11y-lint:
+	@mkdir -p docs
+	go run ./scripts/a11y-lint -o docs/a11y-report.md
+	@echo "Accessibility report written to docs/a11y-report.md"
