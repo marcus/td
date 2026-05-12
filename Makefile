@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version install-hooks a11y-lint
 
 SHELL := /bin/sh
 
@@ -50,6 +50,9 @@ tag: check-clean check-version
 release: tag
 	@git remote get-url origin >/dev/null 2>&1 || (echo "Error: no 'origin' remote configured" && exit 1)
 	git push origin "$(VERSION)"
+
+a11y-lint:
+	@go run ./scripts/a11y-lint -out docs/a11y-report.md
 
 install-hooks:
 	@echo "Installing git pre-commit hook..."
