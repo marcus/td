@@ -1,6 +1,8 @@
 package depscan
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -255,6 +257,28 @@ func TestFilterBySeverity(t *testing.T) {
 	high := FilterBySeverity(r, SeverityHigh)
 	if high.Summary.Total != 1 || high.Findings[0].Category != CategoryReplace {
 		t.Errorf("high filter: %+v", high.Findings)
+	}
+}
+
+func TestCountGoSumModules(t *testing.T) {
+	dir := t.TempDir()
+	goMod := filepath.Join(dir, "go.mod")
+
+	// Missing go.sum: ok == false.
+	if n, ok := countGoSumModules(goMod); ok || n != 0 {
+		t.Errorf("missing go.sum: got (%d, %v), want (0, false)", n, ok)
+	}
+
+	// Present go.sum: distinct module@version, ignoring /go.mod hash lines.
+	sum := "example.com/a v1.0.0 h1:aaa=\n" +
+		"example.com/a v1.0.0/go.mod h1:bbb=\n" +
+		"example.com/b v2.1.0 h1:ccc=\n" +
+		"example.com/b v2.1.0/go.mod h1:ddd=\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), []byte(sum), 0o644); err != nil {
+		t.Fatalf("write go.sum: %v", err)
+	}
+	if n, ok := countGoSumModules(goMod); !ok || n != 2 {
+		t.Errorf("present go.sum: got (%d, %v), want (2, true)", n, ok)
 	}
 }
 

@@ -214,11 +214,13 @@ func decodeModInfo(data []byte) (*modInfo, error) {
 }
 
 // countGoSumModules counts the distinct module@version entries verified in
-// go.sum (lines ending in a plain hash, not the /go.mod hash variant).
-func countGoSumModules(goModPath string) int {
+// go.sum (lines ending in a plain hash, not the /go.mod hash variant). The
+// bool return reports whether go.sum was found and readable, so callers can
+// distinguish "no hashed modules" from "no go.sum".
+func countGoSumModules(goModPath string) (int, bool) {
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(goModPath), "go.sum"))
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	seen := map[string]struct{}{}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -232,7 +234,7 @@ func countGoSumModules(goModPath string) int {
 		}
 		seen[fields[0]+"@"+fields[1]] = struct{}{}
 	}
-	return len(seen)
+	return len(seen), true
 }
 
 // goMinor extracts the minor version from a Go version string such as
@@ -332,7 +334,11 @@ func Scan(opts Options) (*Report, error) {
 
 	report.Summary.DirectDeps = direct
 	report.Summary.IndirectDeps = indirect
-	report.Summary.GoSumModules = countGoSumModules(goModPath)
+	if n, ok := countGoSumModules(goModPath); ok {
+		report.Summary.GoSumModules = n
+	} else if len(mi.Require) > 0 {
+		report.Notes = append(report.Notes, "go.sum not found or unreadable; hash-verified module count unavailable")
+	}
 	finalize(report)
 	return report, nil
 }
