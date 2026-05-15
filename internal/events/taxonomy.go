@@ -25,13 +25,19 @@
 //   - 'remove_dependency', 'unlink_file', 'board_delete', 'work_session_untag' → 'delete'
 //   - 'delete', 'board_unposition', 'board_remove_issue', 'soft_delete' → 'soft_delete'
 //   - 'restore' → 'restore'
+//   - Issue state transitions ('start', 'review', 'review_approve',
+//     'review_changes_requested', 'close_after_review', 'approve', 'reject',
+//     'block', 'unblock', 'close', 'reopen', 'board_move_issue') → 'update'
 //   - Others default to 'update'
 //
 // This mapping ensures existing events in the events table with old action/entity types
 // can be queried and processed correctly by the sync engine.
 package events
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // EntityType represents the canonical entity types in the sync system.
 type EntityType string
@@ -163,9 +169,41 @@ func NormalizeActionType(tdAction string) ActionType {
 		return ActionSoftDelete
 	case "restore":
 		return ActionRestore
+	case "update", "start", "review", "review_approve", "review_changes_requested",
+		"close_after_review", "approve", "reject", "block", "unblock", "close",
+		"reopen", "board_move_issue":
+		return ActionUpdate
 	default:
 		return ActionUpdate
 	}
+}
+
+// EmitEvent normalizes the given entity type and action type strings to their
+// canonical forms and validates that the combination is allowed by
+// ValidEntityActionCombinations.
+//
+// It is intentionally side-effect free: callers remain responsible for any
+// DB writes / network sends. The helper exists so emit sites can route raw
+// strings through a single chokepoint and surface invalid pairings (e.g.
+// 'logs' + 'restore', or unknown entity types) at the boundary rather than
+// silently dropping them downstream.
+//
+// Returns the canonical EntityType, the canonical ActionType, and a non-nil
+// error when the entity is unknown or the entity+action pair is not in
+// ValidEntityActionCombinations.
+func EmitEvent(entityType, actionType string) (EntityType, ActionType, error) {
+	canonicalEntity, ok := NormalizeEntityType(entityType)
+	if !ok {
+		return "", "", fmt.Errorf("events: unknown entity type %q", entityType)
+	}
+	canonicalAction := NormalizeActionType(actionType)
+	if !IsValidEntityActionCombination(canonicalEntity, canonicalAction) {
+		return canonicalEntity, canonicalAction, fmt.Errorf(
+			"events: invalid combination entity=%q action=%q",
+			canonicalEntity, canonicalAction,
+		)
+	}
+	return canonicalEntity, canonicalAction, nil
 }
 
 // ValidEntityActionCombinations defines which entity types can have which action types.

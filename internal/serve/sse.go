@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/db"
+	tdevents "github.com/marcus/td/internal/events"
 	"github.com/marcus/td/internal/session"
 	tdsync "github.com/marcus/td/internal/sync"
 	"github.com/marcus/td/internal/syncclient"
@@ -412,10 +413,19 @@ func serveAutoSyncPush(database *db.DB, client *syncclient.Client, state *db.Syn
 		SessionID: sessionID,
 	}
 	for _, ev := range events {
+		// GetPendingEvents already routes through the taxonomy normalizer,
+		// but re-normalize at the wire boundary so any future emit-site
+		// that bypasses GetPendingEvents still produces canonical strings.
+		canonicalEntity, action, err := tdevents.EmitEvent(ev.EntityType, ev.ActionType)
+		if err != nil {
+			slog.Debug("serve autosync: drop event with invalid taxonomy",
+				"entity", ev.EntityType, "action", ev.ActionType, "err", err)
+			continue
+		}
 		pushReq.Events = append(pushReq.Events, syncclient.EventInput{
 			ClientActionID:  ev.ClientActionID,
-			ActionType:      ev.ActionType,
-			EntityType:      ev.EntityType,
+			ActionType:      string(action),
+			EntityType:      string(canonicalEntity),
 			EntityID:        ev.EntityID,
 			Payload:         ev.Payload,
 			ClientTimestamp: ev.ClientTimestamp.Format(time.RFC3339),
@@ -474,23 +484,32 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 			break
 		}
 
-		events := make([]tdsync.Event, len(pullResp.Events))
-		for i, pe := range pullResp.Events {
+		events := make([]tdsync.Event, 0, len(pullResp.Events))
+		for _, pe := range pullResp.Events {
 			clientTS, err := time.Parse(time.RFC3339Nano, pe.ClientTimestamp)
 			if err != nil {
 				clientTS, _ = time.Parse(time.RFC3339, pe.ClientTimestamp)
 			}
-			events[i] = tdsync.Event{
+			// Normalize on the consume side so downstream comparisons
+			// (entity_type / action_type) are always against canonical
+			// strings even if the server somehow returned legacy forms.
+			canonicalEntity, action, err := tdevents.EmitEvent(pe.EntityType, pe.ActionType)
+			if err != nil {
+				slog.Debug("serve autosync: drop pulled event with invalid taxonomy",
+					"entity", pe.EntityType, "action", pe.ActionType, "err", err)
+				continue
+			}
+			events = append(events, tdsync.Event{
 				ServerSeq:       pe.ServerSeq,
 				DeviceID:        pe.DeviceID,
 				SessionID:       pe.SessionID,
 				ClientActionID:  pe.ClientActionID,
-				ActionType:      pe.ActionType,
-				EntityType:      pe.EntityType,
+				ActionType:      string(action),
+				EntityType:      string(canonicalEntity),
 				EntityID:        pe.EntityID,
 				Payload:         pe.Payload,
 				ClientTimestamp: clientTS,
-			}
+			})
 		}
 
 		conn := database.Conn()
