@@ -99,8 +99,15 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 		args = append(args, string(normalized))
 	}
 	if v := q.Get("action_type"); v != "" {
+		// Normalize legacy action verbs (e.g. "handoff" → "create") so
+		// callers can filter using either legacy or canonical strings.
+		// Already-canonical strings round-trip unchanged.
+		normalizedAction := v
+		if !tdevents.IsValidActionType(v) {
+			normalizedAction = string(tdevents.NormalizeActionType(v))
+		}
 		query += " AND action_type = ?"
-		args = append(args, v)
+		args = append(args, normalizedAction)
 	}
 	if v := q.Get("from"); v != "" {
 		query += " AND server_timestamp >= ?"
