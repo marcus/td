@@ -18,23 +18,28 @@ import (
 
 var handoffCmd = &cobra.Command{
 	Use:   "handoff <issue-id> [message]",
-	Short: "Capture structured working state",
-	Long: `Required before submitting for review. Captures git state automatically.
+	Short: "Capture working state so the next session can resume",
+	Long: `Record what's done, what's left, decisions made, and open questions.
+Captures git state automatically. Run this before 'td review' so the reviewer
+(or the next session) has full context.
 
-Accepts YAML-like format via stdin:
+Provide items via flags, stdin (-), file (@path), or a YAML-like block on
+stdin with done/remaining/decisions/uncertain sections.
+
+Examples:
+  td handoff td-abc1 --done "wired up oauth" --remaining "add tests"
+  td handoff td-abc1 --done @done.txt        # one item per line from file
+  echo "fixed login" | td handoff td-abc1 --done -
+  td handoff td-abc1 <<EOF
   done:
-    - Item completed
+    - Wired up oauth flow
   remaining:
-    - Item to do
+    - Add integration tests
   decisions:
-    - Decision made
+    - Use PKCE for native clients
   uncertain:
-    - Question/uncertainty
-
-Or use flags with values, stdin (-), or file (@path):
-  --done "item"          Single item
-  --done @done.txt       Items from file (one per line)
-  echo "item" | td handoff ID --done -   Items from stdin`,
+    - Token refresh strategy
+  EOF`,
 	GroupID: "workflow",
 	Args:    cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {

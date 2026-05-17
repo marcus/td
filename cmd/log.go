@@ -22,21 +22,17 @@ var issueIDPattern = regexp.MustCompile(`^td-[0-9a-f]{6,8}$`)
 
 var logCmd = &cobra.Command{
 	Use:   "log [issue-id] <message>",
-	Short: "Append a log entry to the current issue",
-	Long: `Low-friction progress tracking during a session.
+	Short: "Record progress, decisions, or blockers on an issue",
+	Long: `Append a timestamped log entry. With no issue ID, logs to the focused
+issue. Use type flags (--decision, --blocker, --hypothesis, --tried, --result)
+to tag entries for later filtering.
 
-Syntax:
-  td log <message>              # Log to focused issue
-  td log <issue-id> <message>   # Log to specific issue
-  td log --issue <id> <message> # Log to specific issue (flag syntax)
-
-Supports stdin input for multi-line messages or piped input:
-  echo "message" | td log
-  td log < notes.txt
-  td log <<EOF
-  Multi-line
-  log message
-  EOF`,
+Examples:
+  td log "fixed login redirect"               # log to focused issue
+  td log td-abc1 "investigating timeout"      # log to a specific issue
+  td log --decision "use websocket"           # tag as a decision
+  echo "long note" | td log                   # read message from stdin
+  td log < notes.txt                          # read message from file`,
 	GroupID: "workflow",
 	Args:    cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {

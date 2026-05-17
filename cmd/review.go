@@ -190,19 +190,21 @@ func isRoutineWorkflowLogMessage(message string) bool {
 var reviewCmd = &cobra.Command{
 	Use:     "review [issue-id...]",
 	Aliases: []string{"submit", "finish"},
-	Short:   "Submit one or more issues for review",
-	Long: `Submits the issue(s) for review. If no handoff exists, a minimal one is
-auto-created (consider using 'td handoff' for better documentation).
+	Short:   "Submit issues for independent review",
+	Long: `Move issues to in_review and record this session as the requester.
+If no handoff exists, a minimal one is auto-created — prefer running
+'td handoff' first so the reviewer has real context.
 
-The submitting session is recorded as 'review_requested_by_session' on the
-issue. Under review_policy_mode=delegated, an active independent approval is
-the close gate, so any session may close after a reviewer records approval.
+Epics cascade automatically to all open/in_progress descendants, which do not
+need individual handoffs.
 
-For epics/parent issues, automatically cascades to all open/in_progress
-descendants. Cascaded children don't require individual handoffs.
+Under review_policy_mode=delegated, an active independent approval is the
+close gate; any session may close once a reviewer records approval.
 
-Supports bulk operations:
-  td review td-abc1 td-abc2 td-abc3    # Submit multiple issues for review`,
+Examples:
+  td review td-abc1
+  td review td-abc1 td-abc2 td-abc3       # bulk submit
+  td review td-epic1                      # cascades to all open descendants`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -493,7 +495,7 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
-	Short: "Approve and close one or more issues, or record a review",
+	Short: "Approve reviewed work (and close, unless --record-only)",
 	Long: `Approves the issue(s). You cannot review your own implementation, but you
 can close after an independent review has been recorded. 'td approve' operates
 in one of three modes:
@@ -1085,12 +1087,14 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 var rejectCmd = &cobra.Command{
 	Use:   "reject [issue-id...]",
-	Short: "Reject and return to open",
-	Long: `Rejects the issue(s) and returns them to open status so they can be
-picked up again by td next.
+	Short: "Reject reviewed work and return it to open",
+	Long: `Send issues back to open so they can be picked up again. Supersedes any
+active approval review and clears the implementer/reviewer/requester stamps so
+a fresh review cycle starts clean.
 
-Supports bulk operations:
-  td reject td-abc1 td-abc2    # Reject multiple issues`,
+Examples:
+  td reject td-abc1 -m "tests are flaky, please rerun"
+  td reject td-abc1 td-abc2                 # bulk reject`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1227,7 +1231,7 @@ Supports bulk operations:
 var closeCmd = &cobra.Command{
 	Use:     "close [issue-id...]",
 	Aliases: []string{"done", "complete"},
-	Short:   "Admin close: duplicates, won't-fix, cleanup (NOT for reviewed work)",
+	Short:   "Admin close for duplicates, won't-fix, or cleanup",
 	Long: `Closes the issue(s) directly. Admin-only scope: duplicates, won't-fix,
 or cleanup of never-implemented issues.
 

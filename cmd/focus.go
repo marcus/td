@@ -12,8 +12,11 @@ import (
 )
 
 var focusCmd = &cobra.Command{
-	Use:     "focus [issue-id]",
-	Short:   "Set the current working issue",
+	Use:   "focus [issue-id]",
+	Short: "Pin an issue as the default for log, handoff, and close",
+	Long: `Set the focused issue so commands like 'td log' and 'td handoff' can be
+run without an ID. Focus is cleared automatically when an issue moves to
+review or closed.`,
 	GroupID: "session",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
