@@ -15,9 +15,19 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:     "list [filters]",
+	Use:     "list [query]",
 	Aliases: []string{"ls"},
-	Short:   "List issues matching given filters",
+	Short:   "List issues, optionally filtered by flags or a TDQ query",
+	Long: `List issues. With no arguments, shows open/in-progress/blocked/in-review
+issues (use --all to include closed and deferred). Combine flags for quick
+filters, or pass a TDQ expression for full query power.
+
+Examples:
+  td list                                     # default view
+  td list --mine --status in_progress         # your active work
+  td list --type bug --priority P1            # high-priority bugs
+  td list "status=open AND label=backend"     # TDQ query
+  td list --epic td-epic1                     # all tasks under an epic`,
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

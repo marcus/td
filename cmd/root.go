@@ -35,10 +35,12 @@ func SetVersion(v string) {
 
 var rootCmd = &cobra.Command{
 	Use:   "td",
-	Short: "Local task and session management CLI",
-	Long: `td - A minimalist local task and session management CLI designed for AI-assisted development workflows.
+	Short: "Track tasks and hand off work between AI sessions",
+	Long: `td is a local-first task tracker built for AI-assisted development.
 
-Optimized for session continuity—capturing working state so new context windows can resume where previous ones stopped.`,
+It captures progress, decisions, and git state so a new context window can
+pick up exactly where the previous one stopped. Run 'td usage -q' for a
+condensed command reference, or 'td next' to see what to work on.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		cmdStartTime = time.Now()
 		runGatedSyncStartupHook(cmd)
