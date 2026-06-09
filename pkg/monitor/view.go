@@ -2,11 +2,12 @@ package monitor
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/marcus/td/internal/models"
@@ -1998,7 +1999,7 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 
 	// Default lipgloss rendering
 	// Select border color based on depth
-	var borderColor lipgloss.Color
+	var borderColor color.Color
 	switch depth {
 	case 1:
 		borderColor = primaryColor // Purple/Magenta (212)

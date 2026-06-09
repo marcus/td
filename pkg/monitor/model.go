@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -249,7 +249,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	searchInput := textinput.New()
 	searchInput.Placeholder = "search"
 	searchInput.Prompt = "" // No prompt, we show triangle icon separately
-	searchInput.Width = 50  // Reasonable width for search queries
+	searchInput.SetWidth(50) // Reasonable width for search queries
 	searchInput.CharLimit = 200
 
 	return Model{
@@ -920,9 +920,17 @@ func (m Model) CurrentContextString() string {
 	return keymap.ContextToSidecar(m.currentContext())
 }
 
-// View implements tea.Model
-func (m Model) View() string {
+// ViewString returns the monitor as a plain rendered string for embedders.
+func (m Model) ViewString() string {
 	return m.renderView()
+}
+
+// View implements tea.Model.
+func (m Model) View() tea.View {
+	view := tea.NewView(m.ViewString())
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeAllMotion
+	return view
 }
 
 // scheduleTick returns a command that sends a TickMsg after the refresh interval

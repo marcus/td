@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
 	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -100,16 +100,17 @@ func (m Model) currentContext() keymap.Context {
 func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle our custom key bindings first
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		key := keyMsg.String()
 		switch {
-		case keyMsg.Type == tea.KeyCtrlS:
+		case key == "ctrl+s":
 			return m.executeCommand(keymap.CmdFormSubmit)
-		case keyMsg.Type == tea.KeyEsc && (m.FormState == nil || m.FormState.Autofill == nil || !m.FormState.Autofill.Active):
+		case key == "esc" && (m.FormState == nil || m.FormState.Autofill == nil || !m.FormState.Autofill.Active):
 			// Only cancel form if autofill dropdown is not active; Esc with dropdown
 			// active is handled below to dismiss just the dropdown.
 			return m.executeCommand(keymap.CmdFormCancel)
-		case keyMsg.Type == tea.KeyCtrlX:
+		case key == "ctrl+x":
 			return m.executeCommand(keymap.CmdFormToggleExtend)
-		case keyMsg.Type == tea.KeyCtrlO:
+		case key == "ctrl+o":
 			return m.executeCommand(keymap.CmdFormOpenEditor)
 		}
 
@@ -118,7 +119,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only intercept when form fields are focused (not buttons).
 		if m.FormState != nil && m.FormState.Autofill != nil && m.FormState.Autofill.Active &&
 			len(m.FormState.Autofill.Filtered) > 0 && m.FormState.ButtonFocus == formButtonFocusForm {
-			switch keyMsg.Type {
+			switch keyMsg.Key().Code {
 			case tea.KeyUp:
 				if m.FormState.Autofill.Idx > 0 {
 					m.FormState.Autofill.Idx--
@@ -135,7 +136,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Esc closes the autofill dropdown without closing the form
 		if m.FormState != nil && m.FormState.Autofill != nil && m.FormState.Autofill.Active {
-			if keyMsg.Type == tea.KeyEsc {
+			if key == "esc" {
 				m.FormState.Autofill = nil
 				return m, nil
 			}
@@ -170,8 +171,8 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			switch keyMsg.Type {
-			case tea.KeyTab:
+			switch key {
+			case "tab":
 				if m.FormState.ButtonFocus >= 0 {
 					switch m.FormState.ButtonFocus {
 					case formButtonFocusSubmit:
@@ -185,7 +186,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.FormState.focusedFieldKey() == m.FormState.lastFieldKey() {
 					return moveToButtons(formButtonFocusSubmit)
 				}
-			case tea.KeyShiftTab:
+			case "shift+tab":
 				if m.FormState.ButtonFocus >= 0 {
 					switch m.FormState.ButtonFocus {
 					case formButtonFocusCancel:
@@ -199,7 +200,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.FormState.focusedFieldKey() == m.FormState.firstFieldKey() {
 					return moveToButtons(formButtonFocusCancel)
 				}
-			case tea.KeyEnter:
+			case "enter":
 				switch m.FormState.ButtonFocus {
 				case formButtonFocusSubmit:
 					return m.executeCommand(keymap.CmdFormSubmit)
@@ -248,7 +249,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle PgUp/PgDn scroll for form overflow (before huh processes)
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		switch keyMsg.Type {
+		switch keyMsg.Key().Code {
 		case tea.KeyPgUp:
 			maxHeight := m.Height - 2
 			availableLines := maxHeight - 4
@@ -293,7 +294,8 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Auto-scroll to keep the focused field visible after Tab/Shift+Tab
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.Type == tea.KeyTab || keyMsg.Type == tea.KeyShiftTab {
+		switch keyMsg.String() {
+		case "tab", "shift+tab":
 			m.FormScrollOffset = m.formScrollForFocusedField()
 		}
 	}
@@ -309,6 +311,7 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey processes key input using the centralized keymap registry
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := m.currentContext()
+	key := msg.String()
 
 	// Sync Prompt modal: let declarative modal handle keys first
 	if m.SyncPromptOpen && m.SyncPromptModal != nil {
@@ -360,7 +363,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Help modal filter mode: handle typing when filtering
 	if m.HelpOpen && m.HelpFilterMode {
-		switch msg.Type {
+		switch msg.Key().Code {
 		case tea.KeyEsc:
 			// Clear filter and exit filter mode
 			m.HelpFilter = ""
@@ -378,23 +381,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.HelpScroll = 0
 			}
 			return m, nil
-		case tea.KeyRunes:
-			m.HelpFilter += string(msg.Runes)
-			m.HelpScroll = 0
-			return m, nil
+		default:
+			if msg.Key().Text != "" {
+				m.HelpFilter += msg.Key().Text
+				m.HelpScroll = 0
+				return m, nil
+			}
 		}
 		// Fall through to keymap for other keys
 	}
 
 	// Help modal: "/" enters filter mode, Esc clears filter first
 	if m.HelpOpen && !m.HelpFilterMode {
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '/' {
+		if msg.Key().Text == "/" {
 			m.HelpFilterMode = true
 			m.HelpFilter = ""
 			return m, nil
 		}
 		// Esc clears filter if active, otherwise falls through to close help
-		if msg.Type == tea.KeyEsc && m.HelpFilter != "" {
+		if key == "esc" && m.HelpFilter != "" {
 			m.HelpFilter = ""
 			m.HelpScroll = 0
 			return m, nil
@@ -441,7 +446,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			// Handle esc to cancel delete
-			if msg.Type == tea.KeyEsc {
+			if key == "esc" {
 				return m.handleBoardEditorAction("delete-cancel")
 			}
 			return m, nil
@@ -456,7 +461,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				return m, cmd
 			}
-			if msg.Type == tea.KeyEsc {
+			if key == "esc" {
 				return m.handleBoardEditorAction("cancel")
 			}
 			return m, nil
@@ -469,7 +474,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// No manual forwarding or Focus/Blur sync needed.
 
 		// Intercept Ctrl+S (modal doesn't know this shortcut)
-		if msg.Type == tea.KeyCtrlS {
+		if key == "ctrl+s" {
 			return m.handleBoardEditorAction("save")
 		}
 
@@ -512,7 +517,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Delete confirmation modal: let declarative modal handle keys first
 	if m.ConfirmOpen && m.DeleteConfirmModal != nil && m.DeleteConfirmMouseHandler != nil {
 		// Handle Y/N quick keys directly (modal doesn't know about these)
-		key := msg.String()
 		switch key {
 		case "y", "Y":
 			return m.handleDeleteConfirmAction("yes")
@@ -543,13 +547,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Consume keys that the modal handles internally (focus cycling, input)
 		// to prevent double-handling by keymap
-		key := msg.String()
 		switch key {
 		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end", "backspace", "delete":
 			return m, nil // Key was handled by modal
 		}
 		// Also consume regular character keys for the input field
-		if msg.Type == tea.KeyRunes {
+		if msg.Key().Text != "" {
 			return m, nil
 		}
 		// Fall through to keymap only for unhandled keys (like esc)
@@ -587,12 +590,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			return m, cmd
 		}
-		key := msg.String()
 		switch key {
 		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end", "backspace", "delete":
 			return m, nil
 		}
-		if msg.Type == tea.KeyRunes {
+		if msg.Key().Text != "" {
 			return m, nil
 		}
 		// Fall through to keymap only for unhandled keys (like esc)
@@ -601,7 +603,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '?' {
+		if msg.Key().Text == "?" {
 			return m.executeCommand(keymap.CmdToggleHelp)
 		}
 

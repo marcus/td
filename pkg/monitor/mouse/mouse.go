@@ -5,7 +5,7 @@ package mouse
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Rect represents a rectangular region.
@@ -173,10 +173,12 @@ func (h *Handler) Clear() {
 // HandleMouse is a convenience method for processing tea.MouseMsg events.
 // Returns the action to take based on the mouse event.
 func (h *Handler) HandleMouse(msg tea.MouseMsg) MouseAction {
-	switch msg.Action {
-	case tea.MouseActionPress:
-		if msg.Button == tea.MouseButtonLeft {
-			result := h.HandleClick(msg.X, msg.Y)
+	m := msg.Mouse()
+
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		if m.Button == tea.MouseLeft {
+			result := h.HandleClick(m.X, m.Y)
 			if result.Region == nil {
 				return MouseAction{Type: ActionNone}
 			}
@@ -184,103 +186,62 @@ func (h *Handler) HandleMouse(msg tea.MouseMsg) MouseAction {
 				return MouseAction{
 					Type:   ActionDoubleClick,
 					Region: result.Region,
-					X:      msg.X,
-					Y:      msg.Y,
+					X:      m.X,
+					Y:      m.Y,
 				}
 			}
 			return MouseAction{
 				Type:   ActionClick,
 				Region: result.Region,
-				X:      msg.X,
-				Y:      msg.Y,
-			}
-		}
-		if msg.Button == tea.MouseButtonWheelUp {
-			region := h.HitMap.Test(msg.X, msg.Y)
-			// Shift+scroll = horizontal scroll
-			if msg.Shift {
-				return MouseAction{
-					Type:   ActionScrollLeft,
-					Region: region,
-					X:      msg.X,
-					Y:      msg.Y,
-					Delta:  -10,
-				}
-			}
-			return MouseAction{
-				Type:   ActionScrollUp,
-				Region: region,
-				X:      msg.X,
-				Y:      msg.Y,
-				Delta:  -3,
-			}
-		}
-		if msg.Button == tea.MouseButtonWheelDown {
-			region := h.HitMap.Test(msg.X, msg.Y)
-			// Shift+scroll = horizontal scroll
-			if msg.Shift {
-				return MouseAction{
-					Type:   ActionScrollRight,
-					Region: region,
-					X:      msg.X,
-					Y:      msg.Y,
-					Delta:  10,
-				}
-			}
-			return MouseAction{
-				Type:   ActionScrollDown,
-				Region: region,
-				X:      msg.X,
-				Y:      msg.Y,
-				Delta:  3,
-			}
-		}
-		// Native horizontal scroll (trackpad) - reversed for Mac natural scrolling
-		if msg.Button == tea.MouseButtonWheelLeft {
-			region := h.HitMap.Test(msg.X, msg.Y)
-			return MouseAction{
-				Type:   ActionScrollRight,
-				Region: region,
-				X:      msg.X,
-				Y:      msg.Y,
-				Delta:  10,
-			}
-		}
-		if msg.Button == tea.MouseButtonWheelRight {
-			region := h.HitMap.Test(msg.X, msg.Y)
-			return MouseAction{
-				Type:   ActionScrollLeft,
-				Region: region,
-				X:      msg.X,
-				Y:      msg.Y,
-				Delta:  -10,
+				X:      m.X,
+				Y:      m.Y,
 			}
 		}
 
-	case tea.MouseActionRelease:
+	case tea.MouseWheelMsg:
+		region := h.HitMap.Test(m.X, m.Y)
+		shiftScroll := m.Mod&tea.ModShift != 0
+		switch m.Button {
+		case tea.MouseWheelUp:
+			if shiftScroll {
+				return MouseAction{Type: ActionScrollLeft, Region: region, X: m.X, Y: m.Y, Delta: -10}
+			}
+			return MouseAction{Type: ActionScrollUp, Region: region, X: m.X, Y: m.Y, Delta: -3}
+		case tea.MouseWheelDown:
+			if shiftScroll {
+				return MouseAction{Type: ActionScrollRight, Region: region, X: m.X, Y: m.Y, Delta: 10}
+			}
+			return MouseAction{Type: ActionScrollDown, Region: region, X: m.X, Y: m.Y, Delta: 3}
+		case tea.MouseWheelLeft:
+			return MouseAction{Type: ActionScrollRight, Region: region, X: m.X, Y: m.Y, Delta: 10}
+		case tea.MouseWheelRight:
+			return MouseAction{Type: ActionScrollLeft, Region: region, X: m.X, Y: m.Y, Delta: -10}
+		}
+
+	case tea.MouseReleaseMsg:
 		if h.dragging {
 			h.EndDrag()
 			return MouseAction{Type: ActionDragEnd}
 		}
 
-	case tea.MouseActionMotion:
+	case tea.MouseMotionMsg:
 		if h.dragging {
-			dx, dy := h.DragDelta(msg.X, msg.Y)
+			dx, dy := h.DragDelta(m.X, m.Y)
 			return MouseAction{
 				Type:   ActionDrag,
-				X:      msg.X,
-				Y:      msg.Y,
+				X:      m.X,
+				Y:      m.Y,
 				DragDX: dx,
 				DragDY: dy,
 			}
 		}
 		// Track hover for visual feedback
-		region := h.HitMap.Test(msg.X, msg.Y)
+		region := h.HitMap.Test(m.X, m.Y)
 		return MouseAction{
 			Type:   ActionHover,
 			Region: region,
-			X:      msg.X,
-			Y:      msg.Y,
+			X:      m.X,
+			Y:      m.Y,
 		}
 	}
 

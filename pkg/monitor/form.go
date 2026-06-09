@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -250,7 +250,7 @@ func (fs *FormState) buildForm() {
 	}
 
 	// Configure form appearance
-	fs.Form.WithTheme(huh.ThemeDracula())
+	fs.Form.WithTheme(huh.ThemeFunc(huh.ThemeDracula))
 
 	// Apply width if set (ensures text wrapping works after form rebuild)
 	if fs.Width > 0 {

@@ -6,10 +6,10 @@ import (
 
 	"encoding/json"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/modal"
 	"github.com/marcus/td/pkg/monitor/mouse"
@@ -772,7 +772,7 @@ func (m Model) openCloseConfirmModal(issueID, issueTitle string) Model {
 	// Create textinput for reason
 	m.CloseConfirmInput = textinput.New()
 	m.CloseConfirmInput.Placeholder = "Optional: reason for closing"
-	m.CloseConfirmInput.Width = 40
+	m.CloseConfirmInput.SetWidth(40)
 
 	// Create declarative modal and mouse handler
 	m.CloseConfirmModal = m.createCloseConfirmModal()
@@ -873,7 +873,7 @@ func (m Model) openRecordReviewModal(issueID, issueTitle string) Model {
 
 	m.RecordReviewInput = textinput.New()
 	m.RecordReviewInput.Placeholder = "Review summary (required)"
-	m.RecordReviewInput.Width = 50
+	m.RecordReviewInput.SetWidth(50)
 	m.RecordReviewInput.Focus()
 
 	m.RecordReviewModal = m.createRecordReviewModal()

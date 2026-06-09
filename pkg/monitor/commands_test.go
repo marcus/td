@@ -4,7 +4,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -88,7 +88,7 @@ func TestHelpFilterBackspaceUTF8(t *testing.T) {
 				HelpFilter:     tc.filter,
 			}
 
-			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyBackspace})
 			result := updated.(Model)
 
 			if result.HelpFilter != tc.want {

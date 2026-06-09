@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -446,7 +446,7 @@ func (m Model) openNoteCreator() (tea.Model, tea.Cmd) {
 	ti := textinput.New()
 	ti.Placeholder = "Note title"
 	ti.CharLimit = 200
-	ti.Width = 40
+	ti.SetWidth(40)
 	ti.Focus()
 
 	ta := textarea.New()
@@ -476,7 +476,7 @@ func (m Model) openNoteEditor(note *models.Note) (tea.Model, tea.Cmd) {
 	ti := textinput.New()
 	ti.SetValue(note.Title)
 	ti.CharLimit = 200
-	ti.Width = 40
+	ti.SetWidth(40)
 	ti.Focus()
 
 	ta := textarea.New()

@@ -3,8 +3,8 @@ package monitor
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/config"
 )
 
@@ -818,17 +818,33 @@ func (m *Model) updatePanelBounds() {
 
 // handleMouse processes mouse events for panel selection and row clicking
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Handle mouse wheel scroll in modals/overlays
-	if msg.Action == tea.MouseActionPress {
-		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
-			delta := 3
-			if msg.Button == tea.MouseButtonWheelUp {
-				delta = -3
-			}
+	mouseEvent := msg.Mouse()
+	isLeftClick := false
+	isMotion := false
+	isRelease := false
+	wheelDelta := 0
 
+	switch mouseEvent.Button {
+	case tea.MouseWheelUp:
+		wheelDelta = -3
+	case tea.MouseWheelDown:
+		wheelDelta = 3
+	}
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		isLeftClick = mouseEvent.Button == tea.MouseLeft
+	case tea.MouseMotionMsg:
+		isMotion = true
+	case tea.MouseReleaseMsg:
+		isRelease = true
+	case tea.MouseWheelMsg:
+	}
+
+	// Handle mouse wheel scroll in modals/overlays
+	if wheelDelta != 0 {
 			// Route scroll to help modal
 			if m.HelpOpen {
-				m.HelpScroll += delta
+				m.HelpScroll += wheelDelta
 				m.clampHelpScroll()
 				return m, nil
 			}
@@ -851,7 +867,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			// Route scroll to appropriate modal
 			if modal := m.CurrentModal(); modal != nil {
 				// Mouse wheel always scrolls modal content (use j/k for task list navigation)
-				modal.Scroll += delta
+				modal.Scroll += wheelDelta
 				if modal.Scroll < 0 {
 					modal.Scroll = 0
 				}
@@ -864,7 +880,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 			// Route scroll to kanban view (navigate rows)
 			if m.KanbanOpen {
-				if delta < 0 {
+				if wheelDelta < 0 {
 					m.kanbanMoveUp()
 				} else {
 					m.kanbanMoveDown()
@@ -873,7 +889,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 
 			if m.StatsOpen {
-				m.StatsScroll += delta
+				m.StatsScroll += wheelDelta
 				if m.StatsScroll < 0 {
 					m.StatsScroll = 0
 				}
@@ -881,7 +897,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 
 			if m.HandoffsOpen {
-				m.HandoffsScroll += delta
+				m.HandoffsScroll += wheelDelta
 				if m.HandoffsScroll < 0 {
 					m.HandoffsScroll = 0
 				}
@@ -896,12 +912,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				// During loading, ignore scroll
 				return m, nil
 			}
-		}
 	}
 
 	// Handle Sync Prompt modal mouse events (declarative modal)
 	if m.SyncPromptOpen && m.SyncPromptModal != nil && m.SyncPromptMouse != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.SyncPromptModal.HandleMouse(msg, m.SyncPromptMouse)
 			if action != "" {
 				return m, m.handleSyncPromptAction(action)
@@ -909,7 +924,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.SyncPromptModal.HandleMouse(msg, m.SyncPromptMouse)
 			return m, nil
 		}
@@ -917,7 +932,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Getting Started modal mouse events (declarative modal)
 	if m.GettingStartedOpen && m.GettingStartedModal != nil && m.GettingStartedMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.GettingStartedModal.HandleMouse(msg, m.GettingStartedMouseHandler)
 			if action != "" {
 				return m.handleGettingStartedAction(action)
@@ -925,7 +940,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.GettingStartedModal.HandleMouse(msg, m.GettingStartedMouseHandler)
 			return m, nil
 		}
@@ -933,7 +948,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Activity Detail modal mouse events (declarative modal)
 	if m.ActivityDetailOpen && m.ActivityDetailModal != nil && m.ActivityDetailMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.ActivityDetailModal.HandleMouse(msg, m.ActivityDetailMouseHandler)
 			if action != "" {
 				return m.handleActivityDetailAction(action)
@@ -941,7 +956,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.ActivityDetailModal.HandleMouse(msg, m.ActivityDetailMouseHandler)
 			return m, nil
 		}
@@ -949,7 +964,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle TDQ Help modal mouse events (declarative modal)
 	if m.ShowTDQHelp && m.TDQHelpModal != nil && m.TDQHelpMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.TDQHelpModal.HandleMouse(msg, m.TDQHelpMouseHandler)
 			if action != "" {
 				return m.handleTDQHelpAction(action)
@@ -957,7 +972,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.TDQHelpModal.HandleMouse(msg, m.TDQHelpMouseHandler)
 			return m, nil
 		}
@@ -965,7 +980,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Stats modal mouse events (declarative modal)
 	if m.StatsOpen && m.StatsModal != nil && m.StatsMouseHandler != nil && !m.StatsLoading && m.StatsError == nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.StatsModal.HandleMouse(msg, m.StatsMouseHandler)
 			if action != "" {
 				return m.handleStatsAction(action)
@@ -973,7 +988,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.StatsModal.HandleMouse(msg, m.StatsMouseHandler)
 			return m, nil
 		}
@@ -981,7 +996,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Handoffs modal mouse events (declarative modal)
 	if m.HandoffsOpen && m.HandoffsModal != nil && m.HandoffsMouseHandler != nil && !m.HandoffsLoading && m.HandoffsError == nil && len(m.HandoffsData) > 0 {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.HandoffsModal.HandleMouse(msg, m.HandoffsMouseHandler)
 			if action != "" {
 				return m.handleHandoffsAction(action)
@@ -989,20 +1004,20 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.HandoffsModal.HandleMouse(msg, m.HandoffsMouseHandler)
 			return m, nil
 		}
 	}
 
 	// Handle left-click in modal for section selection
-	if m.ModalOpen() && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-		return m.handleModalClick(msg.X, msg.Y)
+	if m.ModalOpen() && isLeftClick {
+		return m.handleModalClick(mouseEvent.X, mouseEvent.Y)
 	}
 
 	// Handle Delete confirmation modal mouse events (declarative modal)
 	if m.ConfirmOpen && m.DeleteConfirmModal != nil && m.DeleteConfirmMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.DeleteConfirmModal.HandleMouse(msg, m.DeleteConfirmMouseHandler)
 			if action != "" {
 				return m.handleDeleteConfirmAction(action)
@@ -1010,7 +1025,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.DeleteConfirmModal.HandleMouse(msg, m.DeleteConfirmMouseHandler)
 			return m, nil
 		}
@@ -1018,7 +1033,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Close confirmation modal mouse events (declarative modal)
 	if m.CloseConfirmOpen && m.CloseConfirmModal != nil && m.CloseConfirmMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.CloseConfirmModal.HandleMouse(msg, m.CloseConfirmMouseHandler)
 			if action != "" {
 				return m.handleCloseConfirmAction(action)
@@ -1026,7 +1041,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.CloseConfirmModal.HandleMouse(msg, m.CloseConfirmMouseHandler)
 			return m, nil
 		}
@@ -1034,25 +1049,25 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Record-review modal mouse events (declarative modal)
 	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.RecordReviewModal.HandleMouse(msg, m.RecordReviewMouseHandler)
 			if action != "" {
 				return m.handleRecordReviewAction(action)
 			}
 			return m, nil
 		}
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.RecordReviewModal.HandleMouse(msg, m.RecordReviewMouseHandler)
 			return m, nil
 		}
 	}
-	if m.FormOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-		return m.handleFormDialogClick(msg.X, msg.Y)
+	if m.FormOpen && isLeftClick {
+		return m.handleFormDialogClick(mouseEvent.X, mouseEvent.Y)
 	}
 
 	// Handle Board editor modal mouse events (declarative modal)
 	if m.BoardEditorOpen && m.BoardEditorModal != nil && m.BoardEditorMouseHandler != nil {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.BoardEditorModal.HandleMouse(msg, m.BoardEditorMouseHandler)
 			if action != "" {
 				return m.handleBoardEditorAction(action)
@@ -1060,7 +1075,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.BoardEditorModal.HandleMouse(msg, m.BoardEditorMouseHandler)
 			return m, nil
 		}
@@ -1068,7 +1083,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Board picker modal mouse events (declarative modal)
 	if m.BoardPickerOpen && m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil && len(m.AllBoards) > 0 {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if isLeftClick {
 			action := m.BoardPickerModal.HandleMouse(msg, m.BoardPickerMouseHandler)
 			if action != "" {
 				return m.handleBoardPickerAction(action)
@@ -1076,7 +1091,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Handle motion for hover states
-		if msg.Action == tea.MouseActionMotion {
+		if isMotion {
 			_ = m.BoardPickerModal.HandleMouse(msg, m.BoardPickerMouseHandler)
 			return m, nil
 		}
@@ -1084,8 +1099,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle mouse motion for hover states on confirmation dialogs
 	// Note: CloseConfirm hover is now handled by declarative modal above
-	if m.FormOpen && msg.Action == tea.MouseActionMotion {
-		return m.handleFormDialogHover(msg.X, msg.Y)
+	if m.FormOpen && isMotion {
+		return m.handleFormDialogHover(mouseEvent.X, mouseEvent.Y)
 	}
 
 	// Ignore other mouse events when modals/overlays are open
@@ -1093,43 +1108,39 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.Action {
-	case tea.MouseActionPress:
-		if msg.Button == tea.MouseButtonLeft {
-			// Check divider hit first (highest priority)
-			divider := m.HitTestDivider(msg.X, msg.Y)
-			if divider >= 0 {
-				return m.startDividerDrag(divider, msg.Y)
-			}
-			return m.handleMouseClick(msg.X, msg.Y)
+	if isLeftClick {
+		// Check divider hit first (highest priority)
+		divider := m.HitTestDivider(mouseEvent.X, mouseEvent.Y)
+		if divider >= 0 {
+			return m.startDividerDrag(divider, mouseEvent.Y)
 		}
-		// Handle mouse wheel (reported as button press)
-		if msg.Button == tea.MouseButtonWheelUp {
-			return m.handleMouseWheel(msg.X, msg.Y, -3)
-		}
-		if msg.Button == tea.MouseButtonWheelDown {
-			return m.handleMouseWheel(msg.X, msg.Y, 3)
-		}
+		return m.handleMouseClick(mouseEvent.X, mouseEvent.Y)
+	}
 
-	case tea.MouseActionRelease:
+	if wheelDelta != 0 {
+		return m.handleMouseWheel(mouseEvent.X, mouseEvent.Y, wheelDelta)
+	}
+
+	if isRelease {
 		if m.DraggingDivider >= 0 {
 			return m.endDividerDrag()
 		}
+	}
 
-	case tea.MouseActionMotion:
+	if isMotion {
 		// Handle divider dragging
 		if m.DraggingDivider >= 0 {
-			return m.updateDividerDrag(msg.Y)
+			return m.updateDividerDrag(mouseEvent.Y)
 		}
 
 		// Track divider hover for visual feedback
-		divider := m.HitTestDivider(msg.X, msg.Y)
+		divider := m.HitTestDivider(mouseEvent.X, mouseEvent.Y)
 		if divider != m.DividerHover {
 			m.DividerHover = divider
 		}
 
 		// Track panel hover for visual feedback
-		panel := m.HitTestPanel(msg.X, msg.Y)
+		panel := m.HitTestPanel(mouseEvent.X, mouseEvent.Y)
 		if panel != m.HoverPanel {
 			m.HoverPanel = panel
 		}

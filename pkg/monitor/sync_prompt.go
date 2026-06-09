@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/internal/syncclient"
@@ -76,7 +76,7 @@ func (m *Model) buildSyncPromptCreateModal() *modal.Modal {
 		ti := textinput.New()
 		ti.Placeholder = "Project name"
 		ti.CharLimit = 100
-		ti.Width = 40
+		ti.SetWidth(40)
 		m.SyncPromptNameInput = &ti
 	}
 

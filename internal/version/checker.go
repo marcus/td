@@ -3,7 +3,7 @@ package version
 import (
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // UpdateAvailableMsg is sent when a new version is available.

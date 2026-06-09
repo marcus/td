@@ -182,7 +182,7 @@ func TestKanbanColumnLabelsAndColors(t *testing.T) {
 		}
 
 		color := kanbanColumnColor(cat)
-		if color == "" {
+		if color == nil {
 			t.Errorf("kanbanColumnColor(%s) returned empty string", cat)
 		}
 	}

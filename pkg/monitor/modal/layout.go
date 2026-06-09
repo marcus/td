@@ -3,7 +3,7 @@ package modal
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/marcus/td/pkg/monitor/mouse"
 )

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/output"
@@ -94,7 +94,7 @@ Mouse support:
 			}()
 		}
 
-		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
+		p := tea.NewProgram(model)
 		if _, err := p.Run(); err != nil {
 			cancelSync()
 			return fmt.Errorf("error running monitor: %w", err)

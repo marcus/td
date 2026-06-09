@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 const sequenceTimeout = 500 * time.Millisecond
@@ -355,100 +355,15 @@ func (r *Registry) AllContexts() []Context {
 
 // KeyToString converts a tea.KeyMsg to a string representation
 func KeyToString(key tea.KeyMsg) string {
-	switch key.Type {
-	case tea.KeyCtrlC:
-		return "ctrl+c"
-	case tea.KeyCtrlA:
-		return "ctrl+a"
-	case tea.KeyCtrlB:
-		return "ctrl+b"
-	case tea.KeyCtrlD:
-		return "ctrl+d"
-	case tea.KeyCtrlE:
-		return "ctrl+e"
-	case tea.KeyCtrlF:
-		return "ctrl+f"
-	case tea.KeyCtrlG:
-		return "ctrl+g"
-	case tea.KeyCtrlH:
-		return "ctrl+h"
-	case tea.KeyTab:
-		return "tab"
-	case tea.KeyCtrlJ:
-		return "ctrl+j"
-	case tea.KeyCtrlK:
-		return "ctrl+k"
-	case tea.KeyCtrlL:
-		return "ctrl+l"
-	case tea.KeyEnter:
-		return "enter"
-	case tea.KeyCtrlN:
-		return "ctrl+n"
-	case tea.KeyCtrlO:
-		return "ctrl+o"
-	case tea.KeyCtrlP:
-		return "ctrl+p"
-	case tea.KeyCtrlQ:
-		return "ctrl+q"
-	case tea.KeyCtrlR:
-		return "ctrl+r"
-	case tea.KeyCtrlS:
-		return "ctrl+s"
-	case tea.KeyCtrlT:
-		return "ctrl+t"
-	case tea.KeyCtrlU:
-		return "ctrl+u"
-	case tea.KeyCtrlV:
-		return "ctrl+v"
-	case tea.KeyCtrlW:
-		return "ctrl+w"
-	case tea.KeyCtrlX:
-		return "ctrl+x"
-	case tea.KeyCtrlY:
-		return "ctrl+y"
-	case tea.KeyCtrlZ:
-		return "ctrl+z"
-	case tea.KeyEsc:
-		return "esc"
-	case tea.KeySpace:
-		return "space"
-	case tea.KeyBackspace:
-		return "backspace"
-	case tea.KeyUp:
-		return "up"
-	case tea.KeyDown:
-		return "down"
-	case tea.KeyLeft:
-		return "left"
-	case tea.KeyRight:
-		return "right"
-	case tea.KeyHome:
-		return "home"
-	case tea.KeyEnd:
-		return "end"
-	case tea.KeyPgUp:
-		return "pgup"
-	case tea.KeyPgDown:
-		return "pgdown"
-	case tea.KeyDelete:
-		return "delete"
-	case tea.KeyShiftTab:
-		return "shift+tab"
-	case tea.KeyRunes:
-		return string(key.Runes)
-	default:
-		return key.String()
-	}
+	return key.Key().Keystroke()
 }
 
 // IsPrintable returns true if the key represents a printable character
 func IsPrintable(key tea.KeyMsg) bool {
-	if key.Type != tea.KeyRunes {
+	k := key.Key()
+	if len(k.Text) != 1 {
 		return false
 	}
-	if len(key.Runes) != 1 {
-		return false
-	}
-	r := key.Runes[0]
+	r := rune(k.Text[0])
 	return r >= ' ' && r <= '~'
 }

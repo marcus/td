@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -59,7 +59,7 @@ func (m Model) openBoardEditorModal(board *models.Board) Model {
 	// the bubbletea Model copies all reference the same underlying instance.
 	nameInput := textinput.New()
 	nameInput.Placeholder = "Board name"
-	nameInput.Width = 40
+	nameInput.SetWidth(40)
 	nameInput.CharLimit = 100
 	if board != nil {
 		nameInput.SetValue(board.Name)

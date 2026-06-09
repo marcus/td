@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -129,7 +129,7 @@ func TestCheckboxSection(t *testing.T) {
 	}
 
 	// Toggle via Update
-	s.Update(tea.KeyMsg{Type: tea.KeyEnter}, "agree")
+	s.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, "agree")
 	if !checked {
 		t.Errorf("expected checked to be true after Enter")
 	}
@@ -217,7 +217,7 @@ func TestHandleKeyEsc(t *testing.T) {
 	handler := mouse.NewHandler()
 	m.Render(80, 24, handler)
 
-	action, _ := m.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	action, _ := m.HandleKey(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if action != "cancel" {
 		t.Errorf("expected 'cancel' on Esc, got %q", action)
 	}
@@ -240,25 +240,25 @@ func TestHandleKeyTab(t *testing.T) {
 	}
 
 	// Tab to next
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.FocusedID() != "b" {
 		t.Errorf("expected focus on 'b' after Tab, got %q", m.FocusedID())
 	}
 
 	// Tab again
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.FocusedID() != "c" {
 		t.Errorf("expected focus on 'c' after second Tab, got %q", m.FocusedID())
 	}
 
 	// Tab wraps around
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.FocusedID() != "a" {
 		t.Errorf("expected focus to wrap to 'a', got %q", m.FocusedID())
 	}
 
 	// Shift+Tab goes backward
-	m.HandleKey(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	if m.FocusedID() != "c" {
 		t.Errorf("expected focus on 'c' after Shift+Tab, got %q", m.FocusedID())
 	}
@@ -275,14 +275,14 @@ func TestHandleKeyEnter(t *testing.T) {
 	m.Render(80, 24, handler)
 
 	// Enter on focused button returns its ID
-	action, _ := m.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	action, _ := m.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if action != "ok" {
 		t.Errorf("expected 'ok' on Enter, got %q", action)
 	}
 
 	// Focus cancel and enter
 	m.SetFocus("cancel")
-	action, _ = m.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	action, _ = m.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if action != "cancel" {
 		t.Errorf("expected 'cancel' on Enter, got %q", action)
 	}
@@ -317,12 +317,7 @@ func TestHandleMouseClick(t *testing.T) {
 	// Click on the OK button
 	clickX := okRegion.Rect.X + okRegion.Rect.W/2
 	clickY := okRegion.Rect.Y
-	action := m.HandleMouse(tea.MouseMsg{
-		X:      clickX,
-		Y:      clickY,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	}, handler)
+	action := m.HandleMouse(tea.MouseClickMsg{X: clickX, Y: clickY, Button: tea.MouseLeft}, handler)
 
 	if action != "ok" {
 		t.Errorf("expected 'ok' on click, got %q", action)
@@ -336,12 +331,7 @@ func TestHandleMouseBackdropClick(t *testing.T) {
 	handler := mouse.NewHandler()
 	m.Render(80, 24, handler)
 
-	action := m.HandleMouse(tea.MouseMsg{
-		X:      0,
-		Y:      0,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	}, handler)
+	action := m.HandleMouse(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}, handler)
 	if action != "cancel" {
 		t.Errorf("expected 'cancel' on backdrop click, got %q", action)
 	}
@@ -351,12 +341,7 @@ func TestHandleMouseBackdropClick(t *testing.T) {
 	handler = mouse.NewHandler()
 	m.Render(80, 24, handler)
 
-	action = m.HandleMouse(tea.MouseMsg{
-		X:      0,
-		Y:      0,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	}, handler)
+	action = m.HandleMouse(tea.MouseClickMsg{X: 0, Y: 0, Button: tea.MouseLeft}, handler)
 	if action != "" {
 		t.Errorf("expected no action on backdrop click when disabled, got %q", action)
 	}
@@ -384,22 +369,14 @@ func TestHandleMouseHover(t *testing.T) {
 	}
 
 	// Hover over button
-	m.HandleMouse(tea.MouseMsg{
-		X:      okRegion.Rect.X,
-		Y:      okRegion.Rect.Y,
-		Action: tea.MouseActionMotion,
-	}, handler)
+	m.HandleMouse(tea.MouseMotionMsg{X: okRegion.Rect.X, Y: okRegion.Rect.Y}, handler)
 
 	if m.HoveredID() != "ok" {
 		t.Errorf("expected hoverID 'ok', got %q", m.HoveredID())
 	}
 
 	// Move away
-	m.HandleMouse(tea.MouseMsg{
-		X:      0,
-		Y:      0,
-		Action: tea.MouseActionMotion,
-	}, handler)
+	m.HandleMouse(tea.MouseMotionMsg{X: 0, Y: 0}, handler)
 
 	if m.HoveredID() != "" {
 		t.Errorf("expected empty hoverID, got %q", m.HoveredID())
@@ -418,24 +395,14 @@ func TestMouseScrollModal(t *testing.T) {
 	m.Render(80, 10, handler) // Small height to enable scrolling
 
 	// Scroll on backdrop should do nothing
-	m.HandleMouse(tea.MouseMsg{
-		X:      0,
-		Y:      0,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelDown,
-	}, handler)
+	m.HandleMouse(tea.MouseWheelMsg{X: 0, Y: 0, Button: tea.MouseWheelDown}, handler)
 
 	initialOffset := m.scrollOffset
 
 	// Scroll on modal body should work
 	bodyRegion := handler.HitMap.Test(40, 5) // Should hit modal-body
 	if bodyRegion != nil && bodyRegion.ID == "modal-body" {
-		m.HandleMouse(tea.MouseMsg{
-			X:      40,
-			Y:      5,
-			Action: tea.MouseActionPress,
-			Button: tea.MouseButtonWheelDown,
-		}, handler)
+		m.HandleMouse(tea.MouseWheelMsg{X: 40, Y: 5, Button: tea.MouseWheelDown}, handler)
 		// Scroll offset should increase (if content is scrollable)
 		_ = initialOffset // May not change if content fits
 	}
@@ -483,13 +450,13 @@ func TestListSection(t *testing.T) {
 	}
 
 	// Test navigation - pass the list's ID, not item ID
-	s.Update(tea.KeyMsg{Type: tea.KeyDown}, "my-list")
+	s.Update(tea.KeyPressMsg{Code: tea.KeyDown}, "my-list")
 	if selectedIdx != 1 {
 		t.Errorf("expected selectedIdx 1 after down, got %d", selectedIdx)
 	}
 
 	// Test enter returns selected item ID
-	action, _ := s.Update(tea.KeyMsg{Type: tea.KeyEnter}, "my-list")
+	action, _ := s.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, "my-list")
 	if action != "item2" {
 		t.Errorf("expected action 'item2' on enter, got %q", action)
 	}
@@ -654,12 +621,7 @@ func TestMouseHandler(t *testing.T) {
 	handler.HitMap.AddRect("button2", 40, 10, 20, 5, "data2")
 
 	// Test click detection
-	action := handler.HandleMouse(tea.MouseMsg{
-		X:      15,
-		Y:      12,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	})
+	action := handler.HandleMouse(tea.MouseClickMsg{X: 15, Y: 12, Button: tea.MouseLeft})
 
 	if action.Type != mouse.ActionClick {
 		t.Errorf("expected ActionClick, got %v", action.Type)
@@ -669,11 +631,7 @@ func TestMouseHandler(t *testing.T) {
 	}
 
 	// Test hover detection
-	action = handler.HandleMouse(tea.MouseMsg{
-		X:      45,
-		Y:      12,
-		Action: tea.MouseActionMotion,
-	})
+	action = handler.HandleMouse(tea.MouseMotionMsg{X: 45, Y: 12})
 
 	if action.Type != mouse.ActionHover {
 		t.Errorf("expected ActionHover, got %v", action.Type)
@@ -683,12 +641,7 @@ func TestMouseHandler(t *testing.T) {
 	}
 
 	// Test scroll
-	action = handler.HandleMouse(tea.MouseMsg{
-		X:      15,
-		Y:      12,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelDown,
-	})
+	action = handler.HandleMouse(tea.MouseWheelMsg{X: 15, Y: 12, Button: tea.MouseWheelDown})
 
 	if action.Type != mouse.ActionScrollDown {
 		t.Errorf("expected ActionScrollDown, got %v", action.Type)
@@ -742,24 +695,14 @@ func TestGettingStartedModalButtonClick(t *testing.T) {
 	t.Logf("Close button at (%d, %d) size %dx%d", closeRegion.Rect.X, closeRegion.Rect.Y, closeRegion.Rect.W, closeRegion.Rect.H)
 
 	// Click the Install button
-	action := m.HandleMouse(tea.MouseMsg{
-		X:      installRegion.Rect.X + 1,
-		Y:      installRegion.Rect.Y,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	}, handler)
+	action := m.HandleMouse(tea.MouseClickMsg{X: installRegion.Rect.X + 1, Y: installRegion.Rect.Y, Button: tea.MouseLeft}, handler)
 
 	if action != "install" {
 		t.Errorf("expected 'install' on click, got %q", action)
 	}
 
 	// Click the Close button
-	action = m.HandleMouse(tea.MouseMsg{
-		X:      closeRegion.Rect.X + 1,
-		Y:      closeRegion.Rect.Y,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	}, handler)
+	action = m.HandleMouse(tea.MouseClickMsg{X: closeRegion.Rect.X + 1, Y: closeRegion.Rect.Y, Button: tea.MouseLeft}, handler)
 
 	if action != "close" {
 		t.Errorf("expected 'close' on click, got %q", action)

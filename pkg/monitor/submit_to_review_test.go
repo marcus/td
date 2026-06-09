@@ -3,7 +3,7 @@ package monitor
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/keymap"
 )
@@ -30,7 +30,7 @@ func TestShiftRKeybindingRecognition(t *testing.T) {
 	km := newTestKeymap()
 
 	// Test that Shift+R is mapped to CmdMarkForReview in ContextMain
-	cmd, found := km.Lookup(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, keymap.ContextMain)
+	cmd, found := km.Lookup(tea.KeyPressMsg{Code: 'R', Text: ""}, keymap.ContextMain)
 
 	if !found {
 		t.Fatal("Shift+R keybinding not found in keymap")
@@ -46,7 +46,7 @@ func TestShiftRKeybindingInModal(t *testing.T) {
 	km := newTestKeymap()
 
 	// Test that Shift+R is mapped to CmdMarkForReview in ContextModal
-	cmd, found := km.Lookup(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, keymap.ContextModal)
+	cmd, found := km.Lookup(tea.KeyPressMsg{Code: 'R', Text: ""}, keymap.ContextModal)
 
 	if !found {
 		t.Fatal("Shift+R keybinding not found in modal context")
@@ -107,46 +107,46 @@ func TestMarkForReviewCommandExecution(t *testing.T) {
 // TestSubmitToReviewStateTransition is a table-driven test for state transitions
 func TestSubmitToReviewStateTransition(t *testing.T) {
 	tests := []struct {
-		name            string
-		initialStatus   models.Status
-		expectedStatus  models.Status
+		name             string
+		initialStatus    models.Status
+		expectedStatus   models.Status
 		shouldTransition bool
-		description     string
+		description      string
 	}{
 		{
-			name:            "open issue transitions to in_review",
-			initialStatus:   models.StatusOpen,
-			expectedStatus:  models.StatusInReview,
+			name:             "open issue transitions to in_review",
+			initialStatus:    models.StatusOpen,
+			expectedStatus:   models.StatusInReview,
 			shouldTransition: true,
-			description:     "Ready issues can be submitted for review",
+			description:      "Ready issues can be submitted for review",
 		},
 		{
-			name:            "in_progress issue transitions to in_review",
-			initialStatus:   models.StatusInProgress,
-			expectedStatus:  models.StatusInReview,
+			name:             "in_progress issue transitions to in_review",
+			initialStatus:    models.StatusInProgress,
+			expectedStatus:   models.StatusInReview,
 			shouldTransition: true,
-			description:     "In-progress issues can be submitted for review",
+			description:      "In-progress issues can be submitted for review",
 		},
 		{
-			name:            "in_review issue stays in_review",
-			initialStatus:   models.StatusInReview,
-			expectedStatus:  models.StatusInReview,
+			name:             "in_review issue stays in_review",
+			initialStatus:    models.StatusInReview,
+			expectedStatus:   models.StatusInReview,
 			shouldTransition: false,
-			description:     "Already reviewed issues cannot be re-reviewed",
+			description:      "Already reviewed issues cannot be re-reviewed",
 		},
 		{
-			name:            "closed issue stays closed",
-			initialStatus:   models.StatusClosed,
-			expectedStatus:  models.StatusClosed,
+			name:             "closed issue stays closed",
+			initialStatus:    models.StatusClosed,
+			expectedStatus:   models.StatusClosed,
 			shouldTransition: false,
-			description:     "Closed issues cannot be submitted for review",
+			description:      "Closed issues cannot be submitted for review",
 		},
 		{
-			name:            "blocked issue stays blocked",
-			initialStatus:   models.StatusBlocked,
-			expectedStatus:  models.StatusBlocked,
+			name:             "blocked issue stays blocked",
+			initialStatus:    models.StatusBlocked,
+			expectedStatus:   models.StatusBlocked,
 			shouldTransition: false,
-			description:     "Blocked issues cannot be submitted for review",
+			description:      "Blocked issues cannot be submitted for review",
 		},
 	}
 
@@ -161,7 +161,7 @@ func TestSubmitToReviewStateTransition(t *testing.T) {
 
 			// Simulate the validation logic from markForReview
 			allowReview := (issue.Status == models.StatusInProgress ||
-			                issue.Status == models.StatusOpen)
+				issue.Status == models.StatusOpen)
 
 			if tt.shouldTransition {
 				if !allowReview {
@@ -190,32 +190,32 @@ func TestSubmitToReviewStateTransition(t *testing.T) {
 // TestSubmitToReviewModalHandling verifies modal closes after submission
 func TestSubmitToReviewModalHandling(t *testing.T) {
 	tests := []struct {
-		name             string
-		modalOpen        bool
+		name              string
+		modalOpen         bool
 		expectedModalOpen bool
-		description      string
+		description       string
 	}{
 		{
-			name:             "modal should close after review submission",
-			modalOpen:        true,
+			name:              "modal should close after review submission",
+			modalOpen:         true,
 			expectedModalOpen: false,
-			description:     "Modal closes when issue transitions to review",
+			description:       "Modal closes when issue transitions to review",
 		},
 		{
-			name:             "main panel submission keeps panel active",
-			modalOpen:        false,
+			name:              "main panel submission keeps panel active",
+			modalOpen:         false,
 			expectedModalOpen: false,
-			description:     "Main panel remains active after submission",
+			description:       "Main panel remains active after submission",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{
-				Keymap:       newTestKeymap(),
-				ModalStack:   []ModalEntry{},
-				ActivePanel:  PanelTaskList,
-				SessionID:    "test-session",
+				Keymap:      newTestKeymap(),
+				ModalStack:  []ModalEntry{},
+				ActivePanel: PanelTaskList,
+				SessionID:   "test-session",
 			}
 
 			// Set up modal if test expects it
@@ -342,12 +342,12 @@ func TestMarkForReviewFromCurrentWorkPanel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{
-				Keymap:      newTestKeymap(),
-				ActivePanel: PanelCurrentWork,
-				Cursor:      map[Panel]int{PanelCurrentWork: tt.cursorPos},
-				SelectedID:  map[Panel]string{},
+				Keymap:       newTestKeymap(),
+				ActivePanel:  PanelCurrentWork,
+				Cursor:       map[Panel]int{PanelCurrentWork: tt.cursorPos},
+				SelectedID:   map[Panel]string{},
 				FocusedIssue: tt.focusedIssue,
-				InProgress:  tt.inProgress,
+				InProgress:   tt.inProgress,
 			}
 
 			// Build current work rows
@@ -492,7 +492,7 @@ func TestHandleKeyShiftRInMainContext(t *testing.T) {
 			}
 
 			// Verify keybinding exists
-			cmd, found := m.Keymap.Lookup(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, ctx)
+			cmd, found := m.Keymap.Lookup(tea.KeyPressMsg{Code: 'R', Text: ""}, ctx)
 			if !found {
 				t.Fatal("Shift+R keybinding not found")
 			}
@@ -524,7 +524,7 @@ func TestHandleKeyShiftRInModalContext(t *testing.T) {
 	}
 
 	// Verify Shift+R keybinding in modal
-	cmd, found := m.Keymap.Lookup(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}}, ctx)
+	cmd, found := m.Keymap.Lookup(tea.KeyPressMsg{Code: 'R', Text: ""}, ctx)
 	if !found {
 		t.Fatal("Shift+R keybinding not found in modal context")
 	}
@@ -536,19 +536,19 @@ func TestHandleKeyShiftRInModalContext(t *testing.T) {
 // TestStatusMessageAfterSubmit verifies user feedback
 func TestStatusMessageAfterSubmit(t *testing.T) {
 	tests := []struct {
-		name            string
-		shouldShowMsg   bool
-		description     string
+		name          string
+		shouldShowMsg bool
+		description   string
 	}{
 		{
 			name:          "transition to in_review",
 			shouldShowMsg: true,
-			description:  "User sees feedback when issue submitted for review",
+			description:   "User sees feedback when issue submitted for review",
 		},
 		{
 			name:          "already in review (no action)",
 			shouldShowMsg: false,
-			description:  "No message when action has no effect",
+			description:   "No message when action has no effect",
 		},
 	}
 
@@ -617,16 +617,16 @@ func TestReviewActionLogging(t *testing.T) {
 // TestContextDetectionWithModals verifies correct context selection
 func TestContextDetectionWithModals(t *testing.T) {
 	tests := []struct {
-		name           string
-		model          Model
+		name            string
+		model           Model
 		expectedContext keymap.Context
 	}{
 		{
 			name: "main context without modals",
 			model: Model{
-				Keymap:      newTestKeymap(),
-				ModalStack:  []ModalEntry{},
-				SearchMode:  false,
+				Keymap:     newTestKeymap(),
+				ModalStack: []ModalEntry{},
+				SearchMode: false,
 			},
 			expectedContext: keymap.ContextMain,
 		},
@@ -671,13 +671,13 @@ func TestShiftRVsLowercaseR(t *testing.T) {
 
 	// Test lowercase r
 	cmdLower, foundLower := km.Lookup(
-		tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}},
+		tea.KeyPressMsg{Code: 'r', Text: ""},
 		keymap.ContextMain,
 	)
 
 	// Test uppercase R (Shift+R)
 	cmdUpper, foundUpper := km.Lookup(
-		tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}},
+		tea.KeyPressMsg{Code: 'R', Text: ""},
 		keymap.ContextMain,
 	)
 

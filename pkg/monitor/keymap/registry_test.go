@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestNewRegistry(t *testing.T) {
@@ -74,42 +74,42 @@ func TestLookup(t *testing.T) {
 	}{
 		{
 			name:    "quit with q in main",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}},
+			key:     tea.KeyPressMsg{Code: 'q', Text: ""},
 			context: ContextMain,
 			want:    CmdQuit,
 			found:   true,
 		},
 		{
 			name:    "cursor down with j in main",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
+			key:     tea.KeyPressMsg{Code: 'j', Text: ""},
 			context: ContextMain,
 			want:    CmdCursorDown,
 			found:   true,
 		},
 		{
 			name:    "close with esc in modal",
-			key:     tea.KeyMsg{Type: tea.KeyEsc},
+			key:     tea.KeyPressMsg{Code: tea.KeyEsc},
 			context: ContextModal,
 			want:    CmdClose,
 			found:   true,
 		},
 		{
 			name:    "scroll down with j in modal",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}},
+			key:     tea.KeyPressMsg{Code: 'j', Text: ""},
 			context: ContextModal,
 			want:    CmdScrollDown,
 			found:   true,
 		},
 		{
 			name:    "confirm with y in confirm",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}},
+			key:     tea.KeyPressMsg{Code: 'y', Text: ""},
 			context: ContextConfirm,
 			want:    CmdConfirm,
 			found:   true,
 		},
 		{
 			name:    "unknown key returns not found",
-			key:     tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}},
+			key:     tea.KeyPressMsg{Code: 'z', Text: ""},
 			context: ContextMain,
 			want:    "",
 			found:   false,
@@ -139,7 +139,7 @@ func TestMultiKeySequence(t *testing.T) {
 	})
 
 	// First 'g' should not find a command but set pending
-	key1 := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	key1 := tea.KeyPressMsg{Code: 'g', Text: ""}
 	cmd, found := r.Lookup(key1, ContextMain)
 	if found {
 		t.Errorf("first 'g' should not find a command, got %s", cmd)
@@ -170,7 +170,7 @@ func TestMultiKeySequenceTimeout(t *testing.T) {
 	})
 
 	// First 'g'
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	key := tea.KeyPressMsg{Code: 'g', Text: ""}
 	r.Lookup(key, ContextMain)
 
 	// Simulate timeout by manually setting pendingTime
@@ -190,7 +190,7 @@ func TestUserOverride(t *testing.T) {
 	RegisterDefaults(r)
 
 	// Default: 'j' is cursor down in main
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	key := tea.KeyPressMsg{Code: 'j', Text: ""}
 	cmd, _ := r.Lookup(key, ContextMain)
 	if cmd != CmdCursorDown {
 		t.Errorf("default 'j' should be CmdCursorDown, got %s", cmd)
@@ -215,7 +215,7 @@ func TestGlobalBindingsFallback(t *testing.T) {
 	})
 
 	// Should be found even in modal context
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+	key := tea.KeyPressMsg{Code: '?', Text: ""}
 	cmd, found := r.Lookup(key, ContextModal)
 	if !found {
 		t.Error("global binding should be found in modal context")
@@ -240,7 +240,7 @@ func TestContextOverridesGlobal(t *testing.T) {
 		Context: ContextMain,
 	})
 
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}}
+	key := tea.KeyPressMsg{Code: 'r', Text: ""}
 
 	// In main context, should use context-specific binding
 	cmd, _ := r.Lookup(key, ContextMain)
@@ -254,16 +254,16 @@ func TestKeyToString(t *testing.T) {
 		key  tea.KeyMsg
 		want string
 	}{
-		{tea.KeyMsg{Type: tea.KeyTab}, "tab"},
-		{tea.KeyMsg{Type: tea.KeyEsc}, "esc"},
-		{tea.KeyMsg{Type: tea.KeyEnter}, "enter"},
-		{tea.KeyMsg{Type: tea.KeyUp}, "up"},
-		{tea.KeyMsg{Type: tea.KeyDown}, "down"},
-		{tea.KeyMsg{Type: tea.KeyCtrlC}, "ctrl+c"},
-		{tea.KeyMsg{Type: tea.KeyCtrlD}, "ctrl+d"},
-		{tea.KeyMsg{Type: tea.KeyShiftTab}, "shift+tab"},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, "j"},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}, "G"},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, "tab"},
+		{tea.KeyPressMsg{Code: tea.KeyEsc}, "esc"},
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, "enter"},
+		{tea.KeyPressMsg{Code: tea.KeyUp}, "up"},
+		{tea.KeyPressMsg{Code: tea.KeyDown}, "down"},
+		{tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "ctrl+c"},
+		{tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, "ctrl+d"},
+		{tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}, "shift+tab"},
+		{tea.KeyPressMsg{Code: 'j', Text: "j"}, "j"},
+		{tea.KeyPressMsg{Code: 'G', Text: "G"}, "G"},
 	}
 
 	for _, tt := range tests {
@@ -281,14 +281,14 @@ func TestIsPrintable(t *testing.T) {
 		key  tea.KeyMsg
 		want bool
 	}{
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, true},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Z'}}, true},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, true},
-		{tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}}, true},
-		{tea.KeyMsg{Type: tea.KeyTab}, false},
-		{tea.KeyMsg{Type: tea.KeyEnter}, false},
-		{tea.KeyMsg{Type: tea.KeyEsc}, false},
-		{tea.KeyMsg{Type: tea.KeyCtrlC}, false},
+		{tea.KeyPressMsg{Code: 'a', Text: "a"}, true},
+		{tea.KeyPressMsg{Code: 'Z', Text: "Z"}, true},
+		{tea.KeyPressMsg{Code: '1', Text: "1"}, true},
+		{tea.KeyPressMsg{Code: '!', Text: "!"}, true},
+		{tea.KeyPressMsg{Code: tea.KeyTab}, false},
+		{tea.KeyPressMsg{Code: tea.KeyEnter}, false},
+		{tea.KeyPressMsg{Code: tea.KeyEsc}, false},
+		{tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, false},
 	}
 
 	for _, tt := range tests {
@@ -311,7 +311,7 @@ func TestResetPending(t *testing.T) {
 	})
 
 	// Start a sequence
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	key := tea.KeyPressMsg{Code: 'g', Text: ""}
 	r.Lookup(key, ContextMain)
 
 	if !r.HasPending() {
@@ -339,7 +339,7 @@ func TestPendingKey(t *testing.T) {
 	}
 
 	// Start a sequence
-	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
+	key := tea.KeyPressMsg{Code: 'g', Text: ""}
 	r.Lookup(key, ContextMain)
 
 	// Should have pending 'g'

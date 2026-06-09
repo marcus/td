@@ -3,7 +3,7 @@ package modal
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // ListItem represents an item in a list section.

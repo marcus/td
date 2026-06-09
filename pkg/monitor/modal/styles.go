@@ -1,6 +1,6 @@
 package modal
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Style mappings from sidecar to td monitor styles.
 // These bridge the modal library to td's existing style system.

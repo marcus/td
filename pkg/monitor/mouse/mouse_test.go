@@ -3,7 +3,7 @@ package mouse
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestRectContains(t *testing.T) {
@@ -175,12 +175,7 @@ func TestHandleMouseActions(t *testing.T) {
 	h.HitMap.AddRect("button", 10, 10, 30, 10, nil)
 
 	// Test click
-	action := h.HandleMouse(tea.MouseMsg{
-		X:      20,
-		Y:      15,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonLeft,
-	})
+	action := h.HandleMouse(tea.MouseClickMsg{X: 20, Y: 15, Button: tea.MouseLeft})
 	if action.Type != ActionClick {
 		t.Errorf("expected ActionClick, got %v", action.Type)
 	}
@@ -189,33 +184,19 @@ func TestHandleMouseActions(t *testing.T) {
 	}
 
 	// Test hover
-	action = h.HandleMouse(tea.MouseMsg{
-		X:      25,
-		Y:      15,
-		Action: tea.MouseActionMotion,
-	})
+	action = h.HandleMouse(tea.MouseMotionMsg{X: 25, Y: 15})
 	if action.Type != ActionHover {
 		t.Errorf("expected ActionHover, got %v", action.Type)
 	}
 
 	// Test scroll down
-	action = h.HandleMouse(tea.MouseMsg{
-		X:      20,
-		Y:      15,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelDown,
-	})
+	action = h.HandleMouse(tea.MouseWheelMsg{X: 20, Y: 15, Button: tea.MouseWheelDown})
 	if action.Type != ActionScrollDown {
 		t.Errorf("expected ActionScrollDown, got %v", action.Type)
 	}
 
 	// Test scroll up
-	action = h.HandleMouse(tea.MouseMsg{
-		X:      20,
-		Y:      15,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelUp,
-	})
+	action = h.HandleMouse(tea.MouseWheelMsg{X: 20, Y: 15, Button: tea.MouseWheelUp})
 	if action.Type != ActionScrollUp {
 		t.Errorf("expected ActionScrollUp, got %v", action.Type)
 	}
@@ -225,25 +206,13 @@ func TestHandleMouseShiftScroll(t *testing.T) {
 	h := NewHandler()
 
 	// Shift+scroll up = scroll left
-	action := h.HandleMouse(tea.MouseMsg{
-		X:      10,
-		Y:      10,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelUp,
-		Shift:  true,
-	})
+	action := h.HandleMouse(tea.MouseWheelMsg{X: 10, Y: 10, Button: tea.MouseWheelUp, Mod: tea.ModShift})
 	if action.Type != ActionScrollLeft {
 		t.Errorf("expected ActionScrollLeft, got %v", action.Type)
 	}
 
 	// Shift+scroll down = scroll right
-	action = h.HandleMouse(tea.MouseMsg{
-		X:      10,
-		Y:      10,
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelDown,
-		Shift:  true,
-	})
+	action = h.HandleMouse(tea.MouseWheelMsg{X: 10, Y: 10, Button: tea.MouseWheelDown, Mod: tea.ModShift})
 	if action.Type != ActionScrollRight {
 		t.Errorf("expected ActionScrollRight, got %v", action.Type)
 	}
@@ -256,11 +225,7 @@ func TestHandleMouseDragMotion(t *testing.T) {
 	h.StartDrag(100, 100, "divider", 50)
 
 	// Motion while dragging
-	action := h.HandleMouse(tea.MouseMsg{
-		X:      150,
-		Y:      110,
-		Action: tea.MouseActionMotion,
-	})
+	action := h.HandleMouse(tea.MouseMotionMsg{X: 150, Y: 110})
 	if action.Type != ActionDrag {
 		t.Errorf("expected ActionDrag, got %v", action.Type)
 	}
@@ -269,11 +234,7 @@ func TestHandleMouseDragMotion(t *testing.T) {
 	}
 
 	// Release
-	action = h.HandleMouse(tea.MouseMsg{
-		X:      150,
-		Y:      110,
-		Action: tea.MouseActionRelease,
-	})
+	action = h.HandleMouse(tea.MouseReleaseMsg{X: 150, Y: 110})
 	if action.Type != ActionDragEnd {
 		t.Errorf("expected ActionDragEnd, got %v", action.Type)
 	}

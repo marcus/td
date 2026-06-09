@@ -2,10 +2,11 @@ package monitor
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/td/internal/models"
 )
@@ -47,7 +48,7 @@ func kanbanColumnLabel(cat TaskListCategory) string {
 
 // kanbanColumnColor returns the header color for each column category.
 // Colors are derived from the style variables defined in styles.go.
-func kanbanColumnColor(cat TaskListCategory) lipgloss.Color {
+func kanbanColumnColor(cat TaskListCategory) color.Color {
 	switch cat {
 	case CategoryReviewable:
 		return secondaryColor // purple (in_review)
