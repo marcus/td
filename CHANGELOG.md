@@ -2,6 +2,15 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.45.0] - 2026-06-08
+
+### Dependencies
+- **Charmbracelet v2 migration**: the monitor TUI and all Charm dependencies moved to the `charm.land` v2 stack — lipgloss v2.0.3, bubbletea v2.0.7, bubbles v2.1.0, glamour v2.0.0, huh v2.0.3 — plus x/ansi v0.11.7 and x/cellbuf v0.0.15. Bubble Tea v2 ships a faster renderer; glamour v2 renders OSC 8 clickable links in markdown.
+- Key and mouse handling migrated to the v2 message model (`tea.KeyPressMsg`, `tea.MouseClickMsg`/`MouseWheelMsg`, etc.); colors moved to `image/color.Color`.
+
+### API
+- `monitor.Model.View()` now returns `tea.View` (Bubble Tea v2). A `monitor.Model.ViewString()` accessor is preserved so embedders (sidecar's tdmonitor plugin) can render the monitor as a plain string. The exported `modal`/`mouse` handler signatures (`HandleKey`, `HandleMouse`) are unchanged — they take the v2 message interfaces.
+
 ## [v0.44.0] - 2026-04-18
 
 ### Features
