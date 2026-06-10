@@ -11,7 +11,7 @@ import (
 // CreateIssueReview inserts a new review row and returns its id. The caller
 // is responsible for superseding any prior active review (see
 // SupersedeActiveReviews) — this helper only appends history.
-func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, requestedBySession string) (string, error) {
+func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, requestedBySession string, selfReview bool) (string, error) {
 	var id string
 	err := db.withWriteLock(func() error {
 		newID, err := generateTextID(reviewIDPrefix)
@@ -19,9 +19,9 @@ func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, req
 			return fmt.Errorf("generate review id: %w", err)
 		}
 		_, err = db.conn.Exec(`
-			INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, newID, NormalizeIssueID(issueID), reviewerSession, decision, summary, requestedBySession, time.Now())
+			INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, newID, NormalizeIssueID(issueID), reviewerSession, decision, summary, requestedBySession, time.Now(), selfReview)
 		if err != nil {
 			return fmt.Errorf("insert issue_reviews: %w", err)
 		}
@@ -38,7 +38,7 @@ func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, req
 // active approval and is therefore skipped.
 func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, error) {
 	row := db.conn.QueryRow(`
-		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at
+		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review
 		FROM issue_reviews
 		WHERE issue_id = ?
 		  AND superseded_at IS NULL
@@ -50,7 +50,7 @@ func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, erro
 	var r models.IssueReview
 	var summary, requestedBy sql.NullString
 	var supersededAt sql.NullTime
-	if err := row.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt); err != nil {
+	if err := row.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -69,7 +69,7 @@ func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, erro
 // caller can render full history.
 func (db *DB) ListIssueReviews(issueID string) ([]*models.IssueReview, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at
+		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review
 		FROM issue_reviews
 		WHERE issue_id = ?
 		ORDER BY created_at ASC
@@ -84,7 +84,7 @@ func (db *DB) ListIssueReviews(issueID string) ([]*models.IssueReview, error) {
 		var r models.IssueReview
 		var summary, requestedBy sql.NullString
 		var supersededAt sql.NullTime
-		if err := rows.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview); err != nil {
 			return nil, err
 		}
 		r.Summary = summary.String

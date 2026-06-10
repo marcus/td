@@ -262,6 +262,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 32 {
+				if err := db.migrateSelfReviewColumn(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 32 (self_review column): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}

@@ -184,6 +184,11 @@ type IssueReview struct {
 	RequestedBySession string     `json:"requested_by_session,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
+	// SelfReview marks an approval that was recorded by the issue's
+	// implementer-of-record (or a session with substantive implementation
+	// history) acknowledging they reviewed their own work. It is an audit
+	// attribute of an approved row, not a distinct decision type.
+	SelfReview bool `json:"self_review"`
 }
 
 // IssueSessionHistory tracks all sessions that touched an issue

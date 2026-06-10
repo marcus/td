@@ -766,7 +766,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
 				}
 
-				reviewID, err := database.CreateIssueReview(issueID, sess.ID, decision, reason, issue.ReviewRequestedBySession)
+				reviewID, err := database.CreateIssueReview(issueID, sess.ID, decision, reason, issue.ReviewRequestedBySession, false)
 				if err != nil {
 					output.Error("failed to record review: %v", err)
 					skipped++
@@ -1003,7 +1003,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// Create the approval row first so we can record its id in
 			// the action_log payload via UpdateIssueLoggedWithReviewMeta.
 			reviewID, err := database.CreateIssueReview(
-				issueID, sess.ID, reviewpolicy.DecisionApproved, reason, issue.ReviewRequestedBySession,
+				issueID, sess.ID, reviewpolicy.DecisionApproved, reason, issue.ReviewRequestedBySession, false,
 			)
 			if err != nil {
 				output.Warning("failed to record issue review: %v", err)

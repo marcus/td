@@ -228,7 +228,7 @@ func TestIntegration_Approve_CloseAfterReview(t *testing.T) {
 
 	// Another session records an approval review directly in DB (simulates a
 	// different reviewer having recorded review).
-	_, err = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "looks good", sess.ID)
+	_, err = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "looks good", sess.ID, false)
 	if err != nil {
 		t.Fatalf("create review: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestIntegration_Approve_CloseAfterReview_RequiresReason(t *testing.T) {
 	issue.ReviewRequestedBySession = sess.ID
 	_ = database.UpdateIssue(issue)
 
-	_, _ = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", sess.ID)
+	_, _ = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", sess.ID, false)
 	issue, _ = database.GetIssue(issueID)
 	issue.ReviewerSession = "ses-reviewer"
 	_ = database.UpdateIssue(issue)
@@ -292,7 +292,7 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	setDelegatedMode(t, database.BaseDir())
 
 	issueID := seedInReviewIssue(t, database, "ses-other-impl")
-	reviewID, err := database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "")
+	reviewID, err := database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "", false)
 	if err != nil {
 		t.Fatalf("create review: %v", err)
 	}

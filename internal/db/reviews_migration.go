@@ -85,3 +85,22 @@ UPDATE issues
 
 	return nil
 }
+
+// migrateSelfReviewColumn is migration 32. It adds the self_review audit
+// column to the issue_reviews table (Stage 2 of trusted-review-mode).
+//
+// Idempotent: the columnExists guard skips the ALTER when the column already
+// exists, so partial runs or cross-version databases re-open cleanly. Mirrors
+// the v31 columnExists precedent rather than a raw ALTER.
+func (db *DB) migrateSelfReviewColumn() error {
+	hasSelfReview, err := db.columnExists("issue_reviews", "self_review")
+	if err != nil {
+		return fmt.Errorf("check issue_reviews.self_review: %w", err)
+	}
+	if !hasSelfReview {
+		if _, err := db.conn.Exec(`ALTER TABLE issue_reviews ADD COLUMN self_review INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add issue_reviews.self_review: %w", err)
+		}
+	}
+	return nil
+}

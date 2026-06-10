@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 31
+const SchemaVersion = 32
 
 const schema = `
 -- Issues table
@@ -491,6 +491,13 @@ CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 		Description: "Add review-attestation columns to issues and issue_reviews table",
 		// Handled by custom Go code in reviews_migration.go (migrateReviewAttestations)
 		// so that re-running is safe even if some columns already exist.
+		SQL: "",
+	},
+	{
+		Version:     32,
+		Description: "Add self_review column to issue_reviews",
+		// Handled by custom Go code in reviews_migration.go (migrateSelfReviewColumn)
+		// using a columnExists guard so re-running is safe.
 		SQL: "",
 	},
 }

@@ -155,7 +155,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	}
 	_ = ctx.DB.SupersedeActiveReviews(issue.ID)
 
-	reviewID, err := ctx.DB.CreateIssueReview(issue.ID, ctx.SessionID, body.Decision, body.Summary, issue.ReviewRequestedBySession)
+	reviewID, err := ctx.DB.CreateIssueReview(issue.ID, ctx.SessionID, body.Decision, body.Summary, issue.ReviewRequestedBySession, false)
 	if err != nil {
 		slog.Error("create issue review", "err", err, "id", issue.ID)
 		WriteError(w, ErrInternal, "failed to record review", http.StatusInternalServerError)

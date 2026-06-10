@@ -487,6 +487,7 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 				reviewpolicy.DecisionApproved,
 				"",
 				issue.ReviewRequestedBySession,
+				false,
 			)
 		},
 		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
