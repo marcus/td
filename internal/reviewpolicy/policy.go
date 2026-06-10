@@ -45,6 +45,17 @@ const (
 	// history, not the current implementer). Creator-only sessions are
 	// eligible reviewers. Close-after-recorded-approval is wired in Step 2.
 	ModeDelegated Mode = "delegated"
+
+	// ModeTrusted is delegated plus a flag-gated, audited self-review escape
+	// hatch. It keeps the delegated reviewer-independence norm — an
+	// independent session is always the preferred reviewer — but allows the
+	// implementer (or any session with implementation history) to record an
+	// approval and direct-close their own work IF they explicitly acknowledge
+	// the self-review with the --self-review flag and supply a --reason. The
+	// acknowledgement is stamped on the review row for audit. Without the
+	// flag, trusted mode behaves exactly like delegated and rejects the
+	// self-review with a teaching message.
+	ModeTrusted Mode = "trusted"
 )
 
 // ParseMode accepts the canonical string form and returns the corresponding
@@ -52,12 +63,12 @@ const (
 // callers that want a default should explicitly test for it.
 func ParseMode(s string) (Mode, error) {
 	switch Mode(s) {
-	case ModeStrict, ModeBalanced, ModeDelegated:
+	case ModeStrict, ModeBalanced, ModeDelegated, ModeTrusted:
 		return Mode(s), nil
 	case "":
 		return "", fmt.Errorf("review_policy_mode is empty")
 	default:
-		return "", fmt.Errorf("unknown review_policy_mode %q (want strict|balanced|delegated)", s)
+		return "", fmt.Errorf("unknown review_policy_mode %q (want strict|balanced|delegated|trusted)", s)
 	}
 }
 
@@ -82,11 +93,19 @@ const (
 // sharing sprintf templates.
 const (
 	ReasonImplementerCannotReview = "you cannot review your own implementation"
-	ReasonPriorInvolvement        = "you were involved with this issue (created, started, or previously worked on)"
-	ReasonIssueNotInReview        = "issue is not in review"
-	ReasonNoActiveReview          = "no active approval review exists yet for this issue"
-	ReasonNotAllowedCloser        = "no active independent approval review exists for this issue"
-	ReasonIssueNotFound           = "issue not found"
+
+	// ReasonTrustedSelfReviewNeedsFlag is the teaching base string used when a
+	// session that implemented (or has implementation history) tries to review
+	// in trusted mode without acknowledging the self-review. It names BOTH the
+	// preferred norm (delegate to an independent session) and the explicit
+	// escape hatch. Callers append the issue ID via the format helper below.
+	ReasonTrustedSelfReviewNeedsFlag = "you implemented this issue; reviewing it is a self-review. Prefer delegating the review to an independent session. To self-review anyway, re-run with --self-review --reason \"...\""
+
+	ReasonPriorInvolvement = "you were involved with this issue (created, started, or previously worked on)"
+	ReasonIssueNotInReview = "issue is not in review"
+	ReasonNoActiveReview   = "no active approval review exists yet for this issue"
+	ReasonNotAllowedCloser = "no active independent approval review exists for this issue"
+	ReasonIssueNotFound    = "issue not found"
 )
 
 // ReviewerEligibilityInput is the full set of facts the policy layer needs
@@ -103,6 +122,12 @@ type ReviewerEligibilityInput struct {
 	SessionIsCreator         bool
 	HasImplementationHistory bool // WasSessionImplementationInvolved
 	HasActiveApproval        bool // GetActiveApprovalReview != nil
+
+	// SelfReviewAcknowledged is true when the caller passed --self-review (or
+	// the UI equivalent). It only has an effect in trusted mode, where it
+	// converts the implementer self-review rejection into a flag-gated,
+	// audited allow.
+	SelfReviewAcknowledged bool
 
 	// WasAnyInvolved mirrors the old WasSessionInvolved helper (any history
 	// row at all, including created/reviewed). Required for strict mode
@@ -128,6 +153,12 @@ type ReviewerEligibility struct {
 	CreatorException bool
 	RequiresReason   bool
 	RejectionMessage string
+
+	// SelfReview marks the trusted-mode path where an implementer (or session
+	// with implementation history) approved their own work after explicitly
+	// acknowledging it with --self-review. Callers stamp it on the review row
+	// for audit.
+	SelfReview bool
 }
 
 // EvaluateReviewerEligibility decides whether the current session may record
@@ -153,6 +184,8 @@ func EvaluateReviewerEligibility(in ReviewerEligibilityInput) ReviewerEligibilit
 		return evaluateReviewerBalanced(in)
 	case ModeDelegated:
 		return evaluateReviewerDelegated(in)
+	case ModeTrusted:
+		return evaluateReviewerTrusted(in)
 	default:
 		// Unknown modes behave like strict so a misconfigured system fails
 		// closed rather than silently opening approval.
@@ -216,6 +249,37 @@ func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility 
 	return ReviewerEligibility{Allowed: true}
 }
 
+// evaluateReviewerTrusted implements the trusted-mode reviewer predicate. It is
+// delegated with one difference: the delegated reject for an implementer (or a
+// session with implementation history) becomes a flag-gated, audited allow.
+//
+// The trigger condition is intentionally identical to the delegated reject at
+// evaluateReviewerDelegated (SessionIsImplementer || HasImplementationHistory) —
+// we convert that exact reject into an allow-with-flag rather than inventing a
+// looser predicate. A session that merely created or viewed the issue (no
+// started history) still needs no flag, exactly as in delegated mode.
+func evaluateReviewerTrusted(in ReviewerEligibilityInput) ReviewerEligibility {
+	if !(in.SessionIsImplementer || in.HasImplementationHistory) {
+		// Independent session: eligible reviewer, no flag, not a self-review.
+		return ReviewerEligibility{Allowed: true}
+	}
+
+	if in.SelfReviewAcknowledged {
+		// Acknowledged self-review: allow, mark it for audit, require a reason.
+		return ReviewerEligibility{
+			Allowed:        true,
+			SelfReview:     true,
+			RequiresReason: true,
+		}
+	}
+
+	// Self-review without acknowledgement: reject with a teaching message that
+	// names both the preferred norm and the explicit escape hatch.
+	return ReviewerEligibility{
+		RejectionMessage: fmt.Sprintf("cannot approve: %s (%s)", ReasonTrustedSelfReviewNeedsFlag, in.Issue.ID),
+	}
+}
+
 // CloseEligibilityInput is the full set of facts the policy layer needs to
 // decide whether a session may close an issue. In delegated mode, the active
 // approval record is the safety gate; the caller's role is audit metadata,
@@ -231,6 +295,11 @@ type CloseEligibilityInput struct {
 	HasImplementationHistory  bool
 	WasAnyInvolved            bool
 	HasActiveApproval         bool
+
+	// SelfReviewAcknowledged is true when the caller passed --self-review. It
+	// only has an effect in trusted mode's direct review+close path (Case 2),
+	// where it lets the implementer approve+close their own work in one action.
+	SelfReviewAcknowledged bool
 }
 
 // CloseEligibility is the decision returned by EvaluateCloseEligibility.
@@ -262,6 +331,8 @@ func EvaluateCloseEligibility(in CloseEligibilityInput) CloseEligibility {
 		return evaluateCloseStrictBalanced(in)
 	case ModeDelegated:
 		return evaluateCloseDelegated(in)
+	case ModeTrusted:
+		return evaluateCloseTrusted(in)
 	default:
 		return evaluateCloseStrictBalanced(in)
 	}
@@ -347,6 +418,47 @@ func evaluateCloseDelegated(in CloseEligibilityInput) CloseEligibility {
 	// (as the first draft did) would let an uninvolved session close a still-
 	// open issue it never looked at. Run through the strict/balanced predicate
 	// so delegated mode never relaxes the non-in_review gate.
+	return evaluateCloseStrictBalanced(in)
+}
+
+// evaluateCloseTrusted mirrors evaluateCloseDelegated. The only difference is
+// Case 2 (in_review, no recorded approval): instead of the delegated reviewer
+// predicate it routes through the trusted reviewer predicate, so an implementer
+// who acknowledges the self-review with --self-review can direct approve+close
+// their own work in one action.
+func evaluateCloseTrusted(in CloseEligibilityInput) CloseEligibility {
+	// Case 1: in_review with an active independent approval. Any session may
+	// close — reviewer independence was already enforced when the approval was
+	// recorded.
+	if in.Issue.Status == models.StatusInReview && in.HasActiveApproval {
+		return CloseEligibility{Allowed: true}
+	}
+
+	// Case 2: in_review without an active approval — the direct review+close
+	// fast path. Reviewer eligibility IS close eligibility. Use the trusted
+	// reviewer predicate so the self-review flag gates the implementer path and
+	// the teaching message propagates on rejection.
+	if in.Issue.Status == models.StatusInReview {
+		rev := evaluateReviewerTrusted(ReviewerEligibilityInput{
+			Mode:                     ModeTrusted,
+			Issue:                    in.Issue,
+			SessionID:                in.SessionID,
+			SessionIsImplementer:     in.SessionIsImplementer,
+			SessionIsCreator:         in.SessionIsCreator,
+			HasImplementationHistory: in.HasImplementationHistory,
+			SelfReviewAcknowledged:   in.SelfReviewAcknowledged,
+		})
+		if rev.Allowed {
+			// A self-review close always requires a reason for audit; an
+			// independent direct close inherits the reviewer decision (no
+			// reason forced here beyond what callers already apply).
+			return CloseEligibility{Allowed: true, RequiresReason: rev.RequiresReason}
+		}
+		return CloseEligibility{RejectionMessage: "cannot close: " + rev.RejectionMessage}
+	}
+
+	// Case 3: not in_review — fall through to the strict/balanced gate exactly
+	// like delegated, so trusted mode never relaxes the non-in_review close.
 	return evaluateCloseStrictBalanced(in)
 }
 

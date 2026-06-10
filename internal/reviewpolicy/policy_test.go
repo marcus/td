@@ -9,7 +9,7 @@ import (
 
 func TestParseMode(t *testing.T) {
 	t.Run("round trip for each known mode", func(t *testing.T) {
-		cases := []Mode{ModeStrict, ModeBalanced, ModeDelegated}
+		cases := []Mode{ModeStrict, ModeBalanced, ModeDelegated, ModeTrusted}
 		for _, want := range cases {
 			got, err := ParseMode(string(want))
 			if err != nil {
@@ -68,7 +68,7 @@ func TestEvaluateReviewerEligibility_NilIssue(t *testing.T) {
 }
 
 func TestEvaluateReviewerEligibility_MinorBypass(t *testing.T) {
-	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated} {
+	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated, ModeTrusted} {
 		in := ReviewerEligibilityInput{
 			Mode:                     mode,
 			Issue:                    minorIssue(),
@@ -263,7 +263,7 @@ func TestEvaluateCloseEligibility_NilIssue(t *testing.T) {
 }
 
 func TestEvaluateCloseEligibility_MinorBypass(t *testing.T) {
-	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated} {
+	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated, ModeTrusted} {
 		in := CloseEligibilityInput{
 			Mode:                 mode,
 			Issue:                minorIssue(),
@@ -527,6 +527,216 @@ func TestEvaluateCloseEligibility_Delegated_NonInReviewIssue(t *testing.T) {
 			}
 			if got.CreatorOpenBypass != c.wantCreatorOpenBypass {
 				t.Errorf("CreatorOpenBypass: got %v, want %v", got.CreatorOpenBypass, c.wantCreatorOpenBypass)
+			}
+		})
+	}
+}
+
+func TestEvaluateReviewerEligibility_Trusted(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+
+	cases := []struct {
+		name                     string
+		sessionID                string
+		sessionIsImplementer     bool
+		sessionIsCreator         bool
+		hasImplementationHistory bool
+		selfReviewAcknowledged   bool
+		wantAllowed              bool
+		wantSelfReview           bool
+		wantRequiresReason       bool
+	}{
+		{
+			name:        "independent session approves (no flag, not self-review)",
+			sessionID:   "ses-fresh",
+			wantAllowed: true,
+		},
+		{
+			name:             "creator-only no history approves without flag",
+			sessionID:        "ses-creator",
+			sessionIsCreator: true,
+			wantAllowed:      true,
+		},
+		{
+			name:                 "implementer without flag rejected",
+			sessionID:            "ses-impl",
+			sessionIsImplementer: true,
+			wantAllowed:          false,
+		},
+		{
+			name:                     "impl history without flag rejected",
+			sessionID:                "ses-prev-impl",
+			hasImplementationHistory: true,
+			wantAllowed:              false,
+		},
+		{
+			name:                   "implementer with flag allowed as self-review",
+			sessionID:              "ses-impl",
+			sessionIsImplementer:   true,
+			selfReviewAcknowledged: true,
+			wantAllowed:            true,
+			wantSelfReview:         true,
+			wantRequiresReason:     true,
+		},
+		{
+			name:                     "impl history with flag allowed as self-review",
+			sessionID:                "ses-prev-impl",
+			hasImplementationHistory: true,
+			selfReviewAcknowledged:   true,
+			wantAllowed:              true,
+			wantSelfReview:           true,
+			wantRequiresReason:       true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := ReviewerEligibilityInput{
+				Mode:                     ModeTrusted,
+				Issue:                    issue,
+				SessionID:                c.sessionID,
+				SessionIsImplementer:     c.sessionIsImplementer,
+				SessionIsCreator:         c.sessionIsCreator,
+				HasImplementationHistory: c.hasImplementationHistory,
+				SelfReviewAcknowledged:   c.selfReviewAcknowledged,
+			}
+			got := EvaluateReviewerEligibility(in)
+			if got.Allowed != c.wantAllowed {
+				t.Errorf("Allowed: got %v, want %v (msg=%q)", got.Allowed, c.wantAllowed, got.RejectionMessage)
+			}
+			if got.SelfReview != c.wantSelfReview {
+				t.Errorf("SelfReview: got %v, want %v", got.SelfReview, c.wantSelfReview)
+			}
+			if got.RequiresReason != c.wantRequiresReason {
+				t.Errorf("RequiresReason: got %v, want %v", got.RequiresReason, c.wantRequiresReason)
+			}
+		})
+	}
+}
+
+// TestEvaluateReviewerEligibility_Trusted_TeachingMessage asserts the rejection
+// for an unflagged self-review names BOTH the preferred delegate path and the
+// explicit --self-review escape hatch, plus the issue ID.
+func TestEvaluateReviewerEligibility_Trusted_TeachingMessage(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+	got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
+		Mode:                 ModeTrusted,
+		Issue:                issue,
+		SessionID:            "ses-impl",
+		SessionIsImplementer: true,
+	})
+	if got.Allowed {
+		t.Fatal("implementer without flag should be rejected")
+	}
+	msg := got.RejectionMessage
+	for _, want := range []string{"independent", "--self-review", "--reason", issue.ID} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("teaching message missing %q: %s", want, msg)
+		}
+	}
+}
+
+func TestEvaluateReviewerEligibility_Trusted_UnknownModeFailsClosed(t *testing.T) {
+	// A misconfigured mode must fall through to strict, not trusted's flag path.
+	issue := inReview("ses-creator", "ses-impl")
+	got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
+		Mode:                   Mode("bogus"),
+		Issue:                  issue,
+		SessionID:              "ses-impl",
+		SessionIsImplementer:   true,
+		SelfReviewAcknowledged: true, // flag must NOT help under unknown mode
+	})
+	if got.Allowed {
+		t.Errorf("unknown mode must fail closed to strict, got allowed (msg=%q)", got.RejectionMessage)
+	}
+}
+
+func TestEvaluateCloseEligibility_Trusted(t *testing.T) {
+	inReviewIssue := inReview("ses-creator", "ses-impl")
+	openIssue := func() *models.Issue {
+		is := inReview("ses-creator", "ses-impl")
+		is.Status = models.StatusOpen
+		return is
+	}
+
+	cases := []struct {
+		name                     string
+		issue                    *models.Issue
+		sessionID                string
+		sessionIsImplementer     bool
+		sessionIsCreator         bool
+		hasImplementationHistory bool
+		hasActiveApproval        bool
+		selfReviewAcknowledged   bool
+		wantAllowed              bool
+		wantRequiresReason       bool
+	}{
+		{
+			name:                 "case1: in_review with active approval, implementer may close",
+			issue:                inReviewIssue,
+			sessionID:            "ses-impl",
+			sessionIsImplementer: true,
+			hasActiveApproval:    true,
+			wantAllowed:          true,
+		},
+		{
+			name:        "case2: in_review no approval, independent session direct close",
+			issue:       inReviewIssue,
+			sessionID:   "ses-fresh",
+			wantAllowed: true,
+		},
+		{
+			name:                 "case2: in_review no approval, implementer without flag blocked",
+			issue:                inReviewIssue,
+			sessionID:            "ses-impl",
+			sessionIsImplementer: true,
+			wantAllowed:          false,
+		},
+		{
+			name:                   "case2: in_review no approval, implementer with flag direct closes (requires reason)",
+			issue:                  inReviewIssue,
+			sessionID:              "ses-impl",
+			sessionIsImplementer:   true,
+			selfReviewAcknowledged: true,
+			wantAllowed:            true,
+			wantRequiresReason:     true,
+		},
+		{
+			name:                 "case3: not in_review, implementer blocked even with flag",
+			issue:                openIssue(),
+			sessionID:            "ses-impl",
+			sessionIsImplementer: true,
+			// flag does not relax the non-in_review gate (Case 3 = strict/balanced)
+			selfReviewAcknowledged: true,
+			wantAllowed:            false,
+		},
+		{
+			name:             "case3: creator-open-bypass on never-implemented self-created open issue",
+			issue:            func() *models.Issue { is := openIssue(); is.ImplementerSession = ""; return is }(),
+			sessionID:        "ses-creator",
+			sessionIsCreator: true,
+			wantAllowed:      true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := CloseEligibilityInput{
+				Mode:                     ModeTrusted,
+				Issue:                    c.issue,
+				SessionID:                c.sessionID,
+				SessionIsImplementer:     c.sessionIsImplementer,
+				SessionIsCreator:         c.sessionIsCreator,
+				HasImplementationHistory: c.hasImplementationHistory,
+				HasActiveApproval:        c.hasActiveApproval,
+				SelfReviewAcknowledged:   c.selfReviewAcknowledged,
+			}
+			got := EvaluateCloseEligibility(in)
+			if got.Allowed != c.wantAllowed {
+				t.Errorf("Allowed: got %v, want %v (msg=%q)", got.Allowed, c.wantAllowed, got.RejectionMessage)
+			}
+			if got.RequiresReason != c.wantRequiresReason {
+				t.Errorf("RequiresReason: got %v, want %v", got.RequiresReason, c.wantRequiresReason)
 			}
 		})
 	}
