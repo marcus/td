@@ -197,6 +197,8 @@ auto-created (consider using 'td handoff' for better documentation).
 The submitting session is recorded as 'review_requested_by_session' on the
 issue. Under review_policy_mode=delegated, an active independent approval is
 the close gate, so any session may close after a reviewer records approval.
+Under review_policy_mode=trusted, the implementer may instead approve+close
+their own work with 'td approve --self-review --reason "..."'.
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -509,15 +511,23 @@ in one of three modes:
     closes later. Pass --decision changes_requested to record a non-approving
     review instead of an approval.
 
-  Mode C: Close using recorded approval (delegated mode only)
+  Mode C: Close using recorded approval (delegated/trusted mode)
     An active approval review already exists. Any session may close.
     --reason is required if the closing session is not the same as the
     reviewer-of-record.
 
+  Self-review (--self-review, trusted mode only)
+    When you implemented the issue (or have implementation history), trusted
+    mode lets you approve+close your own work in one step by acknowledging
+    the self-review with --self-review. It requires --reason and stamps
+    self_review on the recorded review row for audit. Prefer delegating
+    review to an independent session; this flag is the explicit escape hatch.
+
 Flag summary:
   --record-only                       record an approval review without closing
   --decision approved|changes_requested  review decision (use with --record-only)
-  --reason "..."                      required for --record-only and delegated close
+  --self-review                       acknowledge self-review of your own work (trusted mode); implies --reason
+  --reason "..."                      required for --record-only, delegated close, and --self-review
   --all                               approve all reviewable issues for this session
 
 Examples:
@@ -525,6 +535,7 @@ Examples:
   td approve --all                                         # Approve all reviewable
   td approve td-abc1 --record-only --reason "looks good"   # Record approval only
   td approve td-abc1 --record-only --decision changes_requested --reason "fix X"
+  td approve td-abc1 --self-review --reason "reviewed diff" # Trusted-mode self-review approve+close
 
 To surface issues reviewed by a sub-agent that you can close, use
   td reviewable --include-approved`,
@@ -549,6 +560,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		all, _ := cmd.Flags().GetBool("all")
 		recordOnly, _ := cmd.Flags().GetBool("record-only")
+		selfReview, _ := cmd.Flags().GetBool("self-review")
 		decisionFlag, _ := cmd.Flags().GetString("decision")
 		balancedPolicy := balancedReviewPolicyEnabled(baseDir)
 		mode, err := resolveReviewPolicyMode(baseDir)
@@ -560,6 +572,18 @@ To surface issues reviewed by a sub-agent that you can close, use
 		// Record-only is only meaningful under delegated mode.
 		if recordOnly && mode != reviewpolicy.ModeDelegated {
 			msg := "--record-only requires review_policy_mode=delegated"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+
+		// --self-review is only valid under trusted mode. In every other mode it
+		// errors clearly (mirrors the --record-only delegated guard above).
+		if selfReview && mode != reviewpolicy.ModeTrusted {
+			msg := "--self-review requires review_policy_mode=trusted"
 			if jsonOutput {
 				output.JSONError(output.ErrCodeInvalidInput, msg)
 			} else {
@@ -674,9 +698,11 @@ To surface issues reviewed by a sub-agent that you can close, use
 				continue
 			}
 
-			// Look up active approval (delegated-mode routing input).
+			// Look up active approval (delegated/trusted-mode routing input).
+			// Trusted mode mirrors delegated's Case 1: an existing independent
+			// approval lets any session close without re-reviewing.
 			var activeApproval *models.IssueReview
-			if mode == reviewpolicy.ModeDelegated {
+			if mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted {
 				activeApproval, _ = database.GetActiveApprovalReview(issueID)
 			}
 
@@ -742,7 +768,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				// directly instead of hardcoding balanced. Under delegated a prior
 				// reviewer may re-review after a reject/re-review cycle; the
 				// balanced fallback would incorrectly block via WasAnyInvolved.
-				eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplInvolved, mode)
+				eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplInvolved, mode, selfReview)
 				if !eligibility.Allowed {
 					if !all {
 						if jsonOutput {
@@ -766,7 +792,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
 				}
 
-				reviewID, err := database.CreateIssueReview(issueID, sess.ID, decision, reason, issue.ReviewRequestedBySession, false)
+				reviewID, err := database.CreateIssueReview(issueID, sess.ID, decision, reason, issue.ReviewRequestedBySession, eligibility.SelfReview)
 				if err != nil {
 					output.Error("failed to record review: %v", err)
 					skipped++
@@ -815,8 +841,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 				continue
 			}
 
-			// Mode C: close using recorded approval (delegated mode only).
-			if mode == reviewpolicy.ModeDelegated && activeApproval != nil {
+			// Mode C: close using recorded approval (delegated/trusted mode).
+			if (mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted) && activeApproval != nil {
 				wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
 				if err != nil {
 					output.Warning("failed to check session history for %s: %v", issueID, err)
@@ -833,7 +859,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					hasImplHistoryForIssue = true
 				}
 
-				closeDec := evaluateCloseEligibilityForBaseDir(baseDir, issue, sess.ID, wasInvolved, wasImplInvolved, hasImplHistoryForIssue, true /*hasActiveApproval*/)
+				closeDec := evaluateCloseEligibilityForBaseDir(baseDir, issue, sess.ID, wasInvolved, wasImplInvolved, hasImplHistoryForIssue, true /*hasActiveApproval*/, selfReview)
 				if !closeDec.Allowed {
 					msg := closeDec.RejectionMessage
 					if msg == "" {
@@ -943,7 +969,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					wasImplementationInvolved = implInvolved
 				}
 			}
-			if mode == reviewpolicy.ModeDelegated && !issue.Minor {
+			if (mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted) && !issue.Minor {
 				implInvolved, implErr := database.WasSessionImplementationInvolved(issueID, sess.ID)
 				if implErr != nil {
 					output.Warning("failed to check implementation history for %s: %v", issueID, implErr)
@@ -955,8 +981,10 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 			// Route through mode-aware wrapper so delegated mode honors the
 			// "prior reviewers may re-review" rule rather than falling into
-			// balanced's WasAnyInvolved block.
-			eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplementationInvolved, mode)
+			// balanced's WasAnyInvolved block. In trusted mode the --self-review
+			// flag converts the implementer self-review rejection into an
+			// audited allow.
+			eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplementationInvolved, mode, selfReview)
 			if !eligibility.Allowed {
 				if !all { // Only show error for explicit requests
 					if jsonOutput {
@@ -971,12 +999,15 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 			if eligibility.RequiresReason && reason == "" {
 				msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
+				if eligibility.SelfReview {
+					msg = fmt.Sprintf("--self-review requires --reason for %s", issueID)
+				}
 				if jsonOutput {
 					output.JSONError(output.ErrCodeInvalidInput, msg)
 				} else if !all {
 					output.Error("%s", msg)
 				} else {
-					output.Warning("skipping %s: creator approval exception requires --reason", issueID)
+					output.Warning("skipping %s: %s", issueID, msg)
 				}
 				skipped++
 				continue
@@ -1003,7 +1034,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// Create the approval row first so we can record its id in
 			// the action_log payload via UpdateIssueLoggedWithReviewMeta.
 			reviewID, err := database.CreateIssueReview(
-				issueID, sess.ID, reviewpolicy.DecisionApproved, reason, issue.ReviewRequestedBySession, false,
+				issueID, sess.ID, reviewpolicy.DecisionApproved, reason, issue.ReviewRequestedBySession, eligibility.SelfReview,
 			)
 			if err != nil {
 				output.Warning("failed to record issue review: %v", err)
@@ -1039,6 +1070,19 @@ To surface issues reviewed by a sub-agent that you can close, use
 					AgentType: sess.AgentType,
 					Reason:    "creator_approval_exception: " + reason,
 				})
+			} else if eligibility.SelfReview {
+				agentInfo := sess.AgentType
+				if agentInfo == "" {
+					agentInfo = "Unknown Agent"
+				}
+				logMsg = fmt.Sprintf("[%s] Approved (SELF-REVIEW: %s)", agentInfo, reason)
+				logType = models.LogTypeSecurity
+				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					AgentType: sess.AgentType,
+					Reason:    "self_review: " + reason,
+				})
 			}
 
 			if err := database.AddLog(&models.Log{
@@ -1055,6 +1099,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 			if eligibility.CreatorException {
 				fmt.Printf("APPROVED %s (reviewer: %s, creator exception)\n", issueID, sess.ID)
+			} else if eligibility.SelfReview {
+				fmt.Printf("APPROVED %s (reviewer: %s, self-review)\n", issueID, sess.ID)
 			} else {
 				fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
 			}
@@ -1460,6 +1506,7 @@ func init() {
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated mode)")
+	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
 	approveCmd.Flags().String("decision", "", "Review decision: approved (default) | changes_requested (use with --record-only)")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")
 	rejectCmd.Flags().StringP("comment", "c", "", "Reason for rejection (alias for --reason)")

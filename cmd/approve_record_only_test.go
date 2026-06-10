@@ -21,7 +21,7 @@ func runApproveCmd(t *testing.T, args []string, flags map[string]string) (string
 
 	// Reset flags that approve sets so leftover state from earlier tests
 	// doesn't leak in.
-	resetKeys := []string{"reason", "message", "comment", "note", "notes", "json", "all", "record-only", "decision"}
+	resetKeys := []string{"reason", "message", "comment", "note", "notes", "json", "all", "record-only", "decision", "self-review"}
 	for _, k := range resetKeys {
 		if f := approveCmd.Flags().Lookup(k); f != nil {
 			_ = approveCmd.Flags().Set(k, f.DefValue)

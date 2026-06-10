@@ -198,6 +198,7 @@ Examples:
 						"created_at":       r.CreatedAt,
 						"requested_by":     r.RequestedBySession,
 						"superseded":       r.SupersededAt != nil,
+						"self_review":      r.SelfReview,
 					}
 					if r.SupersededAt != nil {
 						e["superseded_at"] = r.SupersededAt
@@ -306,8 +307,11 @@ Examples:
 			}
 			for _, r := range reviews[start:] {
 				marker := ""
+				if r.SelfReview {
+					marker += " (self-review)"
+				}
 				if r.SupersededAt != nil {
-					marker = " [superseded]"
+					marker += " [superseded]"
 				}
 				summary := r.Summary
 				if summary == "" {

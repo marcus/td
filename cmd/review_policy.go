@@ -21,11 +21,17 @@ type approveEligibility struct {
 	CreatorException bool
 	RequiresReason   bool
 	RejectionMessage string
+
+	// SelfReview is true when the trusted-mode self-review path applied: the
+	// caller is the implementer (or has implementation history) and passed
+	// --self-review. Callers stamp it on the recorded review row.
+	SelfReview bool
 }
 
 type closeEligibility struct {
 	Allowed           bool
 	CreatorOpenBypass bool
+	RequiresReason    bool
 	RejectionMessage  string
 }
 
@@ -128,14 +134,14 @@ func evaluateApproveEligibility(issue *models.Issue, sessionID string, wasInvolv
 	if balancedPolicy {
 		mode = reviewpolicy.ModeBalanced
 	}
-	return evaluateApproveEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, mode)
+	return evaluateApproveEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, mode, false)
 }
 
 // evaluateApproveEligibilityWithMode is the mode-aware variant used by the
 // Step 2 record-only and close-after-review paths. It preserves the legacy
 // balanced/strict rejection strings while letting delegated mode apply its
 // own rule (prior reviewers may re-review).
-func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved bool, mode reviewpolicy.Mode) approveEligibility {
+func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved bool, mode reviewpolicy.Mode, selfReview bool) approveEligibility {
 	balancedPolicy := mode == reviewpolicy.ModeBalanced
 
 	in := reviewpolicy.ReviewerEligibilityInput{
@@ -146,6 +152,7 @@ func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, w
 		SessionIsCreator:         issue != nil && issue.CreatorSession != "" && issue.CreatorSession == sessionID,
 		HasImplementationHistory: wasImplementationInvolved,
 		WasAnyInvolved:           wasInvolved,
+		SelfReviewAcknowledged:   selfReview,
 	}
 	decision := reviewpolicy.EvaluateReviewerEligibility(in)
 
@@ -158,6 +165,7 @@ func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, w
 			Allowed:          true,
 			CreatorException: decision.CreatorException,
 			RequiresReason:   decision.RequiresReason,
+			SelfReview:       decision.SelfReview,
 		}
 	}
 
@@ -165,6 +173,17 @@ func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, w
 		return approveEligibility{
 			Allowed:          false,
 			RejectionMessage: "cannot approve: issue not found",
+		}
+	}
+
+	// Trusted mode owns a teaching rejection (names both the preferred
+	// independent-review norm and the --self-review escape hatch). Forward it
+	// verbatim so agents see the actionable guidance instead of the generic
+	// "you were involved" string.
+	if mode == reviewpolicy.ModeTrusted && decision.RejectionMessage != "" {
+		return approveEligibility{
+			Allowed:          false,
+			RejectionMessage: decision.RejectionMessage,
 		}
 	}
 
@@ -197,7 +216,7 @@ func evaluateCloseEligibility(issue *models.Issue, sessionID string, wasInvolved
 	// legacy signature preserves the pre-batch behavior where a post-decision
 	// veto handles the issue-wide impl-history gate.
 	mode := reviewpolicy.ModeStrict
-	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, false)
+	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, false, false)
 }
 
 // evaluateCloseEligibilityForBaseDir resolves the project review_policy_mode
@@ -214,13 +233,14 @@ func evaluateCloseEligibilityForBaseDir(
 	sessionID string,
 	wasInvolved, wasImplementationInvolved, hasImplementationHistory bool,
 	hasActiveApproval bool,
+	selfReview bool,
 ) closeEligibility {
 	mode, err := resolveReviewPolicyMode(baseDir)
 	if err != nil {
 		// Fail-closed: unknown mode configurations drop to strict rules.
 		mode = reviewpolicy.ModeStrict
 	}
-	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, hasActiveApproval)
+	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, hasActiveApproval, selfReview)
 }
 
 // evaluateCloseEligibilityWithMode is the shared implementation behind
@@ -231,7 +251,7 @@ func evaluateCloseEligibilityForBaseDir(
 func evaluateCloseEligibilityWithMode(
 	issue *models.Issue, sessionID string,
 	wasInvolved, wasImplementationInvolved, hasImplementationHistory bool,
-	mode reviewpolicy.Mode, hasActiveApproval bool,
+	mode reviewpolicy.Mode, hasActiveApproval bool, selfReview bool,
 ) closeEligibility {
 	in := reviewpolicy.CloseEligibilityInput{
 		Mode:                      mode,
@@ -244,6 +264,7 @@ func evaluateCloseEligibilityWithMode(
 		HasImplementationHistory:  wasImplementationInvolved,
 		WasAnyInvolved:            wasInvolved,
 		HasActiveApproval:         hasActiveApproval,
+		SelfReviewAcknowledged:    selfReview,
 	}
 
 	decision := reviewpolicy.EvaluateCloseEligibility(in)
@@ -271,6 +292,7 @@ func evaluateCloseEligibilityWithMode(
 		return closeEligibility{
 			Allowed:           true,
 			CreatorOpenBypass: decision.CreatorOpenBypass,
+			RequiresReason:    decision.RequiresReason,
 		}
 	}
 
