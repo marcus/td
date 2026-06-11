@@ -77,6 +77,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
+	// Overlay self-review confirmation dialog if open (declarative modal)
+	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil && m.SelfReviewConfirmMouseHandler != nil {
+		sr := m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
+		return OverlayModal(base, sr, m.Width, m.Height)
+	}
+
 	// Overlay record-review dialog if open (declarative modal)
 	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
 		rr := m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)

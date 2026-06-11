@@ -558,6 +558,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap only for unhandled keys (like esc)
 	}
 
+	// Self-review confirmation modal (trusted mode): route keys through the
+	// declarative modal (tab/shift+tab/enter/esc). No text input.
+	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil && m.SelfReviewConfirmMouseHandler != nil {
+		action, cmd := m.SelfReviewConfirmModal.HandleKey(msg)
+		if action != "" {
+			return m.handleSelfReviewConfirmAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		switch key {
+		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end":
+			return m, nil // Key was handled by modal
+		}
+		// Fall through to keymap only for unhandled keys (like esc)
+	}
+
 	// Record-review modal: 'c' toggles decision between approved and
 	// changes_requested. All other keys are routed through the declarative
 	// modal (tab/shift+tab/enter/esc + text input). Without this block the
@@ -1340,6 +1357,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.CloseConfirmOpen = false
 			m.CloseConfirmIssueID = ""
 			m.CloseConfirmTitle = ""
+			return m, nil
+		}
+		if m.SelfReviewConfirmOpen {
+			m.closeSelfReviewConfirmModal()
 			return m, nil
 		}
 		// Delete confirmation is now handled by declarative modal in handleKey

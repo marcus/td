@@ -22,6 +22,12 @@ type monitorApproveInputs struct {
 	HasImplementationHistory bool
 	WasAnyInvolved           bool
 	HasActiveApproval        bool
+	// SelfReviewAcknowledged mirrors the CLI's --self-review flag. In the
+	// monitor it is set to true after the operator confirms the trusted-mode
+	// "you implemented this; approve as self-review?" prompt. It is threaded
+	// into the reviewpolicy decision so trusted-mode self-review becomes an
+	// audited allow (SelfReview=true) instead of a reject.
+	SelfReviewAcknowledged bool
 }
 
 // MonitorApproveDecisionForTest is the exported thin wrapper that the
@@ -29,7 +35,7 @@ type monitorApproveInputs struct {
 // the monitor's decision path with synthetic inputs. Not intended for
 // runtime callers; runtime code should use monitorApproveDecision +
 // loadMonitorApproveInputs directly.
-func MonitorApproveDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval bool) reviewpolicy.ReviewerEligibility {
+func MonitorApproveDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool) reviewpolicy.ReviewerEligibility {
 	return monitorApproveDecision(monitorApproveInputs{
 		Mode:                     mode,
 		Issue:                    issue,
@@ -37,6 +43,7 @@ func MonitorApproveDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, 
 		HasImplementationHistory: hasImplementationHistory,
 		WasAnyInvolved:           wasAnyInvolved,
 		HasActiveApproval:        hasActiveApproval,
+		SelfReviewAcknowledged:   selfReviewAcknowledged,
 	})
 }
 
@@ -59,6 +66,7 @@ func monitorApproveDecision(in monitorApproveInputs) reviewpolicy.ReviewerEligib
 		HasImplementationHistory: in.HasImplementationHistory,
 		HasActiveApproval:        in.HasActiveApproval,
 		WasAnyInvolved:           in.WasAnyInvolved,
+		SelfReviewAcknowledged:   in.SelfReviewAcknowledged,
 	})
 }
 
@@ -434,11 +442,11 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	// rejects approvals the CLI would reject too.
 	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
 
-	// Close-after-review (Mode C, delegated only): if an active approval
+	// Close-after-review (Mode C, delegated/trusted): if an active approval
 	// already exists, close preserving the prior reviewer_session/reviewed_at.
-	if inputs.Mode == reviewpolicy.ModeDelegated && inputs.HasActiveApproval {
+	if (inputs.Mode == reviewpolicy.ModeDelegated || inputs.Mode == reviewpolicy.ModeTrusted) && inputs.HasActiveApproval {
 		closeIn := reviewpolicy.CloseEligibilityInput{
-			Mode:                      reviewpolicy.ModeDelegated,
+			Mode:                      inputs.Mode,
 			Issue:                     issue,
 			SessionID:                 m.SessionID,
 			SessionIsImplementer:      issue.ImplementerSession != "" && issue.ImplementerSession == m.SessionID,
@@ -471,9 +479,32 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 
 	decision := monitorApproveDecision(inputs)
 	if !decision.Allowed {
+		// Trusted-mode self-review escape: the only reject the monitor can
+		// turn into an allow is the implementer/has-history self-review under
+		// trusted mode. Rather than silently blocking (the CLI requires the
+		// --self-review flag) or silently self-approving, prompt the operator
+		// for an explicit acknowledgement. Re-running with the ack set must
+		// then be allowed (decision.SelfReview=true) — otherwise the reject is
+		// for some other reason and we leave it blocked.
+		if inputs.Mode == reviewpolicy.ModeTrusted {
+			ackInputs := inputs
+			ackInputs.SelfReviewAcknowledged = true
+			if monitorApproveDecision(ackInputs).SelfReview {
+				m = m.openSelfReviewConfirmModal(issue.ID, issue.Title)
+				return m, nil
+			}
+		}
 		return m, nil
 	}
 
+	return m.executeApproveClose(issue, decision.SelfReview)
+}
+
+// executeApproveClose performs the direct reviewer-close (Mode A) and any
+// epic cascade for an approved issue. selfReview records the trusted-mode
+// self-review audit bit on the issue_reviews row, identical to the CLI's
+// `td approve --self-review` path.
+func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Model, tea.Cmd) {
 	// Direct reviewer-close (Mode A)
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -490,8 +521,9 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 
 	// Also record an issue_reviews row so audit output distinguishes direct
 	// reviewer-close from cascaded close. Best-effort: a missing review
-	// write does not block the approve.
-	_, _ = m.DB.CreateIssueReview(issue.ID, m.SessionID, reviewpolicy.DecisionApproved, "", issue.ReviewRequestedBySession, false)
+	// write does not block the approve. selfReview stamps the audit bit
+	// identically to the CLI.
+	_, _ = m.DB.CreateIssueReview(issue.ID, m.SessionID, reviewpolicy.DecisionApproved, "", issue.ReviewRequestedBySession, selfReview)
 
 	// Cascade DOWN to descendants if this is a parent issue (epic).
 	// Reuse the `now` captured above so the whole cascade shares one
@@ -886,6 +918,41 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
 	}
 	return m, tea.Batch(cmds...)
+}
+
+// executeSelfReviewApprove is the confirm handler for the trusted-mode
+// self-review modal. The operator has acknowledged that they implemented the
+// issue and chose to approve it as a self-review; this re-runs the eligibility
+// decision with SelfReviewAcknowledged=true and, when the decision is the
+// expected audited self-review allow, closes the issue with self_review=true.
+func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
+	issueID := m.SelfReviewConfirmIssueID
+	m.closeSelfReviewConfirmModal()
+	if issueID == "" {
+		return m, nil
+	}
+
+	issue, err := m.DB.GetIssue(issueID)
+	if err != nil || issue == nil {
+		return m, nil
+	}
+
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
+		return m, nil
+	}
+
+	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
+	inputs.SelfReviewAcknowledged = true
+	decision := monitorApproveDecision(inputs)
+	// Only proceed on the audited self-review allow. If the decision is not a
+	// self-review (e.g. mode flipped, or the session is no longer the
+	// implementer) fall back to the normal allow check.
+	if !decision.Allowed {
+		return m, nil
+	}
+	return m.executeApproveClose(issue, decision.SelfReview)
 }
 
 // filterActiveBlockers returns only non-closed issues from a list of blockers

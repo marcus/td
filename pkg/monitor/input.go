@@ -842,76 +842,76 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Handle mouse wheel scroll in modals/overlays
 	if wheelDelta != 0 {
-			// Route scroll to help modal
-			if m.HelpOpen {
-				m.HelpScroll += wheelDelta
-				m.clampHelpScroll()
-				return m, nil
-			}
+		// Route scroll to help modal
+		if m.HelpOpen {
+			m.HelpScroll += wheelDelta
+			m.clampHelpScroll()
+			return m, nil
+		}
 
-			// Route scroll to getting started modal - just ignore scroll
-			if m.GettingStartedOpen {
-				return m, nil
-			}
+		// Route scroll to getting started modal - just ignore scroll
+		if m.GettingStartedOpen {
+			return m, nil
+		}
 
-			// Route scroll to sync prompt modal - just ignore scroll
-			if m.SyncPromptOpen {
-				return m, nil
-			}
+		// Route scroll to sync prompt modal - just ignore scroll
+		if m.SyncPromptOpen {
+			return m, nil
+		}
 
-			// Route scroll to activity detail modal - just ignore scroll
-			if m.ActivityDetailOpen {
-				return m, nil
-			}
+		// Route scroll to activity detail modal - just ignore scroll
+		if m.ActivityDetailOpen {
+			return m, nil
+		}
 
-			// Route scroll to appropriate modal
-			if modal := m.CurrentModal(); modal != nil {
-				// Mouse wheel always scrolls modal content (use j/k for task list navigation)
-				modal.Scroll += wheelDelta
-				if modal.Scroll < 0 {
-					modal.Scroll = 0
-				}
-				maxScroll := m.modalMaxScroll(modal)
-				if modal.Scroll > maxScroll {
-					modal.Scroll = maxScroll
-				}
-				return m, nil
+		// Route scroll to appropriate modal
+		if modal := m.CurrentModal(); modal != nil {
+			// Mouse wheel always scrolls modal content (use j/k for task list navigation)
+			modal.Scroll += wheelDelta
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
 			}
+			maxScroll := m.modalMaxScroll(modal)
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
+			return m, nil
+		}
 
-			// Route scroll to kanban view (navigate rows)
-			if m.KanbanOpen {
-				if wheelDelta < 0 {
-					m.kanbanMoveUp()
-				} else {
-					m.kanbanMoveDown()
-				}
-				return m, nil
+		// Route scroll to kanban view (navigate rows)
+		if m.KanbanOpen {
+			if wheelDelta < 0 {
+				m.kanbanMoveUp()
+			} else {
+				m.kanbanMoveDown()
 			}
+			return m, nil
+		}
 
-			if m.StatsOpen {
-				m.StatsScroll += wheelDelta
-				if m.StatsScroll < 0 {
-					m.StatsScroll = 0
-				}
-				return m, nil
+		if m.StatsOpen {
+			m.StatsScroll += wheelDelta
+			if m.StatsScroll < 0 {
+				m.StatsScroll = 0
 			}
+			return m, nil
+		}
 
-			if m.HandoffsOpen {
-				m.HandoffsScroll += wheelDelta
-				if m.HandoffsScroll < 0 {
-					m.HandoffsScroll = 0
-				}
-				return m, nil
+		if m.HandoffsOpen {
+			m.HandoffsScroll += wheelDelta
+			if m.HandoffsScroll < 0 {
+				m.HandoffsScroll = 0
 			}
+			return m, nil
+		}
 
-			if m.BoardPickerOpen {
-				// Route scroll to declarative modal if available
-				if m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil {
-					_ = m.BoardPickerModal.HandleMouse(msg, m.BoardPickerMouseHandler)
-				}
-				// During loading, ignore scroll
-				return m, nil
+		if m.BoardPickerOpen {
+			// Route scroll to declarative modal if available
+			if m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil {
+				_ = m.BoardPickerModal.HandleMouse(msg, m.BoardPickerMouseHandler)
 			}
+			// During loading, ignore scroll
+			return m, nil
+		}
 	}
 
 	// Handle Sync Prompt modal mouse events (declarative modal)
@@ -1061,6 +1061,19 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil && m.SelfReviewConfirmMouseHandler != nil {
+		if isLeftClick {
+			action := m.SelfReviewConfirmModal.HandleMouse(msg, m.SelfReviewConfirmMouseHandler)
+			if action != "" {
+				return m.handleSelfReviewConfirmAction(action)
+			}
+			return m, nil
+		}
+		if isMotion {
+			_ = m.SelfReviewConfirmModal.HandleMouse(msg, m.SelfReviewConfirmMouseHandler)
+			return m, nil
+		}
+	}
 	if m.FormOpen && isLeftClick {
 		return m.handleFormDialogClick(mouseEvent.X, mouseEvent.Y)
 	}
@@ -1104,7 +1117,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.ActivityDetailOpen || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.RecordReviewOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
+	if m.ModalOpen() || m.ActivityDetailOpen || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.SelfReviewConfirmOpen || m.RecordReviewOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen || m.SyncPromptOpen {
 		return m, nil
 	}
 

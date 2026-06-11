@@ -95,6 +95,16 @@ type Model struct {
 	CloseConfirmModal        *modal.Modal   // Declarative modal instance
 	CloseConfirmMouseHandler *mouse.Handler // Mouse handler for close confirmation modal
 
+	// Self-review confirmation dialog (trusted mode). Shown when the current
+	// session implemented the in_review issue being approved; confirming
+	// records the approval with self_review=true. No text input — just a
+	// Confirm / Cancel button pair following the close-confirm modal pattern.
+	SelfReviewConfirmOpen         bool
+	SelfReviewConfirmIssueID      string
+	SelfReviewConfirmTitle        string
+	SelfReviewConfirmModal        *modal.Modal
+	SelfReviewConfirmMouseHandler *mouse.Handler
+
 	// Record-review (delegated-mode) reason prompt. Reused pattern from
 	// CloseConfirm — a single-line text input with confirm/cancel buttons.
 	RecordReviewOpen         bool
@@ -248,7 +258,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	// Initialize search input
 	searchInput := textinput.New()
 	searchInput.Placeholder = "search"
-	searchInput.Prompt = "" // No prompt, we show triangle icon separately
+	searchInput.Prompt = ""  // No prompt, we show triangle icon separately
 	searchInput.SetWidth(50) // Reasonable width for search queries
 	searchInput.CharLimit = 200
 

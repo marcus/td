@@ -861,6 +861,80 @@ func (m Model) handleCloseConfirmAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openSelfReviewConfirmModal opens the trusted-mode self-review confirmation
+// prompt. Mirrors the close-confirm modal but without a text input — a simple
+// Confirm / Cancel pair gated to the trusted self-review case.
+func (m Model) openSelfReviewConfirmModal(issueID, issueTitle string) Model {
+	m.SelfReviewConfirmOpen = true
+	m.SelfReviewConfirmIssueID = issueID
+	m.SelfReviewConfirmTitle = issueTitle
+
+	m.SelfReviewConfirmModal = m.createSelfReviewConfirmModal()
+	m.SelfReviewConfirmModal.Reset()
+	m.SelfReviewConfirmMouseHandler = mouse.NewHandler()
+
+	return m
+}
+
+// closeSelfReviewConfirmModal closes the self-review confirmation modal and
+// clears its state.
+func (m *Model) closeSelfReviewConfirmModal() {
+	m.SelfReviewConfirmOpen = false
+	m.SelfReviewConfirmIssueID = ""
+	m.SelfReviewConfirmTitle = ""
+	m.SelfReviewConfirmModal = nil
+	m.SelfReviewConfirmMouseHandler = nil
+}
+
+// createSelfReviewConfirmModal builds the declarative modal for the trusted
+// self-review confirmation.
+func (m *Model) createSelfReviewConfirmModal() *modal.Modal {
+	width := 56
+
+	title := fmt.Sprintf("Self-review %s?", m.SelfReviewConfirmIssueID)
+
+	md := modal.New(title,
+		modal.WithWidth(width),
+		modal.WithVariant(modal.VariantDanger),
+		modal.WithHints(false),
+		modal.WithPrimaryAction("confirm"),
+	)
+
+	maxTitleLen := width - 10
+	if maxTitleLen < 20 {
+		maxTitleLen = 20
+	}
+	displayTitle := m.SelfReviewConfirmTitle
+	if len(displayTitle) > maxTitleLen {
+		displayTitle = displayTitle[:maxTitleLen-3] + "..."
+	}
+
+	md.AddSection(modal.Text("\"" + displayTitle + "\""))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("You implemented this. Approve as self-review?"))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Confirm ", "confirm"),
+		modal.Btn(" Cancel ", "cancel"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Tab:switch  Enter:confirm  Esc:cancel"))
+
+	return md
+}
+
+// handleSelfReviewConfirmAction handles actions from the self-review modal.
+func (m Model) handleSelfReviewConfirmAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "confirm":
+		return m.executeSelfReviewApprove()
+	case "cancel":
+		m.closeSelfReviewConfirmModal()
+		return m, nil
+	}
+	return m, nil
+}
+
 // openRecordReviewModal opens the record-review reason prompt. Mirrors the
 // openCloseConfirmModal pattern — one text input for the reason plus the
 // Confirm / Cancel buttons. The "changes_requested" variant is available by

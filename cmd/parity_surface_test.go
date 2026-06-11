@@ -667,6 +667,7 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 			monitorDec := monitor.MonitorApproveDecisionForTest(
 				r.mode, issue, r.sessionID,
 				r.hasImplementationHistory, r.wasAnyInvolved, r.hasActiveApproval,
+				false, /*selfReviewAcknowledged*/
 			)
 			if monitorDec.Allowed != r.wantReviewerAllowed {
 				t.Fatalf("monitor Allowed=%v, want %v", monitorDec.Allowed, r.wantReviewerAllowed)
@@ -758,6 +759,31 @@ func TestReviewPolicyParity_TrustedSelfReview(t *testing.T) {
 	}
 	if !withFlag.SelfReview {
 		t.Fatalf("trusted self-review WITH --self-review should be flagged SelfReview for audit")
+	}
+
+	// Monitor surface parity: the monitor's approve decision must agree with
+	// the CLI for trusted self-review, both without and with acknowledgement.
+	// Without the ack the implementer self-review is rejected (the monitor then
+	// prompts the confirm modal); with the ack it is an audited self-review
+	// allow stamped SelfReview=true.
+	monitorWithoutAck := monitor.MonitorApproveDecisionForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self",
+		true /*hasImplementationHistory*/, true /*wasAnyInvolved*/, false, /*hasActiveApproval*/
+		false, /*selfReviewAcknowledged*/
+	)
+	if monitorWithoutAck.Allowed {
+		t.Fatalf("monitor trusted self-review without ack should be rejected, got allowed")
+	}
+	monitorWithAck := monitor.MonitorApproveDecisionForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self",
+		true, true, false,
+		true, /*selfReviewAcknowledged*/
+	)
+	if !monitorWithAck.Allowed {
+		t.Fatalf("monitor trusted self-review WITH ack should be allowed, got %+v", monitorWithAck)
+	}
+	if !monitorWithAck.SelfReview {
+		t.Fatalf("monitor trusted self-review WITH ack should be flagged SelfReview for audit")
 	}
 
 	// The shared reviewpolicy ground truth agrees with the CLI wrapper.
