@@ -458,6 +458,59 @@ func parityMatrix() []parityRow {
 		},
 	)
 
+	// --- Trusted mode scenarios ---
+	//
+	// Trusted is delegated plus a flag-gated, audited self-review escape. These
+	// rows exercise the non-self-review paths, where trusted must behave
+	// exactly like delegated (the --self-review flag is not set, so the
+	// implementer self-review remains blocked at decision time). The trusted
+	// self-review-allow path is covered separately in
+	// TestReviewPolicyParity_TrustedSelfReview because it requires the
+	// SelfReviewAcknowledged flag the generic shims do not thread.
+	rows = append(rows,
+		parityRow{name: "trusted: implementer blocked without flag", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-impl",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			hasImplementationHistory: true, wasAnyInvolved: true,
+			wantReviewerAllowed: false, wantCloseAllowed: false,
+		},
+		parityRow{name: "trusted: impl history blocked without flag", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-prev-impl",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			hasImplementationHistory: true,
+			wantReviewerAllowed:      false, wantCloseAllowed: false,
+		},
+		parityRow{name: "trusted: fresh session allowed (review+close)", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-fresh",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			wantReviewerAllowed: true, wantCloseAllowed: true,
+		},
+		parityRow{name: "trusted: creator-who-never-implemented allowed", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-c",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			wasAnyInvolved:      true,
+			wantReviewerAllowed: true, wantCloseAllowed: true,
+		},
+		parityRow{name: "trusted: active approval + arbitrary session closes", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-other",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			hasActiveApproval:   true,
+			wantReviewerAllowed: true, wantCloseAllowed: true,
+		},
+		parityRow{name: "trusted: active approval + implementer closes", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, sessionID: "ses-impl",
+			creatorSession: "ses-c", implementerSession: "ses-impl",
+			hasImplementationHistory: true, hasActiveApproval: true,
+			wantReviewerAllowed: false, wantCloseAllowed: true,
+		},
+		parityRow{name: "trusted: minor bypass", mode: reviewpolicy.ModeTrusted,
+			issueStatus: models.StatusInReview, minor: true, sessionID: "ses-impl",
+			creatorSession: "ses-impl", implementerSession: "ses-impl",
+			hasImplementationHistory: true, wasAnyInvolved: true,
+			wantReviewerAllowed: true, wantCloseAllowed: true,
+		},
+	)
+
 	return rows
 }
 
@@ -537,16 +590,30 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 			cliApprove := evaluateApproveEligibility(issue, r.sessionID,
 				r.wasAnyInvolved, r.hasImplementationHistory, balancedPolicy)
 
-			if r.mode != reviewpolicy.ModeDelegated {
+			switch r.mode {
+			case reviewpolicy.ModeDelegated:
+				// In delegated mode, the legacy CLI wrapper uses
+				// strict/balanced, which may differ. We only assert delegated
+				// reviewpolicy agrees with itself; the CLI wrapper's delegated
+				// behavior is wired in Step 2.
+				_ = cliApprove
+			case reviewpolicy.ModeTrusted:
+				// Trusted mode routes through the mode-aware CLI approve
+				// wrapper. These rows do not set the --self-review flag, so the
+				// trusted decision must equal the reviewpolicy ground truth.
+				cliApproveTrusted := evaluateApproveEligibilityWithMode(
+					issue, r.sessionID,
+					r.wasAnyInvolved, r.hasImplementationHistory,
+					reviewpolicy.ModeTrusted, false,
+				)
+				if cliApproveTrusted.Allowed != r.wantReviewerAllowed {
+					t.Fatalf("cli trusted approve Allowed=%v, want %v",
+						cliApproveTrusted.Allowed, r.wantReviewerAllowed)
+				}
+			default:
 				if cliApprove.Allowed != r.wantReviewerAllowed {
 					t.Fatalf("cli approve Allowed=%v, want %v", cliApprove.Allowed, r.wantReviewerAllowed)
 				}
-			} else {
-				// In delegated mode, the CLI wrapper uses strict/balanced,
-				// which may differ. We only assert delegated reviewpolicy
-				// agrees with itself; the CLI wrapper's delegated behavior
-				// is wired in Step 2.
-				_ = cliApprove
 			}
 
 			// CLI close wrapper. The legacy 5-arg wrapper stays on
@@ -557,7 +624,22 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 			cliClose := evaluateCloseEligibility(issue, r.sessionID,
 				r.wasAnyInvolved, r.hasImplementationHistory, r.effectiveIssueImplHistory())
 
-			if r.mode != reviewpolicy.ModeDelegated {
+			switch r.mode {
+			case reviewpolicy.ModeDelegated, reviewpolicy.ModeTrusted:
+				// Delegated and trusted share the review-attestation close rule
+				// (an in_review issue with an active approval is closeable by
+				// any session). Invoke the mode-aware CLI close wrapper so the
+				// rule is exercised through the CLI too.
+				cliCloseModed := evaluateCloseEligibilityWithMode(
+					issue, r.sessionID,
+					r.wasAnyInvolved, r.hasImplementationHistory, r.effectiveIssueImplHistory(),
+					r.mode, r.hasActiveApproval, false,
+				)
+				if cliCloseModed.Allowed != r.wantCloseAllowed {
+					t.Fatalf("cli %s close Allowed=%v, want %v (msg=%q)",
+						r.mode, cliCloseModed.Allowed, r.wantCloseAllowed, cliCloseModed.RejectionMessage)
+				}
+			default:
 				// Strict and balanced share the same close logic, so the CLI
 				// close decision must match the reviewpolicy close decision
 				// for those modes — except when the wrapper's issue-wide
@@ -569,23 +651,13 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 				if !cliClose.Allowed && cliClose.RejectionMessage == "" {
 					t.Fatalf("cli close rejected with empty RejectionMessage")
 				}
-			} else {
-				// Delegated: invoke the mode-aware CLI close wrapper so the
-				// review-attestation rule is exercised through the CLI too.
-				cliCloseDelegated := evaluateCloseEligibilityWithMode(
-					issue, r.sessionID,
-					r.wasAnyInvolved, r.hasImplementationHistory, r.effectiveIssueImplHistory(),
-					reviewpolicy.ModeDelegated, r.hasActiveApproval, false,
-				)
-				if cliCloseDelegated.Allowed != r.wantCloseAllowed {
-					t.Fatalf("cli delegated close Allowed=%v, want %v (msg=%q)",
-						cliCloseDelegated.Allowed, r.wantCloseAllowed, cliCloseDelegated.RejectionMessage)
-				}
 			}
 
 			// Rejection-message non-emptiness parity for approve as well.
+			// Skip for delegated/trusted: those rows assert the mode-aware
+			// wrapper above, not the legacy strict/balanced cliApprove value.
 			if !cliApprove.Allowed && cliApprove.RejectionMessage == "" &&
-				r.mode != reviewpolicy.ModeDelegated {
+				r.mode != reviewpolicy.ModeDelegated && r.mode != reviewpolicy.ModeTrusted {
 				t.Fatalf("cli approve rejected with empty RejectionMessage")
 			}
 
@@ -639,7 +711,7 @@ func TestReviewPolicyParity_Composer(t *testing.T) {
 	// This is intentionally a smoke test — the deep SQL behavior is tested
 	// in internal/db/db_test.go#TestReviewableByFilter. What matters here
 	// is that the contract surface exists and has the documented shape.
-	for _, mode := range []string{"strict", "balanced", "delegated"} {
+	for _, mode := range []string{"strict", "balanced", "delegated", "trusted"} {
 		sqlFrag, args := reviewableByFilterForModeParity("ses-x", mode)
 		if sqlFrag == "" {
 			t.Errorf("composer returned empty SQL for mode %q", mode)
@@ -647,5 +719,59 @@ func TestReviewPolicyParity_Composer(t *testing.T) {
 		if len(args) == 0 {
 			t.Errorf("composer returned empty args for mode %q", mode)
 		}
+	}
+}
+
+// TestReviewPolicyParity_TrustedSelfReview proves the trusted-mode contract
+// the DB composer and the action-time policy jointly enforce: the
+// ReviewableByFilter is intentionally broad (it returns self-implemented
+// in_review issues, unlike delegated), and the implementer-independence
+// requirement is enforced at action time via the --self-review flag. This row
+// can't live in the generic parity matrix because the shared monitor/serve
+// shims do not thread SelfReviewAcknowledged.
+func TestReviewPolicyParity_TrustedSelfReview(t *testing.T) {
+	issue := &models.Issue{
+		ID: "td-trusted-self", Title: "trusted self", Status: models.StatusInReview,
+		Type: models.TypeTask, Priority: models.PriorityP2,
+		CreatorSession: "ses-self", ImplementerSession: "ses-self",
+	}
+
+	// Action time WITHOUT the flag: trusted self-review is rejected, matching
+	// the CLI's mode-aware approve wrapper.
+	withoutFlag := evaluateApproveEligibilityWithMode(
+		issue, "ses-self",
+		true /*wasInvolved*/, true, /*wasImplementationInvolved*/
+		reviewpolicy.ModeTrusted, false, /*selfReview*/
+	)
+	if withoutFlag.Allowed {
+		t.Fatalf("trusted self-review without --self-review should be rejected, got allowed")
+	}
+
+	// Action time WITH the flag: allowed and stamped as a self-review for audit.
+	withFlag := evaluateApproveEligibilityWithMode(
+		issue, "ses-self",
+		true, true,
+		reviewpolicy.ModeTrusted, true, /*selfReview*/
+	)
+	if !withFlag.Allowed {
+		t.Fatalf("trusted self-review WITH --self-review should be allowed, got %+v", withFlag)
+	}
+	if !withFlag.SelfReview {
+		t.Fatalf("trusted self-review WITH --self-review should be flagged SelfReview for audit")
+	}
+
+	// The shared reviewpolicy ground truth agrees with the CLI wrapper.
+	groundTruth := reviewpolicy.EvaluateReviewerEligibility(reviewpolicy.ReviewerEligibilityInput{
+		Mode:                     reviewpolicy.ModeTrusted,
+		Issue:                    issue,
+		SessionID:                "ses-self",
+		SessionIsImplementer:     true,
+		SessionIsCreator:         true,
+		HasImplementationHistory: true,
+		WasAnyInvolved:           true,
+		SelfReviewAcknowledged:   true,
+	})
+	if !groundTruth.Allowed || !groundTruth.SelfReview {
+		t.Fatalf("reviewpolicy trusted self-review ground truth = %+v, want allowed+SelfReview", groundTruth)
 	}
 }

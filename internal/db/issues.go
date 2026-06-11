@@ -419,6 +419,8 @@ func ReviewableByFilterForMode(sessionID, mode string) (string, []interface{}) {
 		return reviewableByFilterBalanced(sessionID)
 	case "delegated":
 		return reviewableByFilterDelegated(sessionID)
+	case "trusted":
+		return reviewableByFilterTrusted(sessionID)
 	default:
 		return reviewableByFilterStrict(sessionID)
 	}
@@ -486,17 +488,29 @@ func reviewableByFilterDelegated(sessionID string) (string, []interface{}) {
 	return sql, []interface{}{models.StatusInReview, sessionID, sessionID}
 }
 
+// reviewableByFilterTrusted returns the reviewable-by SQL fragment for trusted
+// mode. Unlike delegated, trusted mode does NOT exclude self-implemented
+// in_review issues: every in_review issue is reviewable by the session. The
+// implementer-independence requirement is enforced at action time via the
+// --self-review flag (audited), not at query time. So the trusted filter drops
+// the `implementer_session != ?` and NOT EXISTS(started/unstarted) exclusions
+// that delegated applies, keeping only the shared base predicates.
+func reviewableByFilterTrusted(sessionID string) (string, []interface{}) {
+	sql := ` AND status = ? AND implementer_session != ''`
+	return sql, []interface{}{models.StatusInReview}
+}
+
 // ReadyToCloseByFilter returns the SQL fragment and args for issues that are
 // ready to close because an active approval review already exists. Under
 // strict and balanced modes there is no close-after-recorded-review path, so
-// the filter returns an always-false clause. Under delegated mode it matches
-// in_review issues with a non-superseded approval in issue_reviews; the
-// closing session is recorded for audit but does not gate the close.
+// the filter returns an always-false clause. Under delegated and trusted modes
+// it matches in_review issues with a non-superseded approval in issue_reviews;
+// the closing session is recorded for audit but does not gate the close.
 //
 // Step 2 wires the CLI / monitor / snapshot-query-source callers; Batch 1c
 // only ships the composer so it is ready.
 func ReadyToCloseByFilter(sessionID, mode string) (string, []interface{}) {
-	if mode != "delegated" {
+	if mode != "delegated" && mode != "trusted" {
 		// Empty category under strict/balanced: no close-after-review flow.
 		return " AND 0=1", nil
 	}
