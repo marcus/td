@@ -129,7 +129,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	}
 
 	// Reviewer eligibility — share the same decision path as approve.
-	decision := serveReviewerDecision(ctx, issue)
+	decision := serveReviewerDecision(ctx, issue, false)
 	if !decision.Allowed {
 		WriteError(w, ErrForbidden, decision.RejectionMessage, http.StatusForbidden)
 		return

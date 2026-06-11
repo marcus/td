@@ -20,7 +20,7 @@ import (
 // synthetic inputs. The parity suite lives outside this package, which is
 // why a thin exported shim is needed; runtime callers should use
 // serveReviewerDecision directly.
-func ServeReviewerDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval bool) reviewpolicy.ReviewerEligibility {
+func ServeReviewerDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool) reviewpolicy.ReviewerEligibility {
 	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == sessionID
 	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
 	return reviewpolicy.EvaluateReviewerEligibility(reviewpolicy.ReviewerEligibilityInput{
@@ -32,13 +32,14 @@ func ServeReviewerDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, s
 		HasImplementationHistory: hasImplementationHistory,
 		HasActiveApproval:        hasActiveApproval,
 		WasAnyInvolved:           wasAnyInvolved,
+		SelfReviewAcknowledged:   selfReviewAcknowledged,
 	})
 }
 
 // ServeCloseDecisionForTest exposes the close-eligibility decision that the
 // serve close handler runs. See ServeReviewerDecisionForTest for why this
 // shim exists.
-func ServeCloseDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval bool) reviewpolicy.CloseEligibility {
+func ServeCloseDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool) reviewpolicy.CloseEligibility {
 	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == sessionID
 	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
 	isReviewerOfRecord := issue != nil && issue.ReviewerSession != "" && issue.ReviewerSession == sessionID
@@ -54,6 +55,7 @@ func ServeCloseDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sess
 		HasImplementationHistory:  hasImplementationHistory,
 		WasAnyInvolved:            wasAnyInvolved,
 		HasActiveApproval:         hasActiveApproval,
+		SelfReviewAcknowledged:    selfReviewAcknowledged,
 	})
 }
 
@@ -62,7 +64,7 @@ func ServeCloseDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sess
 // HandleApprove to align the serve transition path with the CLI policy.
 // Exported as an unexported package helper so the parity suite can exercise
 // the exact decision the runtime uses.
-func serveReviewerDecision(ctx HandlerContext, issue *models.Issue) reviewpolicy.ReviewerEligibility {
+func serveReviewerDecision(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool) reviewpolicy.ReviewerEligibility {
 	mode := reviewpolicy.ModeStrict
 	if ctx.BaseDir != "" {
 		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
@@ -100,12 +102,13 @@ func serveReviewerDecision(ctx HandlerContext, issue *models.Issue) reviewpolicy
 		HasImplementationHistory: wasImpl,
 		HasActiveApproval:        hasActive,
 		WasAnyInvolved:           wasAny,
+		SelfReviewAcknowledged:   selfReviewAcknowledged,
 	})
 }
 
 // serveCloseDecision runs reviewpolicy.EvaluateCloseEligibility for the given
 // issue/session pair. Serves the close endpoint harden check.
-func serveCloseDecision(ctx HandlerContext, issue *models.Issue) reviewpolicy.CloseEligibility {
+func serveCloseDecision(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool) reviewpolicy.CloseEligibility {
 	mode := reviewpolicy.ModeStrict
 	if ctx.BaseDir != "" {
 		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
@@ -163,6 +166,7 @@ func serveCloseDecision(ctx HandlerContext, issue *models.Issue) reviewpolicy.Cl
 		HasImplementationHistory:  wasImpl,
 		WasAnyInvolved:            wasAny,
 		HasActiveApproval:         hasActive,
+		SelfReviewAcknowledged:    selfReviewAcknowledged,
 	})
 }
 
@@ -181,6 +185,11 @@ func serveCloseDecision(ctx HandlerContext, issue *models.Issue) reviewpolicy.Cl
 // transitionReasonBody is the optional request body for transition endpoints.
 type transitionReasonBody struct {
 	Reason string `json:"reason"`
+	// SelfReview is the API equivalent of the CLI's --self-review flag. It is
+	// only meaningful for the approve transition under trusted mode, where an
+	// implementer acknowledging the self-review converts the otherwise-blocked
+	// approval into an audited self-review allow.
+	SelfReview bool `json:"self_review"`
 }
 
 // transitionCascadeResult holds the results of cascade operations for the response.
@@ -441,6 +450,23 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 // reviewer_of_record, the request must include a reason in the body —
 // otherwise the handler returns 400 so CLI and API enforce the same rule.
 func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
+	// The approve transition accepts a `self_review` boolean (the API
+	// equivalent of the CLI's --self-review) plus the usual `reason`. Read the
+	// body once here and restore it so handleTransition can re-parse the
+	// reason. self_review only has an effect in trusted mode.
+	var approveBody transitionReasonBody
+	if r.Body != nil {
+		if bodyBytes, readErr := io.ReadAll(r.Body); readErr == nil {
+			if len(bodyBytes) > 0 {
+				_ = json.Unmarshal(bodyBytes, &approveBody)
+			}
+			// Restore the body for downstream readers (handleTransition,
+			// handledCloseAfterReview).
+			r.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
+		}
+	}
+	selfReviewAck := approveBody.SelfReview
+
 	// Pre-inspect the issue for the Mode-C branch decision. We still
 	// delegate most work to handleTransition for consistency with other
 	// transitions; the branch below short-circuits when Mode-C applies.
@@ -453,22 +479,37 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// decisionSelfReview captures whether the policy decision classified this
+	// approval as an audited self-review, so postCommit can stamp the
+	// issue_reviews row accordingly.
+	var decisionSelfReview bool
+
 	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusInReview},
 		toStatus:   models.StatusClosed,
 		actionType: models.ActionApprove,
 		policyCheck: func(c HandlerContext, issue *models.Issue) (int, string) {
-			decision := serveReviewerDecision(c, issue)
+			decision := serveReviewerDecision(c, issue, selfReviewAck)
 			if !decision.Allowed {
 				return http.StatusForbidden, decision.RejectionMessage
 			}
 			// Also check close-eligibility in case delegated mode adds a
 			// further restriction (Step 2 flips close-after-review through
 			// this same path).
-			closeDecision := serveCloseDecision(c, issue)
+			closeDecision := serveCloseDecision(c, issue, selfReviewAck)
 			if !closeDecision.Allowed {
 				return http.StatusForbidden, closeDecision.RejectionMessage
 			}
+			// Mirror the CLI reason gate: a trusted-mode self-review approval
+			// requires a reason. Reject before mutating so API and CLI enforce
+			// the same rule.
+			if decision.RequiresReason && strings.TrimSpace(approveBody.Reason) == "" {
+				if decision.SelfReview {
+					return http.StatusBadRequest, fmt.Sprintf("self_review approval requires `reason` for %s", issue.ID)
+				}
+				return http.StatusBadRequest, fmt.Sprintf("approval requires `reason` for %s", issue.ID)
+			}
+			decisionSelfReview = decision.SelfReview
 			return 0, ""
 		},
 		applySideEffects: func(c HandlerContext, issue *models.Issue) {
@@ -480,14 +521,16 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 		},
 		postCommit: func(c HandlerContext, issue *models.Issue) {
 			// Record the approval in the append-only review history. Best-
-			// effort: a write error must not roll back the transition.
+			// effort: a write error must not roll back the transition. The
+			// self_review flag is stamped from the policy decision so a
+			// trusted-mode self-review is auditable.
 			_, _ = c.DB.CreateIssueReview(
 				issue.ID,
 				c.SessionID,
 				reviewpolicy.DecisionApproved,
-				"",
+				approveBody.Reason,
 				issue.ReviewRequestedBySession,
-				false,
+				decisionSelfReview,
 			)
 		},
 		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
@@ -528,7 +571,7 @@ func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.
 		return false
 	}
 
-	closeDec := serveCloseDecision(ctx, issue)
+	closeDec := serveCloseDecision(ctx, issue, false)
 	if !closeDec.Allowed {
 		// Fall back to normal path — serveReviewerDecision will surface the
 		// correct error (either eligible reviewer or forbidden).

@@ -679,6 +679,7 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 			serveRev := serve.ServeReviewerDecisionForTest(
 				r.mode, issue, r.sessionID,
 				r.hasImplementationHistory, r.wasAnyInvolved, r.hasActiveApproval,
+				false, /*selfReviewAcknowledged*/
 			)
 			if serveRev.Allowed != r.wantReviewerAllowed {
 				t.Fatalf("serve reviewer Allowed=%v, want %v (msg=%q)",
@@ -690,6 +691,7 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 			serveClose := serve.ServeCloseDecisionForTest(
 				r.mode, issue, r.sessionID,
 				r.hasImplementationHistory, r.wasAnyInvolved, r.hasActiveApproval,
+				false, /*selfReviewAcknowledged*/
 			)
 			if serveClose.Allowed != r.wantCloseAllowed {
 				t.Fatalf("serve close Allowed=%v, want %v (msg=%q)",
@@ -784,6 +786,44 @@ func TestReviewPolicyParity_TrustedSelfReview(t *testing.T) {
 	}
 	if !monitorWithAck.SelfReview {
 		t.Fatalf("monitor trusted self-review WITH ack should be flagged SelfReview for audit")
+	}
+
+	// Serve surface parity: the serve approve/close decision shims must agree
+	// with the CLI/monitor for trusted self-review. Without the ack the
+	// implementer self-review is rejected; with the ack it is an audited allow
+	// stamped SelfReview=true.
+	serveRevWithoutAck := serve.ServeReviewerDecisionForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self",
+		true /*hasImplementationHistory*/, true /*wasAnyInvolved*/, false, /*hasActiveApproval*/
+		false, /*selfReviewAcknowledged*/
+	)
+	if serveRevWithoutAck.Allowed {
+		t.Fatalf("serve trusted self-review without ack should be rejected, got allowed")
+	}
+	if serveRevWithoutAck.RejectionMessage == "" {
+		t.Fatalf("serve trusted self-review rejection should carry a teaching message")
+	}
+	serveRevWithAck := serve.ServeReviewerDecisionForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self",
+		true, true, false,
+		true, /*selfReviewAcknowledged*/
+	)
+	if !serveRevWithAck.Allowed {
+		t.Fatalf("serve trusted self-review WITH ack should be allowed, got %+v", serveRevWithAck)
+	}
+	if !serveRevWithAck.SelfReview {
+		t.Fatalf("serve trusted self-review WITH ack should be flagged SelfReview for audit")
+	}
+	if !serveRevWithAck.RequiresReason {
+		t.Fatalf("serve trusted self-review WITH ack should require a reason")
+	}
+	serveCloseWithAck := serve.ServeCloseDecisionForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self",
+		true, true, false,
+		true, /*selfReviewAcknowledged*/
+	)
+	if !serveCloseWithAck.Allowed {
+		t.Fatalf("serve trusted self-review close WITH ack should be allowed, got %+v", serveCloseWithAck)
 	}
 
 	// The shared reviewpolicy ground truth agrees with the CLI wrapper.

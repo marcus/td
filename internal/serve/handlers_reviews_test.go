@@ -3,6 +3,7 @@ package serve
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/config"
@@ -393,4 +394,156 @@ func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
 	if final.ClosedBySession == "" || final.ReviewerSession == "" {
 		t.Fatalf("expected reviewer+closed-by stamped: %+v", final)
 	}
+}
+
+// setTrustedMode flips review_policy_mode=trusted in the project config.
+func setTrustedMode(t *testing.T, baseDir string) {
+	t.Helper()
+	if err := config.SetFeatureStringFlag(baseDir, features.ReviewPolicyMode, string(reviewpolicy.ModeTrusted)); err != nil {
+		t.Fatalf("set review policy: %v", err)
+	}
+}
+
+// webSessionID returns the server's fixed web session ID (idempotent fetch).
+func webSessionID(t *testing.T, database *db.DB) string {
+	t.Helper()
+	sess, err := GetOrCreateWebSession(database)
+	if err != nil {
+		t.Fatalf("GetOrCreateWebSession: %v", err)
+	}
+	return sess.ID
+}
+
+// TestIntegration_Approve_TrustedSelfReview_RequiresAck proves that in trusted
+// mode an implementer (the web session here) cannot approve their own work
+// without acknowledging the self-review — the serve approve path enforces the
+// same rule as the CLI and surfaces the trusted teaching message.
+func TestIntegration_Approve_TrustedSelfReview_RequiresAck(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	// Seed an issue implemented by the web session itself → self-review.
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	// Without self_review: rejected with the trusted teaching message.
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reason": "I reviewed my own diff",
+	})
+	_, _, errP := iParseEnvelope(t, resp)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status=%d want 403 (self-review without ack)", resp.StatusCode)
+	}
+	if errP == nil || !strings.Contains(asString(errP["message"]), "self-review") {
+		t.Fatalf("expected trusted teaching message, got %v", errP)
+	}
+	// Issue must remain in_review.
+	issue, _ := database.GetIssue(issueID)
+	if issue.Status != models.StatusInReview {
+		t.Fatalf("status=%v want in_review (rejected)", issue.Status)
+	}
+}
+
+// TestIntegration_Approve_TrustedSelfReview_RequiresReason proves the reason
+// gate: self_review=true without a reason is rejected (400), mirroring the CLI.
+func TestIntegration_Approve_TrustedSelfReview_RequiresReason(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"self_review": true,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d want 400 (self_review without reason)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	issue, _ := database.GetIssue(issueID)
+	if issue.Status != models.StatusInReview {
+		t.Fatalf("status=%v want in_review (rejected)", issue.Status)
+	}
+}
+
+// TestIntegration_Approve_TrustedSelfReview_Allowed proves the happy path: an
+// implementer with self_review=true and a reason approves+closes, and the
+// recorded issue_review row is stamped self_review=true for audit.
+func TestIntegration_Approve_TrustedSelfReview_Allowed(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"self_review": true,
+		"reason":      "reviewed my own diff, tests pass",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200 (self_review+reason)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	final, _ := database.GetIssue(issueID)
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%v want closed", final.Status)
+	}
+	// The recorded review row must carry self_review=true for audit.
+	reviews, err := database.ListIssueReviews(issueID)
+	if err != nil {
+		t.Fatalf("list reviews: %v", err)
+	}
+	if len(reviews) == 0 {
+		t.Fatalf("expected a recorded approval review, got none")
+	}
+	var found bool
+	for _, rv := range reviews {
+		if rv.Decision == reviewpolicy.DecisionApproved {
+			found = true
+			if !rv.SelfReview {
+				t.Fatalf("approval review should be stamped self_review=true, got %+v", rv)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no approved review row found in %v", reviews)
+	}
+}
+
+// TestIntegration_Approve_TrustedNonImplementer_NoSelfReview proves that a
+// non-implementer (the web session, with the issue implemented by a different
+// session) approves+closes in trusted mode without needing self_review, and the
+// recorded review is NOT a self-review.
+func TestIntegration_Approve_TrustedNonImplementer_NoSelfReview(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	// Implemented by a different session → web session is an independent reviewer.
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200 (non-implementer approve)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	final, _ := database.GetIssue(issueID)
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%v want closed", final.Status)
+	}
+	reviews, _ := database.ListIssueReviews(issueID)
+	for _, rv := range reviews {
+		if rv.Decision == reviewpolicy.DecisionApproved && rv.SelfReview {
+			t.Fatalf("non-implementer approval must not be stamped self_review: %+v", rv)
+		}
+	}
+}
+
+// asString coerces an interface map value to a string for assertions.
+func asString(v interface{}) string {
+	s, _ := v.(string)
+	return s
 }
