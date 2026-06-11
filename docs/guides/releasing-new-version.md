@@ -9,7 +9,7 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 1. Builds binaries for darwin/linux × amd64/arm64
 2. Creates a GitHub release with binary assets and checksums
 3. Generates a changelog from commits since the last tag
-4. Pushes a Homebrew tap formula (`Casks/td.rb`) to `marcus/homebrew-tap`
+4. Pushes a Homebrew tap formula (`Formula/td.rb`) to `marcus/homebrew-tap`
 
 ## Prerequisites
 
