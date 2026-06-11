@@ -18,11 +18,16 @@ import (
 var createCmd = &cobra.Command{
 	Use:     "create [title]",
 	Aliases: []string{"add", "new"},
-	Short:   "Create a new issue",
-	Long:    `Create a new issue with optional flags for type, priority, labels, and more.`,
+	Short:   "Create an issue",
+	Long: `Create an issue. Title is required; type, priority, labels, parent,
+dependencies, and rich-text description/acceptance are all optional.
+
+You can prefix the title with a type (e.g., "epic: Migrate auth") and td will
+extract it; explicit --type wins.`,
 	Example: "  td create \"Add user auth\" --type feature --priority P1\n" +
-		"  td create \"Rich markdown issue\" --description-file description.md --acceptance-file acceptance.md\n" +
-		"  cat acceptance.md | td create \"Import from stdin\" --acceptance-file -",
+		"  td create \"epic: Migrate auth\"                                # type from prefix\n" +
+		"  td create \"Rich issue\" --description-file body.md --acceptance-file accept.md\n" +
+		"  cat accept.md | td create \"From stdin\" --acceptance-file -",
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Route "td new task Title" → td create --type task "Title"

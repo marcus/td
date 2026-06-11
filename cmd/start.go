@@ -16,12 +16,14 @@ import (
 var startCmd = &cobra.Command{
 	Use:     "start [issue-id...]",
 	Aliases: []string{"begin"},
-	Short:   "Begin work on issue(s)",
-	Long: `Records current session as implementer and captures git state.
+	Short:   "Begin work on one or more issues",
+	Long: `Mark issues as in-progress, claim them for this session, and snapshot
+git HEAD so diffs at handoff time are accurate.
 
 Examples:
-  td start td-abc1                    # Start single issue
-  td start td-abc1 td-abc2 td-abc3    # Start multiple issues`,
+  td start td-abc1                    # Start a single issue
+  td start td-abc1 td-abc2 td-abc3    # Start several at once
+  td start td-abc1 --force            # Override blocked status`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
