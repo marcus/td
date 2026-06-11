@@ -2,7 +2,7 @@
 
 All notable changes to td are documented in this file.
 
-## [Unreleased]
+## [v0.46.0] - 2026-06-11
 
 ### Review policy
 - **`trusted` is now the default `review_policy_mode`.** A fresh install with no explicit configuration resolves to `trusted`, which keeps the delegated review-attestation model (prefer an independent reviewer; any session may close once an approval is recorded) and adds a flag-gated, audited self-review escape hatch. When you have reviewed your own diff and delegation is impractical, approve+close with `td approve <id> --self-review --reason "..."` (stamps `self_review` on the review row for audit). Explicit `review_policy_mode` settings, the `TD_FEATURE_REVIEW_POLICY_MODE` env override, and the legacy `balanced_review_policy` mapping are all unchanged — only the unconfigured default flips. Pin `review_policy_mode=delegated|strict` to keep the hard no-self-review wall.
