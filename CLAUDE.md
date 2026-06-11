@@ -18,27 +18,32 @@ Sessions are automatic (based on your terminal/agent context). Optional:
 - `td session "name"` to label the current session
 - `td session --new` to force a new session in the same context
 
-**Do NOT start a new session mid-work.** Sessions track implementers. A new session mid-task looks like a bypass of the review guardrails and breaks audit trails.
+Sessions track implementers so the audit trail records who did what. Use a real reviewer sub-agent or a separate agent context for independent review — don't spin up throwaway sessions just to game the review check.
 
 Use `td usage -q` after first read.
 
-## Review Model (Delegated Review)
+## Review Model (Trusted Review)
 
-td's review guardrail protects against unchecked self-review, not against delegated closure. The rules:
+The default mode is now **`trusted`**. Trusted keeps the delegated review-attestation model — **prefer delegating review to an independent sub-agent** — and adds a flag-gated, audited self-review escape hatch for when delegation is not practical.
 
-- **Review must come from a session that did not participate in implementation.** You cannot review your own implementation, but you *can* close an issue after an independent review has been recorded.
-- **Any session may perform the final close after approval.** Once an independent review exists, any session may run `td approve --reason "..."` to close. An independent review is required; the close itself may be delegated and is audited via `closed_by_session`.
-- **Do NOT start a new session mid-work just to satisfy the review rules.** Use a real reviewer sub-agent or a separate agent context.
+The rules:
+
+- **Prefer an independent review.** A session that did not implement the issue reviews it (`td approve <id>`) or records an approval (`td approve <id> --record-only --reason "..."`). This is the norm; reach for it first.
+- **Any session may perform the final close after approval.** Once an independent review exists, any session may run `td approve <id> --reason "..."` to close. The close is audited via `closed_by_session`; pass `--reason` if the closer is not the reviewer-of-record.
+- **Self-review is allowed in trusted mode, but you must acknowledge it.** When you are the orchestrator/implementer and have already reviewed the diff yourself, approve+close with `td approve <id> --self-review --reason "..."`. The `--self-review` flag requires `--reason` and stamps `self_review` on the review row for audit. Do **not** fabricate a throwaway session to dodge the self-review acknowledgement — just acknowledge it.
 
 ### Modes (`review_policy_mode`)
 
-- `strict` — no prior involvement allowed; current default for existing installs.
+Set with `td feature set review_policy_mode <mode>` (or `TD_FEATURE_REVIEW_POLICY_MODE=<mode>`).
+
+- `trusted` — **default.** Delegated review-attestation plus a flag-gated, audited self-review escape hatch (`td approve --self-review --reason "..."`). Prefer delegation; self-review when delegation is impractical.
+- `delegated` — review attestations + delegated close, with **no** self-review escape: the implementer cannot self-approve. Pin this for projects that want the hard wall.
 - `balanced` — strict, plus a creator-approval exception with `--reason`. Legacy default for projects that set `balanced_review_policy=true`.
-- `delegated` — review attestations + delegated close (opt-in now via `TD_FEATURE_REVIEW_POLICY_MODE=delegated` or `td feature set review_policy_mode delegated`; will become the default in a future release).
+- `strict` — no prior involvement allowed at all.
 
 ### Orchestrator / Sub-Agent Flow
 
-Under `delegated` mode, the orchestrator submits the issue for review itself, delegates the review to a reviewer sub-agent, then closes once the approval is recorded:
+Preferred flow — orchestrator submits the issue for review, delegates the review to a reviewer sub-agent, then closes once the approval is recorded:
 
 ```bash
 # Orchestrator creates work
@@ -59,7 +64,14 @@ td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
 td approve td-a1b2 --reason "Closing after recorded independent approval"
 ```
 
-The orchestrator does not need to own an issue role to close after approval. The reviewer must be independent; the closer is recorded separately for audit. If the closer is not the reviewer-of-record, pass `--reason`.
+Trusted-mode shortcut — when you (orchestrator/implementer) have reviewed the diff yourself and delegation is not practical, acknowledge the self-review instead of spawning a reviewer session:
+
+```bash
+td review td-a1b2
+td approve td-a1b2 --self-review --reason "Reviewed diff myself, tests pass"
+```
+
+The reviewer (when delegated) must be independent; the closer is recorded separately for audit. A self-review is recorded as such.
 
 ## Build & Install
 

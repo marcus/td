@@ -2,6 +2,12 @@
 
 All notable changes to td are documented in this file.
 
+## [Unreleased]
+
+### Review policy
+- **`trusted` is now the default `review_policy_mode`.** A fresh install with no explicit configuration resolves to `trusted`, which keeps the delegated review-attestation model (prefer an independent reviewer; any session may close once an approval is recorded) and adds a flag-gated, audited self-review escape hatch. When you have reviewed your own diff and delegation is impractical, approve+close with `td approve <id> --self-review --reason "..."` (stamps `self_review` on the review row for audit). Explicit `review_policy_mode` settings, the `TD_FEATURE_REVIEW_POLICY_MODE` env override, and the legacy `balanced_review_policy` mapping are all unchanged — only the unconfigured default flips. Pin `review_policy_mode=delegated|strict` to keep the hard no-self-review wall.
+- **`td feature {get,set,unset,list}` now manage the string-valued `review_policy_mode`** (e.g. `td feature set review_policy_mode trusted`), validating values via `reviewpolicy.ParseMode`. Previously the command only accepted boolean flags and rejected `review_policy_mode` as unknown.
+
 ## [v0.45.0] - 2026-06-08
 
 ### Dependencies

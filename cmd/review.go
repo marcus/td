@@ -496,9 +496,10 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues, or record a review",
-	Long: `Approves the issue(s). You cannot review your own implementation, but you
-can close after an independent review has been recorded. 'td approve' operates
-in one of three modes:
+	Long: `Approves the issue(s). Prefer an independent review, but in the default
+trusted mode you may acknowledge a self-review with --self-review --reason "...".
+You can always close after an independent review has been recorded. 'td approve'
+operates in one of these modes:
 
   Mode A: Review + close (default)
     Caller is an eligible reviewer and no active approval exists.

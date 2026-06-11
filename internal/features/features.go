@@ -65,14 +65,19 @@ var (
 )
 
 // ReviewPolicyMode is the string-valued feature name that selects between
-// strict | balanced | delegated review policies.
+// strict | balanced | delegated | trusted review policies.
 //
-// Default: delegated (Step 5). Prior to Step 5 the effective default was
-// balanced via the legacy BalancedReviewPolicy=true feature flag. Step 5
-// flipped BalancedReviewPolicy.Default to false AND the resolver default to
-// delegated — a fresh install with no explicit configuration now runs the
-// review-attestation flow, where reviewer-independence is the core rule and
-// any session may close once an independent approval has been recorded.
+// Default: trusted (Step 5 / trusted-review-mode final stage). Prior to this
+// the resolver default was delegated, and before that the effective default
+// was balanced via the legacy BalancedReviewPolicy=true feature flag. The
+// final stage flipped the resolver default to trusted — a fresh install with
+// no explicit configuration now runs the trusted flow. Trusted keeps the
+// delegated review-attestation model (prefer an independent reviewer; any
+// session may close once an independent approval is recorded) and adds a
+// flag-gated, audited self-review escape hatch: an implementer/orchestrator
+// who has reviewed their own diff may approve+close with
+// `td approve <id> --self-review --reason "..."`. Projects that want the hard
+// wall can pin review_policy_mode=delegated|balanced|strict.
 //
 // Implementation note (Option B): the existing Feature struct is boolean-
 // typed, and retrofitting it with a union type would ripple through
@@ -83,7 +88,7 @@ var (
 // shows up, this should be generalized.
 const (
 	ReviewPolicyMode        = "review_policy_mode"
-	ReviewPolicyModeDefault = string(reviewpolicy.ModeDelegated)
+	ReviewPolicyModeDefault = string(reviewpolicy.ModeTrusted)
 )
 
 // balancedReviewPolicyDeprecatedLogged fires the legacy-mapping deprecation
@@ -233,12 +238,13 @@ func parseBoolEnv(key string) (bool, bool) {
 //  3. legacy balanced_review_policy EXPLICITLY set (env or config, NOT
 //     default) -> map true->balanced / false->strict AND emit a one-time
 //     deprecation warning.
-//  4. default: delegated.
+//  4. default: trusted.
 //
-// Key difference from Step 1-4 behavior: the legacy flag's *default* value
+// Key difference from the pre-flip behavior: the legacy flag's *default* value
 // no longer feeds into mode resolution. Only an explicit set triggers the
-// compat mapping. This is the "flip" — users who never touched either flag
-// now get delegated mode instead of balanced.
+// compat mapping. Users who never touched either flag now get trusted mode
+// (delegated review-attestation plus a flag-gated self-review escape hatch).
+// Explicit review_policy_mode and env overrides are honored unchanged.
 //
 // Conflict detection: if BOTH review_policy_mode AND balanced_review_policy
 // are set EXPLICITLY (env or config, not default) to values that disagree,
@@ -298,9 +304,9 @@ func ResolveReviewPolicyMode(baseDir string) (reviewpolicy.Mode, error) {
 		return mode, nil
 	}
 
-	// 3. Legacy compat (Step 5): only honor the legacy flag when it was set
+	// 3. Legacy compat: only honor the legacy flag when it was set
 	// explicitly. Default-valued legacy does NOT feed mode resolution anymore,
-	// so an untouched config falls through to step 4 (delegated).
+	// so an untouched config falls through to step 4 (trusted).
 	if legacyExplicitSet {
 		balancedReviewPolicyDeprecatedLogged.Do(func() {
 			slog.Warn("balanced_review_policy is deprecated; use review_policy_mode="+
@@ -310,8 +316,8 @@ func ResolveReviewPolicyMode(baseDir string) (reviewpolicy.Mode, error) {
 		return legacyBalancedToMode(legacyExplicit), nil
 	}
 
-	// 4. Default: delegated.
-	return reviewpolicy.ModeDelegated, nil
+	// 4. Default: trusted.
+	return reviewpolicy.ModeTrusted, nil
 }
 
 // legacyBalancedToMode maps the deprecated balanced_review_policy boolean.

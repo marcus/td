@@ -75,19 +75,20 @@ func TestDisableExperimentalKillSwitch(t *testing.T) {
 	}
 }
 
-func TestResolveReviewPolicyMode_DefaultsToDelegated(t *testing.T) {
-	// Step 5: with no explicit config (neither review_policy_mode nor
-	// balanced_review_policy set), the resolver returns ModeDelegated.
-	// BalancedReviewPolicy.Default is now false and the legacy flag is
-	// only honored when explicitly opted into.
+func TestResolveReviewPolicyMode_DefaultsToTrusted(t *testing.T) {
+	// trusted-review-mode final stage: with no explicit config (neither
+	// review_policy_mode nor balanced_review_policy set), the resolver
+	// returns ModeTrusted. BalancedReviewPolicy.Default stays false and the
+	// legacy flag is only honored when explicitly opted into.
+	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "")
 	ResetDeprecationWarningsForTests()
 	dir := t.TempDir()
 	mode, err := ResolveReviewPolicyMode(dir)
 	if err != nil {
 		t.Fatalf("ResolveReviewPolicyMode: %v", err)
 	}
-	if mode != reviewpolicy.ModeDelegated {
-		t.Fatalf("default mode: got %q, want %q", mode, reviewpolicy.ModeDelegated)
+	if mode != reviewpolicy.ModeTrusted {
+		t.Fatalf("default mode: got %q, want %q", mode, reviewpolicy.ModeTrusted)
 	}
 }
 

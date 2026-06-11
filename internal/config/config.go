@@ -303,6 +303,23 @@ func SetFeatureStringFlag(baseDir, name, value string) error {
 	return Save(baseDir, cfg)
 }
 
+// UnsetFeatureStringFlag removes an explicitly-set string-valued feature flag
+// from local config. It is a no-op when the flag is not set.
+func UnsetFeatureStringFlag(baseDir, name string) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+	if cfg.FeatureStringFlags == nil {
+		return nil
+	}
+	delete(cfg.FeatureStringFlags, name)
+	if len(cfg.FeatureStringFlags) == 0 {
+		cfg.FeatureStringFlags = nil
+	}
+	return Save(baseDir, cfg)
+}
+
 // UnsetFeatureFlag removes an explicitly-set feature flag from local config.
 func UnsetFeatureFlag(baseDir, name string) error {
 	cfg, err := Load(baseDir)

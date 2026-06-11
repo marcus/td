@@ -7,7 +7,7 @@ td now supports a **delegated review** policy that separates the "review was rec
 This replaces the earlier "the closing session must be different from the implementer" framing with a stronger, more useful invariant: an independent review is required; the close itself may be delegated to any session and is audited separately.
 
 - Feature flag: `review_policy_mode` with values `strict` | `balanced` | `delegated`.
-- Current default (Step 5): `delegated` for new installs. Projects that previously relied on the legacy `balanced_review_policy=true` flag continue to resolve to `balanced` (with a one-time deprecation warning). Projects that explicitly set `review_policy_mode=strict` keep the original close-time session lock.
+- Default when this spec shipped (Step 5): `delegated` for new installs. (Superseded: the trusted-review-mode change later flipped the default to `trusted`, which keeps delegated's review-attestation rules and adds an audited self-review escape hatch — see docs/plans/review-policy-trusted-mode-plan.md.) Projects that previously relied on the legacy `balanced_review_policy=true` flag continue to resolve to `balanced` (with a one-time deprecation warning). Projects that explicitly set `review_policy_mode=strict` keep the original close-time session lock.
 - Opt out of delegated via `TD_FEATURE_REVIEW_POLICY_MODE=strict` (or `balanced`), or `td feature set review_policy_mode strict|balanced`.
 
 ## Motivation

@@ -126,14 +126,15 @@ func TestReviewableByOptions_UsesBalancedReviewPolicyFlag(t *testing.T) {
 	baseDir := t.TempDir()
 	sessionID := "ses_test"
 
-	// Step 5 default: delegated mode, so BalancedReviewPolicy flag in the
-	// legacy ListIssuesOptions struct is OFF for a fresh project.
+	// trusted-review-mode default: trusted mode, so the legacy
+	// BalancedReviewPolicy flag in the ListIssuesOptions struct is OFF for a
+	// fresh project.
 	opts := reviewableByOptions(baseDir, sessionID)
 	if opts.BalancedReviewPolicy {
-		t.Fatalf("BalancedReviewPolicy should default to false (Step 5: delegated is the default mode)")
+		t.Fatalf("BalancedReviewPolicy should default to false (trusted is the default mode)")
 	}
-	if opts.ReviewPolicyMode != "delegated" {
-		t.Fatalf("ReviewPolicyMode should default to delegated, got %q", opts.ReviewPolicyMode)
+	if opts.ReviewPolicyMode != "trusted" {
+		t.Fatalf("ReviewPolicyMode should default to trusted, got %q", opts.ReviewPolicyMode)
 	}
 
 	// Explicit legacy balanced_review_policy=true opts into balanced mode.

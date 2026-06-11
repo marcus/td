@@ -76,14 +76,14 @@ func TestReviewPolicyRuntimeMode_AllSurfacesAgree(t *testing.T) {
 	// t.Setenv for process-wide overrides.
 	subcases := []subcase{
 		{
-			name: "default config -> delegated (Step 5 default)",
-			// Post Step 5: with no explicit settings (neither
+			name: "default config -> trusted (trusted-review-mode default)",
+			// Post trusted-review-mode flip: with no explicit settings (neither
 			// review_policy_mode nor balanced_review_policy set), the default
-			// resolved mode is delegated across every surface. The legacy
-			// BalancedReviewPolicy.Default was flipped to false so it no
-			// longer feeds the resolver unless explicitly enabled.
-			setup:  func(t *testing.T, dir string) {},
-			wantCL: reviewpolicy.ModeDelegated,
+			// resolved mode is trusted across every surface. The legacy
+			// BalancedReviewPolicy.Default stays false so it does not feed the
+			// resolver unless explicitly enabled.
+			setup:  func(t *testing.T, dir string) { t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "") },
+			wantCL: reviewpolicy.ModeTrusted,
 		},
 		{
 			name: "review_policy_mode=strict",
