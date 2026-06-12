@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/marcus/td/internal/models"
 )
 
 const configFile = ".todos/config.json"
 const lockFile = ".todos/config.json.lock"
+
+// withConfigLock serializes access to config.json using an OS file lock.
+// Implemented per-platform in lock_unix.go (flock) and lock_windows.go (LockFileEx).
 
 // Title validation defaults
 const (
@@ -73,28 +75,6 @@ func Save(baseDir string, cfg *models.Config) error {
 	}
 
 	return os.Rename(tmpName, configPath)
-}
-
-// withConfigLock serializes access to config.json using flock
-func withConfigLock(baseDir string, fn func() error) error {
-	lockPath := filepath.Join(baseDir, lockFile)
-
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
-
-	return fn()
 }
 
 // SetFocus sets the focused issue ID
