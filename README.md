@@ -189,14 +189,14 @@ make install-dev
 # Format code
 make fmt
 
-# Install git pre-commit hook (gofmt, go vet, go build on staged files)
+# Install git hooks (pre-commit checks + commit subject normalization)
 make install-hooks
 ```
 
 ## Tests & Quality Checks
 
 ```bash
-# Run all tests (114 tests across cmd/, internal/db/, internal/models/, etc.)
+# Run all tests (Go packages + commit-msg hook coverage)
 make test
 
 # Expected output: ok for each package, ~2s total runtime
@@ -207,7 +207,13 @@ make test
 # Format code (runs gofmt)
 make fmt
 
-# No linter configured yet — clean gofmt is current quality bar
+# Commit messages are normalized by the git commit-msg hook to:
+#   type: summary (td-<id>)
+# Example:
+#   feat: add sync audit trail (td-a1b2)
+#
+# Allowed exceptions:
+#   td: bump to vX.Y.Z   # automated release/homebrew bump commits
 ```
 
 ## Release

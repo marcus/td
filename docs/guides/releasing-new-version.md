@@ -53,7 +53,7 @@ Add entry at the top of `CHANGELOG.md`:
 Commit the changelog:
 ```bash
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z (td-a1b2)"
 ```
 
 ### 3. Verify Tests Pass
@@ -74,6 +74,7 @@ git push origin vX.Y.Z
 ```
 
 Pushing the tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries, create the GitHub release, and update the Homebrew tap.
+The repo's `commit-msg` hook enforces `type: summary (td-<id>)` for human-authored commits. The Homebrew automation commit `td: bump to vX.Y.Z` is an approved exception.
 
 ### 5. Verify
 
@@ -137,7 +138,7 @@ go test ./...
 # Update changelog
 # (Edit CHANGELOG.md, add entry at top)
 git add CHANGELOG.md
-git commit -m "docs: Update changelog for vX.Y.Z"
+git commit -m "docs: update changelog for vX.Y.Z (td-a1b2)"
 
 # Push commits, then tag (tag push triggers automated release)
 git push origin main
