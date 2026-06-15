@@ -276,6 +276,10 @@ type Config struct {
 	// Title validation limits
 	TitleMinLength int `json:"title_min_length,omitempty"` // Default: 15
 	TitleMaxLength int `json:"title_max_length,omitempty"` // Default: 100
+	// GettingStartedSeen records that the Welcome/Getting Started modal has been
+	// shown at least once in this project, so it is not re-shown on every monitor
+	// launch. Set automatically the first time the modal is displayed.
+	GettingStartedSeen bool `json:"getting_started_seen,omitempty"`
 }
 
 // ActionType represents the type of action that was performed

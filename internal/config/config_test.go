@@ -882,3 +882,47 @@ func TestPermissionErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestGettingStartedSeen(t *testing.T) {
+	t.Run("defaults to false when unset", func(t *testing.T) {
+		dir := t.TempDir()
+		seen, err := GetGettingStartedSeen(dir)
+		if err != nil {
+			t.Fatalf("GetGettingStartedSeen failed: %v", err)
+		}
+		if seen {
+			t.Error("expected getting_started_seen to default to false")
+		}
+	})
+
+	t.Run("set then get round-trips", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := SetGettingStartedSeen(dir, true); err != nil {
+			t.Fatalf("SetGettingStartedSeen failed: %v", err)
+		}
+		seen, err := GetGettingStartedSeen(dir)
+		if err != nil {
+			t.Fatalf("GetGettingStartedSeen failed: %v", err)
+		}
+		if !seen {
+			t.Error("expected getting_started_seen to be true after Set")
+		}
+	})
+
+	t.Run("does not clobber other config fields", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := SetFocus(dir, "td-abc123"); err != nil {
+			t.Fatalf("SetFocus failed: %v", err)
+		}
+		if err := SetGettingStartedSeen(dir, true); err != nil {
+			t.Fatalf("SetGettingStartedSeen failed: %v", err)
+		}
+		focus, err := GetFocus(dir)
+		if err != nil {
+			t.Fatalf("GetFocus failed: %v", err)
+		}
+		if focus != "td-abc123" {
+			t.Errorf("expected focus preserved, got %q", focus)
+		}
+	})
+}

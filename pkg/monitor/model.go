@@ -717,6 +717,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.GettingStartedModal = m.createGettingStartedModal()
 			m.GettingStartedModal.Reset()
 			m.GettingStartedMouseHandler = mouse.NewHandler()
+			// Record that we've shown the modal so it isn't re-shown on every
+			// launch, even if the user declines to install instructions.
+			return m, m.markGettingStartedSeen()
 		}
 		return m, nil
 

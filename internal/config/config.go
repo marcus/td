@@ -229,6 +229,29 @@ func SetFilterState(baseDir string, state *FilterState) error {
 	})
 }
 
+// GetGettingStartedSeen reports whether the Getting Started modal has already
+// been shown at least once in this project.
+func GetGettingStartedSeen(baseDir string) (bool, error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return false, err
+	}
+	return cfg.GettingStartedSeen, nil
+}
+
+// SetGettingStartedSeen records that the Getting Started modal has been shown,
+// so it is not re-displayed on subsequent monitor launches.
+func SetGettingStartedSeen(baseDir string, seen bool) error {
+	return withConfigLock(baseDir, func() error {
+		cfg, err := Load(baseDir)
+		if err != nil {
+			return err
+		}
+		cfg.GettingStartedSeen = seen
+		return Save(baseDir, cfg)
+	})
+}
+
 // GetTitleLengthLimits returns min/max title length limits from config (with defaults)
 func GetTitleLengthLimits(baseDir string) (min, max int, err error) {
 	cfg, err := Load(baseDir)

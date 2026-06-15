@@ -2382,11 +2382,26 @@ func (m Model) checkFirstRun() tea.Cmd {
 	return func() tea.Msg {
 		agentPath := agent.DetectAgentFile(m.BaseDir)
 		hasTD := agent.AnyFileHasTDInstructions(m.BaseDir)
+		// Suppress the modal once it has been shown in this project, even if the
+		// user declined to install instructions. This keeps td from re-prompting
+		// on every launch. The seen flag is recorded when the modal is shown.
+		seen, _ := config.GetGettingStartedSeen(m.BaseDir)
 
 		return FirstRunCheckMsg{
-			IsFirstRun:      !hasTD, // Show modal if no instructions found
+			IsFirstRun:      !seen && !hasTD, // Show only on the first open of a project without instructions
 			AgentFilePath:   agentPath,
 			HasInstructions: hasTD,
 		}
+	}
+}
+
+// markGettingStartedSeen persists the flag that suppresses the Getting Started
+// modal on future launches. Fire-and-forget: failures are ignored so a config
+// write error never disrupts the monitor.
+func (m Model) markGettingStartedSeen() tea.Cmd {
+	baseDir := m.BaseDir
+	return func() tea.Msg {
+		_ = config.SetGettingStartedSeen(baseDir, true)
+		return nil
 	}
 }
