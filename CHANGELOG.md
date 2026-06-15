@@ -2,6 +2,14 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.47.0] - 2026-06-15
+
+### Monitor
+- **Getting Started modal now shows only on the first open of a project**, not on every launch. Previously the "Welcome to td!" modal reappeared each time the monitor opened in any project that had not installed td agent instructions, which nagged repeatedly when agents declined the install. A per-project `getting_started_seen` flag is now stored in `.todos/config.json` and stamped the moment the modal is first displayed; the modal shows only when the project has no instructions **and** has not been seen before. The `H`-key manual reopen path is unchanged.
+
+### Documentation
+- Release guide rewritten to be agent-friendly: documents the `make release` workflow, clarifies that the Homebrew tap is bumped by the dedicated `update-homebrew-tap` GitHub Actions job (building from source, updating URL + tarball sha256) rather than by GoReleaser, distinguishes the hand-written `CHANGELOG.md` from GoReleaser's auto-generated GitHub release notes, and adds an agent-oriented non-interactive runbook. Corrected the stale "manually maintained" comment in `.goreleaser.yml`.
+
 ## [v0.46.0] - 2026-06-11
 
 ### Review policy
