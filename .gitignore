@@ -36,3 +36,4 @@ data/
 api.test
 
 .DS_store
+.todos/
