@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.47.1] - 2026-06-17
+
+### Monitor
+- **Fixed: capital-letter keyboard shortcuts stopped working after the v0.45.0 Charmbracelet v2 migration.** `Y` (copy issue ID), and every other shift-bound shortcut (`C`, `F`, `G`, `H`, `I`, `J`, `K`, `N`, `O`, `R`, `S`, `T`, `V`, `W`), silently did nothing — most visibly in sidecar's embedded monitor. In Bubble Tea v2 a shifted printable key arrives as the unshifted code plus a shift modifier (e.g. `shift+y` => code `y` + `ModShift`), so the keymap's `KeyToString` rendered it as `"shift+y"` and never matched bindings written in textual form (`"Y"`). It now uses `Key.String()`, which returns the printable text (`"Y"`, `"?"`) and falls back to the keystroke form for special keys (`"tab"`, `"ctrl+c"`, `"shift+tab"`). Regression tests now exercise realistic shifted-key input.
+
 ## [v0.47.0] - 2026-06-15
 
 ### Monitor
