@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.47.2] - 2026-06-17
+
+### Bug Fixes
+- **Fixed: `td handoff`, `td review`, and `td ws tag` failed with `FOREIGN KEY constraint failed (787)` when given a bare issue id (e.g. `94e0fd` instead of `td-94e0fd`).** These write paths persisted the raw argument as `issue_id`; since issue PKs always carry the `td-` prefix, a bare id never matched `issues(id)` and the constraint fired once foreign-key enforcement was enabled in v0.44.0. The lookup itself normalized internally, so `td start`/`td show` worked on the bare id while the audit-trail write failed — making the failure look like a session/sync problem (it was not; nothing references the `sessions` table by FK). `AddHandoff`, `AddComment`, `AddGitSnapshot`, and `TagIssueToWorkSession`/`UntagIssueFromWorkSession` now normalize `issue_id` before writing, mirroring how `GetIssue` and `CreateIssueReview` already canonicalize ids. Normalizing tag and untag together also closes a latent mismatch where the two computed different deterministic row ids from differing id forms. A regression test exercises bare-id writes under FK enforcement.
+
 ## [v0.47.1] - 2026-06-17
 
 ### Monitor
