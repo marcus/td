@@ -103,6 +103,10 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 
 // TagIssueToWorkSession links an issue to a work session
 func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
+	// Normalize before computing the deterministic WsiID and writing the
+	// work_session_issues.issue_id FK. Must match UntagIssueFromWorkSession so
+	// tag/untag resolve to the same row id.
+	issueID = NormalizeIssueID(issueID)
 	err := db.withWriteLock(func() error {
 		id := WsiID(wsID, issueID)
 		now := time.Now()
@@ -139,6 +143,8 @@ func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
 
 // UntagIssueFromWorkSession removes an issue from a work session
 func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
+	// Normalize to match TagIssueToWorkSession's deterministic WsiID.
+	issueID = NormalizeIssueID(issueID)
 	err := db.withWriteLock(func() error {
 		id := WsiID(wsID, issueID)
 		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE id = ?`, id)

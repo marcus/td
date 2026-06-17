@@ -211,6 +211,11 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 // AddHandoff adds a handoff entry and logs it to action_log for sync/undo.
 func (db *DB) AddHandoff(handoff *models.Handoff) error {
 	return db.withWriteLock(func() error {
+		// Normalize issue_id to the canonical td- form before persisting.
+		// The handoffs.issue_id FK references issues(id), whose PKs always
+		// carry the prefix; a bare id (e.g. "abc123") would violate the FK
+		// once foreign_keys=ON (migration 30).
+		handoff.IssueID = NormalizeIssueID(handoff.IssueID)
 		handoff.Timestamp = time.Now()
 
 		doneJSON, _ := json.Marshal(handoff.Done)
@@ -392,6 +397,8 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 // AddComment adds a comment to an issue
 func (db *DB) AddComment(comment *models.Comment) error {
 	return db.withWriteLock(func() error {
+		// Normalize issue_id to canonical td- form (comments.issue_id FK).
+		comment.IssueID = NormalizeIssueID(comment.IssueID)
 		comment.CreatedAt = time.Now()
 
 		id, err := generateCommentID()
@@ -751,6 +758,8 @@ func (db *DB) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
 // AddGitSnapshot records a git state snapshot
 func (db *DB) AddGitSnapshot(snapshot *models.GitSnapshot) error {
 	return db.withWriteLock(func() error {
+		// Normalize issue_id to canonical td- form (git_snapshots.issue_id FK).
+		snapshot.IssueID = NormalizeIssueID(snapshot.IssueID)
 		snapshot.Timestamp = time.Now()
 
 		id, err := generateSnapshotID()
