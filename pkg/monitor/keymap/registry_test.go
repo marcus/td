@@ -108,6 +108,23 @@ func TestLookup(t *testing.T) {
 			found:   true,
 		},
 		{
+			// Regression: shift+y must resolve the "Y" binding (td-272d9b).
+			// Real terminal input is Code 'y' + ModShift + Text "Y".
+			name:    "copy id with shift+y in main",
+			key:     tea.KeyPressMsg{Code: 'y', Text: "Y", Mod: tea.ModShift},
+			context: ContextMain,
+			want:    CmdCopyIDToClipboard,
+			found:   true,
+		},
+		{
+			// Lowercase y in main still copies the issue as markdown.
+			name:    "copy markdown with y in main",
+			key:     tea.KeyPressMsg{Code: 'y', Text: "y"},
+			context: ContextMain,
+			want:    CmdCopyToClipboard,
+			found:   true,
+		},
+		{
 			name:    "unknown key returns not found",
 			key:     tea.KeyPressMsg{Code: 'z', Text: ""},
 			context: ContextMain,
@@ -263,7 +280,12 @@ func TestKeyToString(t *testing.T) {
 		{tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}, "ctrl+d"},
 		{tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}, "shift+tab"},
 		{tea.KeyPressMsg{Code: 'j', Text: "j"}, "j"},
-		{tea.KeyPressMsg{Code: 'G', Text: "G"}, "G"},
+		// Shifted printable keys arrive as the unshifted Code plus ModShift and
+		// carry the uppercase Text. KeyToString must return "Y"/"G", not
+		// "shift+y"/"shift+g", so capital-letter bindings match (td-272d9b).
+		{tea.KeyPressMsg{Code: 'y', Text: "Y", Mod: tea.ModShift}, "Y"},
+		{tea.KeyPressMsg{Code: 'g', Text: "G", Mod: tea.ModShift}, "G"},
+		{tea.KeyPressMsg{Code: '/', Text: "?", Mod: tea.ModShift}, "?"},
 	}
 
 	for _, tt := range tests {
