@@ -353,9 +353,16 @@ func (r *Registry) AllContexts() []Context {
 	return contexts
 }
 
-// KeyToString converts a tea.KeyMsg to a string representation
+// KeyToString converts a tea.KeyMsg to a string representation.
+//
+// In bubbletea v2, shifted printable keys arrive as the unshifted Code plus
+// ModShift (e.g. shift+y => Code 'y', Mod ModShift), so Keystroke() renders
+// them as "shift+y" rather than "Y". Our bindings are written in textual form
+// ("Y", "?", "G"), so we use String(), which returns the key's Text when it is
+// a printable character ("Y", "?") and falls back to Keystroke() for special
+// keys ("tab", "enter", "ctrl+c", "shift+tab", etc.).
 func KeyToString(key tea.KeyMsg) string {
-	return key.Key().Keystroke()
+	return key.String()
 }
 
 // IsPrintable returns true if the key represents a printable character
