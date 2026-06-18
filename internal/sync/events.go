@@ -138,7 +138,7 @@ func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
 }
 
 // getTextEmptyDefaultColumns returns the set of TEXT columns declared with
-// DEFAULT '' on the given table. Sync payloads may carry these fields as
+// DEFAULT ” on the given table. Sync payloads may carry these fields as
 // JSON null (either because a previous write set them to NULL, or because
 // the sender serialized an empty pointer/string as null). Binding NULL for
 // such columns breaks readers that scan into plain `string` — notably
@@ -323,6 +323,16 @@ func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, 
 	}
 }
 
+// unwrapIssuePayload extracts the nested issue object from a ReviewUndoPayload wrapper if present.
+func unwrapIssuePayload(fields map[string]any) map[string]any {
+	if issueVal, ok := fields["issue"]; ok {
+		if issueMap, ok := issueVal.(map[string]any); ok {
+			return issueMap
+		}
+	}
+	return fields
+}
+
 // applyPartialUpdateEvent diffs previous_data vs new_data and applies only changed fields.
 // Falls back to full upsert if the partial update fails or the row doesn't exist.
 func applyPartialUpdateEvent(tx *sql.Tx, event Event, previousData json.RawMessage) (applyResult, error) {
@@ -336,6 +346,11 @@ func applyPartialUpdateEvent(tx *sql.Tx, event Event, previousData json.RawMessa
 	if err := json.Unmarshal(event.Payload, &newFields); err != nil {
 		slog.Debug("partial update: bad new_data, falling back", "err", err)
 		return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+	}
+
+	if event.EntityType == "issues" {
+		prevFields = unwrapIssuePayload(prevFields)
+		newFields = unwrapIssuePayload(newFields)
 	}
 
 	changed := diffJSON(prevFields, newFields)
@@ -382,6 +397,10 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 	var fields map[string]any
 	if err := json.Unmarshal(newData, &fields); err != nil {
 		return applyResult{}, fmt.Errorf("upsert %s/%s: unmarshal payload: %w", entityType, entityID, err)
+	}
+
+	if entityType == "issues" {
+		fields = unwrapIssuePayload(fields)
 	}
 
 	if len(fields) == 0 {
@@ -473,8 +492,8 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 // application-level cascade is needed for FK-backed relations.
 //
 // The one exception is issues.parent_id: per migration 30's rationale,
-// td uses '' (empty string) as the "no parent" sentinel, which is
-// incompatible with a schema-level FK (SQLite treats '' as a real value).
+// td uses ” (empty string) as the "no parent" sentinel, which is
+// incompatible with a schema-level FK (SQLite treats ” as a real value).
 // That relation has no FK at all, so parent_id cleanup must still happen
 // here. This was the regression fix from commit baa9b23 (td-4846e6).
 func deleteEntity(tx *sql.Tx, entityType, entityID string) error {
@@ -537,7 +556,7 @@ func buildInsert(fields map[string]any) (cols string, placeholders string, vals 
 // All other array/object fields are stored as JSON strings.
 //
 // textEmptyDefaultCols, when non-nil, lists TEXT columns declared with
-// DEFAULT '' on this table. Any field present in fields with a nil value
+// DEFAULT ” on this table. Any field present in fields with a nil value
 // whose column is in this set is defaulted to "" — otherwise INSERT binds
 // NULL, which breaks readers that scan into plain `string` (see
 // getTextEmptyDefaultColumns for the symptom that motivated this).

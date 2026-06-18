@@ -784,6 +784,37 @@ func TestUpsertEntity_AllFieldsUnknown(t *testing.T) {
 	}
 }
 
+func TestUpsertEntity_ReviewUndoPayloadUnwrapped(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	payload := []byte(`{
+		"issue": {
+			"id": "i1",
+			"title": "Fix repo-wide svelte/type issues",
+			"status": "closed",
+			"type": "task",
+			"priority": "P2"
+		},
+		"created_review_id": "rv-123"
+	}`)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
+	if err != nil {
+		t.Fatalf("upsert with wrapped ReviewUndoPayload: %v", err)
+	}
+	tx.Commit()
+
+	var title, status string
+	err = db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if title != "Fix repo-wide svelte/type issues" || status != "closed" {
+		t.Fatalf("got title=%q status=%q, want 'Fix repo-wide svelte/type issues'/'closed'", title, status)
+	}
+}
+
 // testSchemaWithDefer includes GTD deferral columns (defer_until, due_date, defer_count)
 const testSchemaWithDefer = `CREATE TABLE issues (
 	id          TEXT PRIMARY KEY,
