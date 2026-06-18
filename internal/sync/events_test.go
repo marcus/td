@@ -16,8 +16,10 @@ const testSchema = `CREATE TABLE issues (
 	priority   TEXT,
 	labels     TEXT DEFAULT '',
 	parent_id  TEXT DEFAULT '',
+	closed_by_session TEXT DEFAULT '',
 	created_at DATETIME,
 	updated_at DATETIME,
+	closed_at DATETIME,
 	deleted_at DATETIME
 );
 CREATE TABLE handoffs (
@@ -812,6 +814,93 @@ func TestUpsertEntity_ReviewUndoPayloadUnwrapped(t *testing.T) {
 	}
 	if title != "Fix repo-wide svelte/type issues" || status != "closed" {
 		t.Fatalf("got title=%q status=%q, want 'Fix repo-wide svelte/type issues'/'closed'", title, status)
+	}
+}
+
+func TestApplyEvent_IssueUpdateWrappedNewDataWithPlainPreviousClosesIssue(t *testing.T) {
+	db := setupDB(t)
+
+	tx := beginTx(t, db)
+	seedPayload, _ := json.Marshal(map[string]any{
+		"id":                "td-prod01",
+		"title":             "production replay close",
+		"status":            "in_review",
+		"priority":          "P1",
+		"closed_at":         nil,
+		"closed_by_session": "",
+	})
+	if _, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "td-prod01",
+		Payload:    seedPayload,
+	}, testValidator); err != nil {
+		t.Fatalf("seed issue: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit seed: %v", err)
+	}
+
+	closedAt := "2026-06-18T17:24:00Z"
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data": map[string]any{
+			"issue": map[string]any{
+				"id":                "td-prod01",
+				"title":             "production replay close",
+				"status":            "closed",
+				"priority":          "P1",
+				"closed_at":         closedAt,
+				"closed_by_session": "ses-reviewer",
+			},
+			"created_review_id": "review-123",
+		},
+		"previous_data": map[string]any{
+			"id":                "td-prod01",
+			"title":             "production replay close",
+			"status":            "in_review",
+			"priority":          "P1",
+			"closed_at":         nil,
+			"closed_by_session": "",
+		},
+	})
+	var wrapper struct {
+		NewData      json.RawMessage `json:"new_data"`
+		PreviousData json.RawMessage `json:"previous_data"`
+	}
+	if err := json.Unmarshal(remotePayload, &wrapper); err != nil {
+		t.Fatalf("unmarshal remote payload: %v", err)
+	}
+
+	tx = beginTx(t, db)
+	if _, err := applyEventWithPrevious(tx, Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "td-prod01",
+		Payload:    wrapper.NewData,
+	}, testValidator, wrapper.PreviousData); err != nil {
+		t.Fatalf("apply wrapped issue update: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit update: %v", err)
+	}
+
+	var status, closedBySession string
+	var gotClosedAt sql.NullString
+	if err := db.QueryRow(
+		`SELECT status, closed_at, closed_by_session FROM issues WHERE id = ?`,
+		"td-prod01",
+	).Scan(&status, &gotClosedAt, &closedBySession); err != nil {
+		t.Fatalf("query issue: %v", err)
+	}
+	if status != "closed" {
+		t.Fatalf("status: got %q, want closed", status)
+	}
+	if !gotClosedAt.Valid || gotClosedAt.String != closedAt {
+		t.Fatalf("closed_at: got %q valid=%v, want %q", gotClosedAt.String, gotClosedAt.Valid, closedAt)
+	}
+	if closedBySession != "ses-reviewer" {
+		t.Fatalf("closed_by_session: got %q, want ses-reviewer", closedBySession)
 	}
 }
 
