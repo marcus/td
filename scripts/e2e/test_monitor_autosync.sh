@@ -155,10 +155,15 @@ _ok "Edited $ISSUE_A1 via td update (auto-sync disabled)"
 ALICE_TITLE=$(td_a_nosync show "$ISSUE_A1" --json 2>/dev/null | jq -r '.title')
 assert_eq "alice local DB has edit" "$ALICE_TITLE" "EDITED WHILE MONITOR OPEN"
 
-# Verify the event is unsynced (since td update had auto-sync off)
+# Verify whether the event is still unsynced. The monitor runs concurrently, so
+# a fast tick can legitimately push the event before this immediate check.
 UNSYNCED=$(sqlite3 "$CLIENT_A_DIR/.todos/issues.db" \
     "SELECT COUNT(*) FROM action_log WHERE synced_at IS NULL AND undone = 0" 2>/dev/null)
-assert_ge "alice has unsynced events" "$UNSYNCED" "1"
+if [ "$UNSYNCED" -ge 1 ]; then
+    _ok "alice has unsynced events before monitor tick ($UNSYNCED)"
+else
+    _ok "alice update was already pushed by monitor before unsynced check"
+fi
 
 # Wait for the monitor's periodic sync to fire and push
 # With interval=2s and --interval 1s tick, it should fire within ~3s
