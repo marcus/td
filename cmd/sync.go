@@ -312,7 +312,7 @@ func filterEventsForSync(events []tdsync.Event, validator tdsync.EntityValidator
 }
 
 func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
-	sess, err := session.Get(database)
+	sess, err := session.GetOrCreate(database)
 	if err != nil {
 		output.Error("get session: %v", err)
 		return err

@@ -269,7 +269,7 @@ func autoSyncApplyPullBatch(database *db.DB, events []tdsync.Event, deviceID str
 // autoSyncPush pushes pending events silently. Returns nil if nothing to push.
 // Batches events to stay within server limits (pushBatchSize from sync.go).
 func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
-	sess, err := session.Get(database)
+	sess, err := session.GetOrCreate(database)
 	if err != nil {
 		return fmt.Errorf("get session: %w", err)
 	}
