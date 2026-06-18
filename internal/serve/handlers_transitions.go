@@ -170,6 +170,78 @@ func serveCloseDecision(ctx HandlerContext, issue *models.Issue, selfReviewAckno
 	})
 }
 
+// canApprove mirrors HandleApprove's branch logic to decide whether the given
+// session may approve the issue right now (without a self_review ack). It is
+// kept next to HandleApprove so the two stay in sync: any path that lets
+// HandleApprove succeed must return true here, and vice versa. Used by
+// availableTransitionsFor so clients can hide an Approve button that would 403.
+func canApprove(ctx HandlerContext, issue *models.Issue) bool {
+	if issue == nil || issue.Status != models.StatusInReview {
+		return false
+	}
+
+	// Mode-C (delegated): an active approval lets an eligible closer finish the
+	// close even when they are not the reviewer of record. Mirrors
+	// handledCloseAfterReview.
+	mode := reviewpolicy.ModeStrict
+	if ctx.BaseDir != "" {
+		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
+			mode = m
+		}
+	}
+	if mode == reviewpolicy.ModeDelegated {
+		if active, err := ctx.DB.GetActiveApprovalReview(issue.ID); err == nil && active != nil {
+			if serveCloseDecision(ctx, issue, false).Allowed {
+				return true
+			}
+		}
+	}
+
+	// Primary path: reviewer eligibility AND close eligibility, matching the
+	// approve handler's policyCheck.
+	return serveReviewerDecision(ctx, issue, false).Allowed &&
+		serveCloseDecision(ctx, issue, false).Allowed
+}
+
+// availableTransitionsFor returns the transition action names the requesting
+// session can perform on the issue right now. It mirrors the validity each
+// transition endpoint enforces — the per-action validFrom set, the in_review/
+// non-minor close rule (HandleClose.policyCheck), and the approve review-policy
+// decision (canApprove) — so a client rendering exactly these actions never
+// shows a button that the corresponding endpoint would reject. Action names
+// match the endpoints: start/review/approve/reject/block/unblock/close/reopen.
+func availableTransitionsFor(ctx HandlerContext, issue *models.Issue) []string {
+	actions := []string{}
+	if issue == nil {
+		return actions
+	}
+	sm := workflow.DefaultMachine()
+	status := issue.Status
+
+	// consider appends name when the issue's status is a valid source for the
+	// transition (state-machine path exists, status in validFrom) and the
+	// action-specific guard (allowed) passes.
+	consider := func(name string, validFrom []models.Status, to models.Status, allowed bool) {
+		if !statusIn(status, validFrom) || !sm.IsValidTransition(status, to) || !allowed {
+			return
+		}
+		actions = append(actions, name)
+	}
+
+	consider("start", []models.Status{models.StatusOpen}, models.StatusInProgress, true)
+	consider("review", []models.Status{models.StatusOpen, models.StatusInProgress}, models.StatusInReview, true)
+	consider("approve", []models.Status{models.StatusInReview}, models.StatusClosed, canApprove(ctx, issue))
+	consider("reject", []models.Status{models.StatusInReview}, models.StatusOpen, true)
+	consider("block", []models.Status{models.StatusOpen, models.StatusInProgress}, models.StatusBlocked, true)
+	consider("unblock", []models.Status{models.StatusBlocked}, models.StatusOpen, true)
+	// HandleClose rejects in_review non-minor issues (must use approve).
+	closeAllowed := !(status == models.StatusInReview && !issue.Minor)
+	consider("close", []models.Status{models.StatusOpen, models.StatusInProgress, models.StatusBlocked, models.StatusInReview}, models.StatusClosed, closeAllowed)
+	consider("reopen", []models.Status{models.StatusClosed}, models.StatusOpen, true)
+
+	return actions
+}
+
 // This file contains the status-transition HTTP handlers (start/review/
 // approve/reject/block/unblock/close/reopen). Each handler is exported as a
 // pure function that takes a HandlerContext, so the same code can be mounted
@@ -345,6 +417,10 @@ func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 	}
 
 	dto := IssueToDTO(updated)
+	// Keep available_transitions fresh on the mutation response so clients that
+	// replace their in-memory issue with this payload (instead of re-fetching)
+	// still render the authoritative action set for the new status.
+	dto.AvailableTransitions = availableTransitionsFor(ctx, updated)
 	WriteSuccess(w, map[string]interface{}{
 		"issue":    dto,
 		"cascades": cascades,

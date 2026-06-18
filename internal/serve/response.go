@@ -147,6 +147,14 @@ type IssueDTO struct {
 	// Reviews is populated by GET /v1/issues/{id}?with=reviews only. Kept
 	// off the default response to keep list payloads compact.
 	Reviews []IssueReviewDTO `json:"reviews,omitempty"`
+
+	// AvailableTransitions lists the transition action names the requesting
+	// session can perform on this issue right now (start/review/approve/reject/
+	// block/unblock/close/reopen). Populated by GET /v1/issues/{id} only — it
+	// requires session context and per-issue policy evaluation, so it is omitted
+	// from list payloads. Clients should render exactly these actions and treat
+	// an absent field as "unknown" (fall back to a status-based default).
+	AvailableTransitions []string `json:"available_transitions,omitempty"`
 }
 
 // IssueToDTO converts a models.Issue to an IssueDTO with proper null/empty

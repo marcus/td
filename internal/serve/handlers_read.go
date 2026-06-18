@@ -302,6 +302,11 @@ func HandleGetIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 	if summary := activeReviewSummary(ctx, issue.ID); summary != nil {
 		issueDTO.ActiveReview = summary
 	}
+	// Expose the transitions this session can perform so clients render exactly
+	// the allowed actions (rather than a status-based guess that can include
+	// actions the endpoints would reject — e.g. close on a non-minor in_review
+	// issue, or approve under a strict review policy).
+	issueDTO.AvailableTransitions = availableTransitionsFor(ctx, issue)
 	// Opt-in full review history via ?with=reviews. Split on ',' to allow
 	// future composition (e.g. ?with=reviews,logs) while avoiding accidental
 	// matches against stray query params that contain the substring "with=".

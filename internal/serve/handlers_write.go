@@ -262,6 +262,10 @@ func HandleUpdateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Reques
 	notifyChange(ctx)
 
 	dto := IssueToDTO(issue)
+	// Keep available_transitions fresh: a field edit (e.g. toggling `minor`) can
+	// change which transitions are valid, and clients may use this response to
+	// update their in-memory issue without a follow-up GET.
+	dto.AvailableTransitions = availableTransitionsFor(ctx, issue)
 	WriteSuccess(w, map[string]interface{}{"issue": dto}, http.StatusOK)
 }
 
