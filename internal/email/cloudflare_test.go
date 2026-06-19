@@ -121,12 +121,13 @@ func TestCloudflareSender_Success(t *testing.T) {
 		t.Errorf("subject: got %v, want %q", capturedReq.body["subject"], "Your login link")
 	}
 
-	replyToRaw, ok := capturedReq.body["reply_to"].(map[string]any)
+	// Cloudflare requires reply_to as a plain string, not an object.
+	replyToRaw, ok := capturedReq.body["reply_to"].(string)
 	if !ok {
-		t.Fatalf("reply_to field missing or wrong type: %v", capturedReq.body["reply_to"])
+		t.Fatalf("reply_to field missing or not a string: %v", capturedReq.body["reply_to"])
 	}
-	if replyToRaw["address"] != "support@example.com" {
-		t.Errorf("reply_to.address: got %v, want %q", replyToRaw["address"], "support@example.com")
+	if replyToRaw != "support@example.com" {
+		t.Errorf("reply_to: got %v, want %q", replyToRaw, "support@example.com")
 	}
 }
 

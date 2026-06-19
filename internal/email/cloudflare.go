@@ -73,7 +73,10 @@ func (s *CloudflareSender) SendLoginLink(ctx context.Context, msg LoginEmail) er
 		fromObj["name"] = s.fromName
 	}
 
-	// Build the body. reply_to is omitted when replyTo is empty.
+	// Build the body. Cloudflare's Email Sending API expects reply_to to be a
+	// plain email-address STRING (an object like {"address": ...} is rejected
+	// with email.sending.error.invalid_request_schema). reply_to is omitted
+	// when replyTo is empty.
 	body := map[string]any{
 		"from":    fromObj,
 		"to":      []string{msg.To},
@@ -82,7 +85,7 @@ func (s *CloudflareSender) SendLoginLink(ctx context.Context, msg LoginEmail) er
 		"text":    msg.Text,
 	}
 	if s.replyTo != "" {
-		body["reply_to"] = map[string]string{"address": s.replyTo}
+		body["reply_to"] = s.replyTo
 	}
 
 	encoded, err := json.Marshal(body)
