@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -577,7 +578,13 @@ func buildDependencySummaries(ctx HandlerContext, cardIDs []string) map[string]*
 
 	// One query: card -> []blockerID (depends_on direction).
 	blockersByCard, err := ctx.DB.GetBlockersForIssues(cardIDs)
-	if err != nil || len(blockersByCard) == 0 {
+	if err != nil {
+		// Degrade gracefully: cards lose their blocked dot rather than failing
+		// the whole board/list response, but log so the failure is observable.
+		slog.Warn("buildDependencySummaries: GetBlockersForIssues failed", "err", err)
+		return out
+	}
+	if len(blockersByCard) == 0 {
 		return out
 	}
 
@@ -599,6 +606,7 @@ func buildDependencySummaries(ctx HandlerContext, cardIDs []string) map[string]*
 	// One query: blockerID -> {title, status}.
 	meta, err := ctx.DB.GetIssueTitlesAndStatuses(targetIDs)
 	if err != nil {
+		slog.Warn("buildDependencySummaries: GetIssueTitlesAndStatuses failed", "err", err)
 		return out
 	}
 
