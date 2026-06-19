@@ -191,23 +191,12 @@ func (db *ServerDB) LookupChallenge(selector string) (*EmailChallenge, error) {
 // If user_id is set on the challenge, users.email_verified_at is also set
 // (only if it was previously NULL) within the same transaction.
 func (db *ServerDB) ConsumeChallenge(selector, plaintextSecret string) (*EmailChallenge, error) {
-	// Use BEGIN IMMEDIATE so SQLite acquires the write lock up front,
-	// giving us the equivalent of SELECT … FOR UPDATE.  With a single-connection
-	// pool (MaxOpenConns=1) this also prevents any concurrent consume from
-	// interleaving between our SELECT and UPDATE.
+	// Write serialization is guaranteed by the single-connection pool (MaxOpenConns=1 in db/conn.go).
 	tx, err := db.conn.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	// Escalate to an immediate (write) transaction.
-	if _, err := tx.Exec("BEGIN IMMEDIATE"); err != nil {
-		// modernc.org/sqlite returns an error if we call BEGIN inside a
-		// transaction that is already IMMEDIATE; ignore it silently — the
-		// pool is pinned to one connection so we are already serialised.
-		_ = err
-	}
 
 	row := tx.QueryRow(
 		`SELECT`+challengeSelectCols+`
