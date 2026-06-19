@@ -2176,6 +2176,92 @@ func TestIntegration_GetBoard(t *testing.T) {
 	}
 }
 
+func TestIntegration_GetBoard_DependencySummary(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	// A depends on B (open) and C (closed). Only B is an unresolved blocker.
+	aID := iCreateIssue(t, baseURL, "Card A depends on others")
+	bID := iCreateIssue(t, baseURL, "Blocker B stays open")
+	cID := iCreateIssue(t, baseURL, "Blocker C will be closed")
+
+	if err := database.AddDependencyLogged(aID, bID, "depends_on", "test-session"); err != nil {
+		t.Fatalf("add dependency A->B: %v", err)
+	}
+	if err := database.AddDependencyLogged(aID, cID, "depends_on", "test-session"); err != nil {
+		t.Fatalf("add dependency A->C: %v", err)
+	}
+
+	// Close C so it becomes a resolved (excluded) blocker.
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+cID+"/close", nil)
+	ok, _, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("close C failed")
+	}
+
+	// Board covering all open issues (A and B remain open; C is closed/excluded).
+	boardID := iCreateBoard(t, baseURL, "Dep Summary Board", "status:open")
+
+	resp = iDoJSON(t, "GET", baseURL+"/v1/boards/"+boardID, nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("get board failed")
+	}
+
+	issues, _ := data["issues"].([]interface{})
+	if issues == nil {
+		t.Fatal("data.issues should be an array")
+	}
+
+	var aCard, bCard map[string]interface{}
+	for _, raw := range issues {
+		card, _ := raw.(map[string]interface{})
+		issue, _ := card["issue"].(map[string]interface{})
+		switch issue["id"] {
+		case aID:
+			aCard = issue
+		case bID:
+			bCard = issue
+		}
+	}
+	if aCard == nil {
+		t.Fatal("card A not found on board")
+	}
+	if bCard == nil {
+		t.Fatal("card B not found on board")
+	}
+
+	// A must carry a dependency_summary with B (open) and NOT C (closed).
+	summary, ok := aCard["dependency_summary"].(map[string]interface{})
+	if !ok || summary == nil {
+		t.Fatalf("A dependency_summary missing; got %v", aCard["dependency_summary"])
+	}
+	blockers, _ := summary["blockers"].([]interface{})
+	if len(blockers) != 1 {
+		t.Fatalf("expected 1 unresolved blocker on A, got %d (%v)", len(blockers), blockers)
+	}
+	blocker, _ := blockers[0].(map[string]interface{})
+	if blocker["issue_id"] != bID {
+		t.Errorf("expected blocker issue_id = B (%s), got %v", bID, blocker["issue_id"])
+	}
+	if blocker["status"] == "closed" {
+		t.Errorf("blocker status should never be closed, got %v", blocker["status"])
+	}
+	if blocker["relation_type"] != "depends_on" {
+		t.Errorf("relation_type = %v, want depends_on", blocker["relation_type"])
+	}
+	// dep_id must match the detail-path derivation: DependencyID(A, B, depends_on).
+	wantDepID := db.DependencyID(aID, bID, "depends_on")
+	if blocker["dep_id"] != wantDepID {
+		t.Errorf("dep_id = %v, want %s", blocker["dep_id"], wantDepID)
+	}
+
+	// Direction check: B (the blocker) must NOT carry a summary — nothing blocks B.
+	if _, present := bCard["dependency_summary"]; present {
+		t.Errorf("B should have no dependency_summary (direction check), got %v", bCard["dependency_summary"])
+	}
+}
+
 func TestIntegration_UpdateBoard(t *testing.T) {
 	baseURL, _, cleanup := setupIntegrationServer(t)
 	defer cleanup()

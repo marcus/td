@@ -1137,6 +1137,95 @@ func TestGetIssueStatuses_DeduplicatesIDs(t *testing.T) {
 	}
 }
 
+func TestGetBlockersForIssues(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	a := &models.Issue{Title: "A"}
+	b := &models.Issue{Title: "B"}
+	c := &models.Issue{Title: "C"}
+	_ = db.CreateIssue(a)
+	_ = db.CreateIssue(b)
+	_ = db.CreateIssue(c)
+
+	// A depends on B and A depends on C.
+	_ = db.AddDependency(a.ID, b.ID, "depends_on")
+	_ = db.AddDependency(a.ID, c.ID, "depends_on")
+
+	got, err := db.GetBlockersForIssues([]string{a.ID, b.ID, c.ID})
+	if err != nil {
+		t.Fatalf("GetBlockersForIssues failed: %v", err)
+	}
+
+	// A should have two blockers: B and C.
+	if len(got[a.ID]) != 2 {
+		t.Fatalf("expected 2 blockers for A, got %d (%v)", len(got[a.ID]), got[a.ID])
+	}
+	found := map[string]bool{}
+	for _, id := range got[a.ID] {
+		found[id] = true
+	}
+	if !found[b.ID] || !found[c.ID] {
+		t.Errorf("expected A's blockers to include B and C, got %v", got[a.ID])
+	}
+
+	// B and C depend on nothing.
+	if len(got[b.ID]) != 0 {
+		t.Errorf("expected B to have no blockers, got %v", got[b.ID])
+	}
+	if len(got[c.ID]) != 0 {
+		t.Errorf("expected C to have no blockers, got %v", got[c.ID])
+	}
+}
+
+func TestGetBlockersForIssues_EmptyInput(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	got, err := db.GetBlockersForIssues(nil)
+	if err != nil {
+		t.Fatalf("GetBlockersForIssues failed: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(got))
+	}
+}
+
+func TestGetIssueTitlesAndStatuses(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	open := &models.Issue{Title: "Open One", Status: models.StatusOpen}
+	closed := &models.Issue{Title: "Closed One", Status: models.StatusClosed}
+	_ = db.CreateIssue(open)
+	_ = db.CreateIssue(closed)
+	closed.Status = models.StatusClosed
+	_ = db.UpdateIssue(closed)
+
+	got, err := db.GetIssueTitlesAndStatuses([]string{open.ID, closed.ID})
+	if err != nil {
+		t.Fatalf("GetIssueTitlesAndStatuses failed: %v", err)
+	}
+	if got[open.ID].Title != "Open One" || got[open.ID].Status != models.StatusOpen {
+		t.Errorf("open mismatch: %+v", got[open.ID])
+	}
+	if got[closed.ID].Title != "Closed One" || got[closed.ID].Status != models.StatusClosed {
+		t.Errorf("closed mismatch: %+v", got[closed.ID])
+	}
+}
+
 // ============================================================================
 // File Link Tests
 // ============================================================================
@@ -1730,7 +1819,6 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 		t.Errorf("NewData should contain 'open', got: %s", action.NewData)
 	}
 }
-
 
 func TestGetIssueDependencyRelations(t *testing.T) {
 	dir := t.TempDir()

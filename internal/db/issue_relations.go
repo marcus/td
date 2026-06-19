@@ -557,6 +557,111 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 	return statuses, nil
 }
 
+// GetBlockersForIssues fetches, for each issue id, the list of issue ids it
+// depends on (the depends_on direction: B blocks A when A depends_on B).
+// Returns a map keyed by issue_id whose values are the depends_on_id targets.
+// Runs a single IN (...) query. Empty input returns an empty map.
+func (db *DB) GetBlockersForIssues(issueIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	if len(issueIDs) == 0 {
+		return result, nil
+	}
+
+	// Dedupe IDs
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(issueIDs))
+	for _, id := range issueIDs {
+		nid := NormalizeIssueID(id)
+		if !seen[nid] {
+			seen[nid] = true
+			uniqueIDs = append(uniqueIDs, nid)
+		}
+	}
+
+	placeholders := make([]string, len(uniqueIDs))
+	args := make([]interface{}, len(uniqueIDs))
+	for i, id := range uniqueIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	q := fmt.Sprintf(
+		"SELECT issue_id, depends_on_id FROM issue_dependencies WHERE issue_id IN (%s) AND relation_type = 'depends_on'",
+		strings.Join(placeholders, ","),
+	)
+	rows, err := db.conn.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var issueID, dependsOnID string
+		if err := rows.Scan(&issueID, &dependsOnID); err != nil {
+			return nil, err
+		}
+		result[issueID] = append(result[issueID], dependsOnID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// IssueTitleStatus is a compact (title, status) pair for an issue, used by
+// batched lookups that only need these two fields.
+type IssueTitleStatus struct {
+	Title  string
+	Status models.Status
+}
+
+// GetIssueTitlesAndStatuses fetches title+status for multiple issues in a
+// single IN (...) query. Empty input returns an empty map.
+func (db *DB) GetIssueTitlesAndStatuses(ids []string) (map[string]IssueTitleStatus, error) {
+	result := make(map[string]IssueTitleStatus)
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	// Dedupe IDs
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		nid := NormalizeIssueID(id)
+		if !seen[nid] {
+			seen[nid] = true
+			uniqueIDs = append(uniqueIDs, nid)
+		}
+	}
+
+	placeholders := make([]string, len(uniqueIDs))
+	args := make([]interface{}, len(uniqueIDs))
+	for i, id := range uniqueIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	q := fmt.Sprintf("SELECT id, title, status FROM issues WHERE id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := db.conn.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, title string
+		var status models.Status
+		if err := rows.Scan(&id, &title, &status); err != nil {
+			return nil, err
+		}
+		result[id] = IssueTitleStatus{Title: title, Status: status}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // ============================================================================
 // Issue File Functions
 // ============================================================================

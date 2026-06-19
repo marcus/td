@@ -155,6 +155,30 @@ type IssueDTO struct {
 	// from list payloads. Clients should render exactly these actions and treat
 	// an absent field as "unknown" (fall back to a status-based default).
 	AvailableTransitions []string `json:"available_transitions,omitempty"`
+
+	// DependencySummary is populated ONLY on board + list paths and carries a
+	// compact view of this issue's unresolved blockers (the issues it depends on
+	// whose status is not closed). It powers a "blocked" indicator without a
+	// per-issue detail fetch. Left nil/omitted when the issue has zero unresolved
+	// blockers, so the single-issue detail response and dependency-free issues
+	// are unaffected.
+	DependencySummary *DependencySummaryDTO `json:"dependency_summary,omitempty"`
+}
+
+// BlockerRefDTO is a compact reference to a single unresolved blocker — an
+// issue that the card issue depends on (depends_on direction) whose status is
+// not closed.
+type BlockerRefDTO struct {
+	DepID        string `json:"dep_id"`
+	IssueID      string `json:"issue_id"` // the BLOCKER's id (= depends_on_id)
+	Title        string `json:"title"`
+	Status       string `json:"status"`        // never "closed" (filtered out)
+	RelationType string `json:"relation_type"` // "depends_on"
+}
+
+// DependencySummaryDTO wraps the unresolved blockers for an issue.
+type DependencySummaryDTO struct {
+	Blockers []BlockerRefDTO `json:"blockers"`
 }
 
 // IssueToDTO converts a models.Issue to an IssueDTO with proper null/empty

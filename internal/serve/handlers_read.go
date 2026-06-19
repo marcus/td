@@ -169,7 +169,7 @@ func HandleListIssues(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 			paged := applyPagination(filtered, offset, limit)
 
 			WriteSuccess(w, map[string]interface{}{
-				"issues":   IssuesToDTOs(paged),
+				"issues":   listIssuesToDTOs(ctx, paged),
 				"total":    total,
 				"limit":    limit,
 				"offset":   offset,
@@ -214,7 +214,7 @@ func HandleListIssues(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 	paged := applyPagination(allIssues, offset, limit)
 
 	WriteSuccess(w, map[string]interface{}{
-		"issues":   issuesToDTOsNonNil(paged),
+		"issues":   listIssuesToDTOs(ctx, paged),
 		"total":    total,
 		"limit":    limit,
 		"offset":   offset,
@@ -504,11 +504,22 @@ func HandleGetBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Compute unresolved-blocker summaries for all cards in O(1) extra queries.
+	cardIDs := make([]string, 0, len(boardIssues))
+	for _, biv := range boardIssues {
+		cardIDs = append(cardIDs, biv.Issue.ID)
+	}
+	summaries := buildDependencySummaries(ctx, cardIDs)
+
 	// Convert board issues to DTOs
 	issueDTOs := make([]map[string]interface{}, 0, len(boardIssues))
 	for _, biv := range boardIssues {
+		issueDTO := IssueToDTO(&biv.Issue)
+		if summary := summaries[biv.Issue.ID]; summary != nil {
+			issueDTO.DependencySummary = summary
+		}
 		issueDTOs = append(issueDTOs, map[string]interface{}{
-			"issue":        IssueToDTO(&biv.Issue),
+			"issue":        issueDTO,
 			"board_id":     biv.BoardID,
 			"position":     biv.Position,
 			"has_position": biv.HasPosition,
@@ -529,6 +540,93 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// listIssuesToDTOs converts paged list issues to DTOs and attaches the
+// dependency_summary (unresolved blockers) on the list path. Adds O(1) queries.
+func listIssuesToDTOs(ctx HandlerContext, issues []models.Issue) []IssueDTO {
+	dtos := issuesToDTOsNonNil(issues)
+	if len(issues) == 0 {
+		return dtos
+	}
+	cardIDs := make([]string, 0, len(issues))
+	for i := range issues {
+		cardIDs = append(cardIDs, issues[i].ID)
+	}
+	summaries := buildDependencySummaries(ctx, cardIDs)
+	if len(summaries) == 0 {
+		return dtos
+	}
+	for i := range dtos {
+		if summary := summaries[dtos[i].ID]; summary != nil {
+			dtos[i].DependencySummary = summary
+		}
+	}
+	return dtos
+}
+
+// buildDependencySummaries computes, for each given card issue ID, the compact
+// summary of its UNRESOLVED blockers (issues it depends on whose status is not
+// closed). The result is keyed by card issue ID; entries are present only for
+// cards that have at least one unresolved blocker. Adds O(1) DB queries (one to
+// fetch blocker edges, one to fetch blocker title+status), never O(n).
+func buildDependencySummaries(ctx HandlerContext, cardIDs []string) map[string]*DependencySummaryDTO {
+	out := make(map[string]*DependencySummaryDTO)
+	if len(cardIDs) == 0 {
+		return out
+	}
+
+	// One query: card -> []blockerID (depends_on direction).
+	blockersByCard, err := ctx.DB.GetBlockersForIssues(cardIDs)
+	if err != nil || len(blockersByCard) == 0 {
+		return out
+	}
+
+	// Collect the distinct blocker target IDs.
+	targetSet := make(map[string]bool)
+	for _, blockerIDs := range blockersByCard {
+		for _, bID := range blockerIDs {
+			targetSet[bID] = true
+		}
+	}
+	if len(targetSet) == 0 {
+		return out
+	}
+	targetIDs := make([]string, 0, len(targetSet))
+	for id := range targetSet {
+		targetIDs = append(targetIDs, id)
+	}
+
+	// One query: blockerID -> {title, status}.
+	meta, err := ctx.DB.GetIssueTitlesAndStatuses(targetIDs)
+	if err != nil {
+		return out
+	}
+
+	for cardID, blockerIDs := range blockersByCard {
+		refs := make([]BlockerRefDTO, 0, len(blockerIDs))
+		for _, bID := range blockerIDs {
+			info, ok := meta[bID]
+			if !ok {
+				continue // blocker missing/deleted — skip
+			}
+			if info.Status == models.StatusClosed {
+				continue // resolved blocker — excluded
+			}
+			refs = append(refs, BlockerRefDTO{
+				DepID:        db.DependencyID(cardID, bID, "depends_on"),
+				IssueID:      bID,
+				Title:        info.Title,
+				Status:       string(info.Status),
+				RelationType: "depends_on",
+			})
+		}
+		if len(refs) > 0 {
+			out[cardID] = &DependencySummaryDTO{Blockers: refs}
+		}
+	}
+
+	return out
+}
 
 // parseStatusParams converts repeated query params like ?status=open&status=closed
 // into a slice of models.Status values.
