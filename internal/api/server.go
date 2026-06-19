@@ -301,7 +301,7 @@ func (s *Server) routes() http.Handler {
 	adminMux.HandleFunc("GET /v1/admin/projects/{id}/snapshot/query", s.requireAdmin(AdminScopeReadSnapshots, s.handleAdminSnapshotQuery))
 	mux.Handle("/v1/admin/", s.CORSMiddleware(adminMux))
 
-	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.store))
+	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.config.RateLimitOther, s.store))
 }
 
 // handleHealth returns a health check response, pinging the server DB.

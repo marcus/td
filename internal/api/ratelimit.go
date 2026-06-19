@@ -90,8 +90,14 @@ const (
 
 // authRateLimitMiddleware rate-limits auth endpoints by IP address.
 // Applied globally; only acts on /auth/ and /v1/auth/ paths.
+//
+// Device-login POLL endpoints are a special case: a client polls them every
+// few seconds (advertised interval) for the whole approval window, which would
+// blow past the strict auth-attempt limit. They get a separate, higher limit
+// (pollLimit) under their own counter so polling neither 429s the login nor
+// starves the strict limit that protects the start/exchange/approve endpoints.
 // When a rate limit is exceeded, the event is logged to the store.
-func authRateLimitMiddleware(rl *RateLimiter, limit int, store *serverdb.ServerDB) func(http.Handler) http.Handler {
+func authRateLimitMiddleware(rl *RateLimiter, limit, pollLimit int, store *serverdb.ServerDB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -101,7 +107,12 @@ func authRateLimitMiddleware(rl *RateLimiter, limit int, store *serverdb.ServerD
 					host = r.RemoteAddr
 				}
 				key := "ip:" + host
-				if !rl.Allow(key, limit) {
+				effLimit := limit
+				if path == "/v1/auth/device/poll" || path == "/v1/auth/login/poll" {
+					key = "ip:authpoll:" + host
+					effLimit = pollLimit
+				}
+				if !rl.Allow(key, effLimit) {
 					if err := store.InsertRateLimitEvent("", host, "auth"); err != nil {
 						slog.Error("log rate limit event", "err", err)
 					}

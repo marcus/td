@@ -113,7 +113,7 @@ func TestAuthRateLimitMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl, rateLimitAuth, store)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth, rateLimitAuth*20, store)(inner)
 
 	// Auth endpoint should be rate limited
 	for i := 0; i < rateLimitAuth; i++ {
@@ -153,7 +153,7 @@ func TestAuthRateLimitDifferentIPs(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := authRateLimitMiddleware(rl, rateLimitAuth, store)(inner)
+	handler := authRateLimitMiddleware(rl, rateLimitAuth, rateLimitAuth*20, store)(inner)
 
 	// Exhaust IP 1
 	for i := 0; i < rateLimitAuth; i++ {
@@ -269,5 +269,34 @@ func TestClientIPSpoofedXFF(t *testing.T) {
 	ip := clientIP(req, []string{"10.0.0.99"})
 	if ip != "evil.attacker" {
 		t.Errorf("expected RemoteAddr evil.attacker, got %s", ip)
+	}
+}
+
+func TestAuthRateLimitPollCarveOut(t *testing.T) {
+	rl := &RateLimiter{buckets: make(map[string]*bucket)}
+	store := testStore(t)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := authRateLimitMiddleware(rl, rateLimitAuth, rateLimitAuth*20, store)(inner)
+
+	// device/poll is allowed well past the strict auth-attempt limit — a real CLI
+	// login polls every few seconds for the whole approval window.
+	for i := 0; i < rateLimitAuth*3; i++ {
+		req := httptest.NewRequest("POST", "/v1/auth/device/poll", nil)
+		req.RemoteAddr = "9.9.9.9:1111"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("poll %d: expected 200 (higher poll limit), got %d", i+1, w.Code)
+		}
+	}
+
+	// Heavy polling must NOT starve the strict limit (separate counter): a first
+	// web/start from the same IP is still allowed.
+	req := httptest.NewRequest("POST", "/v1/auth/web/start", nil)
+	req.RemoteAddr = "9.9.9.9:1111"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("web/start after poll burst: expected 200 (separate counter), got %d", w.Code)
 	}
 }
