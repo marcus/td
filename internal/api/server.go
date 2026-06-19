@@ -120,6 +120,13 @@ func (s *Server) Start() error {
 				} else if n > 0 {
 					slog.Info("cleaned up expired auth requests", "count", n)
 				}
+
+				nc, err := s.store.CleanupExpiredChallenges()
+				if err != nil {
+					slog.Error("cleanup expired challenges", "err", err)
+				} else if nc > 0 {
+					slog.Info("cleaned up expired challenges", "count", nc)
+				}
 			}
 		}
 	}()
