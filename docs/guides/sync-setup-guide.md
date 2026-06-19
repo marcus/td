@@ -72,7 +72,7 @@ Skip this step if running locally — the default is `http://localhost:8080`.
 td auth login
 ```
 
-Enter your email. A verification URL and 6-character code are displayed. Open the URL in a browser, enter the code, and the CLI saves your credentials.
+Enter your email. The server emails you a one-time approval link — click it to approve the login from this device. No code is shown in the terminal; the login completes only after you click the emailed link. The CLI then saves your credentials to `~/.config/td/auth.json`.
 
 Check auth status anytime:
 ```bash

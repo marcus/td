@@ -126,14 +126,24 @@ All auto-sync operations are silent (`slog.Debug` only) and use a 5s HTTP timeou
 td auth login
 ```
 
-This starts the device auth flow:
+This starts the email-approval device flow (PKCE):
 
 1. You enter your email
-2. The CLI requests a device code from the server
-3. A verification URL and 6-character code are displayed
-4. Open the URL in a browser and enter the code
-5. The CLI polls until verification completes
-6. An API key is saved to `~/.config/td/auth.json` (file permissions: 0600)
+2. The CLI generates a local PKCE `code_verifier` and sends only its S256
+   `code_challenge` to the server (the verifier never leaves your machine until
+   the final poll)
+3. The server emails you a one-time approval link — nothing to copy, and no
+   code is shown in the terminal
+4. You open your email and click the link to approve the login from this device
+5. The CLI polls until you approve, then verifies the PKCE challenge and
+   completes
+6. An API key (valid ~365 days) is saved to `~/.config/td/auth.json` (file
+   permissions: 0600)
+
+The login cannot be completed without clicking the emailed link, and a
+different process that observed the request but lacks your local verifier cannot
+complete it either. If you do not approve within ~15 minutes the request
+expires; just run `td auth login` again.
 
 If the server has `SYNC_ALLOW_SIGNUP=true`, new users are created automatically on first login.
 
@@ -581,7 +591,7 @@ A unique device identifier is generated automatically on first use and stored in
 ## Command Reference
 
 ```
-td auth login              # Start device auth flow
+td auth login              # Start email-approval device flow (click emailed link)
 td auth logout             # Clear local credentials
 td auth status             # Show current auth state
 
