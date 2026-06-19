@@ -64,6 +64,7 @@ func TestAllScopeConstantsInValidMap(t *testing.T) {
 		AdminScopeReadEvents,
 		AdminScopeReadSnapshots,
 		AdminScopeExport,
+		AdminScopeWriteUsers,
 	}
 	for _, s := range scopes {
 		if !ValidAdminScopes[s] {

@@ -197,6 +197,56 @@ func (s *Server) handleAdminIssueImpersonationToken(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleAdminRevokeUserKey deletes an API key by ID for a given user.
+// The caller must have admin:write:users scope.
+// Returns 204 on success, 404 if the user or key does not exist.
+func (s *Server) handleAdminRevokeUserKey(w http.ResponseWriter, r *http.Request) {
+	caller := getUserFromContext(r.Context())
+
+	userID := r.PathValue("id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing user id")
+		return
+	}
+	keyID := r.PathValue("keyID")
+	if keyID == "" {
+		writeError(w, http.StatusBadRequest, ErrCodeBadRequest, "missing key id")
+		return
+	}
+
+	// Verify user exists.
+	user, err := s.store.GetUserByID(userID)
+	if err != nil {
+		slog.Error("admin revoke user key: get user", "err", err)
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to get user")
+		return
+	}
+	if user == nil {
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "user not found")
+		return
+	}
+
+	if err := s.store.AdminRevokeAPIKey(keyID); err != nil {
+		if err == serverdb.ErrNotFound {
+			writeError(w, http.StatusNotFound, ErrCodeNotFound, "key not found")
+			return
+		}
+		slog.Error("admin revoke user key", "err", err)
+		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to revoke api key")
+		return
+	}
+
+	meta, _ := json.Marshal(map[string]string{
+		"admin_user_id": caller.UserID,
+		"key_id":        keyID,
+	})
+	if err := s.store.InsertAuthEvent("", user.Email, serverdb.AuthEventKeyRevoked, string(meta)); err != nil {
+		slog.Warn("log key revoked", "err", err)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleAdminAuthEvents returns paginated auth events with optional filters.
 func (s *Server) handleAdminAuthEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

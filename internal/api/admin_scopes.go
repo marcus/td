@@ -12,6 +12,7 @@ const (
 	AdminScopeReadEvents    = "admin:read:events"
 	AdminScopeReadSnapshots = "admin:read:snapshots"
 	AdminScopeExport        = "admin:export"
+	AdminScopeWriteUsers    = "admin:write:users"
 )
 
 // ImpersonationScopeRead is the scope carried by admin "view-as" ephemeral
@@ -26,6 +27,7 @@ var ValidAdminScopes = map[string]bool{
 	AdminScopeReadEvents:    true,
 	AdminScopeReadSnapshots: true,
 	AdminScopeExport:        true,
+	AdminScopeWriteUsers:    true,
 }
 
 // ValidateScopes checks that every comma-separated scope is either "sync",

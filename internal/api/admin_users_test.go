@@ -294,6 +294,109 @@ func TestAdminUserEndpoints_RequireAdmin(t *testing.T) {
 	}
 }
 
+func TestAdminRevokeUserKey(t *testing.T) {
+	srv, store := newTestServer(t)
+	adminID, adminToken := createTestAdminKey(t, store, "admin@test.com", "admin:write:users,sync")
+
+	// Create a target user with a key.
+	user, _ := store.CreateUser("target@test.com")
+	_, ak, _ := store.GenerateAPIKey(user.ID, "my-key", "sync", nil)
+
+	// Successful revoke returns 204.
+	w := doRequest(srv, "DELETE", fmt.Sprintf("/v1/admin/users/%s/keys/%s", user.ID, ak.ID), adminToken, nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Auth event with key_revoked type should be recorded.
+	events, err := store.QueryAuthEvents("key_revoked", "", "", "", 10, "")
+	if err != nil {
+		t.Fatalf("query auth events: %v", err)
+	}
+	if len(events.Data) != 1 {
+		t.Fatalf("expected 1 key_revoked event, got %d", len(events.Data))
+	}
+	ev := events.Data[0]
+	if ev.EventType != "key_revoked" {
+		t.Fatalf("expected event_type key_revoked, got %q", ev.EventType)
+	}
+	if ev.Email != user.Email {
+		t.Fatalf("expected email %s, got %s", user.Email, ev.Email)
+	}
+	// Verify metadata contains admin_user_id and key_id but no plaintext key material.
+	var meta map[string]string
+	if err := json.Unmarshal([]byte(ev.Metadata), &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if meta["admin_user_id"] != adminID {
+		t.Fatalf("expected admin_user_id %s, got %s", adminID, meta["admin_user_id"])
+	}
+	if meta["key_id"] != ak.ID {
+		t.Fatalf("expected key_id %s, got %s", ak.ID, meta["key_id"])
+	}
+	if _, ok := meta["key"]; ok {
+		t.Fatal("metadata must not contain plaintext key material")
+	}
+	if _, ok := meta["key_hash"]; ok {
+		t.Fatal("metadata must not contain key_hash")
+	}
+
+	// Revoking the same key again returns 404 (key not found).
+	w = doRequest(srv, "DELETE", fmt.Sprintf("/v1/admin/users/%s/keys/%s", user.ID, ak.ID), adminToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for already-revoked key, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminRevokeUserKey_MissingKey(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, adminToken := createTestAdminKey(t, store, "admin@test.com", "admin:write:users,sync")
+	user, _ := store.CreateUser("target@test.com")
+
+	// Non-existent key returns 404.
+	w := doRequest(srv, "DELETE", fmt.Sprintf("/v1/admin/users/%s/keys/ak_doesnotexist", user.ID), adminToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing key, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminRevokeUserKey_MissingUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, adminToken := createTestAdminKey(t, store, "admin@test.com", "admin:write:users,sync")
+
+	// Non-existent user returns 404.
+	w := doRequest(srv, "DELETE", "/v1/admin/users/u_nonexistent/keys/ak_anything", adminToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing user, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminRevokeUserKey_NonAdmin(t *testing.T) {
+	srv, store := newTestServer(t)
+	// First user becomes admin; create a second non-admin user.
+	_, _ = store.CreateUser("first@test.com")
+	user, _ := store.CreateUser("target@test.com")
+	_, _, _ = store.GenerateAPIKey(user.ID, "some-key", "sync", nil)
+	_, nonAdminToken := createTestUser(t, store, "nonadmin@test.com")
+
+	w := doRequest(srv, "DELETE", fmt.Sprintf("/v1/admin/users/%s/keys/ak_anything", user.ID), nonAdminToken, nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminRevokeUserKey_WrongScope(t *testing.T) {
+	srv, store := newTestServer(t)
+	// Admin with read-only scope (admin:read:server) must not access write endpoint.
+	_, readOnlyToken := createTestAdminKey(t, store, "admin@test.com", "admin:read:server,sync")
+	user, _ := store.CreateUser("target@test.com")
+
+	w := doRequest(srv, "DELETE", fmt.Sprintf("/v1/admin/users/%s/keys/ak_anything", user.ID), readOnlyToken, nil)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for admin with wrong scope, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAdminListUsers_ProjectCount(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:server,sync")
