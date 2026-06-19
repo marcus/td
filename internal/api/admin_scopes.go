@@ -62,3 +62,17 @@ func HasScope(scopes string, required string) bool {
 	}
 	return false
 }
+
+// HasAnyScope reports whether the comma-separated scopes string contains ANY
+// of the required scopes. Returns false if no required scopes are provided.
+func HasAnyScope(scopes string, required ...string) bool {
+	for _, s := range strings.Split(scopes, ",") {
+		s = strings.TrimSpace(s)
+		for _, r := range required {
+			if s == r {
+				return true
+			}
+		}
+	}
+	return false
+}
