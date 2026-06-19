@@ -28,6 +28,15 @@ type Config struct {
 
 	AuthEventRetention      time.Duration // retention period for auth events (default: 90 days)
 	RateLimitEventRetention time.Duration // retention period for rate limit events (default: 30 days)
+
+	EmailProvider           string // "cloudflare", "memory", "log"; default "log" for dev
+	CloudflareAccountID     string
+	CloudflareEmailAPIToken string
+	CloudflareEmailFrom     string // e.g. login@opentangle.com
+	CloudflareEmailFromName string // e.g. td-watch
+	CloudflareEmailReplyTo  string // e.g. haplab@vorwaller.net
+	AuthWebCallbackURL      string // e.g. https://watch.haplab.com/home/login/complete
+	AuthEmailBaseURL        string // e.g. https://sync.haplab.com (for link generation)
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -129,7 +138,59 @@ func LoadConfig() Config {
 		}
 	}
 
+	cfg.EmailProvider = "log"
+	if v := os.Getenv("SYNC_EMAIL_PROVIDER"); v != "" {
+		cfg.EmailProvider = v
+	}
+	if v := os.Getenv("CLOUDFLARE_ACCOUNT_ID"); v != "" {
+		cfg.CloudflareAccountID = v
+	}
+	if v := os.Getenv("CLOUDFLARE_EMAIL_API_TOKEN"); v != "" {
+		cfg.CloudflareEmailAPIToken = v
+	}
+	if v := os.Getenv("CLOUDFLARE_EMAIL_FROM"); v != "" {
+		cfg.CloudflareEmailFrom = v
+	}
+	if v := os.Getenv("CLOUDFLARE_EMAIL_FROM_NAME"); v != "" {
+		cfg.CloudflareEmailFromName = v
+	}
+	if v := os.Getenv("CLOUDFLARE_EMAIL_REPLY_TO"); v != "" {
+		cfg.CloudflareEmailReplyTo = v
+	}
+	if v := os.Getenv("SYNC_AUTH_WEB_CALLBACK_URL"); v != "" {
+		cfg.AuthWebCallbackURL = v
+	}
+	if v := os.Getenv("SYNC_EMAIL_BASE_URL"); v != "" {
+		cfg.AuthEmailBaseURL = v
+	}
+
 	return cfg
+}
+
+// ValidateEmailConfig checks the email provider configuration and returns a list
+// of warning strings for any missing or unrecognized settings.
+func ValidateEmailConfig(cfg Config) []string {
+	var warnings []string
+	switch cfg.EmailProvider {
+	case "log", "memory":
+		// no warnings for development providers
+	case "cloudflare":
+		if cfg.CloudflareAccountID == "" {
+			warnings = append(warnings, "CLOUDFLARE_ACCOUNT_ID is not set")
+		}
+		if cfg.CloudflareEmailAPIToken == "" {
+			warnings = append(warnings, "CLOUDFLARE_EMAIL_API_TOKEN is not set")
+		}
+		if cfg.CloudflareEmailFrom == "" {
+			warnings = append(warnings, "CLOUDFLARE_EMAIL_FROM is not set")
+		}
+		if cfg.AuthEmailBaseURL == "" {
+			warnings = append(warnings, "SYNC_EMAIL_BASE_URL is not set (required for cloudflare email link generation)")
+		}
+	default:
+		warnings = append(warnings, "unrecognized SYNC_EMAIL_PROVIDER: "+cfg.EmailProvider)
+	}
+	return warnings
 }
 
 // parseDaysDuration parses a string like "90d", "30d" into a time.Duration.

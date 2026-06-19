@@ -42,6 +42,10 @@ func main() {
 	}
 	slog.SetDefault(slog.New(handler))
 
+	for _, w := range api.ValidateEmailConfig(cfg) {
+		slog.Warn("email config", "warning", w)
+	}
+
 	store, err := serverdb.Open(cfg.ServerDBPath)
 	if err != nil {
 		slog.Error("open server db", "err", err)
