@@ -37,6 +37,8 @@ type Config struct {
 	CloudflareEmailReplyTo  string // e.g. haplab@vorwaller.net
 	AuthWebCallbackURL      string // e.g. https://watch.haplab.com/home/login/complete
 	AuthEmailBaseURL        string // e.g. https://sync.haplab.com (for link generation)
+
+	LegacyDeviceAuth bool // When true, enables /v1/auth/login/start, /v1/auth/login/poll, GET/POST /auth/verify
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -162,6 +164,10 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("SYNC_EMAIL_BASE_URL"); v != "" {
 		cfg.AuthEmailBaseURL = v
+	}
+
+	if v := os.Getenv("SYNC_LEGACY_DEVICE_AUTH"); v == "true" || v == "1" {
+		cfg.LegacyDeviceAuth = true
 	}
 
 	return cfg

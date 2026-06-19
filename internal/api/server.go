@@ -205,10 +205,25 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /metricz", s.handleMetrics)
 
 	// Auth (public)
-	mux.HandleFunc("POST /v1/auth/login/start", s.handleLoginStart)
-	mux.HandleFunc("POST /v1/auth/login/poll", s.handleLoginPoll)
-	mux.HandleFunc("GET /auth/verify", s.handleVerifyPage)
-	mux.HandleFunc("POST /auth/verify", s.handleVerifySubmit)
+	if s.config.LegacyDeviceAuth {
+		mux.HandleFunc("POST /v1/auth/login/start", s.handleLoginStart)
+		mux.HandleFunc("POST /v1/auth/login/poll", s.handleLoginPoll)
+		mux.HandleFunc("GET /auth/verify", s.handleVerifyPage)
+		mux.HandleFunc("POST /auth/verify", s.handleVerifySubmit)
+	} else {
+		mux.HandleFunc("POST /v1/auth/login/start", func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusGone, "endpoint_disabled", "this endpoint has been disabled; use /v1/auth/web/start or /v1/auth/device/start")
+		})
+		mux.HandleFunc("POST /v1/auth/login/poll", func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusGone, "endpoint_disabled", "this endpoint has been disabled; use /v1/auth/device/poll")
+		})
+		mux.HandleFunc("GET /auth/verify", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		mux.HandleFunc("POST /auth/verify", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
 	mux.HandleFunc("POST /v1/auth/web/start", s.handleWebStart)
 	mux.HandleFunc("POST /v1/auth/web/exchange", s.handleWebExchange)
 	mux.HandleFunc("POST /v1/auth/device/start", s.handleDeviceStart)

@@ -41,6 +41,7 @@ func extractTokenFromEmail(t *testing.T, text string) string {
 
 func TestDeviceAuthFullFlow(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 	srv.config.AllowSignup = true
 	srv.config.BaseURL = "http://localhost:8080"
 
@@ -128,6 +129,7 @@ func TestDeviceAuthFullFlow(t *testing.T) {
 
 func TestDeviceAuthExpiredCode(t *testing.T) {
 	srv, store := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 
 	// Create auth request and expire it
 	ar, err := store.CreateAuthRequest("expired@example.com")
@@ -150,6 +152,7 @@ func TestDeviceAuthExpiredCode(t *testing.T) {
 
 func TestDeviceAuthInvalidUserCode(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 
 	// Submit invalid user code via form
 	formData := url.Values{"user_code": {"ZZZZZZ"}}
@@ -168,6 +171,7 @@ func TestDeviceAuthInvalidUserCode(t *testing.T) {
 
 func TestLoginStartInvalidEmail(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 
 	w := doRequest(srv, "POST", "/v1/auth/login/start", "", map[string]string{
 		"email": "notanemail",
@@ -179,6 +183,7 @@ func TestLoginStartInvalidEmail(t *testing.T) {
 
 func TestLoginStartSignupDisabled(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 	srv.config.AllowSignup = false
 
 	w := doRequest(srv, "POST", "/v1/auth/login/start", "", map[string]string{
@@ -191,6 +196,7 @@ func TestLoginStartSignupDisabled(t *testing.T) {
 
 func TestLoginPollNotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 
 	w := doRequest(srv, "POST", "/v1/auth/login/poll", "", map[string]string{
 		"device_code": "nonexistent",
@@ -202,6 +208,7 @@ func TestLoginPollNotFound(t *testing.T) {
 
 func TestVerifyPageGET(t *testing.T) {
 	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
 
 	req := httptest.NewRequest("GET", "/auth/verify", nil)
 	rec := httptest.NewRecorder()
@@ -1105,4 +1112,96 @@ func TestDevicePoll_UnknownDeviceCodePending(t *testing.T) {
 	if resp.Status != "pending" {
 		t.Fatalf("unknown device_code: expected pending, got %q", resp.Status)
 	}
+}
+
+// --- Legacy endpoint gating tests (SYNC_LEGACY_DEVICE_AUTH) ---
+
+// TestLegacyEndpoints_DisabledByDefault verifies that without LegacyDeviceAuth=true,
+// the legacy /v1/auth/login/* endpoints return 410 and /auth/verify returns 404.
+func TestLegacyEndpoints_DisabledByDefault(t *testing.T) {
+	srv, _ := newTestServer(t)
+	// LegacyDeviceAuth defaults to false — do not set it.
+
+	t.Run("login/start returns 410", func(t *testing.T) {
+		w := doRequest(srv, "POST", "/v1/auth/login/start", "", map[string]string{
+			"email": "user@example.com",
+		})
+		if w.Code != http.StatusGone {
+			t.Fatalf("expected 410, got %d: %s", w.Code, w.Body.String())
+		}
+		var errResp ErrorResponse
+		_ = json.NewDecoder(w.Body).Decode(&errResp)
+		if errResp.Error.Code != "endpoint_disabled" {
+			t.Errorf("expected error code %q, got %q", "endpoint_disabled", errResp.Error.Code)
+		}
+	})
+
+	t.Run("login/poll returns 410", func(t *testing.T) {
+		w := doRequest(srv, "POST", "/v1/auth/login/poll", "", map[string]string{
+			"device_code": "whatever",
+		})
+		if w.Code != http.StatusGone {
+			t.Fatalf("expected 410, got %d: %s", w.Code, w.Body.String())
+		}
+		var errResp ErrorResponse
+		_ = json.NewDecoder(w.Body).Decode(&errResp)
+		if errResp.Error.Code != "endpoint_disabled" {
+			t.Errorf("expected error code %q, got %q", "endpoint_disabled", errResp.Error.Code)
+		}
+	})
+
+	t.Run("GET /auth/verify returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/auth/verify", nil)
+		rec := httptest.NewRecorder()
+		srv.routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("POST /auth/verify returns 404", func(t *testing.T) {
+		formData := url.Values{"user_code": {"AAAAAA"}}
+		req := httptest.NewRequest("POST", "/auth/verify", strings.NewReader(formData.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		srv.routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+// TestLegacyEndpoints_EnabledWhenFlagSet verifies that with LegacyDeviceAuth=true,
+// the legacy endpoints function normally.
+func TestLegacyEndpoints_EnabledWhenFlagSet(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.config.LegacyDeviceAuth = true
+	srv.config.AllowSignup = true
+	srv.config.BaseURL = "http://localhost:8080"
+
+	t.Run("login/start returns 200 for valid email", func(t *testing.T) {
+		w := doRequest(srv, "POST", "/v1/auth/login/start", "", map[string]string{
+			"email": "user@example.com",
+		})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var startResp loginStartResponse
+		_ = json.NewDecoder(w.Body).Decode(&startResp)
+		if startResp.DeviceCode == "" {
+			t.Error("expected non-empty device_code")
+		}
+	})
+
+	t.Run("GET /auth/verify returns 200 HTML", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/auth/verify", nil)
+		rec := httptest.NewRecorder()
+		srv.routes().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "Authorize Device") {
+			t.Fatal("expected 'Authorize Device' in HTML response")
+		}
+	})
 }

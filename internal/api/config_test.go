@@ -127,3 +127,35 @@ func TestLoadConfig_EmailProviderFromEnv(t *testing.T) {
 		t.Errorf("expected AuthEmailBaseURL 'https://sync.test.com', got %q", cfg.AuthEmailBaseURL)
 	}
 }
+
+func TestLoadConfig_LegacyDeviceAuth_TrueString(t *testing.T) {
+	t.Setenv("SYNC_LEGACY_DEVICE_AUTH", "true")
+	cfg := LoadConfig()
+	if !cfg.LegacyDeviceAuth {
+		t.Error("expected LegacyDeviceAuth=true when SYNC_LEGACY_DEVICE_AUTH=true")
+	}
+}
+
+func TestLoadConfig_LegacyDeviceAuth_OneString(t *testing.T) {
+	t.Setenv("SYNC_LEGACY_DEVICE_AUTH", "1")
+	cfg := LoadConfig()
+	if !cfg.LegacyDeviceAuth {
+		t.Error("expected LegacyDeviceAuth=true when SYNC_LEGACY_DEVICE_AUTH=1")
+	}
+}
+
+func TestLoadConfig_LegacyDeviceAuth_UnsetDefaultsFalse(t *testing.T) {
+	t.Setenv("SYNC_LEGACY_DEVICE_AUTH", "")
+	cfg := LoadConfig()
+	if cfg.LegacyDeviceAuth {
+		t.Error("expected LegacyDeviceAuth=false when SYNC_LEGACY_DEVICE_AUTH is unset")
+	}
+}
+
+func TestLoadConfig_LegacyDeviceAuth_FalseString(t *testing.T) {
+	t.Setenv("SYNC_LEGACY_DEVICE_AUTH", "false")
+	cfg := LoadConfig()
+	if cfg.LegacyDeviceAuth {
+		t.Error("expected LegacyDeviceAuth=false when SYNC_LEGACY_DEVICE_AUTH=false")
+	}
+}
