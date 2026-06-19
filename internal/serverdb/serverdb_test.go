@@ -726,8 +726,9 @@ func TestSchemaVersion(t *testing.T) {
 
 func TestMigrationV3_SchemaVersion(t *testing.T) {
 	db := newTestDB(t)
-	if v := db.getSchemaVersion(); v != 3 {
-		t.Fatalf("expected schema version 3, got %d", v)
+	// A fresh DB runs all migrations; check that we are at least v3.
+	if v := db.getSchemaVersion(); v < 3 {
+		t.Fatalf("expected schema version >= 3, got %d", v)
 	}
 }
 
