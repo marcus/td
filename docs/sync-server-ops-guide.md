@@ -107,6 +107,56 @@ All config is via environment variables.
 | `SYNC_LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `SYNC_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
+## Email Provider Configuration
+
+The server sends transactional emails for authentication (magic-link login). The provider is controlled by `SYNC_EMAIL_PROVIDER`.
+
+### Supported providers
+
+| Provider | When to use |
+|---|---|
+| `cloudflare` | Production and staging — sends real email via Cloudflare Email Workers |
+| `memory` | Local development — stores sent emails in memory (logged to stdout, never delivered) |
+| `log` | Default when no provider is set — logs email content at `INFO` level, never delivers |
+
+### Required environment variables (Cloudflare provider)
+
+| Variable | Description |
+|---|---|
+| `SYNC_EMAIL_PROVIDER` | Set to `cloudflare` |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (find in the Cloudflare dashboard) |
+| `CLOUDFLARE_EMAIL_API_TOKEN` | API token with Email Workers send permission |
+| `CLOUDFLARE_EMAIL_FROM` | Sender address — `login@opentangle.com` in production |
+| `CLOUDFLARE_EMAIL_FROM_NAME` | Display name — `td-watch` in production |
+| `CLOUDFLARE_EMAIL_REPLY_TO` | Reply-To address — `haplab@vorwaller.net` in production |
+| `SYNC_EMAIL_BASE_URL` | Base URL of the sync server, used to generate verification links in emails |
+| `SYNC_AUTH_WEB_CALLBACK_URL` | URL of the td-watch login completion page (e.g. `https://watch.haplab.com/home/login/complete`) |
+
+### Production sender identity
+
+Outgoing auth emails use:
+
+- **From:** `td-watch <login@opentangle.com>`
+- **Reply-To:** `haplab@vorwaller.net`
+
+### Startup validation
+
+On startup, `ValidateEmailConfig` (in `internal/api/config.go`) checks the active provider. If any required variable is missing, the server logs a warning per missing field and continues — it does **not** refuse to start. Watch for lines like:
+
+```
+level=WARN msg="email config" warning="CLOUDFLARE_ACCOUNT_ID is not set"
+```
+
+This lets you catch misconfiguration before auth emails are needed rather than at first login attempt.
+
+### Dev setup
+
+Use `SYNC_EMAIL_PROVIDER=memory`. The server captures sent emails in memory and prints them at startup/send time. No Cloudflare account or credentials are required.
+
+```bash
+SYNC_EMAIL_PROVIDER=memory ./td-sync
+```
+
 ## Docker Deployment
 
 ### Quick start
