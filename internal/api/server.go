@@ -251,8 +251,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /internal/dev/last-email", s.handleDevLastEmail)
 
 	// Projects
-	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther)))
-	mux.HandleFunc("GET /v1/projects", s.requireAuth(s.withRateLimit(s.handleListProjects, s.config.RateLimitOther)))
+	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.requireProjectScope(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther))))
+	mux.HandleFunc("GET /v1/projects", s.requireAuth(s.requireProjectScope(s.withRateLimit(s.handleListProjects, s.config.RateLimitOther))))
 	mux.HandleFunc("GET /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleGetProject, s.config.RateLimitOther)))
 	mux.HandleFunc("PATCH /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleUpdateProject, s.config.RateLimitOther)))
 	mux.HandleFunc("DELETE /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleDeleteProject, s.config.RateLimitOther)))

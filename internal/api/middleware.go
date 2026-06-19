@@ -240,6 +240,11 @@ func (s *Server) requireProjectAuth(requiredRole string, handler http.HandlerFun
 		}
 
 		user := getUserFromContext(r.Context())
+		if !projectScopeAllowed(user) {
+			writeError(w, http.StatusForbidden, ErrCodeInsufficientScope, "key does not have the sync or impersonation:read scope required for project routes")
+			return
+		}
+
 		actor := getActingUserFromContext(r.Context())
 		if actor == nil || actor.UserID == "" {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "missing acting user")

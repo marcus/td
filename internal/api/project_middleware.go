@@ -16,6 +16,29 @@ import (
 	"strings"
 )
 
+// ErrCodeInsufficientScope is the error code returned when a caller has valid
+// credentials but lacks the required scope to access a project route.
+const ErrCodeInsufficientScope = "insufficient_scope"
+
+// projectScopeAllowed returns true if the authenticated user is permitted to
+// access project routes. The rule is: allow if any of:
+//
+//	(a) caller has the "sync" scope (normal CLI/td-watch sync key)
+//	(b) caller has the ImpersonationScopeRead scope (ephemeral view-as key;
+//	    already constrained to GET /v1/projects/* in requireAuth)
+//	(c) caller.IsAdmin (admin key + X-Td-Watch-Impersonate header path)
+//
+// Returns false and writes a 403 response if none of the above apply.
+func projectScopeAllowed(u *AuthUser) bool {
+	if u == nil {
+		return false
+	}
+	if u.IsAdmin {
+		return true
+	}
+	return HasAnyScope(strings.Join(u.Scopes, ","), "sync", ImpersonationScopeRead)
+}
+
 // ActingUser is the effective user identity for td-watch-originated
 // /v1/projects* requests. When admin view-as is active, this is the target
 // user rather than the authenticated admin.
@@ -105,6 +128,22 @@ const HeaderTdWatchImpersonate = "X-Td-Watch-Impersonate"
 // per-browser device registration.
 const TdWatchServerDeviceID = "td_watch_server"
 
+// requireProjectScope wraps an http.HandlerFunc to enforce that the caller
+// passes projectScopeAllowed before the inner handler runs. It is intended for
+// the flat project routes (GET /v1/projects, POST /v1/projects) that use
+// requireAuth directly and therefore do not go through requireProjectMembership.
+// It must be called after requireAuth has injected the AuthUser into the context.
+func (s *Server) requireProjectScope(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := getUserFromContext(r.Context())
+		if !projectScopeAllowed(user) {
+			writeError(w, http.StatusForbidden, ErrCodeInsufficientScope, "key does not have the sync or impersonation:read scope required for project routes")
+			return
+		}
+		handler(w, r)
+	}
+}
+
 // requireProjectMembership returns middleware that enforces the authenticated
 // caller has at least the requested role on the project identified by the
 // "id" path value. It composes with requireAuth so the inner handler is only
@@ -130,6 +169,11 @@ func (s *Server) requireProjectMembership(role string) func(http.Handler) http.H
 			if user == nil {
 				// Defense-in-depth: requireAuthHandler should always populate this.
 				writeError(w, http.StatusUnauthorized, "unauthorized", "missing auth user")
+				return
+			}
+
+			if !projectScopeAllowed(user) {
+				writeError(w, http.StatusForbidden, ErrCodeInsufficientScope, "key does not have the sync or impersonation:read scope required for project routes")
 				return
 			}
 
