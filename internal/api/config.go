@@ -39,6 +39,13 @@ type Config struct {
 	AuthEmailBaseURL        string // e.g. https://sync.haplab.com (for link generation)
 
 	LegacyDeviceAuth bool // When true, enables /v1/auth/login/start, /v1/auth/login/poll, GET/POST /auth/verify
+
+	// DevEmailInspect, when true, allows GET /internal/dev/last-email to return
+	// the most recently sent magic-link email in plaintext. This is a DEV/TEST
+	// ONLY affordance: the endpoint additionally requires the in-memory email
+	// provider (*email.MemorySender), which production never uses. Both gates
+	// must hold, so this flag is inert in prod even if accidentally set.
+	DevEmailInspect bool
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -168,6 +175,10 @@ func LoadConfig() Config {
 
 	if v := os.Getenv("SYNC_LEGACY_DEVICE_AUTH"); v == "true" || v == "1" {
 		cfg.LegacyDeviceAuth = true
+	}
+
+	if v := os.Getenv("SYNC_DEV_EMAIL_INSPECT"); v == "true" || v == "1" {
+		cfg.DevEmailInspect = true
 	}
 
 	return cfg

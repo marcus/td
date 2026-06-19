@@ -237,6 +237,13 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /auth/device/approve", s.handleDeviceApprove)
 	mux.HandleFunc("POST /v1/auth/device/poll", s.handleDevicePoll)
 
+	// Dev/test-only: read the last sent magic-link email. The handler itself is
+	// hard-gated (DevEmailInspect flag AND *email.MemorySender provider) and
+	// returns 404 otherwise, so registering it unconditionally is safe — prod
+	// uses the cloudflare provider and can never satisfy the gate. See
+	// handleDevLastEmail for the security rationale.
+	mux.HandleFunc("GET /internal/dev/last-email", s.handleDevLastEmail)
+
 	// Projects
 	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther)))
 	mux.HandleFunc("GET /v1/projects", s.requireAuth(s.withRateLimit(s.handleListProjects, s.config.RateLimitOther)))

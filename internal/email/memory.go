@@ -32,3 +32,15 @@ func (s *MemorySender) Sent() []LoginEmail {
 	copy(out, s.sent)
 	return out
 }
+
+// Last returns the most recently sent email and true, or a zero LoginEmail and
+// false when nothing has been sent yet. It returns a copy, so the caller cannot
+// mutate the buffered message.
+func (s *MemorySender) Last() (LoginEmail, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.sent) == 0 {
+		return LoginEmail{}, false
+	}
+	return s.sent[len(s.sent)-1], true
+}
