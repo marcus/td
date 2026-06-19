@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	apiKeyPrefix             = "td_live_"
-	impersonationKeyPrefix   = "td_ipk_"
-	keyLength                = 32
+	apiKeyPrefix           = "td_live_"
+	impersonationKeyPrefix = "td_ipk_"
+	keyLength              = 32
 )
 
 var base62Chars = []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
@@ -140,6 +140,20 @@ func (db *ServerDB) RevokeAPIKey(keyID, userID string) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("api key not found or not owned by user")
+	}
+	return nil
+}
+
+// AdminRevokeAPIKey deletes any API key by ID regardless of owner.
+// Returns ErrNotFound if no row was deleted.
+func (db *ServerDB) AdminRevokeAPIKey(keyID string) error {
+	res, err := db.conn.Exec(`DELETE FROM api_keys WHERE id = ?`, keyID)
+	if err != nil {
+		return fmt.Errorf("admin revoke api key: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

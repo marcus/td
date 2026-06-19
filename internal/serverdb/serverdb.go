@@ -4,12 +4,16 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	tddb "github.com/marcus/td/internal/db"
 )
+
+// ErrNotFound is returned by serverdb methods when a requested record does not exist.
+var ErrNotFound = errors.New("not found")
 
 // ServerDB wraps the server database connection
 type ServerDB struct {

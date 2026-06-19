@@ -269,6 +269,52 @@ func TestRevokeAPIKeyWrongUser(t *testing.T) {
 	}
 }
 
+func TestAdminRevokeAPIKey(t *testing.T) {
+	t.Run("successful revoke deletes the row", func(t *testing.T) {
+		db := newTestDB(t)
+		u, _ := db.CreateUser("admin-revoke@test.com")
+		_, ak, _ := db.GenerateAPIKey(u.ID, "to-admin-revoke", "sync", nil)
+
+		if err := db.AdminRevokeAPIKey(ak.ID); err != nil {
+			t.Fatalf("AdminRevokeAPIKey: %v", err)
+		}
+
+		keys, _ := db.ListAPIKeys(u.ID)
+		if len(keys) != 0 {
+			t.Fatalf("expected 0 keys after AdminRevokeAPIKey, got %d", len(keys))
+		}
+	})
+
+	t.Run("non-existent keyID returns non-nil error", func(t *testing.T) {
+		db := newTestDB(t)
+		err := db.AdminRevokeAPIKey("ak_doesnotexist")
+		if err == nil {
+			t.Fatal("expected non-nil error for non-existent key")
+		}
+		if err != ErrNotFound {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+
+	t.Run("revoked key returns nil from VerifyAPIKey", func(t *testing.T) {
+		db := newTestDB(t)
+		u, _ := db.CreateUser("admin-revoke-verify@test.com")
+		plaintext, ak, _ := db.GenerateAPIKey(u.ID, "verify-after-revoke", "sync", nil)
+
+		if err := db.AdminRevokeAPIKey(ak.ID); err != nil {
+			t.Fatalf("AdminRevokeAPIKey: %v", err)
+		}
+
+		verifiedKey, verifiedUser, err := db.VerifyAPIKey(plaintext)
+		if err != nil {
+			t.Fatalf("VerifyAPIKey unexpected error: %v", err)
+		}
+		if verifiedKey != nil || verifiedUser != nil {
+			t.Fatal("expected nil from VerifyAPIKey after AdminRevokeAPIKey")
+		}
+	})
+}
+
 func TestListAPIKeys(t *testing.T) {
 	db := newTestDB(t)
 	u, _ := db.CreateUser("list@test.com")
