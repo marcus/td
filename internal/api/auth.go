@@ -1,8 +1,11 @@
 package api
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -10,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marcus/td/internal/email"
 	"github.com/marcus/td/internal/serverdb"
 )
 
@@ -262,6 +266,143 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 
 	logFor(r.Context()).Info("device verified", "email", ar.Email)
 	_ = verifyTmpl.Execute(w, verifyPageData{Success: true})
+}
+
+// webStartRequest is the JSON body for POST /v1/auth/web/start.
+type webStartRequest struct {
+	Email       string `json:"email"`
+	RedirectURI string `json:"redirect_uri"`
+	State       string `json:"state"`
+}
+
+// webStartResponse is the JSON response for POST /v1/auth/web/start.
+type webStartResponse struct {
+	Status     string `json:"status"`
+	ExpiresIn  int    `json:"expires_in"`
+	RetryAfter int    `json:"retry_after"`
+}
+
+// handleWebStart handles POST /v1/auth/web/start.
+// It always returns the generic 200 response for any syntactically-valid email
+// to avoid user enumeration. Only malformed JSON or invalid email returns 400.
+func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
+	var req webStartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body")
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "valid email is required")
+		return
+	}
+
+	// Step 2: Validate redirect_uri when AuthWebCallbackURL is configured.
+	if s.config.AuthWebCallbackURL != "" && req.RedirectURI != s.config.AuthWebCallbackURL {
+		writeError(w, http.StatusBadRequest, "bad_request", "redirect_uri not allowed")
+		return
+	}
+
+	ip := clientIP(r, s.config.TrustedProxies)
+	ua := r.Header.Get("User-Agent")
+	meta := map[string]string{"ip": ip, "user_agent": ua}
+
+	genericOK := func() {
+		writeJSON(w, http.StatusOK, webStartResponse{
+			Status:     "email_sent_if_allowed",
+			ExpiresIn:  900,
+			RetryAfter: 60,
+		})
+	}
+
+	// Step 3: Check resend rate limit (1 per minute per email).
+	rateLimitKey := "web-start:" + strings.ToLower(req.Email)
+	if !s.rateLimiter.Allow(rateLimitKey, 1) {
+		if err := s.store.InsertRateLimitEvent("", ip, "auth"); err != nil {
+			slog.Warn("log rate limit event for web-start", "err", err)
+		}
+		// Return generic 200 — do not reveal rate limiting.
+		genericOK()
+		return
+	}
+
+	// Step 4: Look up user; unknown email => suppressed path.
+	user, err := s.store.GetUserByEmail(req.Email)
+	if err != nil {
+		logFor(r.Context()).Error("get user by email for web start", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to look up user")
+		return
+	}
+	if user == nil {
+		// Unknown user — suppressed regardless of AllowSignup.
+		s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
+		genericOK()
+		return
+	}
+
+	// Step 6: Compute state_hash = sha256(state) hex.
+	stateSum := sha256.Sum256([]byte(req.State))
+	stateHash := hex.EncodeToString(stateSum[:])
+
+	// Step 7: Create email challenge.
+	redirectURI := req.RedirectURI
+	selector, plaintextSecret, err := s.store.CreateEmailChallenge(
+		req.Email,
+		"web_login",
+		user.ID,
+		serverdb.ChallengeOptions{
+			RedirectURI: &redirectURI,
+			StateHash:   &stateHash,
+			IP:          &ip,
+			UserAgent:   &ua,
+		},
+	)
+	if err != nil {
+		logFor(r.Context()).Error("create email challenge for web start", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create auth challenge")
+		return
+	}
+
+	// Step 8: Build magic link. NEVER log the link or the secret.
+	linkURL := s.config.AuthWebCallbackURL + "?token=" + selector + "." + plaintextSecret
+
+	// Step 9: Build email body.
+	htmlBody := fmt.Sprintf(
+		`<p>Click the link below to sign in to td-watch.</p>`+
+			`<p><a href="%s" style="display:inline-block;padding:12px 24px;background:#0070f3;color:#fff;text-decoration:none;border-radius:4px;">Sign in to td-watch</a></p>`+
+			`<p>Or copy this link into your browser (do not share it):</p>`+
+			`<p style="word-break:break-all;">%s</p>`+
+			`<p>This link expires in 15 minutes.</p>`,
+		linkURL, linkURL,
+	)
+	textBody := "Click the link to sign in to td-watch: " + linkURL + "\n\nThis link expires in 15 minutes."
+
+	traceID := getRequestID(r.Context())
+	msg := email.LoginEmail{
+		To:      req.Email,
+		Subject: "Sign in to td-watch",
+		Text:    textBody,
+		HTML:    htmlBody,
+		Purpose: "web_login",
+		TraceID: traceID,
+	}
+
+	// Step 10: Send email.
+	if err := s.emailSender.SendLoginLink(r.Context(), msg); err != nil {
+		// Step 11: Send failure — log at Warn (NO token in message), record failure, return 500.
+		logFor(r.Context()).Warn("send login link failed for web start", "err", err)
+		s.logAuthEvent(selector, req.Email, serverdb.AuthEventLoginFailed, meta)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to send login email")
+		return
+	}
+
+	// Step 12: Record success events; auth_request_id = selector (the challenge selector).
+	s.logAuthEvent(selector, req.Email, serverdb.AuthEventChallengeStarted, meta)
+	s.logAuthEvent(selector, req.Email, serverdb.AuthEventEmailSent, meta)
+
+	// Step 13: Generic 200.
+	genericOK()
 }
 
 // logAuthEvent logs an auth event, silently ignoring errors.

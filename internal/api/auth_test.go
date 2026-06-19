@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marcus/td/internal/email"
+	"github.com/marcus/td/internal/serverdb"
 )
 
 func TestDeviceAuthFullFlow(t *testing.T) {
@@ -183,5 +186,146 @@ func TestVerifyPageGET(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Authorize Device") {
 		t.Fatal("expected page title in response")
+	}
+}
+
+// --- POST /v1/auth/web/start tests ---
+
+// webStartBody is a helper to build the request body for /v1/auth/web/start.
+func webStartBody(email, redirectURI, state string) map[string]string {
+	return map[string]string{
+		"email":        email,
+		"redirect_uri": redirectURI,
+		"state":        state,
+	}
+}
+
+// assertWebStartGeneric200 asserts the generic 200 response shape.
+func assertWebStartGeneric200(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp webStartResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != "email_sent_if_allowed" {
+		t.Errorf("status: got %q, want %q", resp.Status, "email_sent_if_allowed")
+	}
+	if resp.ExpiresIn != 900 {
+		t.Errorf("expires_in: got %d, want 900", resp.ExpiresIn)
+	}
+	if resp.RetryAfter != 60 {
+		t.Errorf("retry_after: got %d, want 60", resp.RetryAfter)
+	}
+}
+
+// TestWebStart_ExistingUser verifies that an existing user gets the generic 200 and one email.
+func TestWebStart_ExistingUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("existing@example.com")
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("existing@example.com", "", "csrf-state"))
+	assertWebStartGeneric200(t, w)
+
+	sent := ms.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 email sent, got %d", len(sent))
+	}
+	if sent[0].To != "existing@example.com" {
+		t.Errorf("email To: got %q, want %q", sent[0].To, "existing@example.com")
+	}
+	if sent[0].Purpose != "web_login" {
+		t.Errorf("email Purpose: got %q, want %q", sent[0].Purpose, "web_login")
+	}
+}
+
+// TestWebStart_UnknownUser verifies that an unknown user gets the generic 200 with no email sent
+// and that an AuthEventEmailSuppressed event is recorded.
+func TestWebStart_UnknownUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("nobody@example.com", "", "csrf-state"))
+	assertWebStartGeneric200(t, w)
+
+	if len(ms.Sent()) != 0 {
+		t.Fatalf("expected 0 emails sent for unknown user, got %d", len(ms.Sent()))
+	}
+
+	// Assert AuthEventEmailSuppressed was recorded.
+	result, err := store.QueryAuthEvents(serverdb.AuthEventEmailSuppressed, "nobody@example.com", "", "", 10, "")
+	if err != nil {
+		t.Fatalf("query auth events: %v", err)
+	}
+	if len(result.Data) == 0 {
+		t.Fatal("expected AuthEventEmailSuppressed to be recorded for unknown user")
+	}
+}
+
+// TestWebStart_InvalidEmail verifies that a syntactically-invalid email returns 400.
+func TestWebStart_InvalidEmail(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("notanemail", "", "state"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestWebStart_MismatchedRedirectURI verifies that a redirect_uri that doesn't match
+// the configured AuthWebCallbackURL returns 400.
+func TestWebStart_MismatchedRedirectURI(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.config.AuthWebCallbackURL = "https://watch.example.com/home/login/complete"
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("user@example.com", "https://evil.example.com/callback", "state"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestWebStart_ResendRateLimit verifies that a second request within 60s for the same email
+// gets the generic 200 but does NOT send a second email.
+func TestWebStart_ResendRateLimit(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("resend@example.com")
+
+	// First request — should send one email.
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("resend@example.com", "", "state1"))
+	assertWebStartGeneric200(t, w)
+	if len(ms.Sent()) != 1 {
+		t.Fatalf("first request: expected 1 email, got %d", len(ms.Sent()))
+	}
+
+	// Second request immediately after — rate-limited, no new email.
+	w = doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("resend@example.com", "", "state2"))
+	assertWebStartGeneric200(t, w)
+	if len(ms.Sent()) != 1 {
+		t.Fatalf("second request: expected still 1 email (rate limited), got %d", len(ms.Sent()))
+	}
+}
+
+// TestWebStart_AllowSignupFalseUnknownUser verifies that AllowSignup=false + unknown email
+// still returns generic 200 (suppressed, non-enumeration).
+func TestWebStart_AllowSignupFalseUnknownUser(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.config.AllowSignup = false
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("unknown@example.com", "", "state"))
+	assertWebStartGeneric200(t, w)
+
+	if len(ms.Sent()) != 0 {
+		t.Fatalf("expected 0 emails sent (suppressed), got %d", len(ms.Sent()))
 	}
 }
