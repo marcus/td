@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -538,4 +539,165 @@ func isValidUserCode(code string) bool {
 		}
 	}
 	return true
+}
+
+// deviceStartRequest is the JSON body for POST /v1/auth/device/start.
+type deviceStartRequest struct {
+	Email               string `json:"email"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	DeviceName          string `json:"device_name"`
+}
+
+// deviceStartResponse is the JSON response for POST /v1/auth/device/start.
+type deviceStartResponse struct {
+	DeviceCode string `json:"device_code"`
+	ExpiresIn  int    `json:"expires_in"`
+	Interval   int    `json:"interval"`
+	EmailSent  bool   `json:"email_sent"`
+}
+
+// generateDeviceCode generates a 32-byte random hex device code (64 chars).
+func generateDeviceCode() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// handleDeviceStart handles POST /v1/auth/device/start.
+// It is non-enumerating: any syntactically-valid email always receives 200 with
+// device_code/expires_in/interval/email_sent=true. Unknown emails get
+// AuthEventEmailSuppressed but no challenge is created and no email is sent.
+func (s *Server) handleDeviceStart(w http.ResponseWriter, r *http.Request) {
+	var req deviceStartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body")
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "valid email is required")
+		return
+	}
+
+	if req.CodeChallenge == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "code_challenge is required")
+		return
+	}
+
+	if req.CodeChallengeMethod != "S256" {
+		writeError(w, http.StatusBadRequest, "bad_request", "code_challenge_method must be S256")
+		return
+	}
+
+	ip := clientIP(r, s.config.TrustedProxies)
+	ua := r.Header.Get("User-Agent")
+	meta := map[string]string{"ip": ip, "user_agent": ua}
+
+	// Generate the device_code that is returned to the CLI.
+	// Only its SHA-256 hash is stored; the plaintext is never persisted.
+	deviceCode, err := generateDeviceCode()
+	if err != nil {
+		logFor(r.Context()).Error("generate device code for device start", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate device code")
+		return
+	}
+
+	genericOK := func() {
+		writeJSON(w, http.StatusOK, deviceStartResponse{
+			DeviceCode: deviceCode,
+			ExpiresIn:  int(serverdb.ChallengeTTL.Seconds()),
+			Interval:   5,
+			EmailSent:  true,
+		})
+	}
+
+	// Resend rate limit: 1 per minute per email (same window as web/start).
+	rateLimitKey := "device-start:" + strings.ToLower(req.Email)
+	if !s.rateLimiter.Allow(rateLimitKey, 1) {
+		if err := s.store.InsertRateLimitEvent("", ip, "auth"); err != nil {
+			slog.Warn("log rate limit event for device-start", "err", err)
+		}
+		// Return generic 200 — do not reveal rate limiting.
+		genericOK()
+		return
+	}
+
+	// Look up user. Unknown email -> suppressed path (non-enumeration).
+	user, err := s.store.GetUserByEmail(req.Email)
+	if err != nil {
+		logFor(r.Context()).Error("get user by email for device start", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to look up user")
+		return
+	}
+	if user == nil {
+		// Unknown user — suppress silently; D4 poll will never transition this device_code.
+		s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
+		genericOK()
+		return
+	}
+
+	// Known user path: create challenge, build approval link, send email.
+	deviceCodeHashSum := sha256.Sum256([]byte(deviceCode))
+	deviceCodeHash := hex.EncodeToString(deviceCodeHashSum[:])
+	codeChallenge := req.CodeChallenge
+	codeChallengeMethod := req.CodeChallengeMethod
+
+	selector, plaintextSecret, err := s.store.CreateEmailChallenge(
+		req.Email,
+		"device_login",
+		user.ID,
+		serverdb.ChallengeOptions{
+			DeviceCodeHash:      &deviceCodeHash,
+			CodeChallenge:       &codeChallenge,
+			CodeChallengeMethod: &codeChallengeMethod,
+			IP:                  &ip,
+			UserAgent:           &ua,
+		},
+	)
+	if err != nil {
+		logFor(r.Context()).Error("create email challenge for device start", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create auth challenge")
+		return
+	}
+
+	// Build approval link. NEVER log the link, selector, or secret.
+	linkURL := s.config.AuthEmailBaseURL + "/auth/device/approve?token=" + selector + "." + plaintextSecret
+
+	htmlBody := fmt.Sprintf(
+		`<p>A CLI login was requested for your td account.</p>`+
+			`<p>Click the link below to approve the login from your terminal.</p>`+
+			`<p><a href="%s" style="display:inline-block;padding:12px 24px;background:#0070f3;color:#fff;text-decoration:none;border-radius:4px;">Approve td CLI login</a></p>`+
+			`<p>Or copy this link into your browser (do not share it):</p>`+
+			`<p style="word-break:break-all;">%s</p>`+
+			`<p>This link expires in 15 minutes. If you did not request this, you can ignore this email.</p>`,
+		linkURL, linkURL,
+	)
+	textBody := "A CLI login was requested for your td account.\n\nClick the link to approve: " + linkURL + "\n\nThis link expires in 15 minutes. If you did not request this, you can ignore this email."
+
+	traceID := getRequestID(r.Context())
+	msg := email.LoginEmail{
+		To:      req.Email,
+		Subject: "Approve td CLI login",
+		Text:    textBody,
+		HTML:    htmlBody,
+		Purpose: "device_login",
+		TraceID: traceID,
+	}
+
+	if err := s.emailSender.SendLoginLink(r.Context(), msg); err != nil {
+		// Log at Warn — never include the link/token.
+		logFor(r.Context()).Warn("send login link failed for device start", "err", err)
+		s.logAuthEvent(selector, req.Email, serverdb.AuthEventLoginFailed, meta)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to send login email")
+		return
+	}
+
+	s.logAuthEvent(selector, req.Email, serverdb.AuthEventChallengeStarted, meta)
+	s.logAuthEvent(selector, req.Email, serverdb.AuthEventEmailSent, meta)
+
+	genericOK()
 }

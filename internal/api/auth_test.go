@@ -547,6 +547,179 @@ func TestWebExchange_WrongState(t *testing.T) {
 	}
 }
 
+// --- POST /v1/auth/device/start tests ---
+
+// deviceStartBody builds a request body for POST /v1/auth/device/start.
+func deviceStartBody(email, codeChallenge, codeChallengeMethod, deviceName string) map[string]string {
+	return map[string]string{
+		"email":                 email,
+		"code_challenge":        codeChallenge,
+		"code_challenge_method": codeChallengeMethod,
+		"device_name":           deviceName,
+	}
+}
+
+// TestDeviceStart_KnownUser verifies that a known user receives 200 with
+// device_code, expires_in=900, interval=5, email_sent=true, and exactly one
+// email whose text body contains the approval link with the selector.
+func TestDeviceStart_KnownUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	_, _ = store.CreateUser("cli@example.com")
+
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", deviceStartBody(
+		"cli@example.com",
+		"abc123-code-challenge",
+		"S256",
+		"marcus-macbook",
+	))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp deviceStartResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.DeviceCode == "" {
+		t.Error("expected non-empty device_code")
+	}
+	if resp.ExpiresIn != 900 {
+		t.Errorf("expires_in: got %d, want 900", resp.ExpiresIn)
+	}
+	if resp.Interval != 5 {
+		t.Errorf("interval: got %d, want 5", resp.Interval)
+	}
+	if !resp.EmailSent {
+		t.Error("expected email_sent=true")
+	}
+
+	sent := ms.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 email sent, got %d", len(sent))
+	}
+	if sent[0].To != "cli@example.com" {
+		t.Errorf("email To: got %q, want %q", sent[0].To, "cli@example.com")
+	}
+	if sent[0].Purpose != "device_login" {
+		t.Errorf("email Purpose: got %q, want %q", sent[0].Purpose, "device_login")
+	}
+	// Approval link must contain the selector portion of the token.
+	const approvalMarker = "/auth/device/approve?token="
+	if !strings.Contains(sent[0].Text, approvalMarker) {
+		t.Errorf("email body missing approval link marker %q; body: %s", approvalMarker, sent[0].Text)
+	}
+	// Extract selector from link and verify it is non-empty.
+	idx := strings.Index(sent[0].Text, approvalMarker)
+	tokenPart := sent[0].Text[idx+len(approvalMarker):]
+	end := strings.IndexAny(tokenPart, " \t\n\r")
+	if end >= 0 {
+		tokenPart = tokenPart[:end]
+	}
+	dotIdx := strings.Index(tokenPart, ".")
+	if dotIdx < 0 {
+		t.Fatalf("approval token has no dot separator: %q", tokenPart)
+	}
+	selector := tokenPart[:dotIdx]
+	if selector == "" {
+		t.Error("expected non-empty selector in approval link")
+	}
+}
+
+// TestDeviceStart_UnknownUser verifies that an unknown email returns 200 with
+// email_sent=true and a device_code (identical shape to known-user response),
+// but sends 0 emails and records AuthEventEmailSuppressed.
+func TestDeviceStart_UnknownUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", deviceStartBody(
+		"nobody@example.com",
+		"abc123-code-challenge",
+		"S256",
+		"some-machine",
+	))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp deviceStartResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	// Response shape must be identical to the known-user case (non-enumeration).
+	if resp.DeviceCode == "" {
+		t.Error("expected non-empty device_code for unknown user (non-enumeration)")
+	}
+	if resp.ExpiresIn != 900 {
+		t.Errorf("expires_in: got %d, want 900", resp.ExpiresIn)
+	}
+	if resp.Interval != 5 {
+		t.Errorf("interval: got %d, want 5", resp.Interval)
+	}
+	if !resp.EmailSent {
+		t.Error("expected email_sent=true for unknown user (non-enumeration)")
+	}
+
+	if len(ms.Sent()) != 0 {
+		t.Fatalf("expected 0 emails for unknown user, got %d", len(ms.Sent()))
+	}
+
+	// AuthEventEmailSuppressed must be recorded.
+	result, err := store.QueryAuthEvents(serverdb.AuthEventEmailSuppressed, "nobody@example.com", "", "", 10, "")
+	if err != nil {
+		t.Fatalf("query auth events: %v", err)
+	}
+	if len(result.Data) == 0 {
+		t.Fatal("expected AuthEventEmailSuppressed to be recorded for unknown user")
+	}
+}
+
+// TestDeviceStart_MissingCodeChallenge verifies that a missing code_challenge returns 400.
+func TestDeviceStart_MissingCodeChallenge(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", map[string]string{
+		"email":                 "user@example.com",
+		"code_challenge_method": "S256",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestDeviceStart_BadChallengeMethod verifies that code_challenge_method != "S256" returns 400.
+func TestDeviceStart_BadChallengeMethod(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", map[string]string{
+		"email":                 "user@example.com",
+		"code_challenge":        "some-challenge",
+		"code_challenge_method": "plain",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestDeviceStart_InvalidEmail verifies that a syntactically-invalid email returns 400.
+func TestDeviceStart_InvalidEmail(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", map[string]string{
+		"email":                 "notanemail",
+		"code_challenge":        "some-challenge",
+		"code_challenge_method": "S256",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestWebExchange_MalformedToken verifies that a token with no dot returns 400.
 func TestWebExchange_MalformedToken(t *testing.T) {
 	srv, _ := newTestServer(t)
