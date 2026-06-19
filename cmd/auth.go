@@ -23,6 +23,10 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in to sync server",
+	Long: "Log in to the sync server using email approval.\n\n" +
+		"You enter your email, td emails you an approval link, and the login\n" +
+		"completes only after you click that link. The login cannot be approved\n" +
+		"from the terminal alone.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverURL := syncconfig.GetServerURL()
 		client := syncclient.New(serverURL, "", "")
@@ -38,25 +42,55 @@ var authLoginCmd = &cobra.Command{
 			return fmt.Errorf("email required")
 		}
 
-		resp, err := client.LoginStart(email)
+		// Generate a local PKCE pair. The verifier never leaves this process
+		// until we poll; only the S256 challenge is sent in DeviceStart. This is
+		// what prevents a different process (which lacks the verifier) from
+		// completing the login even if it observes the device_code.
+		pkce, err := syncclient.GeneratePKCE()
+		if err != nil {
+			output.Error("generate pkce: %v", err)
+			return err
+		}
+
+		deviceName := deviceLoginName()
+
+		resp, err := client.DeviceStart(email, pkce.Challenge, pkce.Method, deviceName)
 		if err != nil {
 			output.Error("login start: %v", err)
 			return err
 		}
 
-		fmt.Printf("Open %s and enter code: %s\n", resp.VerificationURI, resp.UserCode)
+		fmt.Println("Check your email and click the link to approve this login.")
+		fmt.Println("Waiting for approval...")
 
 		interval := time.Duration(resp.Interval) * time.Second
 		if interval < time.Second {
 			interval = 5 * time.Second
 		}
 
+		// Stop polling once the device_code can no longer be approved.
+		expiresIn := time.Duration(resp.ExpiresIn) * time.Second
+		if expiresIn <= 0 {
+			expiresIn = 15 * time.Minute
+		}
+		deadline := time.Now().Add(expiresIn)
+
 		for {
+			if time.Now().After(deadline) {
+				fmt.Println()
+				output.Error("login expired before approval — run `td auth login` again")
+				return fmt.Errorf("login expired before approval")
+			}
+
 			time.Sleep(interval)
 
-			poll, err := client.LoginPoll(resp.DeviceCode)
+			poll, err := client.DevicePoll(resp.DeviceCode, pkce.Verifier)
 			if err != nil {
-				output.Error("login poll: %v", err)
+				// The server returns 410 Gone once the request has expired or
+				// the key has already been issued; surface it cleanly rather
+				// than as a raw HTTP error.
+				fmt.Println()
+				output.Error("login could not be completed: %v", err)
 				return err
 			}
 
@@ -102,6 +136,17 @@ var authLoginCmd = &cobra.Command{
 			}
 		}
 	},
+}
+
+// deviceLoginName returns a human-readable label for this device, used so the
+// approval email/audit log can identify where the login came from. Falls back
+// to "td-cli" when the hostname is unavailable.
+func deviceLoginName() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "td-cli"
+	}
+	return "td-cli@" + host
 }
 
 var authLogoutCmd = &cobra.Command{
