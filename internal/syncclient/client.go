@@ -57,6 +57,28 @@ type LoginPollResponse struct {
 	ExpiresAt *string `json:"expires_at,omitempty"`
 }
 
+// DeviceStartResponse is the response from POST /v1/auth/device/start.
+// The flow is non-enumerating: a syntactically-valid email always yields a
+// device_code and email_sent=true, even for unknown accounts (in which case no
+// email is sent and poll never transitions to complete).
+type DeviceStartResponse struct {
+	DeviceCode string `json:"device_code"`
+	ExpiresIn  int    `json:"expires_in"`
+	Interval   int    `json:"interval"`
+	EmailSent  bool   `json:"email_sent"`
+}
+
+// DevicePollResponse is the response from POST /v1/auth/device/poll.
+// When status=="pending" only Status is set; when status=="complete" all fields
+// are populated.
+type DevicePollResponse struct {
+	Status    string  `json:"status"`
+	APIKey    *string `json:"api_key,omitempty"`
+	UserID    *string `json:"user_id,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+}
+
 // --- Project types ---
 
 // ProjectResponse represents a project from the server.
@@ -171,6 +193,42 @@ func (c *Client) LoginPoll(deviceCode string) (*LoginPollResponse, error) {
 	return &resp, nil
 }
 
+// DeviceStart initiates the PKCE device-login flow. The caller generates a
+// local code_verifier and passes only its S256 code_challenge here; the verifier
+// is never sent until DevicePoll. No API key required.
+//
+// method must be "S256". The server emails a magic approval link to the address
+// and returns a device_code used to poll for completion.
+func (c *Client) DeviceStart(email, codeChallenge, method, deviceName string) (*DeviceStartResponse, error) {
+	body := map[string]string{
+		"email":                 email,
+		"code_challenge":        codeChallenge,
+		"code_challenge_method": method,
+		"device_name":           deviceName,
+	}
+	var resp DeviceStartResponse
+	if err := c.doNoAuth("POST", "/v1/auth/device/start", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// DevicePoll checks the status of a PKCE device login. It sends the device_code
+// from DeviceStart together with the local code_verifier; the server only issues
+// a key once the emailed approval link has been clicked AND the verifier matches
+// the code_challenge sent in DeviceStart. No API key required.
+func (c *Client) DevicePoll(deviceCode, codeVerifier string) (*DevicePollResponse, error) {
+	body := map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": codeVerifier,
+	}
+	var resp DevicePollResponse
+	if err := c.doNoAuth("POST", "/v1/auth/device/poll", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // --- Project methods ---
 
 // CreateProject creates a new project on the server.
@@ -264,8 +322,8 @@ func (c *Client) Pull(projectID string, afterSeq int64, limit int, excludeDevice
 
 // SnapshotResponse holds the result of a snapshot download.
 type SnapshotResponse struct {
-	Data           []byte
-	SnapshotSeq    int64
+	Data        []byte
+	SnapshotSeq int64
 }
 
 // GetSnapshot downloads a snapshot database for bootstrap.
