@@ -23,6 +23,8 @@ func runAdmin(args []string) {
 		runAdminRevoke(args[1:])
 	case "create-key":
 		runAdminCreateKey(args[1:])
+	case "revoke-key":
+		runAdminRevokeKey(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown admin command: %s\n", args[0])
 		printAdminUsage()
@@ -36,7 +38,8 @@ func printAdminUsage() {
 Commands:
   grant       Grant admin privileges to a user
   revoke      Revoke admin privileges from a user
-  create-key  Create an API key for an admin user`)
+  create-key  Create an API key for an admin user
+  revoke-key  Revoke an API key by key ID`)
 }
 
 func openDB(dbPath string) *serverdb.ServerDB {
@@ -178,4 +181,51 @@ func runAdminCreateKey(args []string) {
 	fmt.Printf("  scopes: %s\n", ak.Scopes)
 	fmt.Printf("  key:    %s\n", plaintext)
 	fmt.Println("\nSave this key now -- it will not be shown again.")
+}
+
+func runAdminRevokeKey(args []string) {
+	fs := flag.NewFlagSet("admin revoke-key", flag.ExitOnError)
+	email := fs.String("email", "", "user email address")
+	keyID := fs.String("key-id", "", "API key ID to revoke")
+	dbPath := fs.String("db", "", "path to server.db (default: from SYNC_SERVER_DB_PATH or ./data/server.db)")
+	_ = fs.Parse(args)
+
+	if *email == "" {
+		fmt.Fprintln(os.Stderr, "error: --email is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+	if *keyID == "" {
+		fmt.Fprintln(os.Stderr, "error: --key-id is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	store := openDB(*dbPath)
+	defer store.Close()
+
+	// Look up user to confirm the email exists before attempting revocation.
+	user, err := store.GetUserByEmail(*email)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if user == nil {
+		fmt.Fprintf(os.Stderr, "error: user not found: %s\n", *email)
+		os.Exit(1)
+	}
+
+	// No auth event is emitted on the CLI path by design: the admin CLI has no
+	// caller UserID context. Use the HTTP DELETE /admin/keys/:id endpoint for
+	// audited revocation.
+	if err := store.AdminRevokeAPIKey(*keyID); err != nil {
+		if err == serverdb.ErrNotFound {
+			fmt.Fprintf(os.Stderr, "error: key not found: %s\n", *keyID)
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("revoked key %s from %s\n", *keyID, user.Email)
 }
