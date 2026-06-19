@@ -34,7 +34,7 @@ func NewCloudflareSender(cfg EmailConfig) (*CloudflareSender, error) {
 	if cfg.From == "" {
 		return nil, fmt.Errorf("cloudflare email sender: fromAddress is required")
 	}
-	baseURL := cfg.BaseURL
+	baseURL := cfg.CloudflareBaseURL
 	if baseURL == "" {
 		baseURL = cloudflareDefaultBaseURL
 	}

@@ -23,14 +23,18 @@ type EmailSender interface {
 // EmailConfig holds the fields that email senders need. The mapping from
 // api.Config to EmailConfig is done in the api/cmd layer to avoid import cycles.
 type EmailConfig struct {
-	Provider    string // "cloudflare", "memory", "log"
-	AccountID   string // Cloudflare account ID
-	APIToken    string // Cloudflare Email Workers API token
-	From        string // e.g. login@example.com
-	FromName    string // e.g. td-watch
-	ReplyTo     string // e.g. support@example.com
-	BaseURL     string // e.g. https://sync.example.com (for link generation)
-	CallbackURL string // e.g. https://watch.example.com/home/login/complete
+	Provider  string // "cloudflare", "memory", "log"
+	AccountID string // Cloudflare account ID
+	APIToken  string // Cloudflare Email Workers API token
+	From      string // e.g. login@example.com
+	FromName  string // e.g. td-watch
+	ReplyTo   string // e.g. support@example.com
+	// CloudflareBaseURL overrides the Cloudflare REST API base. Tests-only.
+	// Empty => https://api.cloudflare.com/client/v4. WARNING: do NOT set this to
+	// td-sync's own base URL (SYNC_EMAIL_BASE_URL) — that points email sends at
+	// the wrong host (causes 404 "unexpected status").
+	CloudflareBaseURL string
+	CallbackURL       string // e.g. https://watch.example.com/home/login/complete
 }
 
 // NewEmailSender constructs the appropriate EmailSender for cfg.Provider.

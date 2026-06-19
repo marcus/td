@@ -23,7 +23,7 @@ func newTestCloudflareSender(t *testing.T, srv *httptest.Server, cfg email.Email
 	// Override BaseURL to point at the test server, using the AccountID-based
 	// subpath. The CloudflareSender builds: {baseURL}/accounts/{accountID}/email/...
 	// so we strip that prefix from the server URL.
-	cfg.BaseURL = srv.URL
+	cfg.CloudflareBaseURL = srv.URL
 	s, err := email.NewCloudflareSender(cfg)
 	if err != nil {
 		t.Fatalf("NewCloudflareSender: unexpected error: %v", err)

@@ -34,6 +34,22 @@ type Server struct {
 	pingInterval time.Duration
 }
 
+// buildEmailConfig maps the server Config to the provider-neutral email.EmailConfig.
+// NOTE: CloudflareBaseURL is intentionally NOT set from AuthEmailBaseURL — that field
+// is the Cloudflare REST API base (tests only) and must default to api.cloudflare.com.
+// SYNC_EMAIL_BASE_URL is consumed directly by the auth handlers for link generation.
+func buildEmailConfig(cfg Config) email.EmailConfig {
+	return email.EmailConfig{
+		Provider:    cfg.EmailProvider,
+		AccountID:   cfg.CloudflareAccountID,
+		APIToken:    cfg.CloudflareEmailAPIToken,
+		From:        cfg.CloudflareEmailFrom,
+		FromName:    cfg.CloudflareEmailFromName,
+		ReplyTo:     cfg.CloudflareEmailReplyTo,
+		CallbackURL: cfg.AuthWebCallbackURL,
+	}
+}
+
 // NewServer creates a new Server with the given config and store.
 func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 	s := &Server{
@@ -48,17 +64,7 @@ func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 		pingInterval:    defaultPingInterval,
 	}
 
-	emailCfg := email.EmailConfig{
-		Provider:    cfg.EmailProvider,
-		AccountID:   cfg.CloudflareAccountID,
-		APIToken:    cfg.CloudflareEmailAPIToken,
-		From:        cfg.CloudflareEmailFrom,
-		FromName:    cfg.CloudflareEmailFromName,
-		ReplyTo:     cfg.CloudflareEmailReplyTo,
-		BaseURL:     cfg.AuthEmailBaseURL,
-		CallbackURL: cfg.AuthWebCallbackURL,
-	}
-	sender, err := email.NewEmailSender(emailCfg)
+	sender, err := email.NewEmailSender(buildEmailConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("create email sender: %w", err)
 	}
