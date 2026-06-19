@@ -212,6 +212,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/auth/web/start", s.handleWebStart)
 	mux.HandleFunc("POST /v1/auth/web/exchange", s.handleWebExchange)
 	mux.HandleFunc("POST /v1/auth/device/start", s.handleDeviceStart)
+	mux.HandleFunc("GET /auth/device/approve", s.handleDeviceApprove)
+	mux.HandleFunc("POST /v1/auth/device/poll", s.handleDevicePoll)
 
 	// Projects
 	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther)))

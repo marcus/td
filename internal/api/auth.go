@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -527,6 +528,208 @@ func (s *Server) logAuthEvent(authRequestID, email, eventType string, meta map[s
 	}
 	if err := s.store.InsertAuthEvent(authRequestID, email, eventType, metadata); err != nil {
 		slog.Warn("log auth event", "type", eventType, "err", err)
+	}
+}
+
+// deviceApproveHTML returns a minimal HTML page with the given message.
+// status is the HTTP status code to write, title is for the <title>, and
+// body is the human-readable paragraph shown inside the card.
+func deviceApproveHTML(w http.ResponseWriter, status int, title, body string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>%s - td</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);padding:2rem;max-width:400px;width:90%%;text-align:center}
+h1{font-size:1.2rem;margin-bottom:.75rem}
+p{color:#666;font-size:.9rem}
+</style>
+</head>
+<body><div class="card"><h1>%s</h1><p>%s</p></div></body>
+</html>`, title, title, body)
+}
+
+// handleDeviceApprove handles GET /auth/device/approve.
+// The user clicks the emailed link; it verifies the token and marks the
+// device challenge as verified so the CLI poll can issue an API key.
+func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	dotIdx := strings.IndexByte(token, '.')
+	if token == "" || dotIdx < 0 {
+		deviceApproveHTML(w, http.StatusBadRequest, "Invalid link", "Invalid link.")
+		return
+	}
+	selector := token[:dotIdx]
+	plaintextSecret := token[dotIdx+1:]
+	if selector == "" || plaintextSecret == "" {
+		deviceApproveHTML(w, http.StatusBadRequest, "Invalid link", "Invalid link.")
+		return
+	}
+
+	ip := clientIP(r, s.config.TrustedProxies)
+	ua := r.Header.Get("User-Agent")
+	meta := map[string]string{"ip": ip, "user_agent": ua}
+
+	challenge, err := s.store.VerifyAndMarkDeviceChallengeVerified(selector, plaintextSecret)
+	if err != nil {
+		switch err {
+		case serverdb.ErrChallengeNotFound, serverdb.ErrChallengeInvalidToken:
+			deviceApproveHTML(w, http.StatusOK, "Invalid link", "Invalid or expired link.")
+		case serverdb.ErrChallengeAlreadyConsumed:
+			deviceApproveHTML(w, http.StatusOK, "Already used", "This link has already been used.")
+		case serverdb.ErrChallengeExpired:
+			deviceApproveHTML(w, http.StatusOK, "Link expired", "This link has expired.")
+		default:
+			logFor(r.Context()).Error("verify device challenge", "err", err)
+			deviceApproveHTML(w, http.StatusOK, "Something went wrong", "Something went wrong. Please try again.")
+		}
+		return
+	}
+
+	// Ensure the challenge is for device_login, not some other purpose.
+	if challenge.Purpose != "device_login" {
+		s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+		deviceApproveHTML(w, http.StatusOK, "Invalid link", "Invalid or expired link.")
+		return
+	}
+
+	// Log success. Never log selector/token in the message itself.
+	s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventDeviceVerified, meta)
+
+	deviceApproveHTML(w, http.StatusOK, "Device approved",
+		"Device approved — return to your terminal. You can close this window.")
+}
+
+// devicePollRequest is the JSON body for POST /v1/auth/device/poll.
+type devicePollRequest struct {
+	DeviceCode   string `json:"device_code"`
+	CodeVerifier string `json:"code_verifier"`
+}
+
+// devicePollResponse is the JSON response for POST /v1/auth/device/poll.
+// When status=="pending" only Status is set; when status=="complete" all fields
+// are populated.
+type devicePollResponse struct {
+	Status    string  `json:"status"`
+	APIKey    *string `json:"api_key,omitempty"`
+	UserID    *string `json:"user_id,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+}
+
+// handleDevicePoll handles POST /v1/auth/device/poll.
+// The CLI polls with device_code + code_verifier; when the user has clicked
+// the email link (status='verified') PKCE is verified and an API key is issued.
+func (s *Server) handleDevicePoll(w http.ResponseWriter, r *http.Request) {
+	var req devicePollRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body")
+		return
+	}
+
+	if req.DeviceCode == "" || req.CodeVerifier == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "device_code and code_verifier are required")
+		return
+	}
+
+	deviceCodeHashSum := sha256.Sum256([]byte(req.DeviceCode))
+	deviceCodeHash := hex.EncodeToString(deviceCodeHashSum[:])
+
+	challenge, err := s.store.LookupDeviceChallenge(deviceCodeHash)
+	if err != nil {
+		logFor(r.Context()).Error("lookup device challenge for poll", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to look up challenge")
+		return
+	}
+
+	// Non-enumeration: unknown device_code looks identical to pending.
+	if challenge == nil {
+		writeJSON(w, http.StatusOK, devicePollResponse{Status: "pending"})
+		return
+	}
+
+	ip := clientIP(r, s.config.TrustedProxies)
+	ua := r.Header.Get("User-Agent")
+	meta := map[string]string{"ip": ip, "user_agent": ua}
+
+	switch challenge.Status {
+	case serverdb.ChallengeStatusPending:
+		// Not yet approved via the email link.
+		writeJSON(w, http.StatusOK, devicePollResponse{Status: "pending"})
+		return
+
+	case serverdb.ChallengeStatusVerified:
+		// User clicked the email link — proceed with PKCE verification and key issuance.
+
+		// PKCE S256: want = base64.RawURLEncoding(SHA-256(code_verifier))
+		verifierHash := sha256.Sum256([]byte(req.CodeVerifier))
+		want := base64.RawURLEncoding.EncodeToString(verifierHash[:])
+		if challenge.CodeChallenge == nil || want != *challenge.CodeChallenge {
+			s.logAuthEvent(challenge.Selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+			writeError(w, http.StatusUnauthorized, "invalid_verifier", "code_verifier does not match")
+			return
+		}
+
+		if challenge.UserID == nil {
+			s.logAuthEvent(challenge.Selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+			writeError(w, http.StatusUnauthorized, "invalid_token", "no user associated with this challenge")
+			return
+		}
+
+		// Double-issue guard: mark consumed BEFORE issuing the key.
+		// Under MaxOpenConns=1 only one concurrent poll can win this transition.
+		ok, err := s.store.MarkDeviceChallengeConsumed(challenge.Selector)
+		if err != nil {
+			logFor(r.Context()).Error("mark device challenge consumed", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to finalize challenge")
+			return
+		}
+		if !ok {
+			// A concurrent poll already transitioned it — the other poll got the key.
+			writeError(w, http.StatusGone, "expired", "key already issued to a concurrent request")
+			return
+		}
+
+		// Issue 365-day key with name "device-auth", scope "sync".
+		expiry := time.Now().UTC().Add(365 * 24 * time.Hour)
+		plaintext, ak, err := s.store.GenerateAPIKey(*challenge.UserID, "device-auth", "sync", &expiry)
+		if err != nil {
+			// Challenge is already consumed; acceptable rare failure — user re-logs in.
+			logFor(r.Context()).Error("generate api key for device poll", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate api key")
+			return
+		}
+
+		// Log key_id only — never log the plaintext key.
+		s.logAuthEvent(challenge.Selector, challenge.Email, serverdb.AuthEventKeyIssued, map[string]string{
+			"ip":         ip,
+			"user_agent": ua,
+			"key_id":     ak.ID,
+		})
+
+		expiresAtStr := expiry.Format(time.RFC3339)
+		writeJSON(w, http.StatusOK, devicePollResponse{
+			Status:    "complete",
+			APIKey:    &plaintext,
+			UserID:    challenge.UserID,
+			Email:     &challenge.Email,
+			ExpiresAt: &expiresAtStr,
+		})
+		return
+
+	case serverdb.ChallengeStatusConsumed:
+		// Key was already issued (challenge already consumed). Do not issue again.
+		writeError(w, http.StatusGone, "expired", "key already issued for this device login")
+		return
+
+	default:
+		// expired, failed, suppressed, or any other terminal status.
+		writeError(w, http.StatusGone, "expired", "device login expired or failed")
+		return
 	}
 }
 

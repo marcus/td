@@ -276,6 +276,122 @@ func (db *ServerDB) LookupChallengeByDeviceCodeHash(deviceCodeHash string) (*Ema
 	return c, nil
 }
 
+// LookupDeviceChallenge returns the challenge with the given device_code_hash,
+// regardless of status. Returns nil, nil if no row exists. Used by the poll
+// endpoint which inspects status itself.
+func (db *ServerDB) LookupDeviceChallenge(deviceCodeHash string) (*EmailChallenge, error) {
+	row := db.conn.QueryRow(
+		`SELECT`+challengeSelectCols+`
+		 FROM auth_email_challenges WHERE device_code_hash = ?`,
+		deviceCodeHash,
+	)
+	c, err := scanEmailChallenge(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup device challenge: %w", err)
+	}
+	return c, nil
+}
+
+// VerifyAndMarkDeviceChallengeVerified atomically verifies a device_login
+// challenge by selector+secret and transitions it to status='verified'. It
+// mirrors ConsumeChallenge but sets status='verified' instead of 'consumed'.
+//
+// Sentinel errors:
+//   - ErrChallengeNotFound    — selector not found
+//   - ErrChallengeAlreadyConsumed — status != 'pending' (already used or verified)
+//   - ErrChallengeExpired     — expires_at <= now
+//   - ErrChallengeInvalidToken — SHA-256(plaintextSecret) != token_hash
+//
+// If user_id is set on the challenge, users.email_verified_at is also set
+// (only if previously NULL) within the same transaction.
+func (db *ServerDB) VerifyAndMarkDeviceChallengeVerified(selector, plaintextSecret string) (*EmailChallenge, error) {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRow(
+		`SELECT`+challengeSelectCols+`
+		 FROM auth_email_challenges WHERE selector = ?`, selector,
+	)
+	c, err := scanEmailChallenge(row)
+	if err == sql.ErrNoRows {
+		return nil, ErrChallengeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select device challenge: %w", err)
+	}
+
+	// Status check — must be pending.
+	if c.Status != ChallengeStatusPending {
+		return nil, ErrChallengeAlreadyConsumed
+	}
+
+	// Expiry check.
+	if !time.Now().UTC().Before(c.ExpiresAt) {
+		return nil, ErrChallengeExpired
+	}
+
+	// Token check.
+	if hashSecret(plaintextSecret) != c.TokenHash {
+		return nil, ErrChallengeInvalidToken
+	}
+
+	now := time.Now().UTC()
+
+	// Mark verified.
+	_, err = tx.Exec(
+		`UPDATE auth_email_challenges SET status = ?, verified_at = ? WHERE selector = ?`,
+		ChallengeStatusVerified, now, selector,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update device challenge status: %w", err)
+	}
+
+	// If there is a user_id, set email_verified_at where still NULL.
+	if c.UserID != nil {
+		_, err = tx.Exec(
+			`UPDATE users SET email_verified_at = ?, updated_at = ?
+			 WHERE id = ? AND email_verified_at IS NULL`,
+			now, now, *c.UserID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("set email_verified_at: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	c.Status = ChallengeStatusVerified
+	c.VerifiedAt = &now
+	return c, nil
+}
+
+// MarkDeviceChallengeConsumed atomically transitions a challenge from
+// status='verified' to status='consumed'. Returns (true, nil) if the
+// transition succeeded, (false, nil) if the row was not in 'verified' state
+// (i.e. a concurrent poll already consumed it). This guards against issuing
+// two API keys for the same device login.
+func (db *ServerDB) MarkDeviceChallengeConsumed(selector string) (bool, error) {
+	now := time.Now().UTC()
+	res, err := db.conn.Exec(
+		`UPDATE auth_email_challenges SET status = ?, consumed_at = ?
+		 WHERE selector = ? AND status = ?`,
+		ChallengeStatusConsumed, now, selector, ChallengeStatusVerified,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark device challenge consumed: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 // CleanupExpiredChallenges marks pending challenges that are past their expiry
 // as expired. Returns the number of rows updated.
 func (db *ServerDB) CleanupExpiredChallenges() (int64, error) {

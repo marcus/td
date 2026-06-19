@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -743,5 +746,363 @@ func TestWebExchange_NonExistentSelector(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&errResp)
 	if errResp.Error.Code != "invalid_token" {
 		t.Errorf("nonexistent selector: error code: got %q, want %q", errResp.Error.Code, "invalid_token")
+	}
+}
+
+// --- GET /auth/device/approve + POST /v1/auth/device/poll tests (D4) ---
+
+// makePKCEPair generates a random code_verifier and its S256 code_challenge.
+func makePKCEPair(t *testing.T) (verifier, challenge string) {
+	t.Helper()
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatalf("rand read: %v", err)
+	}
+	verifier = base64.RawURLEncoding.EncodeToString(b)
+	h := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(h[:])
+	return
+}
+
+// extractDeviceApprovalToken parses the ?token=selector.secret from the approval
+// link in the email text body.
+func extractDeviceApprovalToken(t *testing.T, text string) string {
+	t.Helper()
+	const marker = "/auth/device/approve?token="
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatalf("extractDeviceApprovalToken: marker %q not found in: %q", marker, text)
+	}
+	rest := text[idx+len(marker):]
+	end := strings.IndexAny(rest, " \t\n\r")
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	if rest == "" {
+		t.Fatal("extractDeviceApprovalToken: empty token")
+	}
+	return rest
+}
+
+// doDeviceStart is a helper that calls device/start for an existing user,
+// returning the device_code from the response and the raw approval token from
+// the email. The caller must create the user before calling this.
+func doDeviceStart(t *testing.T, srv *Server, ms *email.MemorySender, userEmail, codeChallenge string) (deviceCode, approvalToken string) {
+	t.Helper()
+	before := len(ms.Sent())
+	w := doRequest(srv, "POST", "/v1/auth/device/start", "", deviceStartBody(
+		userEmail, codeChallenge, "S256", "test-device",
+	))
+	if w.Code != http.StatusOK {
+		t.Fatalf("device/start: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp deviceStartResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode device/start response: %v", err)
+	}
+	deviceCode = resp.DeviceCode
+	sent := ms.Sent()
+	if len(sent) <= before {
+		t.Fatal("doDeviceStart: expected one new email, none sent")
+	}
+	approvalToken = extractDeviceApprovalToken(t, sent[len(sent)-1].Text)
+	return
+}
+
+// doDeviceApprove GETs /auth/device/approve?token=<token> and returns the response.
+func doDeviceApprove(srv *Server, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("GET", "/auth/device/approve?token="+url.QueryEscape(token), nil)
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+	return w
+}
+
+// TestDevicePoll_FullFlow tests the complete device login flow:
+// start -> poll(pending) -> approve(email link) -> poll(complete) with api_key;
+// returned key authenticates a real request; expires_at ~365d.
+func TestDevicePoll_FullFlow(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	const userEmail = "cliuser@example.com"
+	_, _ = store.CreateUser(userEmail)
+
+	verifier, challenge := makePKCEPair(t)
+	deviceCode, approvalToken := doDeviceStart(t, srv, ms, userEmail, challenge)
+
+	// Poll before approve — should be pending.
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("poll before approve: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var pendingResp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&pendingResp)
+	if pendingResp.Status != "pending" {
+		t.Fatalf("poll before approve: expected pending, got %q", pendingResp.Status)
+	}
+
+	// Approve via email link.
+	wa := doDeviceApprove(srv, approvalToken)
+	if wa.Code != http.StatusOK {
+		t.Fatalf("approve: expected 200, got %d: %s", wa.Code, wa.Body.String())
+	}
+	if !strings.Contains(wa.Body.String(), "Device approved") {
+		t.Fatalf("approve: expected success page, got: %s", wa.Body.String())
+	}
+	if wa.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Error("approve: missing Referrer-Policy: no-referrer header")
+	}
+
+	// Poll after approve — should be complete.
+	w = doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("poll after approve: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var completeResp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&completeResp)
+	if completeResp.Status != "complete" {
+		t.Fatalf("poll after approve: expected complete, got %q", completeResp.Status)
+	}
+	if completeResp.APIKey == nil || *completeResp.APIKey == "" {
+		t.Fatal("poll after approve: expected non-empty api_key")
+	}
+	if completeResp.UserID == nil || *completeResp.UserID == "" {
+		t.Fatal("poll after approve: expected non-empty user_id")
+	}
+	if completeResp.Email == nil || *completeResp.Email != userEmail {
+		t.Fatalf("poll after approve: expected email %q, got %v", userEmail, completeResp.Email)
+	}
+	if completeResp.ExpiresAt == nil || *completeResp.ExpiresAt == "" {
+		t.Fatal("poll after approve: expected non-empty expires_at")
+	}
+
+	// Returned key must authenticate a real request.
+	w2 := doRequest(srv, "GET", "/v1/projects", *completeResp.APIKey, nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("use api key: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// expires_at should be ~365 days from now (±5 minutes tolerance).
+	expiresAt, err := time.Parse(time.RFC3339, *completeResp.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse expires_at: %v", err)
+	}
+	expected := time.Now().UTC().Add(365 * 24 * time.Hour)
+	diff := expiresAt.Sub(expected)
+	if diff < -5*time.Minute || diff > 5*time.Minute {
+		t.Errorf("expires_at %v is not ~365 days from now (diff=%v)", expiresAt, diff)
+	}
+}
+
+// TestDevicePoll_BeforeApprove verifies poll returns pending before the email link is clicked.
+func TestDevicePoll_BeforeApprove(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	_, _ = store.CreateUser("beforeapprove@example.com")
+	verifier, challenge := makePKCEPair(t)
+	deviceCode, _ := doDeviceStart(t, srv, ms, "beforeapprove@example.com", challenge)
+
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Status != "pending" {
+		t.Fatalf("expected pending, got %q", resp.Status)
+	}
+}
+
+// TestDevicePoll_WrongSecret verifies that approving with a wrong secret leaves
+// the challenge pending and subsequent poll still returns pending (not complete).
+func TestDevicePoll_WrongSecret(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	_, _ = store.CreateUser("wrongsecret@example.com")
+	verifier, challenge := makePKCEPair(t)
+	deviceCode, approvalToken := doDeviceStart(t, srv, ms, "wrongsecret@example.com", challenge)
+
+	// Corrupt the secret portion of the approval token.
+	dotIdx := strings.Index(approvalToken, ".")
+	if dotIdx < 0 {
+		t.Fatal("approval token has no dot separator")
+	}
+	badToken := approvalToken[:dotIdx+1] + strings.Repeat("0", 64)
+
+	wa := doDeviceApprove(srv, badToken)
+	if wa.Code != http.StatusOK {
+		t.Fatalf("approve with wrong secret: expected 200 HTML, got %d", wa.Code)
+	}
+	body := wa.Body.String()
+	if strings.Contains(body, "Device approved") {
+		t.Fatal("approve with wrong secret: should NOT show success page")
+	}
+
+	// Subsequent poll should still return pending (challenge was not verified).
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("poll after bad approve: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Status != "pending" {
+		t.Fatalf("poll after bad approve: expected pending, got %q", resp.Status)
+	}
+}
+
+// TestDevicePoll_WrongVerifier verifies that poll after approve with wrong
+// code_verifier returns 401 invalid_verifier.
+func TestDevicePoll_WrongVerifier(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	_, _ = store.CreateUser("wrongverifier@example.com")
+	_, challenge := makePKCEPair(t)
+	deviceCode, approvalToken := doDeviceStart(t, srv, ms, "wrongverifier@example.com", challenge)
+
+	// Approve the link (correct token).
+	wa := doDeviceApprove(srv, approvalToken)
+	if wa.Code != http.StatusOK || !strings.Contains(wa.Body.String(), "Device approved") {
+		t.Fatalf("approve: expected success, got %d: %s", wa.Code, wa.Body.String())
+	}
+
+	// Poll with a WRONG verifier.
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": "wrong-verifier-that-does-not-match",
+	})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("poll wrong verifier: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "invalid_verifier" {
+		t.Errorf("poll wrong verifier: error code: got %q, want %q", errResp.Error.Code, "invalid_verifier")
+	}
+}
+
+// TestDevicePoll_DoubleIssuePrevented verifies that re-polling after a successful
+// complete returns 410 and that only ONE device-auth key exists for the user.
+func TestDevicePoll_DoubleIssuePrevented(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	const userEmail = "doubleissue@example.com"
+	_, _ = store.CreateUser(userEmail)
+	user, _ := store.GetUserByEmail(userEmail)
+
+	verifier, challenge := makePKCEPair(t)
+	deviceCode, approvalToken := doDeviceStart(t, srv, ms, userEmail, challenge)
+
+	// Approve.
+	doDeviceApprove(srv, approvalToken)
+
+	// First poll — should succeed.
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("first poll: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Status != "complete" {
+		t.Fatalf("first poll: expected complete, got %q", resp.Status)
+	}
+
+	// Second poll — should return 410 (no second key).
+	w2 := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   deviceCode,
+		"code_verifier": verifier,
+	})
+	if w2.Code != http.StatusGone {
+		t.Fatalf("second poll: expected 410, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Assert exactly ONE device-auth key exists for the user.
+	keys, err := store.ListAPIKeysForUser(user.ID)
+	if err != nil {
+		t.Fatalf("list api keys: %v", err)
+	}
+	deviceAuthKeys := 0
+	for _, k := range keys {
+		if k.Name == "device-auth" {
+			deviceAuthKeys++
+		}
+	}
+	if deviceAuthKeys != 1 {
+		t.Fatalf("expected exactly 1 device-auth key, got %d", deviceAuthKeys)
+	}
+}
+
+// TestDevicePoll_ApproveLinkUsedTwice verifies that clicking the approval link
+// a second time shows the "already used" page.
+func TestDevicePoll_ApproveLinkUsedTwice(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+	srv.config.AuthEmailBaseURL = "https://sync.example.com"
+
+	_, _ = store.CreateUser("reapprove@example.com")
+	_, challenge := makePKCEPair(t)
+	_, approvalToken := doDeviceStart(t, srv, ms, "reapprove@example.com", challenge)
+
+	// First approval — should succeed.
+	wa1 := doDeviceApprove(srv, approvalToken)
+	if wa1.Code != http.StatusOK || !strings.Contains(wa1.Body.String(), "Device approved") {
+		t.Fatalf("first approve: expected success, got %d: %s", wa1.Code, wa1.Body.String())
+	}
+
+	// Second approval — should show already-used page.
+	wa2 := doDeviceApprove(srv, approvalToken)
+	if wa2.Code != http.StatusOK {
+		t.Fatalf("second approve: expected 200 HTML, got %d", wa2.Code)
+	}
+	if !strings.Contains(wa2.Body.String(), "already been used") {
+		t.Fatalf("second approve: expected already-used message, got: %s", wa2.Body.String())
+	}
+}
+
+// TestDevicePoll_UnknownDeviceCodePending verifies that an unknown/garbage
+// device_code returns 200 pending (non-enumeration), NOT 410.
+func TestDevicePoll_UnknownDeviceCodePending(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/device/poll", "", map[string]string{
+		"device_code":   "totally-bogus-device-code-that-does-not-exist",
+		"code_verifier": "some-verifier",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("unknown device_code: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp devicePollResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Status != "pending" {
+		t.Fatalf("unknown device_code: expected pending, got %q", resp.Status)
 	}
 }
