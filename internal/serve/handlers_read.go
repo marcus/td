@@ -515,7 +515,9 @@ func HandleGetBoard(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 	// Convert board issues to DTOs
 	issueDTOs := make([]map[string]interface{}, 0, len(boardIssues))
 	for _, biv := range boardIssues {
-		issueDTO := IssueToDTO(&biv.Issue)
+		// Board cards never render description/acceptance; slim them out to keep
+		// the board payload small. The detail panel refetches the full issue.
+		issueDTO := IssueToDTO(&biv.Issue).slimForBoard()
 		if summary := summaries[biv.Issue.ID]; summary != nil {
 			issueDTO.DependencySummary = summary
 		}
@@ -546,6 +548,11 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 // dependency_summary (unresolved blockers) on the list path. Adds O(1) queries.
 func listIssuesToDTOs(ctx HandlerContext, issues []models.Issue) []IssueDTO {
 	dtos := issuesToDTOsNonNil(issues)
+	// The list view never renders description/acceptance; slim them out to keep
+	// the list payload small. The detail panel refetches the full issue.
+	for i := range dtos {
+		dtos[i] = dtos[i].slimForBoard()
+	}
 	if len(issues) == 0 {
 		return dtos
 	}

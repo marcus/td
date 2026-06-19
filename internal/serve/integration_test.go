@@ -2262,6 +2262,102 @@ func TestIntegration_GetBoard_DependencySummary(t *testing.T) {
 	}
 }
 
+// TestIntegration_SlimBoardListPayload verifies that the board and issue-list
+// endpoints OMIT the heavy text fields (description, acceptance) that the
+// board/list views never render, while the single-issue detail endpoint still
+// returns them in full. This is the payload-slimming optimization: the board
+// cards and list rows don't need description/acceptance, and the detail panel
+// refetches the full issue separately.
+func TestIntegration_SlimBoardListPayload(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	const (
+		desc = "This is a long description with a code block:\n```go\nfunc main() {}\n```"
+		acc  = "Given X, when Y, then Z must hold."
+	)
+
+	issueID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title":       "Issue with heavy fields",
+		"description": desc,
+		"acceptance":  acc,
+	})
+
+	// --- List path: description/acceptance must be blanked. ---
+	resp := iDoJSON(t, "GET", baseURL+"/v1/issues", nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("list issues failed")
+	}
+	listIssues, _ := data["issues"].([]interface{})
+	var listIssue map[string]interface{}
+	for _, raw := range listIssues {
+		issue, _ := raw.(map[string]interface{})
+		if issue["id"] == issueID {
+			listIssue = issue
+			break
+		}
+	}
+	if listIssue == nil {
+		t.Fatal("issue not found in list response")
+	}
+	// Heavy fields present (no omitempty) but blanked to empty string.
+	if got := listIssue["description"]; got != "" {
+		t.Errorf("list: description = %q, want empty", got)
+	}
+	if got := listIssue["acceptance"]; got != "" {
+		t.Errorf("list: acceptance = %q, want empty", got)
+	}
+	// Card-rendered fields must survive.
+	if listIssue["title"] != "Issue with heavy fields" {
+		t.Errorf("list: title = %v, want preserved", listIssue["title"])
+	}
+
+	// --- Board path: description/acceptance must be blanked. ---
+	boardID := iCreateBoard(t, baseURL, "Slim Board", "status:open")
+	resp = iDoJSON(t, "GET", baseURL+"/v1/boards/"+boardID, nil)
+	ok, data, _ = iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("get board failed")
+	}
+	boardIssues, _ := data["issues"].([]interface{})
+	var boardCard map[string]interface{}
+	for _, raw := range boardIssues {
+		card, _ := raw.(map[string]interface{})
+		issue, _ := card["issue"].(map[string]interface{})
+		if issue["id"] == issueID {
+			boardCard = issue
+			break
+		}
+	}
+	if boardCard == nil {
+		t.Fatal("issue not found on board")
+	}
+	if got := boardCard["description"]; got != "" {
+		t.Errorf("board: description = %q, want empty", got)
+	}
+	if got := boardCard["acceptance"]; got != "" {
+		t.Errorf("board: acceptance = %q, want empty", got)
+	}
+
+	// --- Detail path: description/acceptance must be FULLY present. ---
+	resp = iDoJSON(t, "GET", baseURL+"/v1/issues/"+issueID, nil)
+	ok, data, _ = iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("get issue detail failed")
+	}
+	detail, _ := data["issue"].(map[string]interface{})
+	if detail == nil {
+		t.Fatal("detail issue missing")
+	}
+	if got := detail["description"]; got != desc {
+		t.Errorf("detail: description = %q, want full %q", got, desc)
+	}
+	if got := detail["acceptance"]; got != acc {
+		t.Errorf("detail: acceptance = %q, want full %q", got, acc)
+	}
+}
+
 func TestIntegration_UpdateBoard(t *testing.T) {
 	baseURL, _, cleanup := setupIntegrationServer(t)
 	defer cleanup()

@@ -227,6 +227,20 @@ func IssueToDTO(issue *models.Issue) IssueDTO {
 	return dto
 }
 
+// slimForBoard blanks the heavy text fields that the board/kanban and
+// issue-list views never render off store-hydrated issues. The single-issue
+// detail endpoint (HandleGetIssue) refetches the full issue, so clients still
+// get description/acceptance when they open the detail panel. This keeps the
+// board/list payload small (description/acceptance dominate the response — some
+// descriptions contain whole code blocks) without changing detail output.
+//
+// Only call this on board/list serialization paths, never on the detail path.
+func (d IssueDTO) slimForBoard() IssueDTO {
+	d.Description = ""
+	d.Acceptance = ""
+	return d
+}
+
 // IssuesToDTOs converts a slice of issues to DTOs.
 func IssuesToDTOs(issues []models.Issue) []IssueDTO {
 	dtos := make([]IssueDTO, len(issues))
