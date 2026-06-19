@@ -17,6 +17,8 @@ func runAdmin(args []string) {
 	}
 
 	switch args[0] {
+	case "create-user":
+		runAdminCreateUser(args[1:])
 	case "grant":
 		runAdminGrant(args[1:])
 	case "revoke":
@@ -36,6 +38,7 @@ func printAdminUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: td-sync admin <command> [flags]
 
 Commands:
+  create-user Create a user (dev/test provisioning; idempotent)
   grant       Grant admin privileges to a user
   revoke      Revoke admin privileges from a user
   create-key  Create an API key for an admin user
@@ -53,6 +56,45 @@ func openDB(dbPath string) *serverdb.ServerDB {
 		os.Exit(1)
 	}
 	return store
+}
+
+// runAdminCreateUser provisions a user by email. It is intended for dev/test
+// setup (e.g. the e2e harness) where the non-enumerating device-login flow
+// requires the user to already exist. It is idempotent: if the user already
+// exists it prints the existing ID and exits 0. Run it while the server is NOT
+// holding the DB open (the e2e harness provisions users before server start).
+func runAdminCreateUser(args []string) {
+	fs := flag.NewFlagSet("admin create-user", flag.ExitOnError)
+	email := fs.String("email", "", "user email address")
+	dbPath := fs.String("db", "", "path to server.db (default: from SYNC_SERVER_DB_PATH or ./data/server.db)")
+	_ = fs.Parse(args)
+
+	if *email == "" {
+		fmt.Fprintln(os.Stderr, "error: --email is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	store := openDB(*dbPath)
+	defer store.Close()
+
+	existing, err := store.GetUserByEmail(*email)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if existing != nil {
+		fmt.Printf("user already exists: %s (%s)\n", existing.Email, existing.ID)
+		return
+	}
+
+	user, err := store.CreateUser(*email)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("created user %s (%s)\n", user.Email, user.ID)
 }
 
 func runAdminGrant(args []string) {

@@ -99,13 +99,30 @@ step "Building td and td-sync"
 (cd "$REPO_DIR" && go build -o "$SYNC_BIN" ./cmd/td-sync)
 ok "Built binaries"
 
+# --- Provision users (before server start) ---
+# The device PKCE login flow is non-enumerating: device/start only emails (and
+# creates a challenge for) emails that already map to a user. Provision the
+# actor users up front via `td-sync admin create-user`, while the server is not
+# yet holding the DB open.
+step "Provisioning users"
+"$SYNC_BIN" admin create-user --email "$EMAIL_A" --db "$SERVER_DATA/server.db" >/dev/null
+"$SYNC_BIN" admin create-user --email "$EMAIL_B" --db "$SERVER_DATA/server.db" >/dev/null
+ok "Provisioned $EMAIL_A, $EMAIL_B"
+
 # --- Start server ---
+# Uses the in-memory email provider + dev email inspection so authenticate() can
+# read the magic link from GET /internal/dev/last-email. The device PKCE flow
+# replaces the legacy /v1/auth/login/start + /auth/verify endpoints (disabled by
+# default); SYNC_LEGACY_DEVICE_AUTH is intentionally NOT set.
 step "Starting sync server on :$PORT"
 SYNC_LISTEN_ADDR=":$PORT" \
 SYNC_SERVER_DB_PATH="$SERVER_DATA/server.db" \
 SYNC_PROJECT_DATA_DIR="$SERVER_DATA/projects" \
 SYNC_ALLOW_SIGNUP=true \
 SYNC_BASE_URL="$SERVER_URL" \
+SYNC_EMAIL_PROVIDER=memory \
+SYNC_DEV_EMAIL_INSPECT=1 \
+SYNC_EMAIL_BASE_URL="$SERVER_URL" \
 SYNC_LOG_FORMAT=text \
 SYNC_LOG_LEVEL=info \
   "$SYNC_BIN" > "$WORKDIR/server.log" 2>&1 &
@@ -121,28 +138,52 @@ done
 curl -sf "$SERVER_URL/healthz" > /dev/null || { cat "$WORKDIR/server.log"; fail "Server not healthy"; }
 ok "Server running (PID $SERVER_PID)"
 
-# --- Helper: authenticate a client ---
+# --- Helper: base64url(no padding) of stdin bytes ---
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+# --- Helper: authenticate a client via the device PKCE flow ---
+# Mirrors `td auth login`: generate PKCE -> device/start -> read magic link from
+# the dev inspection endpoint -> GET approve URL -> poll until complete.
 authenticate() {
     local email="$1"
     local home_dir="$2"
     local auto_sync_enabled="$3"
 
-    local resp device_code user_code api_key user_id device_id
+    local verifier challenge resp device_code approve_url poll status api_key user_id device_id
 
-    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/start" \
+    # PKCE: verifier = base64url(32 random bytes); challenge = base64url(SHA256(verifier)).
+    verifier=$(openssl rand 32 | b64url)
+    challenge=$(printf '%s' "$verifier" | openssl dgst -binary -sha256 | b64url)
+
+    # device/start with the S256 challenge.
+    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/device/start" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\"}")
+        -d "{\"email\":\"$email\",\"code_challenge\":\"$challenge\",\"code_challenge_method\":\"S256\",\"device_name\":\"e2e-script\"}")
     device_code=$(echo "$resp" | jq -r '.device_code')
-    user_code=$(echo "$resp" | jq -r '.user_code')
+    [ -n "$device_code" ] && [ "$device_code" != "null" ] || fail "device/start returned no device_code for $email"
 
-    curl -sf -X POST "$SERVER_URL/auth/verify" \
-        -d "user_code=$user_code" > /dev/null
+    # Read the magic link from the in-memory provider (dev-only endpoint) and
+    # extract the absolute approve URL from the email text body.
+    resp=$(curl -sf "$SERVER_URL/internal/dev/last-email")
+    approve_url=$(echo "$resp" | jq -r '.text' | grep -oE "$SERVER_URL/auth/device/approve\?token=[^[:space:]]+")
+    [ -n "$approve_url" ] || fail "no approve URL in last email for $email"
 
-    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/poll" \
-        -H "Content-Type: application/json" \
-        -d "{\"device_code\":\"$device_code\"}")
-    api_key=$(echo "$resp" | jq -r '.api_key')
-    user_id=$(echo "$resp" | jq -r '.user_id')
+    # Click the approval link (consumes token, marks challenge verified).
+    curl -sf "$approve_url" > /dev/null
+
+    # Poll until complete.
+    for _ in $(seq 1 30); do
+        poll=$(curl -sf -X POST "$SERVER_URL/v1/auth/device/poll" \
+            -H "Content-Type: application/json" \
+            -d "{\"device_code\":\"$device_code\",\"code_verifier\":\"$verifier\"}")
+        status=$(echo "$poll" | jq -r '.status')
+        if [ "$status" = "complete" ]; then break; fi
+        sleep 0.2
+    done
+    [ "$status" = "complete" ] || fail "device/poll did not complete for $email (status=$status)"
+
+    api_key=$(echo "$poll" | jq -r '.api_key')
+    user_id=$(echo "$poll" | jq -r '.user_id')
     device_id=$(openssl rand -hex 16)
 
     cat > "$home_dir/.config/td/auth.json" <<EOF
@@ -179,8 +220,9 @@ EOF
 # --- Helpers: run td as each client ---
 SESSION_ID_A="e2e-alice-$$"
 SESSION_ID_B="e2e-bob-$$"
-td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" "$TD_BIN" "$@"); }
-td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" "$TD_BIN" "$@"); }
+TD_FEATURES="sync_cli,sync_autosync,sync_monitor_prompt"
+td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" TD_ENABLE_FEATURE="$TD_FEATURES" "$TD_BIN" "$@"); }
+td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" TD_ENABLE_FEATURE="$TD_FEATURES" "$TD_BIN" "$@"); }
 
 # --- Common setup (both modes) ---
 step "Initializing client projects"

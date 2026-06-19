@@ -12,13 +12,14 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marcus/td/internal/syncclient"
 )
 
 // Config controls harness setup options.
@@ -165,6 +166,20 @@ func Setup(t *testing.T, cfg Config) *Harness {
 		t.Fatalf("create server log: %v", err)
 	}
 
+	// Provision actor users BEFORE starting the server. The device PKCE login
+	// flow is non-enumerating: it only emails (and creates a challenge for)
+	// emails that already map to a user, so the harness must create users up
+	// front. We do this via `td-sync admin create-user` while the server is not
+	// yet holding the DB open, then auth each actor through the real device flow.
+	for _, actor := range actors {
+		email := actor + "@test.local"
+		out, err := runCmd(workDir, h.SyncBin, "admin", "create-user",
+			"--email", email, "--db", filepath.Join(serverData, "server.db"))
+		if err != nil {
+			t.Fatalf("create-user %s: %v\n%s", actor, err, out)
+		}
+	}
+
 	h.serverCmd = exec.Command(h.SyncBin)
 	h.serverCmd.Env = append(os.Environ(),
 		fmt.Sprintf("SYNC_LISTEN_ADDR=:%d", port),
@@ -172,6 +187,11 @@ func Setup(t *testing.T, cfg Config) *Harness {
 		fmt.Sprintf("SYNC_PROJECT_DATA_DIR=%s/projects", serverData),
 		"SYNC_ALLOW_SIGNUP=true",
 		fmt.Sprintf("SYNC_BASE_URL=%s", h.ServerURL),
+		// Device PKCE login flow: in-memory email provider + dev inspection so the
+		// harness can read the magic link via GET /internal/dev/last-email.
+		"SYNC_EMAIL_PROVIDER=memory",
+		"SYNC_DEV_EMAIL_INSPECT=1",
+		fmt.Sprintf("SYNC_EMAIL_BASE_URL=%s", h.ServerURL),
 		"SYNC_LOG_FORMAT=text",
 		"SYNC_LOG_LEVEL=info",
 		"SYNC_RATE_LIMIT_AUTH=1000",
@@ -386,6 +406,9 @@ func (h *Harness) StartServer() error {
 		fmt.Sprintf("SYNC_PROJECT_DATA_DIR=%s/projects", h.serverData),
 		"SYNC_ALLOW_SIGNUP=true",
 		fmt.Sprintf("SYNC_BASE_URL=%s", h.ServerURL),
+		"SYNC_EMAIL_PROVIDER=memory",
+		"SYNC_DEV_EMAIL_INSPECT=1",
+		fmt.Sprintf("SYNC_EMAIL_BASE_URL=%s", h.ServerURL),
 		"SYNC_LOG_FORMAT=text",
 		"SYNC_LOG_LEVEL=info",
 		"SYNC_RATE_LIMIT_AUTH=1000",
@@ -468,57 +491,28 @@ func (h *Harness) waitForHealth(timeout time.Duration) error {
 	return fmt.Errorf("health check timed out after %v", timeout)
 }
 
-// authenticate performs the device auth flow for an actor.
+// authenticate performs the device PKCE login flow for an actor, mirroring what
+// the real `td auth login` CLI does:
+//
+//  1. Generate a local PKCE verifier/challenge pair.
+//  2. POST /v1/auth/device/start with the S256 challenge -> device_code.
+//  3. Read the emailed approval link from the in-memory email provider via the
+//     dev-only GET /internal/dev/last-email endpoint (stands in for the user
+//     opening their inbox).
+//  4. GET the approve URL (consumes the token, marks the challenge verified) —
+//     this is what the user's browser does when they click the link.
+//  5. POST /v1/auth/device/poll with device_code + verifier until complete; use
+//     the returned 365-day API key.
+//
+// The actor's user must already exist (provisioned in Setup before the server
+// starts) because device/start is non-enumerating and suppresses unknown emails.
 func (h *Harness) authenticate(actor, email string) error {
 	homeDir := h.homeDirs[actor]
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// Step 1: POST /v1/auth/login/start
-	startBody, _ := json.Marshal(map[string]string{"email": email})
-	resp, err := client.Post(h.ServerURL+"/v1/auth/login/start", "application/json", bytes.NewReader(startBody))
+	pollResp, err := h.deviceLogin(client, email)
 	if err != nil {
-		return fmt.Errorf("login/start: %w", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("login/start status %d: %s", resp.StatusCode, body)
-	}
-
-	var startResp struct {
-		DeviceCode string `json:"device_code"`
-		UserCode   string `json:"user_code"`
-	}
-	if err := json.Unmarshal(body, &startResp); err != nil {
-		return fmt.Errorf("parse login/start: %w", err)
-	}
-
-	// Step 2: POST /auth/verify
-	verifyData := url.Values{"user_code": {startResp.UserCode}}
-	resp2, err := client.PostForm(h.ServerURL+"/auth/verify", verifyData)
-	if err != nil {
-		return fmt.Errorf("auth/verify: %w", err)
-	}
-	resp2.Body.Close()
-
-	// Step 3: POST /v1/auth/login/poll
-	pollBody, _ := json.Marshal(map[string]string{"device_code": startResp.DeviceCode})
-	resp3, err := client.Post(h.ServerURL+"/v1/auth/login/poll", "application/json", bytes.NewReader(pollBody))
-	if err != nil {
-		return fmt.Errorf("login/poll: %w", err)
-	}
-	defer resp3.Body.Close()
-	body3, _ := io.ReadAll(resp3.Body)
-	if resp3.StatusCode != 200 {
-		return fmt.Errorf("login/poll status %d: %s", resp3.StatusCode, body3)
-	}
-
-	var pollResp struct {
-		ApiKey string `json:"api_key"`
-		UserID string `json:"user_id"`
-	}
-	if err := json.Unmarshal(body3, &pollResp); err != nil {
-		return fmt.Errorf("parse login/poll: %w", err)
+		return err
 	}
 
 	// Generate device ID
@@ -561,6 +555,149 @@ func (h *Harness) authenticate(actor, email string) error {
 	}
 
 	return nil
+}
+
+// devicePollResult holds the fields the harness needs from a completed device poll.
+type devicePollResult struct {
+	ApiKey string
+	UserID string
+}
+
+// deviceLogin runs the full device PKCE login flow for email and returns the
+// issued API key + user ID. See authenticate() for the step-by-step rationale.
+func (h *Harness) deviceLogin(client *http.Client, email string) (devicePollResult, error) {
+	var zero devicePollResult
+
+	// Step 1: generate the local PKCE pair (reuses the production CLI helper).
+	pkce, err := syncclient.GeneratePKCE()
+	if err != nil {
+		return zero, fmt.Errorf("generate pkce: %w", err)
+	}
+
+	// Step 2: POST /v1/auth/device/start with the S256 challenge.
+	startBody, _ := json.Marshal(map[string]string{
+		"email":                 email,
+		"code_challenge":        pkce.Challenge,
+		"code_challenge_method": pkce.Method,
+		"device_name":           "e2e-harness",
+	})
+	resp, err := client.Post(h.ServerURL+"/v1/auth/device/start", "application/json", bytes.NewReader(startBody))
+	if err != nil {
+		return zero, fmt.Errorf("device/start: %w", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return zero, fmt.Errorf("device/start status %d: %s", resp.StatusCode, body)
+	}
+	var startResp struct {
+		DeviceCode string `json:"device_code"`
+		EmailSent  bool   `json:"email_sent"`
+	}
+	if err := json.Unmarshal(body, &startResp); err != nil {
+		return zero, fmt.Errorf("parse device/start: %w", err)
+	}
+	if startResp.DeviceCode == "" {
+		return zero, fmt.Errorf("device/start returned empty device_code: %s", body)
+	}
+
+	// Step 3: read the magic link from the in-memory provider (dev-only endpoint).
+	approveURL, err := h.lastEmailApproveURL(client, email)
+	if err != nil {
+		return zero, err
+	}
+
+	// Step 4: GET the approve URL — consumes the token, marks challenge verified.
+	resp2, err := client.Get(approveURL)
+	if err != nil {
+		return zero, fmt.Errorf("device/approve: %w", err)
+	}
+	approveBody, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		return zero, fmt.Errorf("device/approve status %d: %s", resp2.StatusCode, approveBody)
+	}
+
+	// Step 5: poll until complete.
+	pollBody, _ := json.Marshal(map[string]string{
+		"device_code":   startResp.DeviceCode,
+		"code_verifier": pkce.Verifier,
+	})
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		resp3, err := client.Post(h.ServerURL+"/v1/auth/device/poll", "application/json", bytes.NewReader(pollBody))
+		if err != nil {
+			return zero, fmt.Errorf("device/poll: %w", err)
+		}
+		body3, _ := io.ReadAll(resp3.Body)
+		resp3.Body.Close()
+		if resp3.StatusCode != 200 {
+			return zero, fmt.Errorf("device/poll status %d: %s", resp3.StatusCode, body3)
+		}
+		var pollResp struct {
+			Status string `json:"status"`
+			ApiKey string `json:"api_key"`
+			UserID string `json:"user_id"`
+		}
+		if err := json.Unmarshal(body3, &pollResp); err != nil {
+			return zero, fmt.Errorf("parse device/poll: %w", err)
+		}
+		switch pollResp.Status {
+		case "complete":
+			if pollResp.ApiKey == "" || pollResp.UserID == "" {
+				return zero, fmt.Errorf("device/poll complete but missing key/user: %s", body3)
+			}
+			return devicePollResult{ApiKey: pollResp.ApiKey, UserID: pollResp.UserID}, nil
+		case "pending":
+			time.Sleep(200 * time.Millisecond)
+		default:
+			return zero, fmt.Errorf("device/poll unexpected status %q: %s", pollResp.Status, body3)
+		}
+	}
+	return zero, fmt.Errorf("device/poll timed out waiting for completion")
+}
+
+// lastEmailApproveURL fetches the most recent magic-link email from the dev
+// inspection endpoint and extracts the /auth/device/approve URL from its body.
+func (h *Harness) lastEmailApproveURL(client *http.Client, email string) (string, error) {
+	resp, err := client.Get(h.ServerURL + "/internal/dev/last-email")
+	if err != nil {
+		return "", fmt.Errorf("last-email: %w", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("last-email status %d: %s", resp.StatusCode, body)
+	}
+	var last struct {
+		To      string `json:"to"`
+		Text    string `json:"text"`
+		Purpose string `json:"purpose"`
+	}
+	if err := json.Unmarshal(body, &last); err != nil {
+		return "", fmt.Errorf("parse last-email: %w", err)
+	}
+	if last.To != email {
+		return "", fmt.Errorf("last-email recipient %q != %q (wrong email buffered)", last.To, email)
+	}
+
+	// The email body contains an absolute link: SYNC_EMAIL_BASE_URL +
+	// "/auth/device/approve?token=selector.secret". Locate the marker, then walk
+	// back to the "http" scheme that begins the absolute URL.
+	const marker = "/auth/device/approve?token="
+	idx := strings.Index(last.Text, marker)
+	if idx < 0 {
+		return "", fmt.Errorf("approve link not found in email body")
+	}
+	start := strings.LastIndex(last.Text[:idx], "http")
+	if start < 0 {
+		return "", fmt.Errorf("absolute approve URL not found in email body")
+	}
+	url := last.Text[start:]
+	if end := strings.IndexAny(url, " \t\n\r"); end >= 0 {
+		url = url[:end]
+	}
+	return url, nil
 }
 
 // extractProjectID finds p_<hex> in the output string.
