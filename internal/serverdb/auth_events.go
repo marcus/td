@@ -26,6 +26,14 @@ const (
 	AuthEventFailed              = "failed"
 	AuthEventImpersonationIssued = "impersonation_issued"
 	AuthEventKeyRevoked          = "key_revoked"
+
+	// Email-login lifecycle events (used by D1-D5).
+	AuthEventChallengeStarted = "challenge_started" // web/start or device/start called, challenge created
+	AuthEventEmailSent        = "email_sent"        // email dispatched to provider without error
+	AuthEventEmailSuppressed  = "email_suppressed"  // challenge created for unknown/disabled user, generic response sent
+	AuthEventWebExchanged     = "web_exchanged"     // web/exchange succeeded, key issued
+	AuthEventDeviceVerified   = "device_verified"   // emailed link consumed, device request marked verified
+	AuthEventLoginFailed      = "login_failed"      // any terminal failure: wrong token, wrong state, wrong verifier, expired
 )
 
 // InsertAuthEvent inserts an auth event row.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/marcus/td/internal/email"
 	"github.com/marcus/td/internal/serverdb"
 	"golang.org/x/sync/singleflight"
 )
@@ -24,6 +25,7 @@ type Server struct {
 	snapshotGroup   singleflight.Group
 	cancel          context.CancelFunc
 	startTime       time.Time
+	emailSender     email.EmailSender
 
 	// sseHubs is the per-project SSE fan-out registry. Initialized in NewServer.
 	sseHubs *SSEHubRegistry
@@ -45,6 +47,22 @@ func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 		sseHubs:         NewSSEHubRegistry(),
 		pingInterval:    defaultPingInterval,
 	}
+
+	emailCfg := email.EmailConfig{
+		Provider:    cfg.EmailProvider,
+		AccountID:   cfg.CloudflareAccountID,
+		APIToken:    cfg.CloudflareEmailAPIToken,
+		From:        cfg.CloudflareEmailFrom,
+		FromName:    cfg.CloudflareEmailFromName,
+		ReplyTo:     cfg.CloudflareEmailReplyTo,
+		BaseURL:     cfg.AuthEmailBaseURL,
+		CallbackURL: cfg.AuthWebCallbackURL,
+	}
+	sender, err := email.NewEmailSender(emailCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create email sender: %w", err)
+	}
+	s.emailSender = sender
 
 	s.http = &http.Server{
 		Addr:         cfg.ListenAddr,
