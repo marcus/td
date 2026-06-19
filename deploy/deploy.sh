@@ -177,6 +177,13 @@ deploy_remote() {
     ssh "${DEPLOY_USER}@${DEPLOY_HOST}" << EOF
 cd ${DEPLOY_PATH}/deploy
 docker compose -f docker-compose.yml -f compose/docker-compose.${env}.yml --env-file envs/.env.${env} up -d $build_flag
+# Disk hygiene: building on the server accumulates build cache + dangling
+# images. A full disk makes nginx truncate large proxied responses, so prune
+# every deploy.
+docker image prune -f || true
+docker builder prune -f || true
+echo "[deploy] disk after prune:"
+df -h /
 EOF
 
     # Health check
