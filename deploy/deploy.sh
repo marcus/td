@@ -91,16 +91,32 @@ Copy deploy/envs/.env.$env.example to deploy/envs/.env.$env and fill in values"
         fi
     fi
 
-    # Prod requires S3 backup
     if [[ "$env" == "prod" ]]; then
-        if [[ -z "${LITESTREAM_S3_BUCKET:-}" ]]; then
-            error "LITESTREAM_S3_BUCKET is required for prod in $env_file"
+        # Backups are OPTIONAL (litestream S3). Only enforce when explicitly enabled,
+        # so a deliberate no-backups prod can still deploy. Warn loudly otherwise.
+        if [[ "${LITESTREAM_ENABLED:-false}" == "true" ]]; then
+            [[ -n "${LITESTREAM_S3_BUCKET:-}" ]]   || error "LITESTREAM_ENABLED=true but LITESTREAM_S3_BUCKET is empty"
+            [[ -n "${AWS_ACCESS_KEY_ID:-}" ]]      || error "LITESTREAM_ENABLED=true but AWS_ACCESS_KEY_ID is empty"
+            [[ -n "${AWS_SECRET_ACCESS_KEY:-}" ]]  || error "LITESTREAM_ENABLED=true but AWS_SECRET_ACCESS_KEY is empty"
+        else
+            warn "litestream S3 backups are DISABLED (set LITESTREAM_ENABLED=true to require them) — prod has NO DB backups"
         fi
-        if [[ -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
-            error "AWS_ACCESS_KEY_ID is required for prod in $env_file"
-        fi
-        if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-            error "AWS_SECRET_ACCESS_KEY is required for prod in $env_file"
+
+        # Fail closed on auth/email config: with legacy auth off, a missing email
+        # provider or callback URL means NOBODY can log in. Refuse to deploy that.
+        if [[ "${SYNC_LEGACY_DEVICE_AUTH:-false}" != "true" ]]; then
+            local provider="${SYNC_EMAIL_PROVIDER:-}"
+            [[ -n "$provider" ]] || error "SYNC_EMAIL_PROVIDER is required for prod (legacy device auth is disabled)"
+            if [[ "$provider" == "cloudflare" ]]; then
+                [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]       || error "CLOUDFLARE_ACCOUNT_ID is required for the cloudflare email provider"
+                [[ -n "${CLOUDFLARE_EMAIL_API_TOKEN:-}" ]]  || error "CLOUDFLARE_EMAIL_API_TOKEN is required for the cloudflare email provider"
+                [[ -n "${CLOUDFLARE_EMAIL_FROM:-}" ]]       || error "CLOUDFLARE_EMAIL_FROM is required for the cloudflare email provider"
+            elif [[ "$provider" != "log" && "$provider" != "memory" ]]; then
+                error "Unknown SYNC_EMAIL_PROVIDER '$provider' (expected cloudflare|log|memory)"
+            fi
+            [[ -n "${SYNC_AUTH_WEB_CALLBACK_URL:-}" ]] || error "SYNC_AUTH_WEB_CALLBACK_URL is required (web magic-link redirect target)"
+        else
+            warn "SYNC_LEGACY_DEVICE_AUTH=true — legacy device-code login is ENABLED (re-opens the known login-bypass; break-glass only)"
         fi
     fi
 
@@ -186,15 +202,35 @@ echo "[deploy] disk after prune:"
 df -h /
 EOF
 
-    # Health check
+    # Health check — poll with a timeout and FAIL LOUDLY if it never comes up,
+    # instead of reporting success on a down server.
     log "Waiting for health check..."
-    sleep 5
     local health_url="${SYNC_BASE_URL}/healthz"
-    if curl -sf "$health_url" > /dev/null 2>&1; then
-        log "Health check passed: $health_url"
-    else
-        warn "Health check pending - server may still be starting"
-        warn "Check status: ./deploy.sh $env --status"
+    local healthy=0 attempts=30
+    for ((i = 1; i <= attempts; i++)); do
+        if curl -sf "$health_url" > /dev/null 2>&1; then
+            healthy=1
+            break
+        fi
+        sleep 2
+    done
+    if [[ $healthy -ne 1 ]]; then
+        error "Health check FAILED after ~$((attempts * 2))s: $health_url
+Deployment is likely broken. Inspect: ./deploy.sh $env --status
+Break-glass: set SYNC_LEGACY_DEVICE_AUTH=true in deploy/envs/.env.$env and redeploy, or roll back the previous image."
+    fi
+    log "Health check passed: $health_url"
+
+    # Auth-surface sanity (prod, secure mode): the legacy login endpoint must be
+    # disabled. A 200 here means the cutover did not take effect.
+    if [[ "$env" == "prod" && "${SYNC_LEGACY_DEVICE_AUTH:-false}" != "true" ]]; then
+        local legacy_code
+        legacy_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${SYNC_BASE_URL}/v1/auth/login/start" 2>/dev/null || echo "000")
+        if [[ "$legacy_code" == "410" || "$legacy_code" == "404" ]]; then
+            log "Legacy device-auth disabled (HTTP $legacy_code)"
+        else
+            warn "Legacy auth endpoint returned HTTP $legacy_code (expected 410/404) — verify the new image + SYNC_LEGACY_DEVICE_AUTH=false took effect"
+        fi
     fi
 
     log "Deployed to $env successfully"
