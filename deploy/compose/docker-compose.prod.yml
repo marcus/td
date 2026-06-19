@@ -1,5 +1,5 @@
 # Production environment overrides
-# Strict config, required S3 backup, resource limits
+# Strict config, resource limits. S3 backup is OPTIONAL and currently OFF.
 
 services:
   td-sync:
@@ -28,8 +28,13 @@ services:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-    volumes:
-      - ./litestream/litestream.prod.yml:/etc/litestream.yml:ro
+    # S3 litestream config (litestream.prod.yml) is intentionally NOT mounted:
+    # backups are OFF (no S3 bucket), and mounting it makes litestream fail with
+    # "bucket required for s3 replica" and crash-loop the container. The image's
+    # default /etc/litestream.yml uses a local file replica and starts cleanly.
+    # To enable S3 backups later: set a real LITESTREAM_S3_BUCKET and re-add:
+    #   volumes:
+    #     - ./litestream/litestream.prod.yml:/etc/litestream.yml:ro
     deploy:
       resources:
         limits:
