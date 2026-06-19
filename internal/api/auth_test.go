@@ -13,6 +13,29 @@ import (
 	"github.com/marcus/td/internal/serverdb"
 )
 
+// extractTokenFromEmail parses the magic-link token from an email text body.
+// The text body format is: "Click the link to sign in to td-watch: <url>\n\n..."
+// where the URL ends with ?token=selector.secret.
+func extractTokenFromEmail(t *testing.T, text string) string {
+	t.Helper()
+	// The token appears after "?token=" in the URL on the first line.
+	const marker = "?token="
+	idx := strings.Index(text, marker)
+	if idx < 0 {
+		t.Fatalf("extractTokenFromEmail: marker %q not found in email body: %q", marker, text)
+	}
+	rest := text[idx+len(marker):]
+	// Token ends at whitespace or end of string.
+	end := strings.IndexAny(rest, " \t\n\r")
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	if rest == "" {
+		t.Fatalf("extractTokenFromEmail: empty token after marker")
+	}
+	return rest
+}
+
 func TestDeviceAuthFullFlow(t *testing.T) {
 	srv, _ := newTestServer(t)
 	srv.config.AllowSignup = true
@@ -327,5 +350,225 @@ func TestWebStart_AllowSignupFalseUnknownUser(t *testing.T) {
 
 	if len(ms.Sent()) != 0 {
 		t.Fatalf("expected 0 emails sent (suppressed), got %d", len(ms.Sent()))
+	}
+}
+
+// --- POST /v1/auth/web/exchange tests ---
+
+// webExchangeBody is a helper to build the request body for /v1/auth/web/exchange.
+func webExchangeBody(token, state string) map[string]string {
+	return map[string]string{
+		"token": token,
+		"state": state,
+	}
+}
+
+// doWebStart is a helper that calls web/start for an existing user and returns
+// the plaintext token parsed from the sent email.
+func doWebStart(t *testing.T, srv *Server, ms *email.MemorySender, userEmail, state string) string {
+	t.Helper()
+	before := len(ms.Sent())
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody(userEmail, "", state))
+	if w.Code != http.StatusOK {
+		t.Fatalf("web/start: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	sent := ms.Sent()
+	if len(sent) <= before {
+		t.Fatal("doWebStart: expected one new email, none sent")
+	}
+	return extractTokenFromEmail(t, sent[len(sent)-1].Text)
+}
+
+// TestWebExchange_FullFlow verifies the complete web login flow:
+// start -> capture token -> exchange -> 200 with api_key/user_id/email/expires_at;
+// that the returned key authenticates a real request; and that expires_at is ~30 days out.
+func TestWebExchange_FullFlow(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	const userEmail = "webflow@example.com"
+	_, _ = store.CreateUser(userEmail)
+
+	const state = "csrf-state-abc123"
+	token := doWebStart(t, srv, ms, userEmail, state)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, state))
+	if w.Code != http.StatusOK {
+		t.Fatalf("exchange: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp webExchangeResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode exchange response: %v", err)
+	}
+
+	if resp.Status != "complete" {
+		t.Errorf("status: got %q, want %q", resp.Status, "complete")
+	}
+	if resp.APIKey == "" {
+		t.Error("expected non-empty api_key")
+	}
+	if resp.UserID == "" {
+		t.Error("expected non-empty user_id")
+	}
+	if resp.Email != userEmail {
+		t.Errorf("email: got %q, want %q", resp.Email, userEmail)
+	}
+	if resp.ExpiresAt == "" {
+		t.Error("expected non-empty expires_at")
+	}
+
+	// Verify the returned key authenticates a real request.
+	w2 := doRequest(srv, "GET", "/v1/projects", resp.APIKey, nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("use api key: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Verify expires_at is approximately 30 days out (±5 minutes tolerance).
+	expiresAt, err := time.Parse(time.RFC3339, resp.ExpiresAt)
+	if err != nil {
+		t.Fatalf("parse expires_at: %v", err)
+	}
+	expected := time.Now().UTC().Add(30 * 24 * time.Hour)
+	diff := expiresAt.Sub(expected)
+	if diff < -5*time.Minute || diff > 5*time.Minute {
+		t.Errorf("expires_at %v is not ~30 days from now (diff=%v)", expiresAt, diff)
+	}
+}
+
+// TestWebExchange_Replay verifies that replaying the same token returns 401 token_replayed.
+func TestWebExchange_Replay(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("replay@example.com")
+
+	const state = "replay-state"
+	token := doWebStart(t, srv, ms, "replay@example.com", state)
+
+	// First exchange — should succeed.
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, state))
+	if w.Code != http.StatusOK {
+		t.Fatalf("first exchange: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Second exchange — should fail with token_replayed.
+	w = doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, state))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("replay: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "token_replayed" {
+		t.Errorf("replay: error code: got %q, want %q", errResp.Error.Code, "token_replayed")
+	}
+}
+
+// TestWebExchange_Expired verifies that an expired token returns 401 token_expired.
+func TestWebExchange_Expired(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("expired@example.com")
+
+	const state = "expire-state"
+	token := doWebStart(t, srv, ms, "expired@example.com", state)
+
+	// Parse selector from token to force expiry.
+	dotIdx := strings.Index(token, ".")
+	if dotIdx < 0 {
+		t.Fatal("token has no dot separator")
+	}
+	selector := token[:dotIdx]
+	store.ForceExpireChallengeForTest(selector, time.Now().UTC().Add(-1*time.Hour))
+
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, state))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "token_expired" {
+		t.Errorf("expired: error code: got %q, want %q", errResp.Error.Code, "token_expired")
+	}
+}
+
+// TestWebExchange_WrongSecret verifies that a wrong secret returns 401 invalid_token.
+func TestWebExchange_WrongSecret(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("wrongsec@example.com")
+
+	const state = "wrongsec-state"
+	token := doWebStart(t, srv, ms, "wrongsec@example.com", state)
+
+	// Corrupt the secret portion by replacing the part after the dot.
+	dotIdx := strings.Index(token, ".")
+	if dotIdx < 0 {
+		t.Fatal("token has no dot separator")
+	}
+	badToken := token[:dotIdx+1] + strings.Repeat("0", 64)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(badToken, state))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong secret: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "invalid_token" {
+		t.Errorf("wrong secret: error code: got %q, want %q", errResp.Error.Code, "invalid_token")
+	}
+}
+
+// TestWebExchange_WrongState verifies that a wrong state returns 401 invalid_state.
+func TestWebExchange_WrongState(t *testing.T) {
+	srv, store := newTestServer(t)
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	_, _ = store.CreateUser("wrongstate@example.com")
+
+	const state = "correct-state"
+	token := doWebStart(t, srv, ms, "wrongstate@example.com", state)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, "wrong-state"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong state: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "invalid_state" {
+		t.Errorf("wrong state: error code: got %q, want %q", errResp.Error.Code, "invalid_state")
+	}
+}
+
+// TestWebExchange_MalformedToken verifies that a token with no dot returns 400.
+func TestWebExchange_MalformedToken(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody("nodottoken", "some-state"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("malformed token: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestWebExchange_NonExistentSelector verifies that a non-existent selector returns 401 invalid_token.
+func TestWebExchange_NonExistentSelector(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	fakeToken := "deadbeefdeadbeefdeadbeefdeadbeef.000000000000000000000000000000000000000000000000000000000000dead"
+	w := doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(fakeToken, "some-state"))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("nonexistent selector: expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	var errResp ErrorResponse
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "invalid_token" {
+		t.Errorf("nonexistent selector: error code: got %q, want %q", errResp.Error.Code, "invalid_token")
 	}
 }

@@ -210,6 +210,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /auth/verify", s.handleVerifyPage)
 	mux.HandleFunc("POST /auth/verify", s.handleVerifySubmit)
 	mux.HandleFunc("POST /v1/auth/web/start", s.handleWebStart)
+	mux.HandleFunc("POST /v1/auth/web/exchange", s.handleWebExchange)
 
 	// Projects
 	mux.HandleFunc("POST /v1/projects", s.requireAuth(s.withRateLimit(s.handleCreateProject, s.config.RateLimitOther)))

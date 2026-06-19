@@ -405,6 +405,117 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 	genericOK()
 }
 
+// webExchangeRequest is the JSON body for POST /v1/auth/web/exchange.
+type webExchangeRequest struct {
+	Token string `json:"token"`
+	State string `json:"state"`
+}
+
+// webExchangeResponse is the JSON response for POST /v1/auth/web/exchange.
+type webExchangeResponse struct {
+	Status    string `json:"status"`
+	APIKey    string `json:"api_key"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// handleWebExchange handles POST /v1/auth/web/exchange.
+// It consumes a one-time magic-link token, verifies the CSRF state, and issues
+// a 30-day scoped API key.
+func (s *Server) handleWebExchange(w http.ResponseWriter, r *http.Request) {
+	var req webExchangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid json body")
+		return
+	}
+
+	// Step 2: Parse token as selector + "." + secret; split on first dot only.
+	dotIdx := strings.IndexByte(req.Token, '.')
+	if dotIdx < 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "malformed token")
+		return
+	}
+	selector := req.Token[:dotIdx]
+	plaintextSecret := req.Token[dotIdx+1:]
+	if selector == "" || plaintextSecret == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "malformed token")
+		return
+	}
+
+	ip := clientIP(r, s.config.TrustedProxies)
+	ua := r.Header.Get("User-Agent")
+	meta := map[string]string{"ip": ip, "user_agent": ua}
+
+	// Step 3: Consume the challenge atomically.
+	challenge, err := s.store.ConsumeChallenge(selector, plaintextSecret)
+	if err != nil {
+		switch err {
+		case serverdb.ErrChallengeNotFound, serverdb.ErrChallengeInvalidToken:
+			s.logAuthEvent(selector, "", serverdb.AuthEventLoginFailed, meta)
+			writeError(w, http.StatusUnauthorized, "invalid_token", "invalid or expired token")
+		case serverdb.ErrChallengeAlreadyConsumed:
+			s.logAuthEvent(selector, "", serverdb.AuthEventLoginFailed, meta)
+			writeError(w, http.StatusUnauthorized, "token_replayed", "token has already been used")
+		case serverdb.ErrChallengeExpired:
+			s.logAuthEvent(selector, "", serverdb.AuthEventLoginFailed, meta)
+			writeError(w, http.StatusUnauthorized, "token_expired", "token has expired")
+		default:
+			logFor(r.Context()).Error("consume challenge for web exchange", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to consume token")
+		}
+		return
+	}
+
+	// Step 4: Verify purpose == "web_login".
+	if challenge.Purpose != "web_login" {
+		s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+		writeError(w, http.StatusUnauthorized, "invalid_token", "invalid or expired token")
+		return
+	}
+
+	// Step 5: Verify state hash — sha256(req.State) hex must match challenge.StateHash.
+	stateSum := sha256.Sum256([]byte(req.State))
+	stateHex := hex.EncodeToString(stateSum[:])
+	if challenge.StateHash == nil || stateHex != *challenge.StateHash {
+		s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+		writeError(w, http.StatusUnauthorized, "invalid_state", "state mismatch")
+		return
+	}
+
+	// Step 6: Verify UserID is non-nil (suppressed challenges have no user).
+	if challenge.UserID == nil {
+		s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventLoginFailed, meta)
+		writeError(w, http.StatusUnauthorized, "invalid_token", "invalid or expired token")
+		return
+	}
+
+	// Step 7: Issue 30-day API key with scope "sync", name "td-watch-web".
+	expiry := time.Now().UTC().Add(30 * 24 * time.Hour)
+	plaintext, ak, err := s.store.GenerateAPIKey(*challenge.UserID, "td-watch-web", "sync", &expiry)
+	if err != nil {
+		logFor(r.Context()).Error("generate api key for web exchange", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate api key")
+		return
+	}
+
+	// Step 8: Log success event with key_id only — never log the plaintext key.
+	s.logAuthEvent(selector, challenge.Email, serverdb.AuthEventWebExchanged, map[string]string{
+		"ip":         ip,
+		"user_agent": ua,
+		"key_id":     ak.ID,
+	})
+
+	// Step 9: Return the key.
+	writeJSON(w, http.StatusOK, webExchangeResponse{
+		Status:    "complete",
+		APIKey:    plaintext,
+		UserID:    *challenge.UserID,
+		Email:     challenge.Email,
+		ExpiresAt: expiry.Format(time.RFC3339),
+	})
+}
+
 // logAuthEvent logs an auth event, silently ignoring errors.
 func (s *Server) logAuthEvent(authRequestID, email, eventType string, meta map[string]string) {
 	metadata := "{}"
