@@ -30,7 +30,12 @@ func TestNewEmailSender_log(t *testing.T) {
 }
 
 func TestNewEmailSender_cloudflare(t *testing.T) {
-	s, err := email.NewEmailSender(email.EmailConfig{Provider: "cloudflare"})
+	s, err := email.NewEmailSender(email.EmailConfig{
+		Provider:  "cloudflare",
+		AccountID: "test-account",
+		APIToken:  "test-token",
+		From:      "login@example.com",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
