@@ -229,7 +229,7 @@ Break-glass: set SYNC_LEGACY_DEVICE_AUTH=true in deploy/envs/.env.$env and redep
         if [[ "$legacy_code" == "410" || "$legacy_code" == "404" ]]; then
             log "Legacy device-auth disabled (HTTP $legacy_code)"
         else
-            warn "Legacy auth endpoint returned HTTP $legacy_code (expected 410/404) — verify the new image + SYNC_LEGACY_DEVICE_AUTH=false took effect"
+            error "Legacy auth endpoint returned HTTP $legacy_code (expected 410/404). Secure auth cutover did not take effect."
         fi
     fi
 
