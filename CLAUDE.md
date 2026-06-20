@@ -73,6 +73,8 @@ td approve td-a1b2 --self-review --reason "Reviewed diff myself, tests pass"
 
 The reviewer (when delegated) must be independent; the closer is recorded separately for audit. A self-review is recorded as such.
 
+**Keeping delegated reviews independent:** sub-agents spawned by one orchestrator share a branch, agent process, and checkout, so their `td` commands can collapse into a single session — making a delegated review look like a self-review. Give each sub-agent context its own session by exporting a distinct `TD_CONTEXT_ID` (e.g. `export TD_CONTEXT_ID=reviewer-<taskid>` then `td session --new`). Full details and the two fallback routes (`TD_SESSION_ID`, forthcoming worktree keying) are in [docs/multi-agent-sessions.md](docs/multi-agent-sessions.md).
+
 ## Build & Install
 
 ```bash
