@@ -318,6 +318,23 @@ td query "stale(14)"       # Issues not updated in 14 days
 
 **Operators**: `=`, `!=`, `~` (contains), `!~`, `<`, `>`, `<=`, `>=`, `AND`, `OR`, `NOT`.
 
+## JSON output
+
+`--json` is a global flag on every command (reads and mutations). Mutating
+commands emit a consistent envelope — issue-affecting commands return
+`{"id","status","action","issue":{...}}`, other mutations return
+`{"action", ...}`, and errors return `{"error":{"code","message"}}` with exit
+code 1. Handy for scripting:
+
+```bash
+id=$(td add "Wire up payment retry" --json | jq -r .id)
+td start "$id" --json | jq -r .status
+```
+
+Note: `td query` uses `--output table|json|ids|count` instead of `--json`. See
+the [CLI commands guide](docs/guides/cli-commands-guide.md#json-output---json)
+for the full contract.
+
 ## Epics
 
 Track large initiatives that span multiple issues.

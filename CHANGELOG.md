@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [Unreleased]
+
+### CLI / JSON output
+- **Consistent `--json` across every command, including all mutating ones.** `--json` is now a global (persistent) flag registered on the root command, so it works uniformly on reads *and* mutations (`create`/`add`, `update`, `start`, `unstart`, `log`, `handoff`, `defer`, `block`/`unblock`/`reopen`, `link`, `note add`/`edit`/`delete`, `approve`, `review`, `reject`, `close`). Previously many mutating commands had no JSON mode or registered their own ad-hoc local `--json` flag.
+- **Shared success envelopes.** Issue-affecting commands emit `{"id","status","action","issue":{...full issue...}}` (plus command-specific extras like `session`, `reason`, or cascade counts); non-issue mutations emit `{"action", ...}` (e.g. `log` -> `{"action":"logged","id","log":{...}}`, `handoff` -> `{"action":"handoff_recorded","id","handoff":{...}}`). Produced by the new `output.EmitIssue` / `output.EmitResult` helpers. Bulk operations emit one JSON object per id (NDJSON).
+- **`td add --json` now returns the new issue id** (and full issue), making `id=$(td add "..." --json | jq -r .id)` a reliable scripting idiom.
+- **Structured JSON error envelopes.** Errors in JSON mode emit `{"error":{"code":"...","message":"..."}}` on stdout with exit code 1, via `output.JSONError`. `JSONError` now encodes through the `json` package so messages containing quotes, backslashes, or newlines remain valid, parseable single-line JSON.
+- **Fixed: `td epic create` was broken** and now correctly delegates to the create path (emitting an `epic`-typed issue, including under `--json`).
+- Exceptions documented: `td query` continues to use `--output table|json|ids|count`; the JSONL commands (`errors`, `security`, and the stats error/security views) emit their own line-delimited JSON; `show` additionally supports the legacy `--format json`.
+
+### Documentation
+- New "JSON output (`--json`)" section in `docs/guides/cli-commands-guide.md` documenting the global flag, both success envelopes, the error envelope, NDJSON bulk output, the exceptions, and a scripting tip, with real captured examples. Added a JSON output pointer to `README.md`.
+
 ## [v0.47.2] - 2026-06-17
 
 ### Bug Fixes

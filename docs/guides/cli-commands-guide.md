@@ -192,6 +192,128 @@ if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
 fmt.Printf("CREATED %s\n", issue.ID)
 ```
 
+## JSON output (`--json`)
+
+`--json` is a **global (persistent) flag** registered on the root command, so it
+is available on **every** command — reads *and* mutations. In JSON mode a command
+suppresses its human output and emits a single machine-readable envelope on
+stdout instead. This is the contract scripts should rely on.
+
+### The contract
+
+Every mutating command emits one of two success envelopes, plus a shared error
+envelope:
+
+- **Issue-affecting commands** (`create`/`add`, `update`, `start`, `unstart`,
+  `block`, `unblock`, `reopen`, `close`, `approve`, `review`, `reject`) emit:
+
+  ```json
+  {"id": "...", "status": "...", "action": "...", "issue": { ...full issue... }}
+  ```
+
+  `issue` is the complete issue record (the `models.Issue` JSON shape).
+  Command-specific extras are merged in alongside — e.g. `start`/`close` add
+  `session`, `block` adds `reason`, and cascade operations add count fields.
+
+- **Non-issue mutations** emit `{"action": "...", ...}` with command-specific
+  payload and (where one applies) an `id`:
+
+  ```json
+  {"action": "logged", "id": "...", "log": { ...full log... }}
+  {"action": "handoff_recorded", "id": "...", "handoff": { ...full handoff... }}
+  ```
+
+  (`note add`/`edit`/`delete` emit `note_created`/`note_updated`/`note_deleted`,
+  `link --depends-on` emits `dependency_added` with `from`/`to`/`type`, `defer`
+  emits `deferred`/`deferral_cleared`, etc.)
+
+The success envelopes are produced by the shared helpers in `internal/output`:
+`output.EmitIssue(action, issue, extra)` and `output.EmitResult(action, extra)`.
+Use those rather than hand-rolling a map so the contract stays consistent.
+
+### Real examples
+
+```console
+$ td add "Investigate retry flake" --json
+{
+  "action": "created",
+  "id": "td-b221e9",
+  "issue": {
+    "id": "td-b221e9",
+    "title": "Investigate retry flake",
+    "status": "open",
+    "type": "task",
+    "priority": "P2",
+    ...
+  },
+  "status": "open"
+}
+
+$ td start td-b221e9 --json
+{
+  "action": "started",
+  "id": "td-b221e9",
+  "issue": { "id": "td-b221e9", "status": "in_progress", ... },
+  "session": "ses_c22b59",
+  "status": "in_progress"
+}
+
+$ td log td-b221e9 "investigated the flake" --json
+{
+  "action": "logged",
+  "id": "td-b221e9",
+  "log": {
+    "id": "lg-bfbc1318",
+    "issue_id": "td-b221e9",
+    "message": "investigated the flake",
+    "type": "progress",
+    ...
+  }
+}
+```
+
+### Error envelope
+
+On failure a JSON-mode command emits the error envelope on **stdout** and
+exits non-zero (exit code 1):
+
+```console
+$ td add "short" --json
+{"error":{"code":"invalid_input","message":"title too short (5 chars, need 15) ..."}}
+$ echo $?
+1
+```
+
+Produced by `output.JSONError(code, message)`. It is encoded via the `json`
+package (HTML escaping disabled), so messages containing quotes, backslashes, or
+newlines still yield valid, parseable JSON on a single line. Error codes are the
+`output.ErrCode*` constants (`not_found`, `invalid_input`, `conflict`,
+`cannot_self_approve`, `handoff_required`, `database_error`, `git_error`,
+`no_active_session`).
+
+### Bulk operations (NDJSON)
+
+Commands that accept multiple ids (e.g. `td start id1 id2`) emit **one JSON
+object per id**, newline-delimited (NDJSON), with no trailing human summary.
+Parse it line-by-line / with a streaming decoder, not as a single document.
+
+### Exceptions (so scripters aren't surprised)
+
+- **`query`** does *not* use `--json`. It selects its format with
+  `--output table|json|ids|count` instead.
+- The **JSONL commands** — `errors`, `security`, and the error/security views of
+  `stats` — emit line-delimited JSON through their own format, not the
+  `EmitIssue`/`EmitResult` envelopes.
+- **`show`** additionally honors a legacy `--format json` in addition to `--json`.
+
+### Scripting tip
+
+```bash
+# Capture the new id from a create in JSON mode
+id=$(td add "Wire up payment retry" --json | jq -r .id)
+td start "$id" --json | jq -r .status   # -> in_progress
+```
+
 ## Undo Support
 
 ```go
@@ -239,7 +361,7 @@ Args: cobra.RangeArgs(1, 3)
 | No output for empty results | Add `if len(results) == 0 { fmt.Println("No results") }` |
 | Database connection leak | Add `defer database.Close()` |
 | Duplicate DB opens in session-aware code | Open DB once, pass to session |
-| Missing JSON support | Add `--json` flag and `output.JSON()` |
+| Missing JSON support | `--json` is already a persistent root flag; gate on `jsonMode(cmd)` and emit via `output.EmitIssue`/`output.EmitResult` (see [JSON output](#json-output---json)) |
 
 ## Testing
 
