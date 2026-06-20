@@ -4,6 +4,14 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.50.0] - 2026-06-20
+
+### Sync server
+- **First-class project slugs.** Projects now have a stored, globally-unique `slug` (migration v6: `slug` column + unique index). Slugs are generated on create from the project name (`slugify`, falling back to the project id for names that produce an empty slug, with `-2`/`-3` suffixes on collision) and an idempotent startup backfill assigns slugs to pre-existing projects, ordered deterministically by `created_at`. Soft-deleted projects are skipped so they don't consume slug namespace. The slug is exposed as the `slug` JSON field on the user project API (`GET /v1/projects`, `GET /v1/projects/{id}`) and the admin project API. Stored slugs are stable canonical identifiers — they are intentionally **not** updated on rename. This enables clean, deep-linkable, guessable `/projects/<slug>` URLs in td-watch (with the opaque `p_…` id still resolving and redirecting to the canonical slug).
+- **Project invitations (backend).** Invite users to a project by email with a role; accept/decline flow with token-hashed invitations, plus invited-user signup support.
+- **Web signup via magic links.** Email magic-link signup, including for invited users.
+- **Sync-scope enforcement on project routes.** Project routes now require the `sync` scope while preserving the admin proxy path; added a `HasAnyScope` helper and a scope-enforcement test matrix covering admin proxy paths.
+
 ### CLI / JSON output
 - **Consistent `--json` across every command, including all mutating ones.** `--json` is now a global (persistent) flag registered on the root command, so it works uniformly on reads *and* mutations (`create`/`add`, `update`, `start`, `unstart`, `log`, `handoff`, `defer`, `block`/`unblock`/`reopen`, `link`, `note add`/`edit`/`delete`, `approve`, `review`, `reject`, `close`). Previously many mutating commands had no JSON mode or registered their own ad-hoc local `--json` flag.
 - **Shared success envelopes.** Issue-affecting commands emit `{"id","status","action","issue":{...full issue...}}` (plus command-specific extras like `session`, `reason`, or cascade counts); non-issue mutations emit `{"action", ...}` (e.g. `log` -> `{"action":"logged","id","log":{...}}`, `handoff` -> `{"action":"handoff_recorded","id","handoff":{...}}`). Produced by the new `output.EmitIssue` / `output.EmitResult` helpers. Bulk operations emit one JSON object per id (NDJSON).
