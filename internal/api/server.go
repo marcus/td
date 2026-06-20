@@ -257,6 +257,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleWriter, s.withRateLimit(s.handleUpdateProject, s.config.RateLimitOther)))
 	mux.HandleFunc("DELETE /v1/projects/{id}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleDeleteProject, s.config.RateLimitOther)))
 
+	// Invitations
+	mux.HandleFunc("POST /v1/projects/{id}/invitations", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleCreateInvitation, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/projects/{id}/invitations", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleListProjectInvitations, s.config.RateLimitOther)))
+	mux.HandleFunc("DELETE /v1/projects/{id}/invitations/{invitationID}", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleDeleteInvitation, s.config.RateLimitOther)))
+	mux.HandleFunc("GET /v1/invitations", s.requireAuth(s.withRateLimit(s.handleListOwnInvitations, s.config.RateLimitOther)))
+	mux.HandleFunc("POST /v1/invitations/{invitationID}/accept", s.requireAuth(s.withRateLimit(s.handleAcceptInvitation, s.config.RateLimitOther)))
+	mux.HandleFunc("POST /v1/invitations/{invitationID}/decline", s.requireAuth(s.withRateLimit(s.handleDeclineInvitation, s.config.RateLimitOther)))
+
 	// Members
 	mux.HandleFunc("POST /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleOwner, s.withRateLimit(s.handleAddMember, s.config.RateLimitOther)))
 	mux.HandleFunc("GET /v1/projects/{id}/members", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleListMembers, s.config.RateLimitOther)))
