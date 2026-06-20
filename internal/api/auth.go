@@ -329,7 +329,7 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 4: Look up user; unknown email => suppressed path.
+	// Step 4: Look up user; unknown email signs up when allowed, otherwise suppress.
 	user, err := s.store.GetUserByEmail(req.Email)
 	if err != nil {
 		logFor(r.Context()).Error("get user by email for web start", "err", err)
@@ -337,10 +337,17 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
-		// Unknown user — suppressed regardless of AllowSignup.
-		s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
-		genericOK()
-		return
+		if !s.config.AllowSignup {
+			s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
+			genericOK()
+			return
+		}
+		user, err = s.store.CreateUser(req.Email)
+		if err != nil {
+			logFor(r.Context()).Error("create user for web start", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to create user")
+			return
+		}
 	}
 
 	// Step 6: Compute state_hash = sha256(state) hex.

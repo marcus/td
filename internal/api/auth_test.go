@@ -277,27 +277,34 @@ func TestWebStart_ExistingUser(t *testing.T) {
 	}
 }
 
-// TestWebStart_UnknownUser verifies that an unknown user gets the generic 200 with no email sent
-// and that an AuthEventEmailSuppressed event is recorded.
-func TestWebStart_UnknownUser(t *testing.T) {
+// TestWebStart_AllowSignupTrueUnknownUser verifies that an unknown user gets the
+// generic 200, is created, and receives a web login email when signup is allowed.
+func TestWebStart_AllowSignupTrueUnknownUser(t *testing.T) {
 	srv, store := newTestServer(t)
+	srv.config.AllowSignup = true
 	ms := email.NewMemorySender()
 	srv.emailSender = ms
 
 	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody("nobody@example.com", "", "csrf-state"))
 	assertWebStartGeneric200(t, w)
 
-	if len(ms.Sent()) != 0 {
-		t.Fatalf("expected 0 emails sent for unknown user, got %d", len(ms.Sent()))
+	user, err := store.GetUserByEmail("nobody@example.com")
+	if err != nil {
+		t.Fatalf("get created user: %v", err)
+	}
+	if user == nil {
+		t.Fatal("expected user to be created for signup-allowed web start")
 	}
 
-	// Assert AuthEventEmailSuppressed was recorded.
-	result, err := store.QueryAuthEvents(serverdb.AuthEventEmailSuppressed, "nobody@example.com", "", "", 10, "")
-	if err != nil {
-		t.Fatalf("query auth events: %v", err)
+	sent := ms.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 email sent for signup-allowed unknown user, got %d", len(sent))
 	}
-	if len(result.Data) == 0 {
-		t.Fatal("expected AuthEventEmailSuppressed to be recorded for unknown user")
+	if sent[0].To != "nobody@example.com" {
+		t.Errorf("email To: got %q, want %q", sent[0].To, "nobody@example.com")
+	}
+	if sent[0].Purpose != "web_login" {
+		t.Errorf("email Purpose: got %q, want %q", sent[0].Purpose, "web_login")
 	}
 }
 
@@ -350,7 +357,7 @@ func TestWebStart_ResendRateLimit(t *testing.T) {
 // TestWebStart_AllowSignupFalseUnknownUser verifies that AllowSignup=false + unknown email
 // still returns generic 200 (suppressed, non-enumeration).
 func TestWebStart_AllowSignupFalseUnknownUser(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, store := newTestServer(t)
 	srv.config.AllowSignup = false
 	ms := email.NewMemorySender()
 	srv.emailSender = ms
@@ -360,6 +367,22 @@ func TestWebStart_AllowSignupFalseUnknownUser(t *testing.T) {
 
 	if len(ms.Sent()) != 0 {
 		t.Fatalf("expected 0 emails sent (suppressed), got %d", len(ms.Sent()))
+	}
+
+	user, err := store.GetUserByEmail("unknown@example.com")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if user != nil {
+		t.Fatal("expected no user to be created when signup is disabled")
+	}
+
+	result, err := store.QueryAuthEvents(serverdb.AuthEventEmailSuppressed, "unknown@example.com", "", "", 10, "")
+	if err != nil {
+		t.Fatalf("query auth events: %v", err)
+	}
+	if len(result.Data) == 0 {
+		t.Fatal("expected AuthEventEmailSuppressed to be recorded for signup-disabled unknown user")
 	}
 }
 
