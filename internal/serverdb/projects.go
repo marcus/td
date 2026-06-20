@@ -11,6 +11,7 @@ type Project struct {
 	ID          string
 	Name        string
 	Description string
+	Slug        string
 	EventCount  int
 	LastEventAt *time.Time
 	CreatedAt   time.Time
@@ -37,9 +38,14 @@ func (db *ServerDB) CreateProject(name, description, ownerUserID string) (*Proje
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	slug, err := uniqueSlugTx(tx, slugBase(name, id), "")
+	if err != nil {
+		return nil, fmt.Errorf("generate slug: %w", err)
+	}
+
 	_, err = tx.Exec(
-		`INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		id, name, description, now, now,
+		`INSERT INTO projects (id, name, description, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, name, description, slug, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert project: %w", err)
@@ -57,7 +63,7 @@ func (db *ServerDB) CreateProject(name, description, ownerUserID string) (*Proje
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	return &Project{ID: id, Name: name, Description: description, CreatedAt: now, UpdatedAt: now}, nil
+	return &Project{ID: id, Name: name, Description: description, Slug: slug, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 // CreateProjectWithID creates a new project using a pre-generated ID and adds the owner as a member.
@@ -74,9 +80,14 @@ func (db *ServerDB) CreateProjectWithID(id, name, description, ownerUserID strin
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	slug, err := uniqueSlugTx(tx, slugBase(name, id), "")
+	if err != nil {
+		return nil, fmt.Errorf("generate slug: %w", err)
+	}
+
 	_, err = tx.Exec(
-		`INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		id, name, description, now, now,
+		`INSERT INTO projects (id, name, description, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, name, description, slug, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert project: %w", err)
@@ -94,18 +105,18 @@ func (db *ServerDB) CreateProjectWithID(id, name, description, ownerUserID strin
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 
-	return &Project{ID: id, Name: name, Description: description, CreatedAt: now, UpdatedAt: now}, nil
+	return &Project{ID: id, Name: name, Description: description, Slug: slug, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 // GetProject returns a project by ID. If includeSoftDeleted is false, soft-deleted projects are excluded.
 func (db *ServerDB) GetProject(id string, includeSoftDeleted bool) (*Project, error) {
-	query := `SELECT id, name, description, event_count, last_event_at, created_at, updated_at, deleted_at FROM projects WHERE id = ?`
+	query := `SELECT id, name, description, COALESCE(slug,''), event_count, last_event_at, created_at, updated_at, deleted_at FROM projects WHERE id = ?`
 	if !includeSoftDeleted {
 		query += ` AND deleted_at IS NULL`
 	}
 
 	p := &Project{}
-	err := db.conn.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Description, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
+	err := db.conn.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Description, &p.Slug, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -118,7 +129,7 @@ func (db *ServerDB) GetProject(id string, includeSoftDeleted bool) (*Project, er
 // ListProjectsForUser returns all non-deleted projects the user is a member of.
 func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 	rows, err := db.conn.Query(`
-		SELECT p.id, p.name, p.description, p.event_count, p.last_event_at, p.created_at, p.updated_at, p.deleted_at
+		SELECT p.id, p.name, p.description, COALESCE(p.slug,''), p.event_count, p.last_event_at, p.created_at, p.updated_at, p.deleted_at
 		FROM projects p
 		JOIN memberships m ON m.project_id = p.id
 		WHERE m.user_id = ? AND p.deleted_at IS NULL
@@ -132,7 +143,7 @@ func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 	var projects []*Project
 	for rows.Next() {
 		p := &Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Slug, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -207,4 +218,49 @@ func (db *ServerDB) CountProjects() (int, error) {
 	var count int
 	err := db.conn.QueryRow("SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL").Scan(&count)
 	return count, err
+}
+
+// BackfillProjectSlugs assigns a slug to every project that has a NULL or
+// empty slug. Projects are processed in created_at ASC order so the
+// deterministic ordering means the same project always wins the base slug.
+// This is safe to call on every startup — projects that already have a slug
+// are skipped.
+func (db *ServerDB) BackfillProjectSlugs() error {
+	rows, err := db.conn.Query(
+		`SELECT id, name FROM projects WHERE slug IS NULL OR slug = '' ORDER BY created_at ASC, id ASC`,
+	)
+	if err != nil {
+		return fmt.Errorf("backfill slugs: query: %w", err)
+	}
+	defer rows.Close()
+
+	type projectRow struct {
+		id   string
+		name string
+	}
+	var pending []projectRow
+	for rows.Next() {
+		var r projectRow
+		if err := rows.Scan(&r.id, &r.name); err != nil {
+			return fmt.Errorf("backfill slugs: scan: %w", err)
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("backfill slugs: iterate: %w", err)
+	}
+
+	for _, r := range pending {
+		slug, err := uniqueSlug(db.conn, slugBase(r.name, r.id), r.id)
+		if err != nil {
+			return fmt.Errorf("backfill slugs: generate for %s: %w", r.id, err)
+		}
+		if _, err := db.conn.Exec(
+			`UPDATE projects SET slug = ? WHERE id = ? AND (slug IS NULL OR slug = '')`,
+			slug, r.id,
+		); err != nil {
+			return fmt.Errorf("backfill slugs: update %s: %w", r.id, err)
+		}
+	}
+	return nil
 }

@@ -1,7 +1,7 @@
 package serverdb
 
 // ServerSchemaVersion is the current server database schema version
-const ServerSchemaVersion = 5
+const ServerSchemaVersion = 6
 
 const serverSchema = `
 -- Users table
@@ -206,5 +206,11 @@ var Migrations = []Migration{
 		CREATE INDEX IF NOT EXISTS idx_invitations_email_status ON invitations(email, status);
 		CREATE INDEX IF NOT EXISTS idx_invitations_cleanup ON invitations(status, expires_at);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);`,
+	},
+	{
+		Version:     6,
+		Description: "Add slug column to projects for stable canonical URL slugs",
+		SQL: `ALTER TABLE projects ADD COLUMN slug TEXT;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);`,
 	},
 }

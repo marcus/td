@@ -47,6 +47,11 @@ func Open(dbPath string) (*ServerDB, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
+	if err := db.BackfillProjectSlugs(); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("backfill project slugs: %w", err)
+	}
+
 	return db, nil
 }
 

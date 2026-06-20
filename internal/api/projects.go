@@ -18,6 +18,7 @@ type ProjectResponse struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
+	Slug        string  `json:"slug"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
 	DeletedAt   *string `json:"deleted_at,omitempty"`
@@ -184,6 +185,7 @@ func projectToResponse(p *serverdb.Project) ProjectResponse {
 		ID:          p.ID,
 		Name:        p.Name,
 		Description: p.Description,
+		Slug:        p.Slug,
 		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
