@@ -1,8 +1,23 @@
 # Plan: Session and Worktree Flow Revisit
 
-Status: proposed
+Status: partially scheduled — lean phase scoped into epic td-124499 (2026-06-20)
 Created: 2026-06-19
 Related: docs/plans/orchestrator-review-closure-plan.md, docs/plans/review-policy-trusted-mode-plan.md, docs/multi-agent-ui-review.md
+
+## Decision Log (2026-06-20)
+
+A planning pass scoped a **lean first epic** (`td-124499`) and deferred the rest. Decisions:
+
+- **Scope = lean.** Ship Phase 2b (context_id keying, Failure Mode #6) plus the two cheap "aged controls" cleanups. Defer worktree identity (Recommended Model #1), `session_state` (Model #2), lineage-aware policy (Phase 4), and directed handoffs (Phase 5) to follow-up epics.
+- **Identity model = both, sequenced.** context_id keying is the shipping *mechanism* now; `td delegate` (explicit role declaration) is the eventual *canonical* model. `td delegate` is **spec-only** in this epic (`td-d7fd80`) so the two don't become two half-supported paths.
+- **td-sync boundary.** When `session_state` lands (deferred), it is **local-only and must not sync** — it is per-machine working context. `sessions`/worktree columns may sync. Recorded as forward-guidance for the deferred Core epic.
+
+Two corrections from grounding the plan against current code (2026-06-20):
+
+- **The mandatory-handoff gate is already gone.** `td review` auto-creates a minimal handoff when none exists (`cmd/review.go:249-253`, `newAutoReviewHandoff`) and warns. The "Right-Size the Mandatory Handoff" item below is therefore a *content-quality* improvement (synthesize from logs) rather than gate removal — see `td-713b57`.
+- **The title minimum is already a config field** (`DefaultTitleMinLength = 15`, `internal/config/config.go:19`, overridable via `TitleMinLength`). The "Relax Input-Validation Gates" item is just reject→warn — see `td-e76379`.
+
+Epic `td-124499` children: `td-64dc09` (context_id keying, P1), `td-a616c2` (document interim TD_SESSION_ID pattern, P2), `td-d7fd80` (design `td delegate`, P2), `td-713b57` (synthesize auto-handoff, P2), `td-e76379` (title reject→warn, P3).
 
 ## Summary
 
