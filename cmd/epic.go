@@ -99,11 +99,27 @@ func init() {
 	epicCmd.AddCommand(epicCreateCmd)
 	epicCmd.AddCommand(epicListCmd)
 
-	// Copy relevant flags from createCmd to epicCreateCmd
+	// Copy relevant flags from createCmd to epicCreateCmd. createCmd.RunE reads
+	// every one of these via cmd.Flags().Get...; any flag it touches must exist
+	// here or resolveRichTextField/GetString returns "flag accessed but not
+	// defined" and the delegated create fails before doing any work.
 	epicCreateCmd.Flags().String("title", "", "Issue title (max 200 characters)")
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
+	epicCreateCmd.Flags().String("desc", "", "Alias for --description")
+	epicCreateCmd.Flags().String("body", "", "Alias for --description")
+	epicCreateCmd.Flags().String("notes", "", "Alias for --description")
+	epicCreateCmd.Flags().String("description-file", "", "Read description from file or - for stdin (preserves formatting)")
+	epicCreateCmd.Flags().String("acceptance", "", "Acceptance criteria")
+	epicCreateCmd.Flags().String("acceptance-file", "", "Read acceptance criteria from file or - for stdin (preserves formatting)")
 	epicCreateCmd.Flags().StringArrayP("labels", "l", nil, "Labels (repeatable, comma-separated)")
+	epicCreateCmd.Flags().StringArray("label", nil, "Alias for --labels")
+	epicCreateCmd.Flags().StringArray("tags", nil, "Alias for --labels")
+	epicCreateCmd.Flags().StringArray("tag", nil, "Alias for --labels")
+	epicCreateCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
+	epicCreateCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
+	epicCreateCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01)")
+	epicCreateCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15)")
 	epicCreateCmd.Flags().String("parent", "", "Parent issue ID")
 	epicCreateCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
 	epicCreateCmd.Flags().StringArray("depends-on", nil, "Issues this depends on (repeatable, comma-separated)")

@@ -41,9 +41,26 @@ var createCmd = &cobra.Command{
 
 		baseDir := getBaseDir()
 
+		// emitErr surfaces a failure. In json mode it stays silent so the
+		// top-level Execute() converts the returned error into a single JSON
+		// error envelope (avoiding a double-print). In human mode it prints the
+		// existing human-oriented error text.
+		emitErr := func(format string, args ...interface{}) {
+			if !jsonMode(cmd) {
+				output.Error(format, args...)
+			}
+		}
+		// emitWarn prints a non-fatal warning in human mode only; in json mode it
+		// stays silent so stray text never corrupts the JSON envelope on stdout.
+		emitWarn := func(format string, args ...interface{}) {
+			if !jsonMode(cmd) {
+				output.Warning(format, args...)
+			}
+		}
+
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
@@ -55,7 +72,7 @@ var createCmd = &cobra.Command{
 		}
 
 		if title == "" {
-			output.Error("title is required")
+			emitErr("title is required")
 			return fmt.Errorf("title is required")
 		}
 
@@ -69,7 +86,7 @@ var createCmd = &cobra.Command{
 		// Validate title quality
 		minLen, maxLen, _ := config.GetTitleLengthLimits(baseDir)
 		if err := validateTitle(title, minLen, maxLen); err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -87,7 +104,7 @@ var createCmd = &cobra.Command{
 		if t := typeFlag; t != "" {
 			issue.Type = models.NormalizeType(t)
 			if !models.IsValidType(issue.Type) {
-				output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
+				emitErr("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
 				return fmt.Errorf("invalid type: %s", t)
 			}
 		}
@@ -96,7 +113,7 @@ var createCmd = &cobra.Command{
 		if p, _ := cmd.Flags().GetString("priority"); p != "" {
 			issue.Priority = models.NormalizePriority(p)
 			if !models.IsValidPriority(issue.Priority) {
-				output.Error("invalid priority: %s (valid: P0, P1, P2, P3, P4)", p)
+				emitErr("invalid priority: %s (valid: P0, P1, P2, P3, P4)", p)
 				return fmt.Errorf("invalid priority: %s", p)
 			}
 		}
@@ -104,7 +121,7 @@ var createCmd = &cobra.Command{
 		// Points
 		if pts, _ := cmd.Flags().GetInt("points"); pts > 0 {
 			if !models.IsValidPoints(pts) {
-				output.Error("invalid points: %d (must be Fibonacci: 1,2,3,5,8,13,21)", pts)
+				emitErr("invalid points: %d (must be Fibonacci: 1,2,3,5,8,13,21)", pts)
 				return fmt.Errorf("invalid points")
 			}
 			issue.Points = pts
@@ -141,7 +158,7 @@ var createCmd = &cobra.Command{
 			stdinUsed,
 		)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		if descriptionProvided {
@@ -156,7 +173,7 @@ var createCmd = &cobra.Command{
 			stdinUsed,
 		)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		if acceptanceProvided {
@@ -178,7 +195,7 @@ var createCmd = &cobra.Command{
 		if deferStr, _ := cmd.Flags().GetString("defer"); deferStr != "" {
 			parsed, err := dateparse.ParseDate(deferStr)
 			if err != nil {
-				output.Error("invalid defer date: %v", err)
+				emitErr("invalid defer date: %v", err)
 				return fmt.Errorf("invalid defer date: %v", err)
 			}
 			issue.DeferUntil = &parsed
@@ -188,7 +205,7 @@ var createCmd = &cobra.Command{
 		if dueStr, _ := cmd.Flags().GetString("due"); dueStr != "" {
 			parsed, err := dateparse.ParseDate(dueStr)
 			if err != nil {
-				output.Error("invalid due date: %v", err)
+				emitErr("invalid due date: %v", err)
 				return fmt.Errorf("invalid due date: %v", err)
 			}
 			issue.DueDate = &parsed
@@ -197,7 +214,7 @@ var createCmd = &cobra.Command{
 		// Get session BEFORE creating issue (needed for CreatorSession)
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("failed to create session: %v", err)
+			emitErr("failed to create session: %v", err)
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 		issue.CreatorSession = sess.ID
@@ -210,20 +227,20 @@ var createCmd = &cobra.Command{
 
 		// Create the issue (atomic create + action log)
 		if err := database.CreateIssueLogged(issue, sess.ID); err != nil {
-			output.Error("failed to create issue: %v", err)
+			emitErr("failed to create issue: %v", err)
 			return err
 		}
 
 		// Record session action for bypass prevention
 		if err := database.RecordSessionAction(issue.ID, sess.ID, models.ActionSessionCreated); err != nil {
-			output.Warning("failed to record session history: %v", err)
+			emitWarn("failed to record session history: %v", err)
 		}
 
 		// Handle dependencies (support repeated flags and comma-separated)
 		if dependsArr, _ := cmd.Flags().GetStringArray("depends-on"); len(dependsArr) > 0 {
 			for _, dep := range mergeMultiValueFlag(dependsArr) {
 				if err := database.AddDependencyLogged(issue.ID, dep, "depends_on", sess.ID); err != nil {
-					output.Warning("failed to add dependency %s: %v", dep, err)
+					emitWarn("failed to add dependency %s: %v", dep, err)
 				}
 			}
 		}
@@ -231,9 +248,13 @@ var createCmd = &cobra.Command{
 		if blocksArr, _ := cmd.Flags().GetStringArray("blocks"); len(blocksArr) > 0 {
 			for _, blocked := range mergeMultiValueFlag(blocksArr) {
 				if err := database.AddDependencyLogged(blocked, issue.ID, "depends_on", sess.ID); err != nil {
-					output.Warning("failed to add blocks %s: %v", blocked, err)
+					emitWarn("failed to add blocks %s: %v", blocked, err)
 				}
 			}
+		}
+
+		if jsonMode(cmd) {
+			return output.EmitIssue("created", issue, nil)
 		}
 
 		fmt.Printf("CREATED %s\n", issue.ID)
