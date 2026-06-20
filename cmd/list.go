@@ -77,7 +77,7 @@ var listCmd = &cobra.Command{
 
 			// Output format
 			format, _ := cmd.Flags().GetString("format")
-			jsonOutput, _ := cmd.Flags().GetBool("json")
+			jsonOutput := jsonMode(cmd)
 			if format == "json" || jsonOutput {
 				return output.JSON(results)
 			}
@@ -281,7 +281,7 @@ var listCmd = &cobra.Command{
 
 		// Output format (supports --json, --long, --short, and --format)
 		format, _ := cmd.Flags().GetString("format")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 		if format == "json" || jsonOutput {
 			return output.JSON(issues)
 		}
@@ -642,7 +642,7 @@ var deletedCmd = &cobra.Command{
 			return err
 		}
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonOutput := jsonMode(cmd); jsonOutput {
 			return output.JSON(result.issues)
 		}
 
@@ -907,10 +907,7 @@ func init() {
 	listCmd.Flags().IntP("limit", "n", 50, "Limit results")
 	listCmd.Flags().Bool("long", false, "Detailed output")
 	listCmd.Flags().Bool("short", false, "Compact output (default)")
-	listCmd.Flags().Bool("json", false, "JSON output")
 	listCmd.Flags().BoolP("all", "a", false, "Include closed and deferred issues")
-
-	deletedCmd.Flags().Bool("json", false, "JSON output")
 
 	listCmd.Flags().Bool("deferred", false, "Show only currently deferred tasks")
 	listCmd.Flags().Bool("overdue", false, "Show tasks past their due date")

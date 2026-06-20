@@ -851,10 +851,15 @@ func TestWsHandoffFlags(t *testing.T) {
 	}
 }
 
-// TestWsCurrentFlags tests that current command has expected flags
+// TestWsCurrentFlags tests that current command still accepts --json.
+// The local --json registration was collapsed onto the root persistent flag;
+// the command must continue to accept --json via inheritance.
 func TestWsCurrentFlags(t *testing.T) {
+	// Trigger cobra's lazy merge of inherited persistent flags, then confirm
+	// --json resolves through the command's flag set.
+	_ = wsCurrentCmd.InheritedFlags()
 	if wsCurrentCmd.Flags().Lookup("json") == nil {
-		t.Error("Expected --json flag on ws current command")
+		t.Error("Expected ws current command to accept --json (via inherited persistent flag)")
 	}
 }
 

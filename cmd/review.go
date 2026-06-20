@@ -209,7 +209,7 @@ Supports bulk operations:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		database, err := db.Open(baseDir)
 		if err != nil {
@@ -260,7 +260,7 @@ Supports bulk operations:
 					skipped++
 					continue
 				}
-				if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) {
+				if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) && !jsonOutput {
 					output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
 				}
 			}
@@ -289,7 +289,20 @@ Supports bulk operations:
 				continue
 			}
 
-			fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
+			if jsonOutput {
+				refetched, ferr := database.GetIssue(issueID)
+				status := string(models.StatusInReview)
+				if ferr == nil {
+					status = string(refetched.Status)
+				}
+				_ = output.EmitResult("review_requested", map[string]any{
+					"id":      issueID,
+					"status":  status,
+					"session": sess.ID,
+				})
+			} else {
+				fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
+			}
 
 			// Cascade to descendants if this is a parent issue
 			hasChildren, _ := database.HasChildren(issueID)
@@ -303,13 +316,15 @@ Supports bulk operations:
 					for _, child := range descendants {
 						cascadeResult := submitIssueForReview(database, child, sess, baseDir, fmt.Sprintf("Cascaded review from %s", issueID))
 						if !cascadeResult.Success {
-							output.Warning("failed to cascade review to %s: %s", child.ID, cascadeResult.Message)
+							if !jsonOutput {
+								output.Warning("failed to cascade review to %s: %s", child.ID, cascadeResult.Message)
+							}
 							continue
 						}
 						cascaded++
 					}
 
-					if cascaded > 0 {
+					if cascaded > 0 && !jsonOutput {
 						fmt.Printf("  + %d descendant(s) also marked for review\n", cascaded)
 					}
 				}
@@ -317,15 +332,17 @@ Supports bulk operations:
 
 			// Cascade up: if all siblings are in_review (or closed), update parent epic
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusInReview, sess.ID); count > 0 {
-				for _, id := range ids {
-					fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusInReview)
+				if !jsonOutput {
+					for _, id := range ids {
+						fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusInReview)
+					}
 				}
 			}
 
 			reviewed++
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !jsonOutput {
 			fmt.Printf("\nReviewed %d, skipped %d\n", reviewed, skipped)
 		}
 		return nil
@@ -544,21 +561,25 @@ To surface issues reviewed by a sub-agent that you can close, use
 	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		jsonOutput := jsonMode(cmd)
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if !jsonOutput {
+				output.Error("%v", err)
+			}
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			if !jsonOutput {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
 		all, _ := cmd.Flags().GetBool("all")
 		recordOnly, _ := cmd.Flags().GetBool("record-only")
 		selfReview, _ := cmd.Flags().GetBool("self-review")
@@ -628,7 +649,9 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// plus delegated-mode ready-to-close work when not recording a review.
 			issues, err := approvalCandidateIssues(database, baseDir, sess.ID, !recordOnly)
 			if err != nil {
-				output.Error("failed to list reviewable issues: %v", err)
+				if !jsonOutput {
+					output.Error("failed to list reviewable issues: %v", err)
+				}
 				return err
 			}
 			for _, issue := range issues {
@@ -639,29 +662,37 @@ To surface issues reviewed by a sub-agent that you can close, use
 			if len(issueIDs) == 0 {
 				issues, err := approvalCandidateIssues(database, baseDir, sess.ID, !recordOnly)
 				if err != nil {
-					output.Error("failed to list reviewable issues: %v", err)
+					if !jsonOutput {
+						output.Error("failed to list reviewable issues: %v", err)
+					}
 					return err
 				}
 				switch len(issues) {
 				case 0:
-					output.Error("no issues to approve. Provide issue IDs or use --all")
+					if !jsonOutput {
+						output.Error("no issues to approve. Provide issue IDs or use --all")
+					}
 					return fmt.Errorf("no issues specified")
 				case 1:
 					issueIDs = []string{issues[0].ID}
 				default:
-					output.Error("no issue ID specified. Multiple issues awaiting your review:")
-					for _, issue := range issues {
-						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					if !jsonOutput {
+						output.Error("no issue ID specified. Multiple issues awaiting your review:")
+						for _, issue := range issues {
+							fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+						}
+						fmt.Printf("\nUsage: td approve <issue-id>\n")
+						fmt.Printf("Or use: td approve --all\n")
 					}
-					fmt.Printf("\nUsage: td approve <issue-id>\n")
-					fmt.Printf("Or use: td approve --all\n")
 					return fmt.Errorf("issue ID required")
 				}
 			}
 		}
 
 		if len(issueIDs) == 0 {
-			output.Error("no issues to approve. Provide issue IDs or use --all")
+			if !jsonOutput {
+				output.Error("no issues to approve. Provide issue IDs or use --all")
+			}
 			return fmt.Errorf("no issues specified")
 		}
 
@@ -837,7 +868,18 @@ To surface issues reviewed by a sub-agent that you can close, use
 					output.Warning("add log failed: %v", err)
 				}
 
-				fmt.Printf("REVIEW RECORDED %s (decision: %s, reviewer: %s)\n", issueID, decision, sess.ID)
+				if jsonOutput {
+					refetched, ferr := database.GetIssue(issueID)
+					if ferr != nil {
+						refetched = issue
+					}
+					_ = output.EmitIssue("review_recorded", refetched, map[string]any{
+						"reviewer": sess.ID,
+						"decision": decision,
+					})
+				} else {
+					fmt.Printf("REVIEW RECORDED %s (decision: %s, reviewer: %s)\n", issueID, decision, sess.ID)
+				}
 				approved++
 				continue
 			}
@@ -921,16 +963,31 @@ To surface issues reviewed by a sub-agent that you can close, use
 				}
 
 				clearFocusIfNeeded(baseDir, issueID)
-				fmt.Printf("APPROVED %s (closed by %s using review by %s)\n", issueID, sess.ID, activeApproval.ReviewerSession)
+				if jsonOutput {
+					refetched, ferr := database.GetIssue(issueID)
+					if ferr != nil {
+						refetched = issue
+					}
+					_ = output.EmitIssue("approved", refetched, map[string]any{
+						"reviewer": activeApproval.ReviewerSession,
+						"closer":   sess.ID,
+					})
+				} else {
+					fmt.Printf("APPROVED %s (closed by %s using review by %s)\n", issueID, sess.ID, activeApproval.ReviewerSession)
+				}
 
 				if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
-					for _, id := range ids {
-						fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+					if !jsonOutput {
+						for _, id := range ids {
+							fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+						}
 					}
 				}
 				if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
-					for _, id := range ids {
-						fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+					if !jsonOutput {
+						for _, id := range ids {
+							fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+						}
 					}
 				}
 				approved++
@@ -1098,7 +1155,15 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			if eligibility.CreatorException {
+			if jsonOutput {
+				refetched, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					refetched = issue
+				}
+				_ = output.EmitIssue("approved", refetched, map[string]any{
+					"reviewer": sess.ID,
+				})
+			} else if eligibility.CreatorException {
 				fmt.Printf("APPROVED %s (reviewer: %s, creator exception)\n", issueID, sess.ID)
 			} else if eligibility.SelfReview {
 				fmt.Printf("APPROVED %s (reviewer: %s, self-review)\n", issueID, sess.ID)
@@ -1108,22 +1173,26 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 			// Cascade up: if all siblings are closed, update parent epic
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
-				for _, id := range ids {
-					fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+				if !jsonOutput {
+					for _, id := range ids {
+						fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+					}
 				}
 			}
 
 			// Auto-unblock dependents whose dependencies are now all closed
 			if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
-				for _, id := range ids {
-					fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+				if !jsonOutput {
+					for _, id := range ids {
+						fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+					}
 				}
 			}
 
 			approved++
 		}
 
-		if len(issueIDs) > 1 {
+		if len(issueIDs) > 1 && !jsonOutput {
 			fmt.Printf("\nApproved %d, skipped %d\n", approved, skipped)
 		}
 		return nil
@@ -1142,7 +1211,7 @@ Supports bulk operations:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		database, err := db.Open(baseDir)
 		if err != nil {
@@ -1579,14 +1648,12 @@ func init() {
 	reviewCmd.Flags().String("comment", "", "Reason for submitting (alias for --reason)")
 	reviewCmd.Flags().String("note", "", "Reason for submitting (alias for --reason)")
 	reviewCmd.Flags().String("notes", "", "Reason for submitting (alias for --reason)")
-	reviewCmd.Flags().Bool("json", false, "JSON output")
 	reviewCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	approveCmd.Flags().StringP("reason", "m", "", "Reason for approval")
 	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().StringP("comment", "c", "", "Reason for approval (alias for --message)")
 	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
-	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated mode)")
 	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
@@ -1596,7 +1663,6 @@ func init() {
 	rejectCmd.Flags().String("message", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("note", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("notes", "", "Reason for rejection (alias for --reason)")
-	rejectCmd.Flags().Bool("json", false, "JSON output")
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")

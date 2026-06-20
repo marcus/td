@@ -33,7 +33,7 @@ var treeCmd = &cobra.Command{
 		}
 
 		maxDepth, _ := cmd.Flags().GetInt("depth")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		if jsonOutput {
 			tree := buildTree(database, issueID, 0, maxDepth)
@@ -261,5 +261,4 @@ func init() {
 	commentsCmd.AddCommand(commentsAddCmd)
 
 	treeCmd.Flags().Int("depth", 0, "Max depth (0=unlimited)")
-	treeCmd.Flags().Bool("json", false, "JSON output")
 }

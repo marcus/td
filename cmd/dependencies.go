@@ -36,7 +36,7 @@ var blockedByCmd = &cobra.Command{
 		}
 
 		directOnly, _ := cmd.Flags().GetBool("direct")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		// Get direct blocked issues
 		blocked, err := database.GetBlockedBy(issueID)
@@ -161,7 +161,7 @@ var dependsOnCmd = &cobra.Command{
 			return err
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		if jsonOutput {
 			result := map[string]interface{}{
@@ -221,7 +221,7 @@ var criticalPathCmd = &cobra.Command{
 		if limit == 0 {
 			limit = 10
 		}
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		// Get all open/in_progress issues (excluding epics - they're containers, not blocking work)
 		allIssues, err := database.ListIssues(db.ListIssuesOptions{
@@ -457,7 +457,7 @@ Examples:
 		defer database.Close()
 
 		blocking, _ := cmd.Flags().GetBool("blocking")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		// Single arg: show dependencies (or blocking issues with --blocking)
 		if len(args) == 1 {
@@ -724,13 +724,8 @@ func init() {
 	depAddCmd.Flags().String("depends-on", "", "Dependency ID(s) to add (comma-separated)")
 
 	blockedByCmd.Flags().Bool("direct", false, "Only show direct dependencies")
-	blockedByCmd.Flags().Bool("json", false, "JSON output")
-
-	dependsOnCmd.Flags().Bool("json", false, "JSON output")
 
 	depCmd.Flags().Bool("blocking", false, "Show what depends on this issue (reverse)")
-	depCmd.Flags().Bool("json", false, "JSON output")
 
 	criticalPathCmd.Flags().Int("limit", 10, "Max issues to show")
-	criticalPathCmd.Flags().Bool("json", false, "JSON output")
 }

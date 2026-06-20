@@ -91,7 +91,7 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 		}
 
 		quiet, _ := cmd.Flags().GetBool("quiet")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		// Check for in-progress issues by this session
 		inProgress, _ := database.ListIssues(db.ListIssuesOptions{
@@ -162,5 +162,4 @@ func init() {
 	rootCmd.AddCommand(checkHandoffCmd)
 
 	checkHandoffCmd.Flags().Bool("quiet", false, "Suppress output, only return exit code")
-	checkHandoffCmd.Flags().Bool("json", false, "JSON output")
 }

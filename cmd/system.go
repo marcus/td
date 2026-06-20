@@ -67,7 +67,7 @@ var infoCmd = &cobra.Command{
 		})
 
 		// JSON output
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonMode(cmd) {
 			result := map[string]interface{}{
 				"project":         projectName,
 				"database":        ".todos/issues.db",
@@ -914,8 +914,6 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(upgradeCmd)
-
-	infoCmd.Flags().Bool("json", false, "JSON output")
 
 	exportCmd.Flags().String("format", "json", "Export format: json or md")
 	exportCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")

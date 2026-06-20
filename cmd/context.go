@@ -46,7 +46,7 @@ var usageCmd = &cobra.Command{
 
 		compact, _ := cmd.Flags().GetBool("compact")
 		quiet, _ := cmd.Flags().GetBool("quiet")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 		newSession, _ := cmd.Flags().GetBool("new-session")
 
 		// Use GetOrCreate to detect context changes and auto-rotate sessions.
@@ -293,6 +293,5 @@ func init() {
 
 	usageCmd.Flags().Bool("compact", false, "Shorter output")
 	usageCmd.Flags().BoolP("quiet", "q", false, "Hide workflow instructions (show only actionable items)")
-	usageCmd.Flags().Bool("json", false, "JSON output")
 	usageCmd.Flags().Bool("new-session", false, "Force create a new session (use at conversation start / after /clear)")
 }

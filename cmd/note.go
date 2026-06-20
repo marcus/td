@@ -121,7 +121,7 @@ Examples:
 		}
 
 		// JSON output
-		if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
+		if jsonMode(cmd) {
 			return output.JSON(notes)
 		}
 		if format, _ := cmd.Flags().GetString("output"); format == "json" {
@@ -175,7 +175,7 @@ Examples:
 			return err
 		}
 
-		if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
+		if jsonMode(cmd) {
 			return output.JSON(note)
 		}
 
@@ -452,10 +452,8 @@ func init() {
 	noteListCmd.Flags().StringP("search", "s", "", "Search title/content")
 	noteListCmd.Flags().IntP("limit", "n", 50, "Max results")
 	noteListCmd.Flags().StringP("output", "o", "table", "Output format (table, json)")
-	noteListCmd.Flags().Bool("json", false, "JSON output")
 
 	// noteShowCmd flags
-	noteShowCmd.Flags().Bool("json", false, "JSON output")
 
 	// noteEditCmd flags
 	noteEditCmd.Flags().StringP("title", "t", "", "New title")

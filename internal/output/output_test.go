@@ -110,6 +110,38 @@ func TestEmitResultShape(t *testing.T) {
 	}
 }
 
+// TestJSONErrorEscaping verifies that JSONError produces valid, parseable JSON
+// even when the message contains characters that require escaping (quotes,
+// backslashes, newlines). The envelope keys must remain {"error":{"code","message"}}.
+func TestJSONErrorEscaping(t *testing.T) {
+	const tricky = "boom: \"quoted\" path C:\\Users\\x and a\nnewline"
+
+	out := captureStdout(t, func() {
+		JSONError(ErrCodeInvalidInput, tricky)
+	})
+
+	var env struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &env); err != nil {
+		t.Fatalf("JSONError output is not valid JSON: %v\nraw: %q", err, out)
+	}
+	if env.Error.Code != ErrCodeInvalidInput {
+		t.Errorf("code = %q, want %q", env.Error.Code, ErrCodeInvalidInput)
+	}
+	if env.Error.Message != tricky {
+		t.Errorf("message did not round-trip:\n got %q\nwant %q", env.Error.Message, tricky)
+	}
+	// Single-line envelope: exactly one trailing newline, no embedded raw newline.
+	trimmed := strings.TrimRight(out, "\n")
+	if strings.Contains(trimmed, "\n") {
+		t.Errorf("JSONError should emit a single JSON line, got: %q", out)
+	}
+}
+
 // TestFormatTimeAgoJustNow tests times less than a minute ago
 func TestFormatTimeAgoJustNow(t *testing.T) {
 	now := time.Now()

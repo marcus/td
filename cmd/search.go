@@ -66,7 +66,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Output
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonOutput := jsonMode(cmd); jsonOutput {
 			return output.JSON(results)
 		}
 
@@ -95,6 +95,5 @@ func init() {
 	searchCmd.Flags().StringArrayP("labels", "l", nil, "Filter by labels")
 	searchCmd.Flags().StringP("priority", "p", "", "Filter by priority")
 	searchCmd.Flags().IntP("limit", "n", 50, "Limit results")
-	searchCmd.Flags().Bool("json", false, "JSON output")
 	searchCmd.Flags().Bool("show-score", false, "Show relevance scores")
 }

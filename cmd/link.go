@@ -412,7 +412,7 @@ var filesCmd = &cobra.Command{
 			return err
 		}
 
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		if jsonOutput := jsonMode(cmd); jsonOutput {
 			return output.JSON(files)
 		}
 
@@ -558,7 +558,6 @@ func init() {
 	linkCmd.Flags().Bool("recursive", true, "Include subdirectories")
 	linkCmd.Flags().String("depends-on", "", "Add dependency instead of linking files (alternative to 'td dep')")
 
-	filesCmd.Flags().Bool("json", false, "JSON output")
 	filesCmd.Flags().Bool("changed", false, "Only show changed files")
 	filesCmd.Flags().BoolP("untracked", "u", false, "Show untracked git changes not linked to this issue")
 }

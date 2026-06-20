@@ -40,7 +40,7 @@ var boardListCmd = &cobra.Command{
 			return err
 		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
+		asJSON := jsonMode(cmd)
 		if asJSON {
 			data, _ := json.MarshalIndent(boards, "", "  ")
 			fmt.Println(string(data))
@@ -234,7 +234,7 @@ var boardShowCmd = &cobra.Command{
 			}
 		}
 
-		asJSON, _ := cmd.Flags().GetBool("json")
+		asJSON := jsonMode(cmd)
 		if asJSON {
 			data, _ := json.MarshalIndent(issues, "", "  ")
 			fmt.Println(string(data))
@@ -468,9 +468,7 @@ func init() {
 	boardCmd.AddCommand(boardUnpositionCmd)
 
 	// Flags
-	boardListCmd.Flags().Bool("json", false, "Output as JSON")
 	boardCreateCmd.Flags().StringP("query", "q", "", "TDQ query for the board")
-	boardShowCmd.Flags().Bool("json", false, "Output as JSON")
 	boardShowCmd.Flags().StringArrayP("status", "s", nil, "Filter by status")
 	boardEditCmd.Flags().StringP("name", "n", "", "New name for the board")
 	boardEditCmd.Flags().StringP("query", "q", "", "New query for the board")

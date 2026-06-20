@@ -39,7 +39,7 @@ Review buckets:
 			return err
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		if jsonOutput {
 			return outputStatusJSON(database, baseDir, sess.ID)
@@ -263,5 +263,4 @@ func getLastLogTime(logs []models.Log) interface{} {
 
 func init() {
 	rootCmd.AddCommand(statusCmd)
-	statusCmd.Flags().Bool("json", false, "JSON output")
 }

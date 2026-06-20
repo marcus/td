@@ -115,10 +115,39 @@ const (
 	ErrCodeNoActiveSession   = "no_active_session"
 )
 
-// JSONError outputs an error as JSON
+// jsonErrorBody is the inner error object for the JSON error envelope.
+// json.Marshal of these structs guarantees proper escaping of quotes,
+// backslashes, and newlines in code/message/details.
+type jsonErrorBody struct {
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Details map[string]interface{} `json:"details,omitempty"`
+}
+
+type jsonErrorEnvelope struct {
+	Error jsonErrorBody `json:"error"`
+}
+
+// JSONError outputs an error as JSON. The envelope shape is
+// {"error":{"code":"...","message":"..."}} emitted on a single line. It encodes
+// via json so that a message containing quotes, backslashes, or newlines still
+// produces valid, parseable JSON. HTML escaping is disabled so that characters
+// like <, >, and & are emitted verbatim, matching the prior printf-based output
+// byte-for-byte for messages that do not require JSON escaping.
 func JSONError(code, message string) {
-	fmt.Printf(`{"error":{"code":"%s","message":"%s"}}`, code, message)
-	fmt.Println()
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(jsonErrorEnvelope{
+		Error: jsonErrorBody{Code: code, Message: message},
+	}); err != nil {
+		// Encode of plain strings cannot realistically fail; fall back to a
+		// minimal valid envelope so callers always get parseable output.
+		fmt.Println(`{"error":{"code":"internal_error","message":"failed to encode error"}}`)
+		return
+	}
+	// Encoder already appends a trailing newline; print as-is.
+	fmt.Print(buf.String())
 }
 
 // JSONErrorWithDetails outputs an error as JSON with additional context

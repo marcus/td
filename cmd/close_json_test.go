@@ -219,12 +219,9 @@ func TestRejectJSONShapeUnchanged(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	// reject reads its own local --json flag directly (it predates jsonMode),
-	// so set the local flag rather than the inherited persistent one.
-	if err := rejectCmd.Flags().Set("json", "true"); err != nil {
-		t.Fatalf("set reject json flag: %v", err)
-	}
-	t.Cleanup(func() { _ = rejectCmd.Flags().Set("json", "false") })
+	// reject now reads --json via jsonMode (the local flag was collapsed onto
+	// the root persistent flag), so set the inherited persistent flag.
+	setJSONFlag(t, true)
 
 	out := captureStdout(t, func() {
 		if err := rejectCmd.RunE(rejectCmd, []string{issue.ID}); err != nil {

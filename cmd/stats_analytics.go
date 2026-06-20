@@ -52,7 +52,7 @@ Analytics are enabled by default. Set TD_ANALYTICS=false to disable.`,
 		// Parse filters
 		sinceStr, _ := cmd.Flags().GetString("since")
 		limit, _ := cmd.Flags().GetInt("limit")
-		jsonOut, _ := cmd.Flags().GetBool("json")
+		jsonOut := jsonMode(cmd)
 
 		var since time.Time
 		if sinceStr != "" {
@@ -303,7 +303,6 @@ func init() {
 	statsCmd.AddCommand(statsAnalyticsCmd)
 
 	statsAnalyticsCmd.Flags().Bool("clear", false, "Clear analytics data")
-	statsAnalyticsCmd.Flags().Bool("json", false, "Output as JSON")
 	statsAnalyticsCmd.Flags().String("since", "", "Show data since duration (e.g., 7d, 24h)")
 	statsAnalyticsCmd.Flags().Int("limit", 0, "Max events to analyze (0 = all)")
 }

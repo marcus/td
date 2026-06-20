@@ -322,7 +322,7 @@ var wsCurrentCmd = &cobra.Command{
 			return err
 		}
 
-		jsonOutput, _ := cmd.Flags().GetBool("json")
+		jsonOutput := jsonMode(cmd)
 
 		// Get tagged issues
 		issueIDs, _ := database.GetWorkSessionIssues(wsID)
@@ -863,8 +863,6 @@ func init() {
 	wsLogCmd.Flags().Bool("tried", false, "Mark as attempted approach")
 	wsLogCmd.Flags().Bool("result", false, "Mark as result")
 	wsLogCmd.Flags().String("only", "", "Log to specific issue only")
-
-	wsCurrentCmd.Flags().Bool("json", false, "JSON output")
 
 	wsTagCmd.Flags().Bool("no-start", false, "Tag without starting (don't change status to in_progress)")
 
