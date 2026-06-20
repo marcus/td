@@ -23,24 +23,39 @@ var updateCmd = &cobra.Command{
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		// emitErr/emitWarn stay silent in json mode so the JSON envelope on
+		// stdout is never corrupted by human text. Fatal errors are returned so
+		// the top-level Execute() emits a single JSON error envelope.
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				continue
 			}
 
@@ -61,7 +76,7 @@ var updateCmd = &cobra.Command{
 				stdinUsed,
 			)
 			if err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				return err
 			}
 			if descriptionProvided {
@@ -80,7 +95,7 @@ var updateCmd = &cobra.Command{
 				stdinUsed,
 			)
 			if err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				return err
 			}
 			if acceptanceProvided {
@@ -94,7 +109,7 @@ var updateCmd = &cobra.Command{
 			if t, _ := cmd.Flags().GetString("type"); t != "" {
 				issue.Type = models.NormalizeType(t)
 				if !models.IsValidType(issue.Type) {
-					output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
+					emitErr("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
 					continue
 				}
 			}
@@ -102,14 +117,14 @@ var updateCmd = &cobra.Command{
 			if p, _ := cmd.Flags().GetString("priority"); p != "" {
 				issue.Priority = models.NormalizePriority(p)
 				if !models.IsValidPriority(issue.Priority) {
-					output.Error("invalid priority: %s (valid: P0, P1, P2, P3, P4)", p)
+					emitErr("invalid priority: %s (valid: P0, P1, P2, P3, P4)", p)
 					continue
 				}
 			}
 
 			if pts, _ := cmd.Flags().GetInt("points"); cmd.Flags().Changed("points") {
 				if pts > 0 && !models.IsValidPoints(pts) {
-					output.Error("invalid points: %d (valid: 1, 2, 3, 5, 8, 13, 21)", pts)
+					emitErr("invalid points: %d (valid: 1, 2, 3, 5, 8, 13, 21)", pts)
 					continue
 				}
 				issue.Points = pts
@@ -140,7 +155,7 @@ var updateCmd = &cobra.Command{
 				} else {
 					parsed, err := dateparse.ParseDate(deferStr)
 					if err != nil {
-						output.Error("invalid defer date: %v", err)
+						emitErr("invalid defer date: %v", err)
 						continue
 					}
 					// Increment defer count if pushing to a later date
@@ -158,7 +173,7 @@ var updateCmd = &cobra.Command{
 				} else {
 					parsed, err := dateparse.ParseDate(dueStr)
 					if err != nil {
-						output.Error("invalid due date: %v", err)
+						emitErr("invalid due date: %v", err)
 						continue
 					}
 					issue.DueDate = &parsed
@@ -169,13 +184,13 @@ var updateCmd = &cobra.Command{
 			if status, _ := cmd.Flags().GetString("status"); status != "" {
 				newStatus := models.NormalizeStatus(status)
 				if !models.IsValidStatus(newStatus) {
-					output.Error("invalid status: %s (valid: open, in_progress, in_review, blocked, closed)", status)
+					emitErr("invalid status: %s (valid: open, in_progress, in_review, blocked, closed)", status)
 					continue
 				}
 				// Validate transition with state machine
 				sm := workflow.DefaultMachine()
 				if !sm.IsValidTransition(issue.Status, newStatus) {
-					output.Warning("cannot update %s: invalid transition from %s to %s", issueID, issue.Status, newStatus)
+					emitWarn("cannot update %s: invalid transition from %s to %s", issueID, issue.Status, newStatus)
 					continue
 				}
 				oldStatus := issue.Status
@@ -193,7 +208,7 @@ var updateCmd = &cobra.Command{
 				}
 				if sessionAction != "" {
 					if err := database.RecordSessionAction(issueID, sess.ID, sessionAction); err != nil {
-						output.Warning("failed to record session history: %v", err)
+						emitWarn("failed to record session history: %v", err)
 					}
 				}
 			}
@@ -222,11 +237,13 @@ var updateCmd = &cobra.Command{
 			}
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-				output.Error("failed to update %s: %v", issueID, err)
+				emitErr("failed to update %s: %v", issueID, err)
 				continue
 			}
 
-			fmt.Printf("UPDATED %s\n", issueID)
+			if !isJSON {
+				fmt.Printf("UPDATED %s\n", issueID)
+			}
 
 			// Add inline comment if --comment/-m or -c was provided
 			commentText, _ := cmd.Flags().GetString("comment")
@@ -240,7 +257,20 @@ var updateCmd = &cobra.Command{
 					Text:      commentText,
 				}
 				if err := database.AddComment(comment); err != nil {
-					output.Warning("failed to add comment to %s: %v", issueID, err)
+					emitWarn("failed to add comment to %s: %v", issueID, err)
+				}
+			}
+
+			if isJSON {
+				// Re-fetch so the emitted record reflects the persisted post-update
+				// state (e.g. updated timestamps). One JSON object per id (NDJSON)
+				// mirrors how the review/start families emit per-item in bulk.
+				updated, err := database.GetIssue(issueID)
+				if err != nil {
+					updated = issue
+				}
+				if err := output.EmitIssue("updated", updated, nil); err != nil {
+					return err
 				}
 			}
 		}

@@ -26,17 +26,29 @@ Examples:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -45,7 +57,7 @@ Examples:
 			Status:      []models.Status{models.StatusInProgress},
 			Implementer: sess.ID,
 		})
-		if len(inProgress) > 4 {
+		if len(inProgress) > 4 && !isJSON {
 			fmt.Println()
 			output.Warning("You have %d issues in progress!", len(inProgress))
 			fmt.Println("  Before starting new work, move completed issues to review:")
@@ -70,7 +82,7 @@ Examples:
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Warning("issue not found: %s", issueID)
+				emitWarn("issue not found: %s", issueID)
 				skipped++
 				continue
 			}
@@ -87,14 +99,14 @@ Examples:
 			}
 
 			if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
-				output.Warning("cannot start %s: invalid transition from %s", issueID, issue.Status)
+				emitWarn("cannot start %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
 
 			// Check if blocked without force (preserving existing behavior)
 			if issue.Status == models.StatusBlocked && !force {
-				output.Warning("cannot start blocked issue: %s (use --force to override)", issueID)
+				emitWarn("cannot start blocked issue: %s (use --force to override)", issueID)
 				skipped++
 				continue
 			}
@@ -103,7 +115,7 @@ Examples:
 			if results, _ := sm.Validate(ctx); len(results) > 0 {
 				for _, r := range results {
 					if !r.Passed {
-						output.Warning("%s: %s", issueID, r.Message)
+						emitWarn("%s: %s", issueID, r.Message)
 					}
 				}
 			}
@@ -113,14 +125,14 @@ Examples:
 			issue.ImplementerSession = sess.ID
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+				emitWarn("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
 			}
 
 			// Record session action for bypass prevention
 			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted); err != nil {
-				output.Warning("failed to record session history: %v", err)
+				emitWarn("failed to record session history: %v", err)
 			}
 
 			// Log the start
@@ -147,7 +159,29 @@ Examples:
 				})
 			}
 
-			fmt.Printf("STARTED %s (session: %s)\n", issueID, sess.ID)
+			if isJSON {
+				// Re-fetch the persisted record and emit one JSON object per id
+				// (NDJSON in the bulk case), mirroring the review family.
+				started2, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					started2 = issue
+				}
+				extra := map[string]any{"session": sess.ID}
+				if gitErr == nil {
+					extra["git"] = map[string]any{
+						"commit_sha": gitState.CommitSHA,
+						"branch":     gitState.Branch,
+						"is_clean":   gitState.IsClean,
+						"modified":   gitState.Modified,
+						"untracked":  gitState.Untracked,
+					}
+				}
+				if err := output.EmitIssue("started", started2, extra); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("STARTED %s (session: %s)\n", issueID, sess.ID)
+			}
 			started++
 		}
 
@@ -157,7 +191,7 @@ Examples:
 		}
 
 		// Show git state once at the end
-		if gitErr == nil && started > 0 {
+		if gitErr == nil && started > 0 && !isJSON {
 			stateStr := "clean"
 			if !gitState.IsClean {
 				stateStr = fmt.Sprintf("%d modified, %d untracked", gitState.Modified, gitState.Untracked)
@@ -169,7 +203,7 @@ Examples:
 			}
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !isJSON {
 			fmt.Printf("\nStarted %d, skipped %d\n", started, skipped)
 		}
 
