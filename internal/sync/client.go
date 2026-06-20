@@ -153,7 +153,20 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
 			continue
 		}
-		if res.Overwritten && localModifiedSinceSync(res.OldData, lastSyncAt) {
+		// Self-authored events are never true conflicts: a sync pulls back the
+		// client's own just-pushed events (to keep sequence convergence), and
+		// replaying them in server_seq order can transiently overwrite newer
+		// local state (e.g. an issue's creation event landing on top of a later
+		// local close) before a subsequent event in the same batch restores it.
+		// Those overwrites are self-replays, not concurrent edits — the latest
+		// event always wins and it's the client's own intent, so no data is
+		// lost. Only events authored by another device (ev.DeviceID != myDeviceID)
+		// can be a genuine conflict worth warning about. Note: this assumes
+		// deviceID is per-install; two distinct users sharing one install would
+		// share a deviceID and a real conflict between them would be suppressed,
+		// which is an accepted trade-off (conflicts flow cross-device via the
+		// server, not within a single install).
+		if res.Overwritten && ev.DeviceID != myDeviceID && localModifiedSinceSync(res.OldData, lastSyncAt) {
 			result.Overwrites++
 			result.Conflicts = append(result.Conflicts, ConflictRecord{
 				EntityType:    ev.EntityType,
@@ -244,11 +257,11 @@ func GetPendingEventsPreserveSession(tx *sql.Tx, deviceID string) ([]Event, erro
 	var events []Event
 	for rows.Next() {
 		var (
-			rowid                                              int64
-			id                                                 sql.NullString
-			rowSessionID                                       sql.NullString
-			actionType, entityType, entityID, tsStr            string
-			newDataStr, prevDataStr                            sql.NullString
+			rowid                                   int64
+			id                                      sql.NullString
+			rowSessionID                            sql.NullString
+			actionType, entityType, entityID, tsStr string
+			newDataStr, prevDataStr                 sql.NullString
 		)
 		if err := rows.Scan(&rowid, &id, &rowSessionID, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
 			return nil, fmt.Errorf("scan action_log row: %w", err)

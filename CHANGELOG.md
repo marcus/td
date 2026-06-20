@@ -4,6 +4,11 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.50.1] - 2026-06-20
+
+### Sync
+- **Fixed: `td sync` no longer warns about phantom conflicts from your own events.** A sync deliberately re-pulls the client's own just-pushed events to keep sequence numbers convergent, and replaying them in `server_seq` order can transiently overwrite newer local state (identical-payload log entries; an issue's creation event landing on top of a later local close) before a subsequent event in the same batch restores it. These self-replays were being flagged as overwrites, producing a spurious `Warning: N local records overwritten by remote changes:` and writing phantom rows to `sync_conflicts`, even on a single device with no other writers. `ApplyRemoteEvents` now gates conflict detection on `ev.DeviceID != myDeviceID` (wiring up a parameter that was already passed but unused), so only changes authored by *another* device are reported. Genuine cross-device conflicts still warn exactly as before. Regression test included.
+
 ## [v0.50.0] - 2026-06-20
 
 ### Sync server

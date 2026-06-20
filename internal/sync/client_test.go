@@ -826,6 +826,54 @@ func TestApplyRemoteEvents_ConflictWhenModifiedAfterSync(t *testing.T) {
 	}
 }
 
+// A sync pulls back the client's own just-pushed events. Replaying them must
+// not register as a conflict even when the local row was modified after the
+// last sync, because a self-authored event (ev.DeviceID == myDeviceID) is a
+// replay of the client's own intent, not a concurrent edit from another device.
+func TestApplyRemoteEvents_NoConflictWhenSelfAuthored(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Create a local row with updated_at AFTER lastSyncAt — the same setup that
+	// produces a conflict in TestApplyRemoteEvents_ConflictWhenModifiedAfterSync.
+	tx := beginTx(t, db)
+	recentTime := "2025-07-01T00:00:00Z"
+	_, err := tx.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES (?, ?, ?, ?)`,
+		"i1", "modified-locally", "open", recentTime)
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	syncTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{"title": "remote", "status": "closed"},
+	})
+	// DeviceID matches myDeviceID below → self-authored replay, no conflict.
+	events := []Event{{
+		ServerSeq: 1, DeviceID: "my-device", ActionType: "update",
+		EntityType: "issues", EntityID: "i1", Payload: remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &syncTime)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Applied != 1 {
+		t.Fatalf("Applied=%d, want 1", result.Applied)
+	}
+	if result.Overwrites != 0 {
+		t.Fatalf("Overwrites=%d, want 0 (self-authored replay is not a conflict)", result.Overwrites)
+	}
+	if len(result.Conflicts) != 0 {
+		t.Fatalf("Conflicts=%d, want 0 (self-authored replay is not a conflict)", len(result.Conflicts))
+	}
+}
+
 func TestApplyRemoteEvents_NilLastSyncAtSkipsConflicts(t *testing.T) {
 	db := setupClientDB(t)
 
