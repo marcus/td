@@ -126,6 +126,20 @@ Impact:
 - A context reset can accidentally create review independence where humans would see continuity.
 - The model still needs `--self-review` as an audit acknowledgement, but td lacks a clear way to say "this new session is the same agent lineage as the prior implementer."
 
+### 6. Sub-Agent Contexts Collapse Into the Orchestrator's Session
+
+This is the inverse of Failure Mode #1, and it is the one that actually bites orchestration workflows today. When a single agent process spawns sub-agents (Claude Code's Task tool, SDK sub-agents, etc.) that all run in the **same checkout on the same branch**, every sub-agent resolves to the *same* session as the orchestrator.
+
+The cause is the identity key plus fingerprint precedence. Lookup is `GetSessionByBranchAgent(branch, fp.String(), fp.PID)` (`internal/session/session.go:174`), and `GetAgentFingerprint` checks terminal environment markers (`TERM_SESSION_ID`, `ITERM_SESSION_ID`, `WINDOWID`, `TMUX_PANE`, `STY`, …) **before** falling back to ppid (`internal/session/session.go:108-139`). Those env vars are inherited by every child process, so all sub-agents produce an identical `term:...` fingerprint. Same branch + same fingerprint + same worktree → one session row.
+
+Note that `context_id` is already stored on the session row (`internal/session/session.go:147`, `internal/db/schema.go:122-153`) but is **not** part of the lookup key, so it does nothing to disambiguate these contexts today.
+
+Impact:
+
+- An orchestrator that delegates implementation to one sub-agent and review to another cannot get an independent review recorded: `td approve` sees the shared session as the implementer-of-record and blocks the close as a self-review.
+- The orchestrator is forced to use `--self-review` on every close, even when a genuinely independent reviewer context did the review. The audit trail then *understates* the independence that actually occurred.
+- Adding `worktree_id` to the key (Recommended Model #1) does **not** fix this case, because all sub-agents share one worktree — the new dimension is identical across them. It only helps when the sub-agents are in *different* worktrees.
+
 ## Recommended Model
 
 ### 1. Add Worktree Identity
@@ -225,6 +239,20 @@ Then add query helpers like:
 - `td handoffs --for-me`
 - `handoff.for(@me)` in TDQ
 
+### 6. Recognize Sub-Agent Contexts as Distinct Sessions
+
+Give td a way to tell sub-agent contexts apart even when they share a process, branch, and worktree. Two complementary levers:
+
+1. **Include `context_id` in the identity key.** Change lookup to `branch + agent_fingerprint + worktree_id + context_id`, where `context_id` is empty for ordinary interactive use (preserving today's behavior) and non-empty when a distinct sub-agent context is signalled. The column already exists; this just promotes it into the key.
+
+2. **Propagate a per-sub-agent identity.** The orchestrator (or harness) supplies a distinct identity per spawned context. In order of preference:
+   - A dedicated `TD_CONTEXT_ID` env var set per sub-agent, feeding the key above. Cleanest, because it keeps `TD_SESSION_ID`'s "explicit exact session" meaning intact.
+   - Failing that, a unique `TD_SESSION_ID` per sub-agent — already treated as explicit identity (`internal/session/session.go` fingerprint path), so it works today with zero schema change. This is the recommended **interim** fix orchestrators can adopt immediately.
+
+3. **Worktree isolation is the other path, and it already works under Recommended Model #1–#2.** If each sub-agent runs in its own worktree (e.g. Claude Code's `isolation: "worktree"`), worktree-scoped session keying gives each sub-agent a distinct session for free — turning "run sub-agents in worktrees" from a merge-safety choice into a review-independence enabler. Call this out in orchestration docs.
+
+Crucially, this is **additive honesty, not a loosened control**: the reviewer was independent; td simply could not represent it. Pair this with an explicit delegation primitive (see "Controls That Have Aged" → *Explicit delegation over inferred identity*) so the audit trail records *who was asked to do what* rather than reverse-engineering it from accidental session reuse.
+
 ## Implementation Plan
 
 ### Phase 1: Worktree Detection and Display
@@ -241,6 +269,15 @@ Then add query helpers like:
 - Preserve legacy fallback for rows with empty `worktree_id`.
 - Update session tests for same branch plus different worktrees.
 - Add regression test for two worktrees on the same branch not sharing one session when worktree IDs differ.
+
+### Phase 2b: Sub-Agent Context Identity
+
+This can land independently of, and earlier than, the worktree work — it is the highest-leverage fix for orchestration today.
+
+- Read an optional `TD_CONTEXT_ID` and thread it into the session identity key (`branch + agent_fingerprint + worktree_id + context_id`).
+- Preserve current behavior when `TD_CONTEXT_ID` is empty (interactive use is unaffected).
+- Document the interim `TD_SESSION_ID`-per-sub-agent pattern for orchestrators who want independence before this ships.
+- Tests: two sub-agent contexts with the same branch/fingerprint/worktree but different `TD_CONTEXT_ID` get distinct sessions; an implementer context and a reviewer context can therefore satisfy independent-review eligibility without `--self-review`.
 
 ### Phase 3: Session-Scoped Current State
 
@@ -279,10 +316,53 @@ Then add query helpers like:
 - `td add "Add lineage-aware self-review detection" --type feature --priority P1`
 - `td add "Show session/worktree ownership in usage and monitor" --type feature --priority P2`
 - `td add "Add directed handoffs for multi-agent work" --type feature --priority P2`
+- `td add "Key sessions by context_id for sub-agent independence (TD_CONTEXT_ID)" --type feature --priority P1`
+- `td add "Add explicit delegation primitive (declare implementer/reviewer roles)" --type feature --priority P2`
+- `td add "Right-size mandatory handoff: auto-synthesize or waive for --minor" --type chore --priority P2`
+- `td add "Relax input-validation gates (title minimums, etc.) to warnings" --type chore --priority P3`
+
+## Controls That Have Aged
+
+Much of td's current friction comes from controls designed roughly six months ago, when agents were less consistent and the safe default was to *gate* behavior — hard walls that assumed an agent would cut corners unless physically prevented. Agents are more capable now, and several of those gates have flipped from "keeps agents honest" to "slows good agents down without adding signal." The guiding principle for revisiting them:
+
+> Keep the audit record rich; drop the gates that block capable agents without producing new information.
+
+Concretely, three changes beyond the session/worktree work above are worth making in the same spirit.
+
+### 1. Explicit Delegation Over Inferred Identity
+
+The deepest fix is conceptual. Today, review independence is *inferred* from session identity — td reverse-engineers "were these the same actor?" from branch/fingerprint/worktree accidents. That inference is both too strict (sub-agents collapse, Failure Mode #6) and too loose (context rotation fabricates independence, Failure Mode #5).
+
+Replace inference with declaration. Let an orchestrator record roles directly:
+
+- `td delegate <id> --implementer <label>` when handing implementation to a sub-agent context.
+- The reviewer context records its own review as today, but eligibility is checked against the *declared* implementer rather than a guessed session match.
+
+This is strictly *more* honest than the current model — the audit trail says "orchestrator O asked context I to implement and context R to review," instead of leaning on whether two processes happened to share a `TERM_SESSION_ID`. It also makes `--self-review` meaningful again: it fires only when the same declared actor did both, not when identity collapsed by accident.
+
+### 2. Right-Size the Mandatory Handoff
+
+`td handoff` is currently required before `td review`. For a tight orchestrator loop closing many small tasks, a full done/remaining/decision/uncertain handoff on every sub-task is ceremony, not state capture — the logs already hold the relevant detail.
+
+Options, least to most aggressive:
+
+- Auto-synthesize a handoff from the session's logs when none was explicitly recorded, so the requirement is satisfied without a separate step.
+- Waive the requirement for `--minor` tasks (which already relax review).
+- Downgrade the hard gate to a warning, keeping the nudge without blocking the close.
+
+Handoffs remain genuinely valuable for human-scale, multi-day, or cross-context work; the change is to stop charging that cost on trivial, single-loop tasks.
+
+### 3. Relax Input-Validation Gates
+
+Small paternalistic validations were cheap insurance against sloppy input and are now mostly friction. The 15-character title minimum is the clearest example (it rejects perfectly clear titles like "install smoke" and forces agents into padding). Prefer warnings over hard rejections for this class of rule, or make the thresholds configurable via `td feature set`. None of these gates produce audit signal; they only stop the command.
+
+### What Not to Loosen
+
+The point is right-sizing, not deregulation. Keep the attestation *record* — who implemented, who reviewed, who closed, and the `--self-review` acknowledgement — because that is the audit value, and it is cheap. The friction worth removing is the *gating*, not the *recording*. Trusted mode is already the correct policy posture (`internal/reviewpolicy/policy.go:234-281`); the remaining problems are identity representation and ceremony, not the policy itself. Resist the temptation to "fix" the friction by deleting the audit trail along with the gate.
 
 ## Recommendation
 
-Start with worktree identity and session-scoped current state. Those changes remove the most dangerous confusion without disturbing the existing review-attestation model. Then add lineage-aware policy so `td usage --new-session` remains useful for context rotation without creating fake independence.
+Start with sub-agent context identity (Phase 2b) — it is small, lands independently, and is the single change that unblocks orchestration workflows today, which are currently forced into blanket `--self-review`. Then add worktree identity and session-scoped current state; those remove the most dangerous cross-agent confusion without disturbing the existing review-attestation model. Then add lineage-aware policy so `td usage --new-session` remains useful for context rotation without creating fake independence. In parallel, take the lower-risk "Controls That Have Aged" cleanups — they are mostly mechanical and immediately reduce day-to-day friction.
 
 The product principle should be:
 
