@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// TestSchemaVersion_At32 confirms the current schema version is 32 and that
+// TestSchemaVersion_At33 confirms the current schema version is 33 and that
 // a freshly initialized database reports that version after migrations run.
-func TestSchemaVersion_At32(t *testing.T) {
-	if SchemaVersion != 32 {
-		t.Fatalf("SchemaVersion: want 32, got %d", SchemaVersion)
+func TestSchemaVersion_At33(t *testing.T) {
+	if SchemaVersion != 33 {
+		t.Fatalf("SchemaVersion: want 33, got %d", SchemaVersion)
 	}
 
 	dir := t.TempDir()

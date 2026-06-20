@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	webAgentType       = "web"
-	webAgentPID        = 0
-	webBranch          = "default"
-	webSessionName     = "td-serve-web"
-	heartbeatInterval  = 60 * time.Second
+	webAgentType      = "web"
+	webAgentPID       = 0
+	webBranch         = "default"
+	webSessionName    = "td-serve-web"
+	heartbeatInterval = 60 * time.Second
 )
 
 // GetOrCreateWebSession finds or creates the shared web session used by
@@ -25,7 +25,7 @@ const (
 // If a matching session exists, its activity timestamp is bumped.
 // If none exists, a new session named "td-serve-web" is created.
 func GetOrCreateWebSession(database *db.DB) (*db.SessionRow, error) {
-	row, err := database.GetSessionByBranchAgent(webBranch, webAgentType, webAgentPID)
+	row, err := database.GetSessionByIdentity(webBranch, webAgentType, webAgentPID, "")
 	if err != nil {
 		return nil, fmt.Errorf("lookup web session: %w", err)
 	}

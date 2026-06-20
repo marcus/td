@@ -27,10 +27,11 @@ var getOrCreateMu sync.Mutex
 type Session struct {
 	ID                string    `json:"id"`
 	Name              string    `json:"name,omitempty"`
-	Branch            string    `json:"branch,omitempty"`            // git branch for session scoping
-	AgentType         string    `json:"agent_type,omitempty"`        // agent type (claude-code, cursor, terminal, etc.)
-	AgentPID          int       `json:"agent_pid,omitempty"`         // stable parent agent process ID
-	ContextID         string    `json:"context_id,omitempty"`        // audit only, not used for matching
+	Branch            string    `json:"branch,omitempty"`           // git branch for session scoping
+	AgentType         string    `json:"agent_type,omitempty"`       // agent type (claude-code, cursor, terminal, etc.)
+	AgentPID          int       `json:"agent_pid,omitempty"`        // stable parent agent process ID
+	ContextID         string    `json:"context_id,omitempty"`       // audit-only execution-context fingerprint
+	MatchContextID    string    `json:"match_context_id,omitempty"` // identity-key dimension fed by TD_CONTEXT_ID
 	PreviousSessionID string    `json:"previous_session_id,omitempty"`
 	StartedAt         time.Time `json:"started_at"`
 	LastActivity      time.Time `json:"last_activity,omitempty"` // heartbeat for session liveness
@@ -92,6 +93,19 @@ func getCurrentBranch() string {
 	return branch
 }
 
+// matchContextID returns the explicit context dimension used in the session
+// identity key. It is sourced solely from TD_CONTEXT_ID. When unset (the normal
+// interactive case) it returns "", which makes the lookup behave exactly as
+// before: empty matches the empty match_context_id of existing rows.
+//
+// This is intentionally separate from getContextID() (the audit-only context
+// fingerprint). The stored match_context_id and the lookup value MUST use this
+// same normalization so a session created under TD_CONTEXT_ID=foo is re-found
+// (not recreated) on a later lookup with the same TD_CONTEXT_ID=foo.
+func matchContextID() string {
+	return os.Getenv("TD_CONTEXT_ID")
+}
+
 // getContextID generates a unique identifier for the current execution context.
 func getContextID() string {
 	if val := os.Getenv("TD_SESSION_ID"); val != "" {
@@ -148,6 +162,7 @@ func sessionFromRow(row *db.SessionRow) *Session {
 		AgentType:         row.AgentType,
 		AgentPID:          row.AgentPID,
 		ContextID:         row.ContextID,
+		MatchContextID:    row.MatchContextID,
 		PreviousSessionID: row.PreviousSessionID,
 		StartedAt:         row.StartedAt,
 		LastActivity:      row.LastActivity,
@@ -171,8 +186,10 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 		_ = database.MigrateFileSystemSessions(cwd)
 	}
 
-	// Look up existing session for this branch + agent fingerprint
-	row, err := database.GetSessionByBranchAgent(branch, fp.String(), fp.PID)
+	// Look up existing session for this branch + agent fingerprint + context.
+	// The context dimension (TD_CONTEXT_ID) keeps distinct sub-agent contexts
+	// that share one process/branch/checkout from collapsing into one session.
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
 	if err != nil {
 		return nil, fmt.Errorf("lookup session: %w", err)
 	}
@@ -196,7 +213,7 @@ func Get(database *db.DB) (*Session, error) {
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
 
-	row, err := database.GetSessionByBranchAgent(branch, fp.String(), fp.PID)
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
 	if err != nil {
 		return nil, fmt.Errorf("lookup session: %w", err)
 	}
@@ -213,7 +230,7 @@ func ForceNewSession(database *db.DB) (*Session, error) {
 
 	// Get previous session ID if exists
 	var previousID string
-	row, err := database.GetSessionByBranchAgent(branch, fp.String(), fp.PID)
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
 	if err == nil && row != nil {
 		previousID = row.ID
 	}
@@ -272,6 +289,7 @@ func createSession(database *db.DB, branch string, fp AgentFingerprint, previous
 		AgentType:         fp.String(),
 		AgentPID:          fp.PID,
 		ContextID:         getContextID(),
+		MatchContextID:    matchContextID(),
 		PreviousSessionID: previousID,
 		StartedAt:         now,
 		LastActivity:      now,

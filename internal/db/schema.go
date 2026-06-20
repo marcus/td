@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 32
+const SchemaVersion = 33
 
 const schema = `
 -- Issues table
@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     agent_type TEXT DEFAULT '',
     agent_pid INTEGER DEFAULT 0,
     context_id TEXT DEFAULT '',
+    match_context_id TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
@@ -150,7 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_git_snapshots_issue ON git_snapshots(issue_id);
 CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
-CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id);
 `
 
 // BaseSchema returns the initial database schema DDL.
@@ -497,6 +498,13 @@ CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 		Version:     32,
 		Description: "Add self_review column to issue_reviews",
 		// Handled by custom Go code in reviews_migration.go (migrateSelfReviewColumn)
+		// using a columnExists guard so re-running is safe.
+		SQL: "",
+	},
+	{
+		Version:     33,
+		Description: "Add match_context_id to sessions for sub-agent session keying (td-64dc09)",
+		// Handled by custom Go code in migrations.go (migrateSessionMatchContextID)
 		// using a columnExists guard so re-running is safe.
 		SQL: "",
 	},

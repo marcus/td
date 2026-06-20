@@ -16,34 +16,43 @@ type SessionRow struct {
 	Branch            string
 	AgentType         string
 	AgentPID          int
-	ContextID         string
+	ContextID         string // audit-only execution-context fingerprint
+	MatchContextID    string // participates in the session identity key (TD_CONTEXT_ID)
 	PreviousSessionID string
 	StartedAt         time.Time
 	LastActivity      time.Time
 }
 
 const sessionSelectCols = `id, name, branch, agent_type, agent_pid, context_id,
-	previous_session_id, started_at, last_activity`
+	match_context_id, previous_session_id, started_at, last_activity`
 
 // UpsertSession inserts or replaces a session in the database
 func (db *DB) UpsertSession(sess *SessionRow) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`INSERT OR REPLACE INTO sessions
-			(id, name, branch, agent_type, agent_pid, context_id, previous_session_id, started_at, last_activity)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(id, name, branch, agent_type, agent_pid, context_id, match_context_id, previous_session_id, started_at, last_activity)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sess.ID, sess.Name, sess.Branch, sess.AgentType, sess.AgentPID,
-			sess.ContextID, sess.PreviousSessionID, sess.StartedAt, sess.LastActivity)
+			sess.ContextID, sess.MatchContextID, sess.PreviousSessionID, sess.StartedAt, sess.LastActivity)
 		return err
 	})
 }
 
-// GetSessionByBranchAgent looks up a session by branch + agent type + agent PID.
+// GetSessionByIdentity looks up a session by its full identity key:
+// branch + agent type + agent PID + match context ID.
+//
+// The match context ID (sourced from TD_CONTEXT_ID) lets distinct sub-agent
+// contexts that share one process/branch/checkout map to distinct sessions.
+// When contextID is empty (the normal interactive case), this matches rows
+// whose match_context_id is empty, preserving the historical behavior where
+// the key was just branch + agent_type + agent_pid.
+//
 // Returns nil, nil if not found.
-func (db *DB) GetSessionByBranchAgent(branch, agentType string, agentPID int) (*SessionRow, error) {
+func (db *DB) GetSessionByIdentity(branch, agentType string, agentPID int, contextID string) (*SessionRow, error) {
 	row := db.conn.QueryRow(`SELECT `+sessionSelectCols+`
-		FROM sessions WHERE branch = ? AND agent_type = ? AND agent_pid = ?
+		FROM sessions WHERE branch = ? AND agent_type = ? AND agent_pid = ? AND match_context_id = ?
 		ORDER BY COALESCE(last_activity, started_at) DESC LIMIT 1`,
-		branch, agentType, agentPID)
+		branch, agentType, agentPID, contextID)
 	return scanSessionRow(row)
 }
 
@@ -109,7 +118,7 @@ func scanSessionRow(row *sql.Row) (*SessionRow, error) {
 	var s SessionRow
 	var lastActivity sql.NullTime
 	err := row.Scan(&s.ID, &s.Name, &s.Branch, &s.AgentType, &s.AgentPID,
-		&s.ContextID, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
+		&s.ContextID, &s.MatchContextID, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -257,7 +266,7 @@ func scanSessionRows(rows *sql.Rows) (*SessionRow, error) {
 	var s SessionRow
 	var lastActivity sql.NullTime
 	err := rows.Scan(&s.ID, &s.Name, &s.Branch, &s.AgentType, &s.AgentPID,
-		&s.ContextID, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
+		&s.ContextID, &s.MatchContextID, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
 	if err != nil {
 		return nil, err
 	}

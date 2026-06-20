@@ -272,6 +272,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 33 {
+				if err := db.migrateSessionMatchContextID(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 33 (session match_context_id): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
@@ -312,13 +322,14 @@ CREATE TABLE sessions (
     agent_type TEXT DEFAULT '',
     agent_pid INTEGER DEFAULT 0,
     context_id TEXT DEFAULT '',
+    match_context_id TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
     last_activity DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
-CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id);
 `)
 		return err
 	}
@@ -359,6 +370,36 @@ CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
 `)
 	return err
+}
+
+// migrateSessionMatchContextID adds the match_context_id column to the sessions
+// table. This column participates in the session identity key (branch +
+// agent_type + agent_pid + match_context_id) so that distinct sub-agent
+// contexts sharing one process/branch/checkout no longer collapse into one
+// session. Existing rows default to ” (empty), which preserves the current
+// interactive behavior since empty matches empty. Guarded by columnExists so
+// re-running is safe.
+func (db *DB) migrateSessionMatchContextID() error {
+	exists, err := db.columnExists("sessions", "match_context_id")
+	if err != nil {
+		return fmt.Errorf("check match_context_id column: %w", err)
+	}
+	if !exists {
+		if _, err := db.conn.Exec(
+			`ALTER TABLE sessions ADD COLUMN match_context_id TEXT DEFAULT ''`); err != nil {
+			return fmt.Errorf("add match_context_id column: %w", err)
+		}
+	}
+
+	// Refresh the identity index to include match_context_id. Drop the old
+	// index first so the recreate picks up the new column set.
+	if _, err := db.conn.Exec(`
+DROP INDEX IF EXISTS idx_sessions_branch_agent;
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id);
+`); err != nil {
+		return fmt.Errorf("rebuild idx_sessions_branch_agent: %w", err)
+	}
+	return nil
 }
 
 // generateTextID creates a prefixed text ID with 4 random bytes (8 hex chars)

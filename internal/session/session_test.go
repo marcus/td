@@ -95,6 +95,99 @@ func TestForceNewSessionAlwaysCreatesNew(t *testing.T) {
 	}
 }
 
+// TestContextIDKeysDistinctSessions verifies that two execution contexts that
+// share the same branch + agent fingerprint but differ only in TD_CONTEXT_ID
+// resolve to DISTINCT sessions (Failure Mode #6). TD_SESSION_ID is held fixed
+// so the agent fingerprint is identical across both calls.
+func TestContextIDKeysDistinctSessions(t *testing.T) {
+	database := setupTestDB(t)
+
+	t.Setenv("TD_SESSION_ID", "shared-agent")
+
+	t.Setenv("TD_CONTEXT_ID", "ctx-a")
+	sa, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate ctx-a: %v", err)
+	}
+
+	t.Setenv("TD_CONTEXT_ID", "ctx-b")
+	sb, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate ctx-b: %v", err)
+	}
+
+	if sa.ID == sb.ID {
+		t.Fatalf("expected distinct sessions for different TD_CONTEXT_ID, both got %q", sa.ID)
+	}
+	if !sb.IsNew {
+		t.Fatalf("expected IsNew=true for the second context's session")
+	}
+	if sa.MatchContextID != "ctx-a" || sb.MatchContextID != "ctx-b" {
+		t.Fatalf("match context not stored: a=%q b=%q", sa.MatchContextID, sb.MatchContextID)
+	}
+}
+
+// TestEmptyContextIDPreservesBehavior verifies that with TD_CONTEXT_ID unset the
+// behavior is identical to before: repeated GetOrCreate reuses one session.
+func TestEmptyContextIDPreservesBehavior(t *testing.T) {
+	database := setupTestDB(t)
+
+	t.Setenv("TD_SESSION_ID", "interactive-agent")
+	os.Unsetenv("TD_CONTEXT_ID") // ensure empty match context
+
+	s1, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate (1): %v", err)
+	}
+	if !s1.IsNew {
+		t.Fatalf("expected IsNew=true on first create")
+	}
+	if s1.MatchContextID != "" {
+		t.Fatalf("expected empty match context, got %q", s1.MatchContextID)
+	}
+
+	s2, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate (2): %v", err)
+	}
+	if s1.ID != s2.ID {
+		t.Fatalf("expected same session reused, got %q vs %q", s1.ID, s2.ID)
+	}
+	if s2.IsNew {
+		t.Fatalf("expected IsNew=false when reusing session")
+	}
+}
+
+// TestContextIDSessionRefound verifies that a session created under a given
+// TD_CONTEXT_ID is re-found (not recreated) on a later GetOrCreate with the
+// same TD_CONTEXT_ID — i.e. the stored and lookup context use the same
+// normalization.
+func TestContextIDSessionRefound(t *testing.T) {
+	database := setupTestDB(t)
+
+	t.Setenv("TD_SESSION_ID", "refound-agent")
+	t.Setenv("TD_CONTEXT_ID", "foo")
+
+	s1, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate (create): %v", err)
+	}
+	if !s1.IsNew {
+		t.Fatalf("expected IsNew=true on first create")
+	}
+
+	s2, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate (refind): %v", err)
+	}
+	if s2.IsNew {
+		t.Fatalf("expected existing session to be re-found, not recreated")
+	}
+	if s1.ID != s2.ID {
+		t.Fatalf("expected same session ID for same context, got %q vs %q", s1.ID, s2.ID)
+	}
+}
+
 func TestMigrateLegacySessionCleanupOldFile(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
