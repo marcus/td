@@ -73,6 +73,10 @@ func uniqueSlugTx(tx *sql.Tx, base, excludeProjectID string) (string, error) {
 
 // slugBase returns the slug base for the given name and id.
 // If slugify(name) is non-empty, returns that; otherwise returns id.
+// When falling back to id, the resulting slug starts with "p_" (the project ID
+// prefix), so td-watch's isProjectId check routes it through the id branch
+// rather than the slug branch — acceptable because the URL still resolves
+// canonically.
 func slugBase(name, id string) string {
 	s := slugify(name)
 	if s == "" {

@@ -155,6 +155,9 @@ func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 }
 
 // UpdateProject updates a project's name and description.
+// Slug is intentionally NOT updated on rename — stored slugs are stable
+// canonical identifiers; the 308 permanent redirect on the td-watch side
+// depends on this immutability.
 func (db *ServerDB) UpdateProject(id, name, description string) (*Project, error) {
 	now := time.Now().UTC()
 	res, err := db.conn.Exec(
@@ -227,7 +230,7 @@ func (db *ServerDB) CountProjects() (int, error) {
 // are skipped.
 func (db *ServerDB) BackfillProjectSlugs() error {
 	rows, err := db.conn.Query(
-		`SELECT id, name FROM projects WHERE slug IS NULL OR slug = '' ORDER BY created_at ASC, id ASC`,
+		`SELECT id, name FROM projects WHERE (slug IS NULL OR slug = '') AND deleted_at IS NULL ORDER BY created_at ASC, id ASC`,
 	)
 	if err != nil {
 		return fmt.Errorf("backfill slugs: query: %w", err)

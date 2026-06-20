@@ -10,6 +10,7 @@ import (
 type AdminProject struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
 	Description string  `json:"description,omitempty"`
 	EventCount  int     `json:"event_count"`
 	LastEventAt *string `json:"last_event_at"`
@@ -30,7 +31,7 @@ type AdminProjectMember struct {
 
 // AdminListProjects returns a paginated list of all projects with aggregate counts.
 func (db *ServerDB) AdminListProjects(query string, includeDeleted bool, limit int, cursor string) (*PaginatedResult[AdminProject], error) {
-	baseQuery := `SELECT p.id, p.name, p.event_count, p.last_event_at,
+	baseQuery := `SELECT p.id, p.name, COALESCE(p.slug,''), p.event_count, p.last_event_at,
 		(SELECT COUNT(*) FROM memberships m WHERE m.project_id = p.id) as member_count,
 		p.created_at, p.updated_at, p.deleted_at
 		FROM projects p WHERE 1=1`
@@ -49,7 +50,7 @@ func (db *ServerDB) AdminListProjects(query string, includeDeleted bool, limit i
 		var lastEventAt *time.Time
 		var deletedAt *time.Time
 		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&p.ID, &p.Name, &p.EventCount, &lastEventAt, &p.MemberCount, &createdAt, &updatedAt, &deletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.EventCount, &lastEventAt, &p.MemberCount, &createdAt, &updatedAt, &deletedAt); err != nil {
 			return p, "", err
 		}
 		p.CreatedAt = createdAt.UTC().Format("2006-01-02T15:04:05Z")
@@ -74,11 +75,11 @@ func (db *ServerDB) AdminGetProject(id string) (*AdminProject, error) {
 	var lastEventAt *time.Time
 	var deletedAt *time.Time
 	var createdAt, updatedAt time.Time
-	err := db.conn.QueryRow(`SELECT p.id, p.name, p.description, p.event_count, p.last_event_at,
+	err := db.conn.QueryRow(`SELECT p.id, p.name, COALESCE(p.slug,''), p.description, p.event_count, p.last_event_at,
 		(SELECT COUNT(*) FROM memberships m WHERE m.project_id = p.id) as member_count,
 		p.created_at, p.updated_at, p.deleted_at
 		FROM projects p WHERE p.id = ?`, id).Scan(
-		&p.ID, &p.Name, &p.Description, &p.EventCount, &lastEventAt,
+		&p.ID, &p.Name, &p.Slug, &p.Description, &p.EventCount, &lastEventAt,
 		&p.MemberCount, &createdAt, &updatedAt, &deletedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil

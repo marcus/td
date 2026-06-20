@@ -305,6 +305,52 @@ func TestBackfillProjectSlugs_EmptyNameFallsBackToID(t *testing.T) {
 	}
 }
 
+func TestBackfillProjectSlugs_SkipsSoftDeleted(t *testing.T) {
+	db := newTestDB(t)
+	u, _ := db.CreateUser("softdel@test.com")
+
+	// Create two projects
+	active, _ := db.CreateProject("Active Project", "", u.ID)
+	deleted, _ := db.CreateProject("Archive", "", u.ID)
+
+	// Null out slugs for both to simulate pre-migration rows
+	if _, err := db.conn.Exec(`UPDATE projects SET slug = NULL WHERE id IN (?, ?)`, active.ID, deleted.ID); err != nil {
+		t.Fatalf("null slugs: %v", err)
+	}
+
+	// Soft-delete the second project
+	if err := db.SoftDeleteProject(deleted.ID); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	if err := db.BackfillProjectSlugs(); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	// Active project must receive a slug
+	gotActive, _ := db.GetProject(active.ID, false)
+	if gotActive.Slug == "" {
+		t.Errorf("active project slug still empty after backfill")
+	}
+
+	// Soft-deleted project must NOT receive a slug — slug namespace is preserved
+	// for active projects; NULL slug on a deleted row is harmless (user-facing
+	// reads exclude deleted projects and COALESCE returns '').
+	var deletedSlug *string
+	if err := db.conn.QueryRow(`SELECT slug FROM projects WHERE id = ?`, deleted.ID).Scan(&deletedSlug); err != nil {
+		t.Fatalf("query deleted slug: %v", err)
+	}
+	if deletedSlug != nil && *deletedSlug != "" {
+		t.Errorf("soft-deleted project was assigned slug %q by backfill; want NULL", *deletedSlug)
+	}
+
+	// Verify "archive" slug is free for an active project
+	gotActive2, _ := db.CreateProject("Archive", "", u.ID)
+	if gotActive2.Slug != "archive" {
+		t.Errorf("slug 'archive' should be free for new active project, got %q", gotActive2.Slug)
+	}
+}
+
 // --- ListProjectsForUser slug test ---
 
 func TestListProjectsForUser_IncludesSlug(t *testing.T) {

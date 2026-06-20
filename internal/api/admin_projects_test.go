@@ -134,6 +134,55 @@ func TestAdminGetProject(t *testing.T) {
 	}
 }
 
+func TestAdminGetProject_SlugPresent(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
+
+	u, _ := store.CreateUser("slug-owner@test.com")
+	_, _ = store.CreateProjectWithID("p_slug1", "Slug Test Project", "desc", u.ID)
+
+	w := doRequest(srv, "GET", "/v1/admin/projects/p_slug1", token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp serverdb.AdminProject
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Slug == "" {
+		t.Fatalf("expected non-empty slug in admin get project response, got empty")
+	}
+	if resp.Slug != "slug-test-project" {
+		t.Fatalf("expected slug 'slug-test-project', got %q", resp.Slug)
+	}
+}
+
+func TestAdminListProjects_SlugPresent(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
+
+	u, _ := store.CreateUser("sluglist-owner@test.com")
+	_, _ = store.CreateProjectWithID("p_sllist1", "Slug List Alpha", "desc", u.ID)
+	_, _ = store.CreateProjectWithID("p_sllist2", "Slug List Beta", "desc", u.ID)
+
+	w := doRequest(srv, "GET", "/v1/admin/projects?q=Slug+List", token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data []serverdb.AdminProject `json:"data"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected 2 projects, got %d", len(resp.Data))
+	}
+	for _, p := range resp.Data {
+		if p.Slug == "" {
+			t.Errorf("project %s (%s) has empty slug in admin list response", p.ID, p.Name)
+		}
+	}
+}
+
 func TestAdminGetProject_NotFound(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestAdminKey(t, store, "admin@test.com", "admin:read:projects,sync")
@@ -319,11 +368,11 @@ func TestAdminSyncCursors_BackfillFromEvents(t *testing.T) {
 		events := make([]EventInput, count)
 		for i := 0; i < count; i++ {
 			events[i] = EventInput{
-				ClientActionID: startID + int64(i),
-				ActionType:     "create",
-				EntityType:     "issues",
-				EntityID:       fmt.Sprintf("i_%s_%d", dev, i),
-				Payload:        json.RawMessage(`{"title":"x"}`),
+				ClientActionID:  startID + int64(i),
+				ActionType:      "create",
+				EntityType:      "issues",
+				EntityID:        fmt.Sprintf("i_%s_%d", dev, i),
+				Payload:         json.RawMessage(`{"title":"x"}`),
 				ClientTimestamp: "2025-01-01T00:00:00Z",
 			}
 		}
