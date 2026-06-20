@@ -47,9 +47,16 @@ export TD_CONTEXT_ID=reviewer-td-a1b2
 td session --new           # creates an independent session under this context key
 
 # Now the reviewer is a distinct session from the implementer:
-td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
+td approve td-a1b2 --reason "Reviewed diff, tests pass"
 # No --self-review needed: this is a genuinely independent session.
 ```
+
+> In the default `trusted` mode, an independent reviewer session closes directly
+> with `td approve <id> --reason "..."`. In `delegated` mode (not the default), a
+> reviewer can instead record approval *without* closing via
+> `td approve <id> --record-only --reason "..."`, and another session performs the
+> close later. `--record-only` requires `review_policy_mode=delegated`; it is
+> hard-rejected in `trusted` mode.
 
 The implementer context, meanwhile, uses its own value (or none):
 
@@ -75,7 +82,7 @@ yields a distinct session, and it works on **older td builds** that predate
 ```bash
 # Reviewer sub-agent context (works on older td too):
 export TD_SESSION_ID=reviewer-td-a1b2
-td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
+td approve td-a1b2 --reason "Reviewed diff, tests pass"
 ```
 
 **Trade-off:** `TD_SESSION_ID` overrides the *whole* fingerprint / exact-session
@@ -108,9 +115,13 @@ route 1 or 2.
    (e.g. `impl-<taskid>`, `reviewer-<taskid>`) before the sub-agent runs any
    `td` command.
 2. In the reviewer context, run `td session --new` so the independent session is
-   materialized, then `td approve <id> --record-only --reason "..."`.
-3. The orchestrator (or any session) performs the final close using the recorded
-   independent approval. See the review-model section in `CLAUDE.md`.
+   materialized, then `td approve <id> --reason "..."` (a genuinely independent
+   session closes directly in the default `trusted` mode; use `--record-only` only
+   in `delegated` mode).
+3. In `trusted` mode the independent `td approve` in step 2 already closes the
+   issue. In `delegated` mode, step 2 only records the approval (`--record-only`),
+   and the orchestrator (or any session) performs the final close using that
+   recorded independent approval. See the review-model section in `CLAUDE.md`.
 
 This keeps delegated reviews genuinely independent instead of collapsing into the
 orchestrator's session.
