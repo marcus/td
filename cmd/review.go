@@ -1299,14 +1299,19 @@ Examples:
 	GroupID: "workflow",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
 
 		// If no args provided, try to use focused issue
 		if len(args) == 0 {
 			focusedID, err := config.GetFocus(baseDir)
 			if err != nil || focusedID == "" {
-				output.Error("no issue specified and no focused issue")
-				fmt.Println("  Usage: td close <issue-id>")
-				fmt.Println("  Or set focus first: td focus <issue-id>")
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, "no issue specified and no focused issue")
+				} else {
+					output.Error("no issue specified and no focused issue")
+					fmt.Println("  Usage: td close <issue-id>")
+					fmt.Println("  Or set focus first: td focus <issue-id>")
+				}
 				return fmt.Errorf("no issue specified")
 			}
 			args = []string{focusedID}
@@ -1314,14 +1319,22 @@ Examples:
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if isJSON {
+				output.JSONError(output.ErrCodeDatabaseError, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			if isJSON {
+				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
@@ -1335,7 +1348,11 @@ Examples:
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Warning("issue not found: %s", issueID)
+				if isJSON {
+					output.JSONError(output.ErrCodeNotFound, err.Error())
+				} else {
+					output.Warning("issue not found: %s", issueID)
+				}
 				skipped++
 				continue
 			}
@@ -1343,7 +1360,11 @@ Examples:
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
-				output.Warning("cannot close %s: invalid transition from %s", issueID, issue.Status)
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, fmt.Sprintf("cannot close %s: invalid transition from %s", issueID, issue.Status))
+				} else {
+					output.Warning("cannot close %s: invalid transition from %s", issueID, issue.Status)
+				}
 				skipped++
 				continue
 			}
@@ -1353,8 +1374,12 @@ Examples:
 			// go through td approve so the review-attestation path records
 			// reviewer and closer separately.
 			if issue.Status == models.StatusInReview && !issue.Minor {
-				output.Error("cannot close %s: issue is in review; use 'td approve %s' to close reviewed work", issueID, issueID)
-				output.Error("  'td close' is the admin path for duplicates/won't-fix/cleanup; it cannot bypass review.")
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, fmt.Sprintf("cannot close %s: issue is in review; use 'td approve %s' to close reviewed work", issueID, issueID))
+				} else {
+					output.Error("cannot close %s: issue is in review; use 'td approve %s' to close reviewed work", issueID, issueID)
+					output.Error("  'td close' is the admin path for duplicates/won't-fix/cleanup; it cannot bypass review.")
+				}
 				skipped++
 				continue
 			}
@@ -1367,8 +1392,12 @@ Examples:
 				(issue.Status == models.StatusOpen || issue.Status == models.StatusInProgress || issue.Status == models.StatusBlocked) {
 				hasHist, _ := database.HasImplementationHistory(issueID)
 				if hasHist && adminReason == "" && selfCloseException == "" {
-					output.Error("cannot close %s: delegated mode requires --admin or --self-close-exception for issues with implementation history", issueID)
-					output.Error("  Use 'td review' -> 'td approve' for completed work, or pass --admin \"duplicate|won't-fix|...\"")
+					if isJSON {
+						output.JSONError(output.ErrCodeInvalidInput, fmt.Sprintf("cannot close %s: delegated mode requires --admin or --self-close-exception for issues with implementation history", issueID))
+					} else {
+						output.Error("cannot close %s: delegated mode requires --admin or --self-close-exception for issues with implementation history", issueID)
+						output.Error("  Use 'td review' -> 'td approve' for completed work, or pass --admin \"duplicate|won't-fix|...\"")
+					}
 					skipped++
 					continue
 				}
@@ -1376,19 +1405,25 @@ Examples:
 
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
 			if err != nil {
-				output.Warning("failed to check session history for %s: %v", issueID, err)
+				if !isJSON {
+					output.Warning("failed to check session history for %s: %v", issueID, err)
+				}
 				wasInvolved = true // Conservative: assume involvement on error
 			}
 
 			wasImplementationInvolved, err := database.WasSessionImplementationInvolved(issueID, sess.ID)
 			if err != nil {
-				output.Warning("failed to check implementation history for %s: %v", issueID, err)
+				if !isJSON {
+					output.Warning("failed to check implementation history for %s: %v", issueID, err)
+				}
 				wasImplementationInvolved = true // Conservative: assume implementation involvement on error
 			}
 
 			hasImplementationHistory, err := database.HasImplementationHistory(issueID)
 			if err != nil {
-				output.Warning("failed to check issue implementation history for %s: %v", issueID, err)
+				if !isJSON {
+					output.Warning("failed to check issue implementation history for %s: %v", issueID, err)
+				}
 				hasImplementationHistory = true // Conservative: assume implementation history on error
 			}
 
@@ -1396,13 +1431,19 @@ Examples:
 
 			if !eligibility.Allowed {
 				if selfCloseException == "" && adminReason == "" {
-					output.Error("%s", eligibility.RejectionMessage)
-					output.Error("%s", closeFollowupGuidance(issue))
+					if isJSON {
+						output.JSONError(output.ErrCodeCannotSelfApprove, eligibility.RejectionMessage)
+					} else {
+						output.Error("%s", eligibility.RejectionMessage)
+						output.Error("%s", closeFollowupGuidance(issue))
+					}
 					skipped++
 					continue
 				}
-				output.Warning("SELF-CLOSE EXCEPTION: %s", issueID)
-				output.Warning("  Reason: %s", selfCloseException)
+				if !isJSON {
+					output.Warning("SELF-CLOSE EXCEPTION: %s", issueID)
+					output.Warning("  Reason: %s", selfCloseException)
+				}
 			}
 
 			// Update issue (atomic update + action log)
@@ -1413,7 +1454,11 @@ Examples:
 			issue.ClosedAt = &now
 
 			if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionClose); err != nil {
-				output.Warning("%s", describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
+				if isJSON {
+					output.JSONError(output.ErrCodeDatabaseError, describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
+				} else {
+					output.Warning("%s", describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
+				}
 				skipped++
 				continue
 			}
@@ -1450,36 +1495,73 @@ Examples:
 				Message:   logMsg,
 				Type:      logType,
 			}); err != nil {
-				output.Warning("add log failed: %v", err)
+				if !isJSON {
+					output.Warning("add log failed: %v", err)
+				}
 			}
 
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			if !eligibility.Allowed && selfCloseException != "" {
-				fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
-			} else {
-				fmt.Printf("CLOSED %s\n", issueID)
+			if !isJSON {
+				if !eligibility.Allowed && selfCloseException != "" {
+					fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
+				} else {
+					fmt.Printf("CLOSED %s\n", issueID)
+				}
 			}
 
 			// Cascade up: if all siblings are closed, update parent epic
+			cascadedParents := []string{}
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
-				for _, id := range ids {
-					fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+				cascadedParents = ids
+				if !isJSON {
+					for _, id := range ids {
+						fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", id, models.StatusClosed)
+					}
 				}
 			}
 
 			// Auto-unblock dependents whose dependencies are now all closed
+			unblockedDependents := []string{}
 			if count, ids := database.CascadeUnblockDependents(issueID, sess.ID); count > 0 {
-				for _, id := range ids {
-					fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+				unblockedDependents = ids
+				if !isJSON {
+					for _, id := range ids {
+						fmt.Printf("  ↓ Dependent %s auto-unblocked\n", id)
+					}
+				}
+			}
+
+			if isJSON {
+				// Re-fetch the persisted record and emit one JSON object per id
+				// (NDJSON in the bulk case), mirroring the review family.
+				closedIssue, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					closedIssue = issue
+				}
+				extra := map[string]any{"session": sess.ID}
+				if !eligibility.Allowed && selfCloseException != "" {
+					extra["self_close_exception"] = selfCloseException
+				}
+				if adminReason != "" {
+					extra["admin"] = adminReason
+				}
+				if len(cascadedParents) > 0 {
+					extra["cascaded_parents"] = cascadedParents
+				}
+				if len(unblockedDependents) > 0 {
+					extra["unblocked_dependents"] = unblockedDependents
+				}
+				if err := output.EmitIssue("closed", closedIssue, extra); err != nil {
+					return err
 				}
 			}
 
 			closed++
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !isJSON {
 			fmt.Printf("\nClosed %d, skipped %d\n", closed, skipped)
 		}
 		return nil
