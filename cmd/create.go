@@ -83,11 +83,17 @@ var createCmd = &cobra.Command{
 			extractedType, title = parseTypeFromTitle(title)
 		}
 
-		// Validate title quality
+		// Validate title quality. A too-short title now produces a non-fatal
+		// warning and creation proceeds; generic and over-max titles remain
+		// hard errors.
 		minLen, maxLen, _ := config.GetTitleLengthLimits(baseDir)
-		if err := validateTitle(title, minLen, maxLen); err != nil {
+		titleWarning, err := validateTitle(title, minLen, maxLen)
+		if err != nil {
 			emitErr("%v", err)
 			return err
+		}
+		if titleWarning != "" {
+			emitWarn("%s", titleWarning)
 		}
 
 		// Build issue
@@ -327,8 +333,11 @@ func mergeMultiValueFlag(values []string) []string {
 	return result
 }
 
-// validateTitle checks that the title is descriptive enough
-func validateTitle(title string, minLength, maxLength int) error {
+// validateTitle checks that the title is descriptive enough. It returns a hard
+// error for titles that should abort creation (generic titles, over-max length)
+// and a non-empty warning string for soft issues that should be surfaced but
+// still allow creation to proceed (under-min length).
+func validateTitle(title string, minLength, maxLength int) (warning string, err error) {
 	// Generic titles that should be rejected (case-insensitive)
 	genericTitles := []string{
 		"task", "issue", "bug", "feature", "fix", "update", "change",
@@ -341,19 +350,21 @@ func validateTitle(title string, minLength, maxLength int) error {
 	// Check for exact match with generic titles
 	for _, generic := range genericTitles {
 		if lower == generic {
-			return fmt.Errorf("title '%s' is too generic - describe what it does or fixes", title)
+			return "", fmt.Errorf("title '%s' is too generic - describe what it does or fixes", title)
 		}
 	}
 
 	// Check length using rune count (correct for unicode)
 	// Use trimmed length to prevent whitespace padding exploit
 	runeCount := utf8.RuneCountInString(trimmed)
-	if runeCount < minLength {
-		return fmt.Errorf("title too short (%d chars, need %d) - e.g. 'Fix login timeout' not 'Fix bug'", runeCount, minLength)
-	}
+	// Over-max stays a hard error - move details to the description.
 	if runeCount > maxLength {
-		return fmt.Errorf("title too long (%d chars, max %d) - move details to description", runeCount, maxLength)
+		return "", fmt.Errorf("title too long (%d chars, max %d) - move details to description", runeCount, maxLength)
+	}
+	// Under-min is now a warning, not a rejection: surface it but proceed.
+	if runeCount < minLength {
+		return fmt.Sprintf("title is short (%d chars, recommended %d+) - e.g. 'Fix login timeout' not 'Fix bug'", runeCount, minLength), nil
 	}
 
-	return nil
+	return "", nil
 }

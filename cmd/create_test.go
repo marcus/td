@@ -841,16 +841,17 @@ func TestMultipleMinorTasksByCreator(t *testing.T) {
 	}
 }
 
-// TestValidateTitleMinLength tests that titles shorter than min are rejected
+// TestValidateTitleMinLength tests that titles shorter than min are no longer
+// rejected: they succeed (no error) but surface a non-empty warning.
 func TestValidateTitleMinLength(t *testing.T) {
 	tests := []struct {
-		title     string
-		minLen    int
-		maxLen    int
-		wantError bool
+		title       string
+		minLen      int
+		maxLen      int
+		wantWarning bool
 	}{
-		{"Short", 15, 200, true},                        // 5 chars < 15
-		{"This is fine!", 15, 200, true},                // 13 chars < 15
+		{"Short", 15, 200, true},                        // 5 chars < 15 -> warn, no error
+		{"This is fine!", 15, 200, true},                // 13 chars < 15 -> warn, no error
 		{"This is long enough to pass", 15, 200, false}, // 27 chars >= 15
 		{"Exactly fifteen!", 15, 200, false},            // 16 chars >= 15
 		{"Fix the login bug", 15, 200, false},           // 17 chars >= 15
@@ -859,12 +860,16 @@ func TestValidateTitleMinLength(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := validateTitle(tt.title, tt.minLen, tt.maxLen)
-		if tt.wantError && err == nil {
-			t.Errorf("validateTitle(%q, %d, %d) expected error, got nil", tt.title, tt.minLen, tt.maxLen)
-		}
-		if !tt.wantError && err != nil {
+		warning, err := validateTitle(tt.title, tt.minLen, tt.maxLen)
+		// A too-short title must never abort creation.
+		if err != nil {
 			t.Errorf("validateTitle(%q, %d, %d) unexpected error: %v", tt.title, tt.minLen, tt.maxLen, err)
+		}
+		if tt.wantWarning && warning == "" {
+			t.Errorf("validateTitle(%q, %d, %d) expected a warning, got none", tt.title, tt.minLen, tt.maxLen)
+		}
+		if !tt.wantWarning && warning != "" {
+			t.Errorf("validateTitle(%q, %d, %d) unexpected warning: %q", tt.title, tt.minLen, tt.maxLen, warning)
 		}
 	}
 }
@@ -886,7 +891,7 @@ func TestValidateTitleMaxLength(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		err := validateTitle(tt.title, tt.minLen, tt.maxLen)
+		_, err := validateTitle(tt.title, tt.minLen, tt.maxLen)
 		if tt.wantError && err == nil {
 			t.Errorf("validateTitle(len=%d, min=%d, max=%d) expected error, got nil", len(tt.title), tt.minLen, tt.maxLen)
 		}
@@ -907,7 +912,7 @@ func TestValidateTitleGenericRejection(t *testing.T) {
 	}
 
 	for _, title := range genericTitles {
-		err := validateTitle(title, 1, 100) // Use min=1 to isolate generic check
+		_, err := validateTitle(title, 1, 100) // Use min=1 to isolate generic check
 		if err == nil {
 			t.Errorf("validateTitle(%q) should reject generic title", title)
 		}
@@ -917,19 +922,22 @@ func TestValidateTitleGenericRejection(t *testing.T) {
 	}
 }
 
-// TestValidateTitleErrorMessages tests that error messages are helpful
+// TestValidateTitleErrorMessages tests that warning/error messages are helpful
 func TestValidateTitleErrorMessages(t *testing.T) {
-	// Too short error
-	err := validateTitle("Short", 15, 100)
-	if err == nil || !strings.Contains(err.Error(), "too short") {
-		t.Errorf("Expected 'too short' error, got: %v", err)
+	// Too short is now a non-fatal warning, not an error.
+	warning, err := validateTitle("Short", 15, 100)
+	if err != nil {
+		t.Errorf("Too-short title should not error, got: %v", err)
 	}
-	if err != nil && !strings.Contains(err.Error(), "5 chars") {
-		t.Errorf("Error should include actual length, got: %v", err)
+	if warning == "" || !strings.Contains(warning, "short") {
+		t.Errorf("Expected 'short' warning, got: %q", warning)
+	}
+	if !strings.Contains(warning, "5 chars") {
+		t.Errorf("Warning should include actual length, got: %q", warning)
 	}
 
 	// Too long error
-	err = validateTitle(strings.Repeat("a", 150), 15, 100)
+	_, err = validateTitle(strings.Repeat("a", 150), 15, 100)
 	if err == nil || !strings.Contains(err.Error(), "too long") {
 		t.Errorf("Expected 'too long' error, got: %v", err)
 	}
