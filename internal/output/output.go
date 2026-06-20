@@ -68,6 +68,41 @@ func JSON(v interface{}) error {
 	return nil
 }
 
+// EmitIssue emits a standard JSON envelope for a mutation that produced or
+// affected a single issue. The envelope is {"id","status","action","issue"}
+// where "issue" is the full issue object (relying on models.Issue json tags).
+// Keys from extra are merged last and override the defaults, allowing callers
+// to attach additional context (e.g. {"session": "..."}). This lives in the
+// output package (alongside JSON) because models has no internal imports, so
+// importing models here creates no cycle.
+func EmitIssue(action string, issue *models.Issue, extra map[string]any) error {
+	payload := map[string]any{
+		"action": action,
+		"issue":  issue,
+	}
+	if issue != nil {
+		payload["id"] = issue.ID
+		payload["status"] = issue.Status
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	return JSON(payload)
+}
+
+// EmitResult emits a standard JSON envelope for a mutation that is not tied to
+// a single issue. The envelope is {"action"} merged with any keys from extra
+// (extra overrides).
+func EmitResult(action string, extra map[string]any) error {
+	payload := map[string]any{
+		"action": action,
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	return JSON(payload)
+}
+
 // Error codes for structured JSON output
 const (
 	ErrCodeNotFound          = "not_found"

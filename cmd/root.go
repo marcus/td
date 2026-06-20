@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/suggest"
 	"github.com/marcus/td/internal/workdir"
@@ -85,6 +87,16 @@ func Execute() {
 		// Log agent error for analysis
 		logAgentError(args, err.Error())
 
+		// JSON callers always get a JSON error envelope. Check the parsed
+		// persistent flag, falling back to a raw os.Args scan in case flag
+		// parsing itself failed on an unknown flag. This must run before the
+		// unknown-flag/workflow-hint handling so json callers never get the
+		// human-oriented hint text.
+		if jsonErrorRequested() {
+			output.JSONError(output.ErrCodeInvalidInput, err.Error())
+			os.Exit(1)
+		}
+
 		// Check if this is an unknown flag error and provide suggestions
 		if handleUnknownFlagError(err.Error(), args) {
 			os.Exit(1)
@@ -98,6 +110,17 @@ func Execute() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// jsonErrorRequested reports whether the top-level error path should emit a
+// JSON error envelope. It prefers the parsed persistent --json flag but falls
+// back to scanning os.Args, since flag parsing may have failed before the flag
+// was recorded (e.g. when the error is itself an unknown flag).
+func jsonErrorRequested() bool {
+	if jsonRequested, err := rootCmd.PersistentFlags().GetBool("json"); err == nil && jsonRequested {
+		return true
+	}
+	return slices.Contains(os.Args, "--json")
 }
 
 // logAnalytics logs command usage analytics once after execution completes
@@ -262,6 +285,7 @@ func nameWithAliases(cmd *cobra.Command) string {
 func init() {
 	cobra.OnInitialize(initBaseDir)
 	rootCmd.PersistentFlags().StringVarP(&workDirFlag, "work-dir", "w", "", "project directory (resolves .td-root and git worktrees from this path)")
+	rootCmd.PersistentFlags().Bool("json", false, "Output result as JSON")
 
 	// Add custom template function for showing aliases
 	cobra.AddTemplateFunc("nameWithAliases", nameWithAliases)

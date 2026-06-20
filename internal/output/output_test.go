@@ -1,12 +1,114 @@
 package output
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marcus/td/internal/models"
 )
+
+// captureStdout runs fn while capturing everything written to os.Stdout.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	w.Close()
+	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+// TestEmitIssueShape verifies EmitIssue produces {id,status,action,issue}.
+func TestEmitIssueShape(t *testing.T) {
+	issue := &models.Issue{ID: "td-abc123", Status: models.StatusOpen, Title: "Test"}
+
+	out := captureStdout(t, func() {
+		if err := EmitIssue("created", issue, nil); err != nil {
+			t.Fatalf("EmitIssue returned error: %v", err)
+		}
+	})
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+
+	if got["id"] != "td-abc123" {
+		t.Errorf("id = %v, want td-abc123", got["id"])
+	}
+	if got["status"] != string(models.StatusOpen) {
+		t.Errorf("status = %v, want %s", got["status"], models.StatusOpen)
+	}
+	if got["action"] != "created" {
+		t.Errorf("action = %v, want created", got["action"])
+	}
+	issueObj, ok := got["issue"].(map[string]any)
+	if !ok {
+		t.Fatalf("issue key missing or not an object: %v", got["issue"])
+	}
+	if issueObj["id"] != "td-abc123" {
+		t.Errorf("issue.id = %v, want td-abc123", issueObj["id"])
+	}
+}
+
+// TestEmitIssueExtraOverrides verifies extra keys merge and override defaults.
+func TestEmitIssueExtraOverrides(t *testing.T) {
+	issue := &models.Issue{ID: "td-abc123", Status: models.StatusOpen}
+
+	out := captureStdout(t, func() {
+		if err := EmitIssue("created", issue, map[string]any{
+			"session": "ses_x",
+			"action":  "overridden",
+		}); err != nil {
+			t.Fatalf("EmitIssue returned error: %v", err)
+		}
+	})
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if got["session"] != "ses_x" {
+		t.Errorf("session = %v, want ses_x", got["session"])
+	}
+	if got["action"] != "overridden" {
+		t.Errorf("action = %v, want overridden (extra should override)", got["action"])
+	}
+}
+
+// TestEmitResultShape verifies EmitResult produces {action} merged with extra.
+func TestEmitResultShape(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := EmitResult("linked", map[string]any{"from": "td-a", "to": "td-b"}); err != nil {
+			t.Fatalf("EmitResult returned error: %v", err)
+		}
+	})
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if got["action"] != "linked" {
+		t.Errorf("action = %v, want linked", got["action"])
+	}
+	if got["from"] != "td-a" || got["to"] != "td-b" {
+		t.Errorf("extra keys not merged: %v", got)
+	}
+	if _, hasIssue := got["issue"]; hasIssue {
+		t.Errorf("EmitResult should not include an issue key: %v", got)
+	}
+}
 
 // TestFormatTimeAgoJustNow tests times less than a minute ago
 func TestFormatTimeAgoJustNow(t *testing.T) {
