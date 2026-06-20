@@ -1525,6 +1525,200 @@ func TestReviewSuppressesAutoHandoffWarningWhenWorkSessionContextExists(t *testi
 	}
 }
 
+func TestReviewSynthesizesHandoffFromLogs(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Has substantive logs",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := reviewCommandSessionID(t, database)
+
+	// Routine log should be ignored, substantive logs should be synthesized.
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Message:   "Started work",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Message:   "Implemented retry handling for the sync client",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Message:   "Chose exponential backoff over fixed interval",
+		Type:      models.LogTypeDecision,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	_ = runReviewCommand(t, dir, issue.ID)
+
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Fatal("expected auto-created handoff")
+	}
+
+	// Done should reflect the substantive progress log, not the placeholder.
+	if len(handoff.Done) == 0 {
+		t.Fatal("expected synthesized Done content")
+	}
+	for _, d := range handoff.Done {
+		if d == autoReviewHandoffMessage {
+			t.Errorf("Done should not contain placeholder when logs exist: %v", handoff.Done)
+		}
+	}
+	foundProgress := false
+	for _, d := range handoff.Done {
+		if strings.Contains(d, "Implemented retry handling") {
+			foundProgress = true
+		}
+		if strings.Contains(d, "Started work") {
+			t.Errorf("routine log should not appear in Done: %v", handoff.Done)
+		}
+	}
+	if !foundProgress {
+		t.Errorf("expected progress log in Done, got %v", handoff.Done)
+	}
+
+	// Decision log should be separated into Decisions.
+	foundDecision := false
+	for _, d := range handoff.Decisions {
+		if strings.Contains(d, "exponential backoff") {
+			foundDecision = true
+		}
+	}
+	if !foundDecision {
+		t.Errorf("expected decision log in Decisions, got %v", handoff.Decisions)
+	}
+
+	// Remaining should point reviewers at the logs when content was synthesized.
+	if len(handoff.Remaining) == 0 {
+		t.Errorf("expected non-empty Remaining for synthesized handoff, got %v", handoff.Remaining)
+	}
+}
+
+func TestReviewFallsBackToMinimalHandoffWithNoLogs(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "No logs at all",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// No logs added at all.
+	_ = runReviewCommand(t, dir, issue.ID)
+
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Fatal("expected auto-created handoff even with no logs")
+	}
+	if len(handoff.Done) != 1 || handoff.Done[0] != autoReviewHandoffMessage {
+		t.Errorf("expected minimal placeholder fallback, got %v", handoff.Done)
+	}
+	if len(handoff.Remaining) != 0 {
+		t.Errorf("expected empty Remaining for minimal fallback, got %v", handoff.Remaining)
+	}
+}
+
+func TestReviewMinorSkipsAutoHandoff(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Minor issue",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_review_cmd")
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	_ = reviewCmd.Flags().Set("json", "false")
+	_ = reviewCmd.Flags().Set("minor", "true")
+	_ = reviewCmd.Flags().Set("reason", "")
+	_ = reviewCmd.Flags().Set("message", "")
+	_ = reviewCmd.Flags().Set("comment", "")
+	_ = reviewCmd.Flags().Set("note", "")
+	_ = reviewCmd.Flags().Set("notes", "")
+	defer reviewCmd.Flags().Set("minor", "false")
+
+	if err := reviewCmd.RunE(reviewCmd, []string{issue.ID}); err != nil {
+		t.Fatalf("reviewCmd.RunE returned error: %v", err)
+	}
+
+	// --minor issues bypass review, so no auto-handoff should be created.
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff != nil {
+		t.Errorf("expected no auto-handoff for --minor issue, got %+v", handoff)
+	}
+}
+
+func TestSynthesizeHandoffFromLogsCap(t *testing.T) {
+	// Verify only the most recent maxAutoHandoffDone entries are kept.
+	var logs []models.Log
+	for i := 0; i < maxAutoHandoffDone+5; i++ {
+		logs = append(logs, models.Log{
+			Message: "did substantive thing " + string(rune('a'+i)),
+			Type:    models.LogTypeProgress,
+		})
+	}
+	done, _ := synthesizeHandoffFromLogs(logs)
+	if len(done) != maxAutoHandoffDone {
+		t.Errorf("expected Done capped at %d, got %d", maxAutoHandoffDone, len(done))
+	}
+	// Should keep the LAST entries (most recent).
+	last := logs[len(logs)-1].Message
+	if done[len(done)-1] != last {
+		t.Errorf("expected most recent log retained, got %q want %q", done[len(done)-1], last)
+	}
+}
+
 func TestReviewPreservesExistingHandoff(t *testing.T) {
 	dir := t.TempDir()
 

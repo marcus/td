@@ -32,15 +32,61 @@ type SubmitReviewResult struct {
 
 const autoReviewHandoffMessage = "Auto-generated for review submission"
 
-func newAutoReviewHandoff(issueID, sessionID string) *models.Handoff {
+// maxAutoHandoffDone caps how many synthesized "done" lines we pull from logs so
+// the handoff stays readable rather than dumping the entire log history.
+const maxAutoHandoffDone = 8
+
+// newAutoReviewHandoff builds a handoff for review submission when none exists.
+// It synthesizes the "done" field from the issue's substantive session logs
+// (decisions, progress, results, etc.) instead of writing an empty placeholder.
+// If there are no usable logs it falls back to the minimal placeholder.
+func newAutoReviewHandoff(issueID, sessionID string, logs []models.Log) *models.Handoff {
+	done, decisions := synthesizeHandoffFromLogs(logs)
+	if len(done) == 0 {
+		done = []string{autoReviewHandoffMessage}
+	}
+
+	remaining := []string{}
+	if len(done) > 0 && done[0] != autoReviewHandoffMessage {
+		// We synthesized real content from logs; point reviewers at the full log.
+		remaining = []string{"see session logs"}
+	}
+
 	return &models.Handoff{
 		IssueID:   issueID,
 		SessionID: sessionID,
-		Done:      []string{autoReviewHandoffMessage},
-		Remaining: []string{},
-		Decisions: []string{},
+		Done:      done,
+		Remaining: remaining,
+		Decisions: decisions,
 		Uncertain: []string{},
 	}
+}
+
+// synthesizeHandoffFromLogs extracts substantive log messages from an issue's
+// logs and returns them as candidate "done" lines plus separated decision lines.
+// Routine workflow logs (e.g. "Started work", "Submitted for review") are
+// skipped. Only the most recent maxAutoHandoffDone "done" lines are kept.
+func synthesizeHandoffFromLogs(logs []models.Log) (done []string, decisions []string) {
+	for _, log := range logs {
+		if !isSubstantiveReviewContextLog(log) {
+			continue
+		}
+		msg := strings.TrimSpace(log.Message)
+		if msg == "" {
+			continue
+		}
+		if log.Type == models.LogTypeDecision {
+			decisions = append(decisions, msg)
+			continue
+		}
+		done = append(done, msg)
+	}
+
+	// Keep the most recent entries if we collected more than the cap.
+	if len(done) > maxAutoHandoffDone {
+		done = done[len(done)-maxAutoHandoffDone:]
+	}
+	return done, decisions
 }
 
 // submitIssueForReview submits a single issue for review with proper validation,
@@ -246,28 +292,35 @@ Supports bulk operations:
 				continue
 			}
 
-			// Check for handoff - auto-create if missing
-			handoff, err := database.GetLatestHandoff(issueID)
-			if err != nil || handoff == nil {
-				// Auto-create minimal handoff
-				autoHandoff := newAutoReviewHandoff(issueID, sess.ID)
-				if err := database.AddHandoff(autoHandoff); err != nil {
-					if jsonOutput {
-						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to create handoff: %v", err))
-					} else {
-						output.Error("failed to create handoff for %s: %v", issueID, err)
-					}
-					skipped++
-					continue
-				}
-				if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) && !jsonOutput {
-					output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
-				}
+			// Handle --minor flag (read early: minor issues bypass review and
+			// don't need an auto-created handoff).
+			minor, _ := cmd.Flags().GetBool("minor")
+			if minor {
+				issue.Minor = true
 			}
 
-			// Handle --minor flag
-			if minor, _ := cmd.Flags().GetBool("minor"); minor {
-				issue.Minor = true
+			// Check for handoff - auto-create if missing (skipped for --minor,
+			// which already bypasses review).
+			if !minor {
+				handoff, err := database.GetLatestHandoff(issueID)
+				if err != nil || handoff == nil {
+					// Synthesize a handoff from the issue's session logs rather
+					// than writing an empty placeholder.
+					logs, _ := database.GetLogs(issueID, 50)
+					autoHandoff := newAutoReviewHandoff(issueID, sess.ID, logs)
+					if err := database.AddHandoff(autoHandoff); err != nil {
+						if jsonOutput {
+							output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to create handoff: %v", err))
+						} else {
+							output.Error("failed to create handoff for %s: %v", issueID, err)
+						}
+						skipped++
+						continue
+					}
+					if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) && !jsonOutput {
+						output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
+					}
+				}
 			}
 
 			// Prepare log message (supports --reason, --message, --comment, --note, --notes)
