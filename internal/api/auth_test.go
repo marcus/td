@@ -254,6 +254,23 @@ func assertWebStartGeneric200(t *testing.T, w *httptest.ResponseRecorder) {
 	}
 }
 
+func createPendingInvitationForAuthTest(t *testing.T, store *serverdb.ServerDB, email string) *serverdb.Invitation {
+	t.Helper()
+	owner, err := store.CreateUser("auth-invite-owner@example.com")
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	project, err := store.CreateProject("auth-invite-project", "", owner.ID)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	inv, err := store.CreateInvitation(project.ID, email, serverdb.RoleWriter, owner.ID, "test-token-hash", time.Now().UTC().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+	return inv
+}
+
 // TestWebStart_ExistingUser verifies that an existing user gets the generic 200 and one email.
 func TestWebStart_ExistingUser(t *testing.T) {
 	srv, store := newTestServer(t)
@@ -305,6 +322,74 @@ func TestWebStart_AllowSignupTrueUnknownUser(t *testing.T) {
 	}
 	if sent[0].Purpose != "web_login" {
 		t.Errorf("email Purpose: got %q, want %q", sent[0].Purpose, "web_login")
+	}
+}
+
+// TestWebStart_AllowSignupFalseUnknownInvitedUser verifies that a pending
+// invitation lets an unknown email start web login even when open signup is off.
+func TestWebStart_AllowSignupFalseUnknownInvitedUser(t *testing.T) {
+	srv, store := newTestServer(t)
+	srv.config.AllowSignup = false
+	ms := email.NewMemorySender()
+	srv.emailSender = ms
+
+	const inviteeEmail = "invited-web-start@example.com"
+	const state = "invite-csrf-state"
+	inv := createPendingInvitationForAuthTest(t, store, inviteeEmail)
+
+	w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody(inviteeEmail, "", state))
+	assertWebStartGeneric200(t, w)
+
+	user, err := store.GetUserByEmail(inviteeEmail)
+	if err != nil {
+		t.Fatalf("get created invitee user: %v", err)
+	}
+	if user == nil {
+		t.Fatal("expected invited user to be created when signup is disabled")
+	}
+
+	sent := ms.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 web login email for invited user, got %d", len(sent))
+	}
+	if sent[0].To != inviteeEmail {
+		t.Errorf("email To: got %q, want %q", sent[0].To, inviteeEmail)
+	}
+	if sent[0].Purpose != "web_login" {
+		t.Errorf("email Purpose: got %q, want %q", sent[0].Purpose, "web_login")
+	}
+
+	token := extractTokenFromEmail(t, sent[0].Text)
+	w = doRequest(srv, "POST", "/v1/auth/web/exchange", "", webExchangeBody(token, state))
+	if w.Code != http.StatusOK {
+		t.Fatalf("exchange: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var exchangeResp webExchangeResponse
+	if err := json.NewDecoder(w.Body).Decode(&exchangeResp); err != nil {
+		t.Fatalf("decode exchange response: %v", err)
+	}
+	if exchangeResp.APIKey == "" {
+		t.Fatal("expected api key from web exchange")
+	}
+
+	w = doRequest(srv, "GET", "/v1/invitations", exchangeResp.APIKey, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list invitations: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var invitations []InvitationResponse
+	if err := json.NewDecoder(w.Body).Decode(&invitations); err != nil {
+		t.Fatalf("decode invitations: %v", err)
+	}
+	if len(invitations) != 1 || invitations[0].ID != inv.ID || invitations[0].Status != serverdb.InvitationStatusPending {
+		t.Fatalf("pending invitations mismatch: %#v", invitations)
+	}
+
+	membership, err := store.GetMembership(inv.ProjectID, user.ID)
+	if err != nil {
+		t.Fatalf("get membership: %v", err)
+	}
+	if membership != nil {
+		t.Fatalf("invitation should not be accepted automatically, membership=%#v", membership)
 	}
 }
 
@@ -383,6 +468,55 @@ func TestWebStart_AllowSignupFalseUnknownUser(t *testing.T) {
 	}
 	if len(result.Data) == 0 {
 		t.Fatal("expected AuthEventEmailSuppressed to be recorded for signup-disabled unknown user")
+	}
+}
+
+func TestWebStart_AllowSignupFalseExpiredOrDeclinedInvitationSuppressed(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+		setup func(*serverdb.ServerDB, *serverdb.Invitation)
+	}{
+		{
+			name:  "expired",
+			email: "expired-invite-web-start@example.com",
+			setup: func(store *serverdb.ServerDB, inv *serverdb.Invitation) {
+				store.ForceExpireInvitationForTest(inv.ID, time.Now().UTC().Add(-1*time.Hour))
+			},
+		},
+		{
+			name:  "declined",
+			email: "declined-invite-web-start@example.com",
+			setup: func(store *serverdb.ServerDB, inv *serverdb.Invitation) {
+				if err := store.DeclineInvitation(inv.ID, inv.Email); err != nil {
+					t.Fatalf("decline invitation: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, store := newTestServer(t)
+			srv.config.AllowSignup = false
+			ms := email.NewMemorySender()
+			srv.emailSender = ms
+			inv := createPendingInvitationForAuthTest(t, store, tc.email)
+			tc.setup(store, inv)
+
+			w := doRequest(srv, "POST", "/v1/auth/web/start", "", webStartBody(tc.email, "", "state"))
+			assertWebStartGeneric200(t, w)
+			if len(ms.Sent()) != 0 {
+				t.Fatalf("expected 0 emails sent (suppressed), got %d", len(ms.Sent()))
+			}
+			user, err := store.GetUserByEmail(tc.email)
+			if err != nil {
+				t.Fatalf("get user: %v", err)
+			}
+			if user != nil {
+				t.Fatal("expected no user to be created")
+			}
+		})
 	}
 }
 
