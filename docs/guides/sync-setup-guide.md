@@ -195,7 +195,7 @@ Your credentials are missing or expired. Run `td auth login` again.
 Your local project isn't connected to a remote. Run `td sync-project join` or `td sync-project link <id>`.
 
 **"no projects found"**
-You haven't been invited to any remote projects yet. Ask the project owner to run `td sync-project invite your@email.com`.
+You do not have access to any remote projects yet. Ask an owner to add your existing td account with `td sync-project invite your@email.com`.
 
 **"unauthorized"**
 Your API key is expired or revoked. Run `td auth login` to get a new one.
