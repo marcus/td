@@ -29,6 +29,13 @@ Examples:
   td note add "Design doc"                # opens editor for content`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
 		title := args[0]
 		content, _ := cmd.Flags().GetString("content")
 
@@ -36,7 +43,7 @@ Examples:
 		if !cmd.Flags().Changed("content") {
 			edited, err := openEditorForContent("")
 			if err != nil {
-				output.Error("editor failed: %v", err)
+				emitErr("editor failed: %v", err)
 				return err
 			}
 			content = edited
@@ -44,15 +51,22 @@ Examples:
 
 		database, err := db.Open(getBaseDir())
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		note, err := database.CreateNote(title, content)
 		if err != nil {
-			output.Error("failed to create note: %v", err)
+			emitErr("failed to create note: %v", err)
 			return err
+		}
+
+		if isJSON {
+			return output.EmitResult("note_created", map[string]any{
+				"id":   note.ID,
+				"note": note,
+			})
 		}
 
 		fmt.Printf("CREATED %s %s\n", note.ID, note.Title)
@@ -193,16 +207,23 @@ Examples:
   td note edit nt-abc123                              # opens editor`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
 		database, err := db.Open(getBaseDir())
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		note, err := database.GetNote(args[0])
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -220,16 +241,23 @@ Examples:
 		if !cmd.Flags().Changed("title") && !cmd.Flags().Changed("content") {
 			edited, err := openEditorForContent(note.Content)
 			if err != nil {
-				output.Error("editor failed: %v", err)
+				emitErr("editor failed: %v", err)
 				return err
 			}
 			newContent = edited
 		}
 
-		_, err = database.UpdateNote(note.ID, newTitle, newContent)
+		updated, err := database.UpdateNote(note.ID, newTitle, newContent)
 		if err != nil {
-			output.Error("failed to update note: %v", err)
+			emitErr("failed to update note: %v", err)
 			return err
+		}
+
+		if isJSON {
+			return output.EmitResult("note_updated", map[string]any{
+				"id":   note.ID,
+				"note": updated,
+			})
 		}
 
 		fmt.Printf("UPDATED %s\n", note.ID)
@@ -242,16 +270,29 @@ var noteDeleteCmd = &cobra.Command{
 	Short: "Delete a note (soft-delete)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
 		database, err := db.Open(getBaseDir())
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		if err := database.DeleteNote(args[0]); err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
+		}
+
+		if isJSON {
+			return output.EmitResult("note_deleted", map[string]any{
+				"id": args[0],
+			})
 		}
 
 		fmt.Printf("DELETED %s\n", args[0])

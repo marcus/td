@@ -25,17 +25,29 @@ Examples:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -47,7 +59,7 @@ Examples:
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Warning("issue not found: %s", issueID)
+				emitWarn("issue not found: %s", issueID)
 				skipped++
 				continue
 			}
@@ -55,14 +67,14 @@ Examples:
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				output.Warning("cannot unstart %s: invalid transition from %s", issueID, issue.Status)
+				emitWarn("cannot unstart %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
 
 			// Only unstart in_progress issues (preserving existing behavior)
 			if issue.Status != models.StatusInProgress {
-				output.Warning("issue not in_progress: %s (status: %s)", issueID, issue.Status)
+				emitWarn("issue not in_progress: %s (status: %s)", issueID, issue.Status)
 				skipped++
 				continue
 			}
@@ -70,7 +82,7 @@ Examples:
 			// Record session action BEFORE clearing ImplementerSession (for bypass prevention)
 			// This tracks that this session touched the issue, even though it's being unstarted
 			if err := database.RecordSessionAction(issueID, sess.ID, models.ActionSessionUnstarted); err != nil {
-				output.Warning("failed to record session history: %v", err)
+				emitWarn("failed to record session history: %v", err)
 			}
 
 			// Update issue (atomic update + action log)
@@ -78,7 +90,7 @@ Examples:
 			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+				emitWarn("failed to update %s: %v", issueID, err)
 				skipped++
 				continue
 			}
@@ -99,11 +111,23 @@ Examples:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			fmt.Printf("UNSTARTED %s → open\n", issueID)
+			if isJSON {
+				// Re-fetch the now-open issue and emit one JSON object per id
+				// (NDJSON in the bulk case).
+				unstarted2, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					unstarted2 = issue
+				}
+				if err := output.EmitIssue("unstarted", unstarted2, nil); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("UNSTARTED %s → open\n", issueID)
+			}
 			unstarted++
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !isJSON {
 			fmt.Printf("\nUnstarted %d, skipped %d\n", unstarted, skipped)
 		}
 

@@ -329,7 +329,7 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 4: Look up user; unknown email signs up when allowed, otherwise suppress.
+	// Step 4: Look up user; unknown email signs up when allowed or invited, otherwise suppress.
 	user, err := s.store.GetUserByEmail(req.Email)
 	if err != nil {
 		logFor(r.Context()).Error("get user by email for web start", "err", err)
@@ -338,9 +338,17 @@ func (s *Server) handleWebStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if user == nil {
 		if !s.config.AllowSignup {
-			s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
-			genericOK()
-			return
+			hasPendingInvite, err := s.store.HasPendingInvitationForEmail(req.Email)
+			if err != nil {
+				logFor(r.Context()).Error("check pending invitation for web start", "err", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to check invitations")
+				return
+			}
+			if !hasPendingInvite {
+				s.logAuthEvent("", req.Email, serverdb.AuthEventEmailSuppressed, meta)
+				genericOK()
+				return
+			}
 		}
 		user, err = s.store.CreateUser(req.Email)
 		if err != nil {

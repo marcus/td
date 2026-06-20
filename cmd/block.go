@@ -18,17 +18,29 @@ var blockCmd = &cobra.Command{
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -37,21 +49,21 @@ var blockCmd = &cobra.Command{
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				continue
 			}
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusBlocked) {
-				output.Warning("cannot block %s: invalid transition from %s", issueID, issue.Status)
+				emitWarn("cannot block %s: invalid transition from %s", issueID, issue.Status)
 				continue
 			}
 
 			issue.Status = models.StatusBlocked
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionBlock); err != nil {
-				output.Error("failed to block %s: %v", issueID, err)
+				emitErr("failed to block %s: %v", issueID, err)
 				continue
 			}
 
@@ -68,7 +80,21 @@ var blockCmd = &cobra.Command{
 				Type:      models.LogTypeBlocker,
 			})
 
-			fmt.Printf("BLOCKED %s\n", issueID)
+			if isJSON {
+				blocked, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					blocked = issue
+				}
+				var extra map[string]any
+				if reason != "" {
+					extra = map[string]any{"reason": reason}
+				}
+				if err := output.EmitIssue("blocked", blocked, extra); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("BLOCKED %s\n", issueID)
+			}
 		}
 
 		return nil
@@ -87,17 +113,29 @@ Examples:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -108,7 +146,7 @@ Examples:
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Warning("issue not found: %s", issueID)
+				emitWarn("issue not found: %s", issueID)
 				skipped++
 				continue
 			}
@@ -116,13 +154,13 @@ Examples:
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				output.Warning("cannot reopen %s: invalid transition from %s", issueID, issue.Status)
+				emitWarn("cannot reopen %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
 
 			if issue.Status != models.StatusClosed {
-				output.Warning("%s is not closed (status: %s)", issueID, issue.Status)
+				emitWarn("%s is not closed (status: %s)", issueID, issue.Status)
 				skipped++
 				continue
 			}
@@ -132,7 +170,7 @@ Examples:
 			issue.ClosedAt = nil
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-				output.Warning("failed to reopen %s: %v", issueID, err)
+				emitWarn("failed to reopen %s: %v", issueID, err)
 				skipped++
 				continue
 			}
@@ -150,11 +188,21 @@ Examples:
 				Type:      models.LogTypeProgress,
 			})
 
-			fmt.Printf("REOPENED %s\n", issueID)
+			if isJSON {
+				reopenedIssue, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					reopenedIssue = issue
+				}
+				if err := output.EmitIssue("reopened", reopenedIssue, nil); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("REOPENED %s\n", issueID)
+			}
 			reopened++
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !isJSON {
 			fmt.Printf("\nReopened %d, skipped %d\n", reopened, skipped)
 		}
 		return nil
@@ -173,17 +221,29 @@ Examples:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -194,7 +254,7 @@ Examples:
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Warning("issue not found: %s", issueID)
+				emitWarn("issue not found: %s", issueID)
 				skipped++
 				continue
 			}
@@ -202,13 +262,13 @@ Examples:
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				output.Warning("cannot unblock %s: invalid transition from %s", issueID, issue.Status)
+				emitWarn("cannot unblock %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
 
 			if issue.Status != models.StatusBlocked {
-				output.Warning("%s is not blocked (status: %s)", issueID, issue.Status)
+				emitWarn("%s is not blocked (status: %s)", issueID, issue.Status)
 				skipped++
 				continue
 			}
@@ -216,7 +276,7 @@ Examples:
 			issue.Status = models.StatusOpen
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUnblock); err != nil {
-				output.Warning("failed to unblock %s: %v", issueID, err)
+				emitWarn("failed to unblock %s: %v", issueID, err)
 				skipped++
 				continue
 			}
@@ -234,11 +294,21 @@ Examples:
 				Type:      models.LogTypeProgress,
 			})
 
-			fmt.Printf("UNBLOCKED %s\n", issueID)
+			if isJSON {
+				unblockedIssue, ferr := database.GetIssue(issueID)
+				if ferr != nil {
+					unblockedIssue = issue
+				}
+				if err := output.EmitIssue("unblocked", unblockedIssue, nil); err != nil {
+					return err
+				}
+			} else {
+				fmt.Printf("UNBLOCKED %s\n", issueID)
+			}
 			unblocked++
 		}
 
-		if len(args) > 1 {
+		if len(args) > 1 && !isJSON {
 			fmt.Printf("\nUnblocked %d, skipped %d\n", unblocked, skipped)
 		}
 		return nil

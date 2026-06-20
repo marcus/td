@@ -96,17 +96,29 @@ Examples:
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -118,29 +130,45 @@ Examples:
 			// Add dependency instead of linking files
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Error("issue not found: %s", issueID)
+				emitErr("issue not found: %s", issueID)
 				return err
 			}
 
 			depIssue, err := database.GetIssue(dependsOnID)
 			if err != nil {
-				output.Error("issue not found: %s", dependsOnID)
+				emitErr("issue not found: %s", dependsOnID)
 				return err
 			}
 
 			// Validate and add with atomic logging
 			err = dependency.Validate(database, issueID, dependsOnID)
 			if err == dependency.ErrDependencyExists {
-				output.Warning("%s already depends on %s", issueID, dependsOnID)
+				emitWarn("%s already depends on %s", issueID, dependsOnID)
+				if isJSON {
+					return output.EmitResult("dependency_added", map[string]any{
+						"from":           issue.ID,
+						"to":             depIssue.ID,
+						"type":           "depends_on",
+						"already_exists": true,
+					})
+				}
 				return nil
 			}
 			if err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				return err
 			}
 			if err := database.AddDependencyLogged(issueID, dependsOnID, "depends_on", sess.ID); err != nil {
-				output.Error("%v", err)
+				emitErr("%v", err)
 				return err
+			}
+
+			if isJSON {
+				return output.EmitResult("dependency_added", map[string]any{
+					"from": issue.ID,
+					"to":   depIssue.ID,
+					"type": "depends_on",
+				})
 			}
 
 			fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
@@ -160,7 +188,7 @@ Examples:
 		// Verify issue exists
 		_, err = database.GetIssue(issueID)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -176,7 +204,7 @@ Examples:
 		for _, pattern := range patterns {
 			globMatches, err := filepath.Glob(pattern)
 			if err != nil {
-				output.Warning("invalid pattern: %s", pattern)
+				emitWarn("invalid pattern: %s", pattern)
 				continue
 			}
 
@@ -187,13 +215,13 @@ Examples:
 				if _, err := os.Stat(pattern); err == nil {
 					matches = append(matches, pattern)
 				} else {
-					output.Warning("no files matching: %s", pattern)
+					emitWarn("no files matching: %s", pattern)
 				}
 			}
 		}
 
 		if len(matches) == 0 {
-			output.Error("no files found matching any pattern")
+			emitErr("no files found matching any pattern")
 			return fmt.Errorf("no matches")
 		}
 
@@ -234,6 +262,7 @@ Examples:
 
 		// Link each file
 		count := 0
+		var linkedPaths []string
 		for _, file := range allFiles {
 			// Get absolute path for SHA computation
 			absPath, _ := filepath.Abs(file)
@@ -241,23 +270,32 @@ Examples:
 			// Convert to repo-relative path for storage
 			relPath, err := db.ToRepoRelative(absPath, baseDir)
 			if err != nil {
-				output.Warning("skipping %s: %v", file, err)
+				emitWarn("skipping %s: %v", file, err)
 				continue
 			}
 
 			// Compute file SHA for change detection
 			sha, err := computeFileSHA(absPath)
 			if err != nil {
-				output.Warning("failed to compute SHA for %s: %v", file, err)
+				emitWarn("failed to compute SHA for %s: %v", file, err)
 				sha = "" // Store empty SHA, will be treated as "new"
 			}
 
 			if err := database.LinkFileLogged(issueID, relPath, role, sha, sess.ID); err != nil {
-				output.Warning("failed to link %s: %v", file, err)
+				emitWarn("failed to link %s: %v", file, err)
 				continue
 			}
 
+			linkedPaths = append(linkedPaths, relPath)
 			count++
+		}
+
+		if isJSON {
+			return output.EmitResult("linked", map[string]any{
+				"issue": issueID,
+				"count": count,
+				"files": linkedPaths,
+			})
 		}
 
 		if count == 1 {
@@ -277,17 +315,29 @@ var unlinkCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+		emitWarn := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Warning(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
@@ -297,20 +347,30 @@ var unlinkCmd = &cobra.Command{
 		// Get linked files
 		files, err := database.GetLinkedFiles(issueID)
 		if err != nil {
-			output.Error("failed to get linked files: %v", err)
+			emitErr("failed to get linked files: %v", err)
 			return err
 		}
 
 		count := 0
+		var unlinkedPaths []string
 		for _, file := range files {
 			matched, _ := filepath.Match(pattern, file.FilePath)
 			if matched || file.FilePath == pattern {
 				if err := database.UnlinkFileLogged(issueID, file.FilePath, sess.ID); err != nil {
-					output.Warning("failed to unlink %s: %v", file.FilePath, err)
+					emitWarn("failed to unlink %s: %v", file.FilePath, err)
 					continue
 				}
+				unlinkedPaths = append(unlinkedPaths, file.FilePath)
 				count++
 			}
+		}
+
+		if isJSON {
+			return output.EmitResult("unlinked", map[string]any{
+				"issue": issueID,
+				"count": count,
+				"files": unlinkedPaths,
+			})
 		}
 
 		if count == 1 {
