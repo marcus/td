@@ -266,7 +266,7 @@ var syncProjectMembersCmd = &cobra.Command{
 
 var syncProjectInviteCmd = &cobra.Command{
 	Use:   "invite <email> [role]",
-	Short: "Invite a user to the project by email",
+	Short: "Add an existing account to the project by email",
 	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncconfig.IsAuthenticated() {
@@ -301,11 +301,11 @@ var syncProjectInviteCmd = &cobra.Command{
 		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
 		m, err := client.AddMember(syncState.ProjectID, email, role)
 		if err != nil {
-			output.Error("invite member: %v", err)
+			output.Error("add member: %v", err)
 			return err
 		}
 
-		output.Success("Invited %s as %s (user %s)", email, m.Role, m.UserID)
+		output.Success("Added %s as %s (user %s)", email, m.Role, m.UserID)
 		return nil
 	},
 }

@@ -122,16 +122,18 @@ td sync
 
 Your local changes push to the server, and remote changes from teammates pull down.
 
-## For Project Owners: Inviting Teammates
+## For Project Owners: Adding Teammates
 
-After creating a project, invite others by email:
+After creating a project, add existing td accounts by email:
 
 ```bash
 td sync-project invite alice@example.com         # defaults to writer
 td sync-project invite bob@example.com reader     # read-only
 ```
 
-The invited user then authenticates (`td auth login`) and joins (`td sync-project join`).
+This CLI command creates direct project membership for an account that already exists on the sync server. In td-watch, web project invitations are pending email invites with an accept/decline flow.
+
+The added user then authenticates (`td auth login`) and joins (`td sync-project join`).
 
 See the [collaboration guide](collaboration.md) for roles, permissions, and member management.
 

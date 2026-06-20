@@ -267,14 +267,14 @@ Server:
 
 All member commands operate on the currently linked project.
 
-**Invite a member** (owner only):
+**Add a member** (owner only):
 
 ```bash
 td sync-project invite alice@example.com          # defaults to writer role
 td sync-project invite bob@example.com reader      # read-only access
 ```
 
-The invited user must have an account on the server (created via `td auth login`).
+This CLI command creates direct project membership for an account that already exists on the sync server. td-watch web invitations are pending email invites with an accept/decline flow.
 
 **List members:**
 

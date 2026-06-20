@@ -32,17 +32,19 @@ td sync-project link abc-123-def
 
 ### Add Members
 
-Invite users by email:
+Add existing td accounts by email:
 ```bash
 td sync-project invite alice@example.com writer
-# Invited alice@example.com as writer (user xyz-789)
+# Added alice@example.com as writer (user xyz-789)
 ```
 
 Role defaults to `writer` if omitted:
 ```bash
 td sync-project invite bob@example.com
-# Invited bob@example.com as writer (user uvw-456)
+# Added bob@example.com as writer (user uvw-456)
 ```
+
+`td sync-project invite` creates direct membership for an existing sync-server account. td-watch web invitations are pending email invites with an accept/decline flow.
 
 ### Roles and Permissions
 
