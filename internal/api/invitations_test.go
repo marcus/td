@@ -1,18 +1,27 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/email"
 	"github.com/marcus/td/internal/serverdb"
 )
+
+type failingInvitationSender struct{}
+
+func (f failingInvitationSender) SendLoginLink(context.Context, email.LoginEmail) error {
+	return errors.New("send failed")
+}
 
 func createProjectForInvitationTest(t *testing.T, srv *Server, ownerToken string) ProjectResponse {
 	t.Helper()
@@ -194,8 +203,79 @@ func TestWrongEmailCannotAcceptInvitation(t *testing.T) {
 	inv := createInvitationForTest(t, srv, ownerToken, project.ID, "right-api@example.com", serverdb.RoleReader)
 
 	w := doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/accept", inv.ID), wrongToken, nil)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("wrong email accept: expected 403, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("wrong email accept: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	wMissing := doRequest(srv, "POST", "/v1/invitations/inv_missing/accept", wrongToken, nil)
+	if wMissing.Code != w.Code || wMissing.Body.String() != w.Body.String() {
+		t.Fatalf("wrong-email accept should match missing invite response: got %d %q vs %d %q",
+			w.Code, w.Body.String(), wMissing.Code, wMissing.Body.String())
+	}
+}
+
+func TestWrongEmailCannotDeclineInvitation(t *testing.T) {
+	srv, store := newTestServer(t)
+	srv.emailSender = email.NewMemorySender()
+	_, ownerToken := createTestUser(t, store, "owner-wrong-decline-api@example.com")
+	_, wrongToken := createTestUser(t, store, "wrong-decline-api@example.com")
+	project := createProjectForInvitationTest(t, srv, ownerToken)
+	inv := createInvitationForTest(t, srv, ownerToken, project.ID, "right-decline-api@example.com", serverdb.RoleReader)
+
+	w := doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/decline", inv.ID), wrongToken, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("wrong email decline: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	wMissing := doRequest(srv, "POST", "/v1/invitations/inv_missing/decline", wrongToken, nil)
+	if wMissing.Code != w.Code || wMissing.Body.String() != w.Body.String() {
+		t.Fatalf("wrong-email decline should match missing invite response: got %d %q vs %d %q",
+			w.Code, w.Body.String(), wMissing.Code, wMissing.Body.String())
+	}
+}
+
+func TestWrongEmailCannotLearnInvitationState(t *testing.T) {
+	srv, store := newTestServer(t)
+	srv.emailSender = email.NewMemorySender()
+	_, ownerToken := createTestUser(t, store, "owner-state-hidden-api@example.com")
+	rightID, _ := createTestUser(t, store, "right-state-hidden-api@example.com")
+	_, wrongToken := createTestUser(t, store, "wrong-state-hidden-api@example.com")
+	project := createProjectForInvitationTest(t, srv, ownerToken)
+
+	expired := createInvitationForTest(t, srv, ownerToken, project.ID, "right-state-hidden-api@example.com", serverdb.RoleReader)
+	store.ForceExpireInvitationForTest(expired.ID, time.Now().UTC().Add(-time.Hour))
+
+	declined := createInvitationForTest(t, srv, ownerToken, project.ID, "right-state-hidden-api@example.com", serverdb.RoleReader)
+	if err := store.DeclineInvitation(declined.ID, "right-state-hidden-api@example.com"); err != nil {
+		t.Fatalf("seed declined invitation: %v", err)
+	}
+
+	accepted := createInvitationForTest(t, srv, ownerToken, project.ID, "right-state-hidden-api@example.com", serverdb.RoleReader)
+	if _, err := store.AcceptInvitation(accepted.ID, rightID, "right-state-hidden-api@example.com"); err != nil {
+		t.Fatalf("seed accepted invitation: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		id     string
+	}{
+		{name: "accept expired", method: "accept", id: expired.ID},
+		{name: "accept declined", method: "accept", id: declined.ID},
+		{name: "decline expired", method: "decline", id: expired.ID},
+		{name: "decline accepted", method: "decline", id: accepted.ID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/%s", tc.id, tc.method), wrongToken, nil)
+			wMissing := doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/inv_missing/%s", tc.method), wrongToken, nil)
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+			}
+			if wMissing.Code != w.Code || wMissing.Body.String() != w.Body.String() {
+				t.Fatalf("wrong-email response should match missing invite: got %d %q vs %d %q",
+					w.Code, w.Body.String(), wMissing.Code, wMissing.Body.String())
+			}
+		})
 	}
 }
 
@@ -217,6 +297,75 @@ func TestDeclineInvitationWorks(t *testing.T) {
 	}
 	if declined.Status != serverdb.InvitationStatusDeclined {
 		t.Fatalf("status = %s, want declined", declined.Status)
+	}
+}
+
+func TestOwnedInvitationShowsExpiredAndNonPending(t *testing.T) {
+	srv, store := newTestServer(t)
+	srv.emailSender = email.NewMemorySender()
+	_, ownerToken := createTestUser(t, store, "owner-state-api@example.com")
+	inviteeID, inviteeToken := createTestUser(t, store, "state-api@example.com")
+	project := createProjectForInvitationTest(t, srv, ownerToken)
+
+	expired := createInvitationForTest(t, srv, ownerToken, project.ID, "state-api@example.com", serverdb.RoleReader)
+	store.ForceExpireInvitationForTest(expired.ID, time.Now().UTC().Add(-time.Hour))
+	w := doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/accept", expired.ID), inviteeToken, nil)
+	if w.Code != http.StatusGone {
+		t.Fatalf("owned expired accept: expected 410, got %d: %s", w.Code, w.Body.String())
+	}
+
+	declined := createInvitationForTest(t, srv, ownerToken, project.ID, "state-api@example.com", serverdb.RoleReader)
+	if err := store.DeclineInvitation(declined.ID, "state-api@example.com"); err != nil {
+		t.Fatalf("seed declined invitation: %v", err)
+	}
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/accept", declined.ID), inviteeToken, nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("owned non-pending accept: expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	accepted := createInvitationForTest(t, srv, ownerToken, project.ID, "state-api@example.com", serverdb.RoleWriter)
+	if _, err := store.AcceptInvitation(accepted.ID, inviteeID, "state-api@example.com"); err != nil {
+		t.Fatalf("seed accepted invitation: %v", err)
+	}
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/invitations/%s/decline", accepted.ID), inviteeToken, nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("owned non-pending decline: expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateInvitationEmailFailureDeletesPendingInvite(t *testing.T) {
+	srv, store := newTestServer(t)
+	srv.emailSender = failingInvitationSender{}
+	_, ownerToken := createTestUser(t, store, "owner-send-fail-api@example.com")
+	_, inviteeToken := createTestUser(t, store, "send-fail-api@example.com")
+	project := createProjectForInvitationTest(t, srv, ownerToken)
+
+	w := doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/invitations", project.ID), ownerToken, CreateInvitationRequest{
+		Email: "send-fail-api@example.com",
+		Role:  serverdb.RoleReader,
+	})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("send failure create invitation: expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+
+	projectInvites, err := store.ListProjectInvitations(project.ID)
+	if err != nil {
+		t.Fatalf("list project invitations: %v", err)
+	}
+	if len(projectInvites) != 0 {
+		t.Fatalf("send failure should delete created invitation, found %#v", projectInvites)
+	}
+
+	w = doRequest(srv, "GET", "/v1/invitations", inviteeToken, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list own invitations after send failure: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var own []InvitationResponse
+	if err := json.NewDecoder(w.Body).Decode(&own); err != nil {
+		t.Fatalf("decode own invitations: %v", err)
+	}
+	if len(own) != 0 {
+		t.Fatalf("send failure should not leave discoverable pending invitation: %#v", own)
 	}
 }
 

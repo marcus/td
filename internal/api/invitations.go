@@ -41,7 +41,7 @@ func handleInvitationError(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, serverdb.ErrInvitationNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
 	case errors.Is(err, serverdb.ErrInvitationEmailMismatch):
-		writeError(w, http.StatusForbidden, "forbidden", "invitation does not belong to authenticated user")
+		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
 	case errors.Is(err, serverdb.ErrInvitationExpired):
 		writeError(w, http.StatusGone, "expired", "invitation has expired")
 	case errors.Is(err, serverdb.ErrInvitationNotPending):
@@ -183,6 +183,9 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		TraceID: getRequestID(r.Context()),
 	}); err != nil {
 		logFor(r.Context()).Warn("send project invitation email failed", "err", err)
+		if cleanupErr := s.store.DeleteInvitation(projectID, inv.ID); cleanupErr != nil {
+			logFor(r.Context()).Error("delete invitation after email send failure", "err", cleanupErr)
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to send invitation email")
 		return
 	}

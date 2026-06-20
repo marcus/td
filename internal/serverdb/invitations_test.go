@@ -135,8 +135,8 @@ func TestDeclineInvitation(t *testing.T) {
 		t.Fatalf("create invitation: %v", err)
 	}
 
-	if err := db.DeclineInvitation(inv.ID, "other@example.com"); err != ErrInvitationEmailMismatch {
-		t.Fatalf("wrong email error = %v, want ErrInvitationEmailMismatch", err)
+	if err := db.DeclineInvitation(inv.ID, "other@example.com"); err != ErrInvitationNotFound {
+		t.Fatalf("wrong email error = %v, want ErrInvitationNotFound", err)
 	}
 	if err := db.DeclineInvitation(inv.ID, invitee.Email); err != nil {
 		t.Fatalf("decline invitation: %v", err)
