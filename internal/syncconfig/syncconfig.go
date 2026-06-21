@@ -23,8 +23,20 @@ type AutoSyncConfig struct {
 
 // SyncConfig holds sync-related settings.
 type SyncConfig struct {
-	URL               string         `json:"url"`
-	Enabled           bool           `json:"enabled"`
+	URL string `json:"url"`
+	// Enabled is a LEGACY field. It is intentionally left untouched by the
+	// global kill-switch logic: the live production config historically carries
+	// "enabled": false while the user actually wants sync on, so a bare legacy
+	// false must NOT silently kill sync everywhere. Use Autosync for the global
+	// master switch instead (td-735875).
+	Enabled bool `json:"enabled"`
+	// Autosync is the tri-state GLOBAL autosync master switch (td-735875).
+	//   nil   = absent  -> per-project / feature config decides (no global override)
+	//   false = kill-all -> global kill-switch engaged, autosync suppressed everywhere
+	//   true  = allow    -> removes the global kill (per-project still decides)
+	// It is read by every td process via GetGlobalAutosyncOverride, so it works
+	// regardless of shell-init semantics (unlike TD_* env vars).
+	Autosync          *bool          `json:"autosync,omitempty"`
 	SnapshotThreshold *int           `json:"snapshot_threshold,omitempty"`
 	Auto              AutoSyncConfig `json:"auto"`
 }
@@ -234,6 +246,43 @@ func GetAutoSyncEnabled() bool {
 		return *cfg.Sync.Auto.Enabled
 	}
 	return true
+}
+
+// GetGlobalAutosyncOverride returns the tri-state global autosync master
+// switch (td-735875).
+//
+//	nil   = no global override set (per-project / feature config decides)
+//	false = global kill-switch engaged (autosync suppressed everywhere)
+//	true  = global kill cleared (per-project still decides)
+//
+// Precedence: env (TD_FEATURE_SYNC_AUTOSYNC, then TD_SYNC_AUTO) > config.json
+// sync.autosync > nil. The legacy sync.enabled field is intentionally NOT
+// consulted here so a stale "enabled": false never silently kills sync.
+func GetGlobalAutosyncOverride() *bool {
+	if v := parseBoolEnv("TD_FEATURE_SYNC_AUTOSYNC"); v != nil {
+		return v
+	}
+	if v := parseBoolEnv("TD_SYNC_AUTO"); v != nil {
+		return v
+	}
+	cfg, err := LoadConfig()
+	if err == nil && cfg.Sync.Autosync != nil {
+		b := *cfg.Sync.Autosync
+		return &b
+	}
+	return nil
+}
+
+// SetGlobalAutosyncOverride persists the global autosync master switch into
+// ~/.config/td/config.json (sync.autosync). Passing a non-nil bool sets the
+// explicit allow/kill value; the legacy sync.enabled field is left untouched.
+func SetGlobalAutosyncOverride(v bool) error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.Sync.Autosync = &v
+	return SaveConfig(cfg)
 }
 
 // GetAutoSyncOnStart returns whether to sync on startup.

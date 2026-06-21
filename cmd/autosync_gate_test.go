@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/syncconfig"
 )
 
 // setupSyncStateDir creates an initialized td DB in a temp dir with an optional
@@ -78,11 +81,95 @@ func TestProjectSyncConfigured(t *testing.T) {
 	})
 }
 
-func TestGlobalKillSwitchOff_StubReturnsFalse(t *testing.T) {
-	// td-735875 will implement the real kill-switch. Until then it must be a
-	// no-op (false) so the gate is never globally suppressed.
-	if globalKillSwitchOff() {
-		t.Fatal("globalKillSwitchOff stub should return false")
+// TestGlobalKillSwitchOff exercises the real global kill-switch (td-735875): it
+// is engaged ONLY when the global autosync override resolves to an explicit
+// false. Absent, or an explicit true, must NOT engage it.
+func TestGlobalKillSwitchOff(t *testing.T) {
+	t.Run("absent -> not engaged", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "")
+		t.Setenv("TD_SYNC_AUTO", "")
+		if globalKillSwitchOff() {
+			t.Fatal("absent override must not engage kill-switch")
+		}
+	})
+
+	t.Run("explicit true -> not engaged", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("TD_SYNC_AUTO", "")
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "true")
+		if globalKillSwitchOff() {
+			t.Fatal("explicit true must not engage kill-switch")
+		}
+	})
+
+	t.Run("explicit false -> engaged", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("TD_SYNC_AUTO", "")
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "false")
+		if !globalKillSwitchOff() {
+			t.Fatal("explicit false must engage kill-switch")
+		}
+	})
+
+	t.Run("legacy enabled:false does not engage", func(t *testing.T) {
+		// Migration guard: a config carrying only the legacy sync.enabled=false
+		// (new sync.autosync absent) must NOT silently kill autosync.
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "")
+		t.Setenv("TD_SYNC_AUTO", "")
+		writeGlobalConfigJSON(t, home, `{"sync":{"enabled":false}}`)
+		if globalKillSwitchOff() {
+			t.Fatal("legacy enabled:false must not engage the kill-switch")
+		}
+	})
+
+	t.Run("config false (no env) -> engaged", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "")
+		t.Setenv("TD_SYNC_AUTO", "")
+		writeGlobalConfigJSON(t, home, `{"sync":{"autosync":false}}`)
+		if !globalKillSwitchOff() {
+			t.Fatal("config sync.autosync=false must engage the kill-switch")
+		}
+	})
+}
+
+// writeGlobalConfigJSON writes raw JSON to <home>/.config/td/config.json.
+func writeGlobalConfigJSON(t *testing.T, home, content string) {
+	t.Helper()
+	dir := filepath.Join(home, ".config", "td")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+// TestSyncEnableDisableRoundTrip drives the td sync enable/disable subcommands
+// and verifies they round-trip the sync.autosync bit in config.json.
+func TestSyncEnableDisableRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// Ensure env does not mask the config value we are asserting.
+	t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "")
+	t.Setenv("TD_SYNC_AUTO", "")
+
+	if err := syncDisableCmd.RunE(syncDisableCmd, nil); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if v := syncconfig.GetGlobalAutosyncOverride(); v == nil || *v != false {
+		t.Fatalf("after disable: got %v, want false", v)
+	}
+
+	if err := syncEnableCmd.RunE(syncEnableCmd, nil); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if v := syncconfig.GetGlobalAutosyncOverride(); v == nil || *v != true {
+		t.Fatalf("after enable: got %v, want true", v)
 	}
 }
 

@@ -599,9 +599,81 @@ func storeConflicts(tx *sql.Tx, conflicts []tdsync.ConflictRecord) error {
 	return nil
 }
 
+// syncEnableCmd / syncDisableCmd flip the GLOBAL autosync master switch in
+// ~/.config/td/config.json (sync.autosync). They are registered UNGATED (as
+// subcommands of syncCmd) so a user can always turn sync back on even when the
+// SyncCLI feature is otherwise off — the parent `td sync` being feature-gated
+// would otherwise strand a user who had disabled sync.
+var syncEnableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Clear the global autosync kill-switch (sync.autosync=true in config.json)",
+	Long: `Sets the global autosync master switch to true in ~/.config/td/config.json.
+
+This clears any global kill-switch so per-project sync configuration decides
+whether autosync runs. It does NOT force-enable sync on an unconfigured
+project. Works regardless of shell-init semantics (unlike TD_* env vars).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := syncconfig.SetGlobalAutosyncOverride(true); err != nil {
+			output.Error("write config: %v", err)
+			return err
+		}
+		output.Success("global autosync enabled (sync.autosync=true)")
+		if v := syncconfig.GetGlobalAutosyncOverride(); v == nil || !*v {
+			output.Warning("a TD_* env var is overriding config.json; unset it to take effect")
+		}
+		return nil
+	},
+}
+
+var syncDisableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Engage the global autosync kill-switch (sync.autosync=false in config.json)",
+	Long: `Sets the global autosync master switch to false in ~/.config/td/config.json.
+
+This is a shell-independent kill-switch: every td process reads config.json, so
+autosync is suppressed everywhere regardless of which shell-init files are
+sourced. Re-enable with: td sync enable.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := syncconfig.SetGlobalAutosyncOverride(false); err != nil {
+			output.Error("write config: %v", err)
+			return err
+		}
+		output.Success("global autosync disabled (sync.autosync=false)")
+		if v := syncconfig.GetGlobalAutosyncOverride(); v == nil || *v {
+			output.Warning("a TD_* env var is overriding config.json; unset it to take effect")
+		}
+		return nil
+	},
+}
+
+// syncAlwaysOnCmd is a minimal `td sync` parent used ONLY when the full,
+// feature-gated syncCmd is not registered (SyncCLI off). It exists so the
+// global kill-switch subcommands `enable`/`disable` remain reachable — a user
+// who disabled sync must always be able to turn it back on without hand-editing
+// config.json. (td-78b482 will ungate status/doctor separately under the same
+// always-on surface.)
+var syncAlwaysOnCmd = &cobra.Command{
+	Use:     "sync",
+	Short:   "Sync local data with remote server",
+	GroupID: "system",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
+}
+
 func init() {
 	syncCmd.Flags().Bool("push", false, "Push only")
 	syncCmd.Flags().Bool("pull", false, "Pull only")
 	syncCmd.Flags().Bool("status", false, "Show sync status only")
-	AddFeatureGatedCommand(features.SyncCLI.Name, syncCmd)
+
+	// enable/disable must be reachable regardless of the SyncCLI gate.
+	if features.IsEnabledForProcess(features.SyncCLI.Name) {
+		syncCmd.AddCommand(syncEnableCmd)
+		syncCmd.AddCommand(syncDisableCmd)
+		rootCmd.AddCommand(syncCmd)
+	} else {
+		syncAlwaysOnCmd.AddCommand(syncEnableCmd)
+		syncAlwaysOnCmd.AddCommand(syncDisableCmd)
+		rootCmd.AddCommand(syncAlwaysOnCmd)
+	}
 }

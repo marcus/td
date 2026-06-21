@@ -120,10 +120,14 @@ func projectSyncConfigured(baseDir string) bool {
 // When true, the autosync gate short-circuits regardless of per-project config
 // or the sync_autosync override.
 //
-// Stub for now: td-735875 will implement the real global kill-switch. Until then
-// this always returns false so the gate is never globally suppressed.
+// It returns true ONLY when the global autosync override (td-735875) resolves
+// to an explicit false — i.e. the user (or a TD_* env var) has explicitly
+// killed autosync everywhere. An absent override (nil) or an explicit true does
+// NOT engage the kill: an explicit true merely clears the kill and lets the
+// per-project gate decide; it never force-enables an unconfigured project.
 func globalKillSwitchOff() bool {
-	return false
+	v := syncconfig.GetGlobalAutosyncOverride()
+	return v != nil && !*v
 }
 
 // autoSyncOnce runs a push and optional pull silently. It returns the number of
