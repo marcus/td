@@ -120,6 +120,67 @@ Auto-sync runs push+pull silently in the background. Enable it in config:
 
 All auto-sync operations are silent (`slog.Debug` only) and use a 5s HTTP timeout.
 
+### Enabling autosync: the per-project model
+
+**Autosync is enabled per project by setting the project up for sync.** Once a project is configured — it has a usable `sync_state` row (a `project_id`, not marked disabled), which `td login` + `td sync init` / `td sync link` give it — autosync just works. There is **no feature flag to flip** to turn sync on; the per-project configuration *is* the control. Most users never touch any of the overrides below.
+
+The `sync_autosync` feature flag and the `config.json` global switch are **optional overrides / a global kill-switch**, not how you turn sync on.
+
+#### Gate precedence
+
+For each command, td decides whether to run the autosync hooks in this exact order (see `cmd/feature_gate.go:autosyncGateOpen`):
+
+1. **Global kill-switch (highest priority).** If the global autosync override resolves to an explicit `false` — `config.json` `sync.autosync: false`, or the env vars `TD_FEATURE_SYNC_AUTOSYNC=false` / `TD_SYNC_AUTO=false` — the gate is **closed everywhere**, regardless of per-project config. An explicit `true` only *clears* the kill (it does **not** force-enable an unconfigured project); an absent value means "no global override, let the lower tiers decide".
+2. **Explicit `sync_autosync` feature flag.** If `sync_autosync` is set explicitly (env `TD_FEATURE_SYNC_AUTOSYNC` or project feature config), its value decides outright.
+3. **Per-project configured (default).** With no explicit override, a project that is actually configured for sync autosyncs; an unconfigured project does not. **This is the normal path.**
+
+#### Global kill-switch: `td sync enable` / `td sync disable`
+
+These write the tri-state `sync.autosync` field in `~/.config/td/config.json` and are always reachable even when the rest of the sync CLI is gated:
+
+```bash
+td sync disable   # sets sync.autosync=false — kills autosync in EVERY project
+td sync enable    # sets sync.autosync=true — clears the kill; per-project config decides again
+```
+
+Tri-state semantics of `sync.autosync`:
+
+| Value | Meaning |
+|---|---|
+| absent (field not present) | No global override — per-project config decides |
+| `false` | Global kill-switch engaged — autosync suppressed everywhere |
+| `true` | Kill cleared — per-project config decides (does **not** force-enable an unconfigured project) |
+
+Because it lives in `config.json`, the kill-switch is **shell-independent**: every td process reads it regardless of which shell init files were sourced (unlike `TD_*` env vars — see the cautionary note below).
+
+#### `TD_FEATURE_SYNC_AUTOSYNC` is an override, not the on-switch
+
+`TD_FEATURE_SYNC_AUTOSYNC` used to be how you turned sync on. **It is now only an override** (tier 1/2 above) and normal use should **not** depend on it — rely on per-project setup instead.
+
+If you *do* set it, put it in **`~/.zshenv`** (sourced by every shell, including non-interactive ones), **not `~/.zshrc`** (interactive shells only). An env var set only in `.zshrc` is invisible to non-interactive agent subshells, so those processes silently fall through to a different gate decision and **strand local changes with no error**. This exact bug once stranded 11 unsynced events in a project for hours. Prefer per-project setup (or the `config.json` kill-switch) precisely so you never have to reason about shell-init semantics.
+
+### When sync seems stuck: `td sync status`
+
+`td sync status` is **always available** — it works even when the rest of the sync CLI is gated off — and is the first thing to run when sync looks stuck. It reports:
+
+- **Gate** state (`ON` / `OFF` / `KILLED`) and **GateSource** (`global-kill-switch`, `explicit-env`, `explicit-config`, or `derived-per-project`) — so you can see *which* tier decided
+- **Configured** (does the project have a usable `sync_state`?) and the `project_id`
+- **Authenticated** and the server URL
+- **PendingEvents** (unsynced action-log rows; `-1` means it could not be counted)
+- **LastSyncAt**
+
+```bash
+td sync status            # human-readable
+td sync status --json     # machine-readable SyncStatusReport
+```
+
+`td doctor` also surfaces sync health as part of its broader checks.
+
+### Migration / upgrade notes
+
+- **Legacy `sync.enabled: false` does NOT affect the gate.** The autosync gate reads only the new `sync.autosync` field, never the legacy `sync.enabled`. Production configs historically carried `sync.enabled: false` while the user actually wanted sync on, so the gate intentionally ignores it — a stale `enabled: false` will **not** silently kill your sync. (To globally kill autosync, use `td sync disable`, which sets `sync.autosync`.)
+- **Already-authenticated projects are automatically "configured."** If a project already has a `sync_state` (you ran `td login` + linked before this change), it is treated as configured under the per-project model with **no re-login or re-link required**. Autosync resumes working without any action on your part.
+
 ### 2. Authenticate
 
 ```bash

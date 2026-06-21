@@ -4,6 +4,9 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Sync
+- **Autosync is now enabled per project, not via a feature flag.** Setting a project up for sync (`td login` + `td sync init`/`link`, giving it a usable `sync_state`) is all it takes for autosync to run — there is no longer a flag to flip to turn sync on. The `sync_autosync` feature flag and the new `config.json` `sync.autosync` field are optional **overrides / a global kill-switch**. Gate precedence: global kill-switch (explicit `false`) → explicit `sync_autosync` override → per-project configured (default). `td sync disable` / `td sync enable` write the tri-state global switch (shell-independent). `td sync status` is always available — run it first when sync seems stuck; it reports gate state + source, configured/authenticated, pending events, and last sync. Documented the per-project model, override precedence, the `~/.zshenv` vs `.zshrc` caveat for `TD_FEATURE_SYNC_AUTOSYNC`, and the upgrade path (legacy `sync.enabled: false` is ignored by the gate; already-authenticated projects are auto-configured with no re-login). See `docs/sync-client-guide.md` and `CLAUDE.md`.
+
 ## [v0.51.2] - 2026-07-18
 
 ### Bug Fixes

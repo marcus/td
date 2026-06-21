@@ -120,6 +120,24 @@ td version
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
 
+## Sync Enablement (per-project model)
+
+**Autosync is enabled per project by setting it up.** Once a project has a usable `sync_state` (via `td login` + `td sync init`/`link`), autosync just works — there is **no feature flag to flip** to turn sync on. The `sync_autosync` feature flag and the `config.json` `sync.autosync` switch are **optional overrides / a global kill-switch**, not the on-switch.
+
+Gate precedence (see `cmd/feature_gate.go:autosyncGateOpen`):
+
+1. **Global kill-switch** — `config.json` `sync.autosync: false` (or `TD_FEATURE_SYNC_AUTOSYNC=false` / `TD_SYNC_AUTO=false`) closes the gate everywhere. `td sync disable` / `td sync enable` write this tri-state field; an explicit `true` only *clears* the kill (does not force-enable an unconfigured project).
+2. **Explicit `sync_autosync` feature flag** (env or project config) decides outright.
+3. **Per-project configured (default)** — a configured project autosyncs; an unconfigured one does not.
+
+`TD_FEATURE_SYNC_AUTOSYNC` is now an **override, not the on-switch** — normal use should not depend on it. If you do set it, put it in `~/.zshenv` (sourced by all shells) **not** `~/.zshrc` (interactive-only), or non-interactive agent subshells silently strand changes with no error.
+
+**Diagnostics:** `td sync status` is always available (even when the sync CLI is gated) — run it first when sync seems stuck. It reports gate state + source, configured, authenticated, pending event count, and last sync. `td doctor` also covers sync.
+
+**Migration:** the gate reads only `sync.autosync`, never the legacy `sync.enabled` — a stale `sync.enabled: false` does not silently kill sync. Already-authenticated projects with a `sync_state` are automatically "configured"; no re-login needed.
+
+Full details: [docs/sync-client-guide.md](docs/sync-client-guide.md#enabling-autosync-the-per-project-model).
+
 ## Settings Persistence
 
 Monitor settings stored in two places:

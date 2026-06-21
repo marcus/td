@@ -32,8 +32,9 @@ func AddFeatureGatedCommand(featureName string, command *cobra.Command) {
 // project at baseDir (td-a4c721).
 //
 // Resolution order:
-//  1. Global kill-switch (td-735875, stubbed off for now) wins — if engaged,
-//     the gate is closed.
+//  1. Global kill-switch (td-735875) wins — when the global autosync override
+//     (config.json sync.autosync, or TD_FEATURE_SYNC_AUTOSYNC / TD_SYNC_AUTO)
+//     resolves to an explicit false, the gate is closed everywhere.
 //  2. The sync_autosync feature flag acts as an explicit override: when set
 //     explicitly (env or project config), its value decides outright.
 //  3. Otherwise (flag unset / source=default) the per-project sync config
