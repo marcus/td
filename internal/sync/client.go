@@ -86,6 +86,8 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 		if prevDataStr.Valid && prevDataStr.String != "" {
 			prevData = json.RawMessage(prevDataStr.String)
 		}
+		newData = scrubLocalOnlySyncPayload(canonicalType, newData)
+		prevData = scrubLocalOnlySyncPayload(canonicalType, prevData)
 
 		payload := map[string]any{
 			"schema_version": 1,
@@ -297,6 +299,8 @@ func GetPendingEventsPreserveSession(tx *sql.Tx, deviceID string) ([]Event, erro
 		if prevDataStr.Valid && prevDataStr.String != "" {
 			prevData = json.RawMessage(prevDataStr.String)
 		}
+		newData = scrubLocalOnlySyncPayload(canonicalType, newData)
+		prevData = scrubLocalOnlySyncPayload(canonicalType, prevData)
 
 		payload := map[string]any{
 			"schema_version": 1,

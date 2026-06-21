@@ -50,6 +50,18 @@ CREATE TABLE logs (
     is_progress INTEGER DEFAULT 0,
     category TEXT DEFAULT ''
 );
+CREATE TABLE work_sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    start_sha TEXT DEFAULT '',
+    end_sha TEXT DEFAULT ''
+);
 CREATE TABLE action_log (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -232,6 +244,45 @@ func TestBackfillOrphanEntities_BackfillsWhenOnlyUpdateExists(t *testing.T) {
 	_ = db.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id='td-210' AND action_type='create'`).Scan(&count)
 	if count != 1 {
 		t.Fatalf("expected 1 create entry for td-210, got %d", count)
+	}
+}
+
+func TestBackfillOrphanWorkSessionsOmitsWorktreeMetadata(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	_, err := db.Exec(`
+		INSERT INTO work_sessions
+			(id, name, session_id, worktree_id, worktree_root, repo_root, start_sha)
+		VALUES
+			('ws-local', 'Local metadata', 'ses-local', 'wt-local', '/tmp/local-worktree', '/tmp/local-repo', 'abc123')
+	`)
+	if err != nil {
+		t.Fatalf("insert work_session: %v", err)
+	}
+
+	tx, _ := db.Begin()
+	n, err := BackfillOrphanEntities(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+
+	if n != 1 {
+		t.Fatalf("expected 1 backfilled work session, got %d", n)
+	}
+
+	var raw string
+	if err := db.QueryRow(`SELECT new_data FROM action_log WHERE entity_type='work_sessions' AND entity_id='ws-local'`).Scan(&raw); err != nil {
+		t.Fatalf("read backfill payload: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		t.Fatalf("unmarshal backfill payload: %v", err)
+	}
+	for _, key := range []string{"worktree_id", "worktree_root", "repo_root"} {
+		if _, ok := fields[key]; ok {
+			t.Fatalf("backfill leaked %s in %v", key, fields)
+		}
 	}
 }
 

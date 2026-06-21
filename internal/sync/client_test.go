@@ -25,6 +25,18 @@ CREATE TABLE issues (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME
 );
+CREATE TABLE work_sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    start_sha TEXT DEFAULT '',
+    end_sha TEXT DEFAULT ''
+);
 CREATE TABLE action_log (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -141,6 +153,28 @@ func TestGetPendingEvents_Basic(t *testing.T) {
 				i, events[i].ClientActionID, i-1, events[i-1].ClientActionID)
 		}
 	}
+}
+
+func TestGetPendingEventsScrubsWorkSessionLocalMetadata(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "sess1", "create", "work_sessions", "ws-local",
+		`{"id":"ws-local","name":"Local","session_id":"sess1","worktree_id":"wt-local","worktree_root":"/tmp/local-worktree","repo_root":"/tmp/local-repo"}`,
+		`{"id":"ws-local","name":"Old","session_id":"sess1","worktree_id":"wt-old","worktree_root":"/tmp/old-worktree","repo_root":"/tmp/old-repo"}`,
+		0, "")
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+
+	events, err := GetPendingEvents(tx, "device1", "sync-sess")
+	if err != nil {
+		t.Fatalf("GetPendingEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+
+	assertWrappedWorkSessionPayloadOmitsLocalFields(t, events[0].Payload)
 }
 
 func TestGetPendingEvents_SkipsUndone(t *testing.T) {
@@ -380,6 +414,50 @@ func TestGetPendingEventsPreserveSession_PayloadShape(t *testing.T) {
 	}
 }
 
+func TestGetPendingEventsPreserveSessionScrubsWorkSessionLocalMetadata(t *testing.T) {
+	db := setupClientDB(t)
+
+	insertActionLog(t, db, "al-00000001", "twu_a", "create", "work_sessions", "ws-local",
+		`{"id":"ws-local","name":"Local","session_id":"twu_a","worktree_id":"wt-local","worktree_root":"/tmp/local-worktree","repo_root":"/tmp/local-repo"}`,
+		`{"id":"ws-local","name":"Old","session_id":"twu_a","worktree_id":"wt-old","worktree_root":"/tmp/old-worktree","repo_root":"/tmp/old-repo"}`,
+		0, "")
+
+	tx, _ := db.Begin()
+	defer tx.Rollback()
+
+	events, err := GetPendingEventsPreserveSession(tx, "td_watch_server")
+	if err != nil {
+		t.Fatalf("GetPendingEventsPreserveSession: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+
+	assertWrappedWorkSessionPayloadOmitsLocalFields(t, events[0].Payload)
+}
+
+func assertWrappedWorkSessionPayloadOmitsLocalFields(t *testing.T, raw json.RawMessage) {
+	t.Helper()
+
+	var wrapper struct {
+		NewData      map[string]any `json:"new_data"`
+		PreviousData map[string]any `json:"previous_data"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		t.Fatalf("unmarshal wrapped payload: %v", err)
+	}
+	for label, fields := range map[string]map[string]any{
+		"new_data":      wrapper.NewData,
+		"previous_data": wrapper.PreviousData,
+	} {
+		for _, key := range []string{"worktree_id", "worktree_root", "repo_root"} {
+			if _, ok := fields[key]; ok {
+				t.Fatalf("%s leaked %s in %v", label, key, fields)
+			}
+		}
+	}
+}
+
 func TestApplyRemoteEvents_Basic(t *testing.T) {
 	db := setupClientDB(t)
 
@@ -438,6 +516,55 @@ func TestApplyRemoteEvents_Basic(t *testing.T) {
 	}
 	if title != "Second" || status != "open" {
 		t.Errorf("i2: title=%q status=%q", title, status)
+	}
+}
+
+func TestApplyRemoteEventsScrubsWorkSessionLocalMetadata(t *testing.T) {
+	db := setupClientDB(t)
+
+	events := []Event{
+		{
+			ServerSeq:  1,
+			ActionType: "create",
+			EntityType: "work_sessions",
+			EntityID:   "ws-remote",
+			Payload: []byte(`{
+				"schema_version": 1,
+				"new_data": {
+					"id": "ws-remote",
+					"name": "Remote work session",
+					"session_id": "ses-remote",
+					"worktree_id": "wt-remote",
+					"worktree_root": "/tmp/remote-worktree",
+					"repo_root": "/tmp/remote-repo",
+					"start_sha": "abc123"
+				},
+				"previous_data": {}
+			}`),
+		},
+	}
+
+	tx, _ := db.Begin()
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, nil)
+	if err != nil {
+		t.Fatalf("ApplyRemoteEvents: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if result.Applied != 1 {
+		t.Fatalf("Applied: got %d, want 1", result.Applied)
+	}
+
+	var worktreeID, worktreeRoot, repoRoot string
+	if err := db.QueryRow(`
+		SELECT worktree_id, worktree_root, repo_root FROM work_sessions WHERE id = ?
+	`, "ws-remote").Scan(&worktreeID, &worktreeRoot, &repoRoot); err != nil {
+		t.Fatalf("read work_session: %v", err)
+	}
+	if worktreeID != "" || worktreeRoot != "" || repoRoot != "" {
+		t.Fatalf("remote metadata populated local fields: id=%q root=%q repo=%q", worktreeID, worktreeRoot, repoRoot)
 	}
 }
 

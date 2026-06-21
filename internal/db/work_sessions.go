@@ -38,7 +38,6 @@ func (db *DB) CreateWorkSession(ws *models.WorkSession) error {
 		}
 		newData, _ := json.Marshal(map[string]interface{}{
 			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
-			"worktree_id": ws.WorktreeID, "worktree_root": ws.WorktreeRoot, "repo_root": ws.RepoRoot,
 			"started_at": ws.StartedAt, "start_sha": ws.StartSHA,
 		})
 		actionTS := actionLogTimestampNow()
@@ -94,7 +93,6 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 		}
 		newData, _ := json.Marshal(map[string]interface{}{
 			"id": ws.ID, "name": ws.Name, "session_id": ws.SessionID,
-			"worktree_id": ws.WorktreeID, "worktree_root": ws.WorktreeRoot, "repo_root": ws.RepoRoot,
 			"started_at": ws.StartedAt, "ended_at": ws.EndedAt,
 			"start_sha": ws.StartSHA, "end_sha": ws.EndSHA,
 		})

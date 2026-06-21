@@ -31,9 +31,23 @@ CREATE TABLE handoffs (
 	uncertain   TEXT DEFAULT '[]',
 	created_at  DATETIME,
 	deleted_at  DATETIME
+);
+CREATE TABLE work_sessions (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	session_id TEXT NOT NULL,
+	worktree_id TEXT DEFAULT '',
+	worktree_root TEXT DEFAULT '',
+	repo_root TEXT DEFAULT '',
+	started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	ended_at DATETIME,
+	start_sha TEXT DEFAULT '',
+	end_sha TEXT DEFAULT ''
 );`
 
-var testValidator EntityValidator = func(t string) bool { return t == "issues" || t == "handoffs" }
+var testValidator EntityValidator = func(t string) bool {
+	return t == "issues" || t == "handoffs" || t == "work_sessions"
+}
 
 func setupDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -220,6 +234,94 @@ func TestMalformedJSON(t *testing.T) {
 	}, testValidator)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON")
+	}
+}
+
+func TestApplyEventWorkSessionScrubsLocalMetadata(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	_, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "work_sessions",
+		EntityID:   "ws-local",
+		Payload: []byte(`{
+			"id":"ws-local",
+			"name":"Remote work session",
+			"session_id":"ses-remote",
+			"worktree_id":"wt-remote",
+			"worktree_root":"/tmp/remote-worktree",
+			"repo_root":"/tmp/remote-repo",
+			"start_sha":"abc123"
+		}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("ApplyEvent: %v", err)
+	}
+
+	var worktreeID, worktreeRoot, repoRoot string
+	if err := tx.QueryRow(`
+		SELECT worktree_id, worktree_root, repo_root FROM work_sessions WHERE id = ?
+	`, "ws-local").Scan(&worktreeID, &worktreeRoot, &repoRoot); err != nil {
+		t.Fatalf("read work_session: %v", err)
+	}
+	if worktreeID != "" || worktreeRoot != "" || repoRoot != "" {
+		t.Fatalf("remote metadata populated local fields: id=%q root=%q repo=%q", worktreeID, worktreeRoot, repoRoot)
+	}
+}
+
+func TestApplyEventWorkSessionPartialUpdateScrubsLocalMetadata(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	if _, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "work_sessions",
+		EntityID:   "ws-local",
+		Payload:    []byte(`{"id":"ws-local","name":"Original","session_id":"ses-local","start_sha":"abc123"}`),
+	}, testValidator); err != nil {
+		t.Fatalf("create work session: %v", err)
+	}
+
+	_, err := applyEventWithPrevious(tx, Event{
+		ActionType: "update",
+		EntityType: "work_sessions",
+		EntityID:   "ws-local",
+		Payload: []byte(`{
+			"id":"ws-local",
+			"name":"Updated",
+			"session_id":"ses-local",
+			"worktree_id":"wt-remote",
+			"worktree_root":"/tmp/remote-worktree",
+			"repo_root":"/tmp/remote-repo",
+			"start_sha":"abc123"
+		}`),
+	}, testValidator, []byte(`{
+		"id":"ws-local",
+		"name":"Original",
+		"session_id":"ses-local",
+		"worktree_id":"wt-old",
+		"worktree_root":"/tmp/old-worktree",
+		"repo_root":"/tmp/old-repo",
+		"start_sha":"abc123"
+	}`))
+	if err != nil {
+		t.Fatalf("partial update work session: %v", err)
+	}
+
+	var name, worktreeID, worktreeRoot, repoRoot string
+	if err := tx.QueryRow(`
+		SELECT name, worktree_id, worktree_root, repo_root FROM work_sessions WHERE id = ?
+	`, "ws-local").Scan(&name, &worktreeID, &worktreeRoot, &repoRoot); err != nil {
+		t.Fatalf("read work_session: %v", err)
+	}
+	if name != "Updated" {
+		t.Fatalf("name: got %q want Updated", name)
+	}
+	if worktreeID != "" || worktreeRoot != "" || repoRoot != "" {
+		t.Fatalf("remote metadata populated local fields: id=%q root=%q repo=%q", worktreeID, worktreeRoot, repoRoot)
 	}
 }
 

@@ -328,6 +328,7 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 				entityID = fmt.Sprint(vals[i])
 			}
 		}
+		scrubLocalOnlySyncFields(st.Table, rowMap)
 		if entityID == "" {
 			continue
 		}

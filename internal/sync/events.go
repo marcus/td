@@ -293,6 +293,8 @@ func applyEventWithPrevious(tx *sql.Tx, event Event, validator EntityValidator, 
 	if event.EntityID == "" {
 		return applyResult{}, fmt.Errorf("empty entity ID for %q event", event.ActionType)
 	}
+	event.Payload = scrubLocalOnlySyncPayload(event.EntityType, event.Payload)
+	previousData = scrubLocalOnlySyncPayload(event.EntityType, previousData)
 
 	switch event.ActionType {
 	case "create", "update":
