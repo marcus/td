@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 )
 
@@ -130,6 +131,35 @@ func iCreateIssueWithFields(t *testing.T, baseURL string, fields map[string]inte
 		t.Fatal("created issue has no id")
 	}
 	return id
+}
+
+func iCurrentSessionID(t *testing.T, baseURL string) string {
+	t.Helper()
+	resp, err := http.Get(baseURL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health: %v", err)
+	}
+	ok, data, errP := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatalf("health failed: status=%d, error=%v", resp.StatusCode, errP)
+	}
+	sessionID, _ := data["session_id"].(string)
+	if sessionID == "" {
+		t.Fatal("health returned empty session_id")
+	}
+	return sessionID
+}
+
+func iSessionStateScope(t *testing.T, database *db.DB, sessionID string) db.SessionStateScope {
+	t.Helper()
+	return db.SessionStateScope{
+		SessionID:     sessionID,
+		WorktreeID:    worktreeIDForBaseDir(database.BaseDir()),
+		ConfigBaseDir: database.BaseDir(),
+		LegacyGetFocus: func(baseDir string) (string, error) {
+			return config.GetFocus(baseDir)
+		},
+	}
 }
 
 // ============================================================================
@@ -1942,10 +1972,11 @@ func TestIntegration_DeleteDependency_WrongIssue(t *testing.T) {
 // ============================================================================
 
 func TestIntegration_SetFocus(t *testing.T) {
-	baseURL, _, cleanup := setupIntegrationServer(t)
+	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 
 	id := iCreateIssue(t, baseURL, "Issue for focus integration test")
+	sessionID := iCurrentSessionID(t, baseURL)
 
 	resp := iDoJSON(t, "PUT", baseURL+"/v1/focus", map[string]interface{}{
 		"issue_id": id,
@@ -1960,13 +1991,29 @@ func TestIntegration_SetFocus(t *testing.T) {
 	if data["focused_issue_id"] != id {
 		t.Errorf("focused_issue_id = %v, want %s", data["focused_issue_id"], id)
 	}
+
+	focused, err := database.GetFocus(iSessionStateScope(t, database, sessionID))
+	if err != nil {
+		t.Fatalf("db GetFocus: %v", err)
+	}
+	if focused != id {
+		t.Fatalf("db focus = %q, want %q", focused, id)
+	}
+	configFocus, err := config.GetFocus(database.BaseDir())
+	if err != nil {
+		t.Fatalf("config GetFocus: %v", err)
+	}
+	if configFocus != "" {
+		t.Fatalf("config focus = %q, want empty", configFocus)
+	}
 }
 
 func TestIntegration_ClearFocus(t *testing.T) {
-	baseURL, _, cleanup := setupIntegrationServer(t)
+	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 
 	id := iCreateIssue(t, baseURL, "Issue for clear focus test")
+	sessionID := iCurrentSessionID(t, baseURL)
 
 	// Set focus first
 	resp := iDoJSON(t, "PUT", baseURL+"/v1/focus", map[string]interface{}{
@@ -1987,6 +2034,24 @@ func TestIntegration_ClearFocus(t *testing.T) {
 	}
 	if data["focused_issue_id"] != nil {
 		t.Errorf("focused_issue_id = %v, want nil", data["focused_issue_id"])
+	}
+
+	focused, err := database.GetFocus(iSessionStateScope(t, database, sessionID))
+	if err != nil {
+		t.Fatalf("db GetFocus after clear: %v", err)
+	}
+	if focused != "" {
+		t.Fatalf("db focus after clear = %q, want empty", focused)
+	}
+	if err := config.SetFocus(database.BaseDir(), "td-stale-config"); err != nil {
+		t.Fatalf("seed stale config focus: %v", err)
+	}
+	focused, err = database.GetFocus(iSessionStateScope(t, database, sessionID))
+	if err != nil {
+		t.Fatalf("db GetFocus after stale config seed: %v", err)
+	}
+	if focused != "" {
+		t.Fatalf("cleared session_state should suppress config fallback, got %q", focused)
 	}
 }
 
@@ -2035,6 +2100,31 @@ func TestIntegration_FocusAppearsInMonitor(t *testing.T) {
 	focusedIssue, _ := mon["focused_issue"].(map[string]interface{})
 	if focusedIssue == nil {
 		t.Fatal("monitor.focused_issue should not be nil after setting focus")
+	}
+	if focusedIssue["id"] != id {
+		t.Errorf("focused_issue.id = %v, want %s", focusedIssue["id"], id)
+	}
+}
+
+func TestIntegration_MonitorUsesLegacyConfigFocusFallback(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	id := iCreateIssue(t, baseURL, "Legacy config focus monitor test")
+	if err := config.SetFocus(database.BaseDir(), id); err != nil {
+		t.Fatalf("config.SetFocus: %v", err)
+	}
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/monitor", nil)
+	ok, data, errP := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatalf("monitor failed: status=%d, err=%v", resp.StatusCode, errP)
+	}
+
+	mon, _ := data["monitor"].(map[string]interface{})
+	focusedIssue, _ := mon["focused_issue"].(map[string]interface{})
+	if focusedIssue == nil {
+		t.Fatal("monitor.focused_issue should use legacy config fallback")
 	}
 	if focusedIssue["id"] != id {
 		t.Errorf("focused_issue.id = %v, want %s", focusedIssue["id"], id)

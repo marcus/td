@@ -65,6 +65,7 @@ func HandleMonitor(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	}
 
 	msg := monitor.FetchDataWithSearchMode(ctx.DB, ctx.SessionID, time.Now().Add(-24*time.Hour), search, searchMode, includeClosed, sortMode)
+	applyScopedFocus(ctx, &msg)
 	dto := MonitorDataToDTO(&msg)
 
 	changeToken, _ := ctx.DB.GetChangeToken()
@@ -78,6 +79,23 @@ func HandleMonitor(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMonitor(w http.ResponseWriter, r *http.Request) {
 	HandleMonitor(s.handlerContext(), w, r)
+}
+
+func applyScopedFocus(ctx HandlerContext, msg *monitor.RefreshDataMsg) {
+	if ctx.BaseDir == "" {
+		return
+	}
+	focusedID, err := ctx.DB.GetFocus(sessionStateScopeFor(ctx))
+	if err != nil || focusedID == "" {
+		msg.FocusedIssue = nil
+		return
+	}
+	issue, err := ctx.DB.GetIssue(focusedID)
+	if err != nil {
+		msg.FocusedIssue = nil
+		return
+	}
+	msg.FocusedIssue = issue
 }
 
 // ============================================================================

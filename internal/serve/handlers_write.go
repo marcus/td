@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/dependency"
 	"github.com/marcus/td/internal/git"
@@ -25,8 +24,8 @@ import (
 // Local-process couplings have been gated:
 //   - git.GetState() is only consulted when ctx.BaseDir != "" (we read it from
 //     the on-disk repo). td-sync passes BaseDir == "" and skips branch capture.
-//   - config.SetFocus / config.ClearFocus require ctx.BaseDir; handlers return
-//     a 503-equivalent when called without one.
+//   - Focus writes require ctx.BaseDir and write local-only DB session_state;
+//     handlers return a 503-equivalent when called without a local root.
 //   - title length limits route through titleLengthLimitsFor(ctx), which
 //     prefers ctx.Config values, then on-disk config, then package defaults.
 //   - Post-mutation notification routes through ctx.Config.NotifyChange (nil
@@ -916,8 +915,8 @@ type FocusBody struct {
 	IssueID *string `json:"issue_id"`
 }
 
-// HandleSetFocus sets or clears the focused issue via config.json. Requires
-// ctx.BaseDir to be non-empty (focus state lives in the local on-disk config).
+// HandleSetFocus sets or clears the focused issue via local session_state.
+// Requires ctx.BaseDir to be non-empty so td-sync cannot invent remote focus.
 // Pure-function form of (s *Server).handleSetFocus.
 func HandleSetFocus(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	var body FocusBody
@@ -926,16 +925,17 @@ func HandleSetFocus(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Focus is a local-process concept (lives in baseDir/config.json). Callers
-	// without an on-disk td root (td-sync) cannot set focus.
+	// Focus is a local-process concept. Callers without an on-disk td root
+	// (td-sync) cannot set focus.
 	if ctx.BaseDir == "" {
 		WriteError(w, ErrInternal, "focus is not available without a local td root", http.StatusServiceUnavailable)
 		return
 	}
 
+	scope := sessionStateScopeFor(ctx)
 	if body.IssueID == nil || *body.IssueID == "" {
 		// Clear focus
-		if err := config.ClearFocus(ctx.BaseDir); err != nil {
+		if err := ctx.DB.ClearFocus(scope); err != nil {
 			slog.Error("clear focus", "err", err)
 			WriteError(w, ErrInternal, "failed to clear focus", http.StatusInternalServerError)
 			return
@@ -957,7 +957,7 @@ func HandleSetFocus(ctx HandlerContext, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := config.SetFocus(ctx.BaseDir, issue.ID); err != nil {
+	if err := ctx.DB.SetFocus(scope, issue.ID); err != nil {
 		slog.Error("set focus", "err", err, "issue_id", issue.ID)
 		WriteError(w, ErrInternal, "failed to set focus", http.StatusInternalServerError)
 		return

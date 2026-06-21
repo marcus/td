@@ -3,6 +3,7 @@ package serve
 import (
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/workdir"
 )
 
 // HandlerConfig carries optional, request-scoped configuration consumed by
@@ -32,28 +33,48 @@ type HandlerConfig struct {
 // same handlers against per-project DBs without standing up a `*serve.Server`.
 //
 // `BaseDir` is empty when there is no on-disk td root (e.g. td-sync). Handlers
-// that touch on-disk config (focus, title-limit lookup) must guard on
+// that need local-only process state (focus, title-limit lookup) must guard on
 // `BaseDir != ""` or fall back to `Config`.
 type HandlerContext struct {
-	DB        *db.DB
-	SessionID string
-	BaseDir   string
-	Config    HandlerConfig
+	DB         *db.DB
+	SessionID  string
+	WorktreeID string
+	BaseDir    string
+	Config     HandlerConfig
 }
 
 // handlerContext builds a HandlerContext from the Server's fields. Used by the
 // thin method wrappers that delegate to the pure HandleXxx functions.
 func (s *Server) handlerContext() HandlerContext {
 	return HandlerContext{
-		DB:        s.db,
-		SessionID: s.sessionID,
-		BaseDir:   s.baseDir,
+		DB:         s.db,
+		SessionID:  s.sessionID,
+		WorktreeID: s.worktreeID,
+		BaseDir:    s.baseDir,
 		Config: HandlerConfig{
 			// Title limits come from on-disk config; defaults applied in
 			// titleLengthLimitsFor when both are zero.
 			NotifyChange: s.NotifyChange,
 		},
 	}
+}
+
+func sessionStateScopeFor(ctx HandlerContext) db.SessionStateScope {
+	return db.SessionStateScope{
+		SessionID:                  ctx.SessionID,
+		WorktreeID:                 ctx.WorktreeID,
+		ConfigBaseDir:              ctx.BaseDir,
+		LegacyGetFocus:             config.GetFocus,
+		LegacyGetActiveWorkSession: config.GetActiveWorkSession,
+	}
+}
+
+func worktreeIDForBaseDir(baseDir string) string {
+	wt, err := workdir.WorktreeForPath(baseDir)
+	if err != nil {
+		return ""
+	}
+	return wt.WorktreeID
 }
 
 // titleLengthLimitsFor resolves the effective min/max title length for a

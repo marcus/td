@@ -25,13 +25,14 @@ type ServeConfig struct {
 
 // Server is the td serve HTTP server.
 type Server struct {
-	db        *db.DB
-	sessionID string
-	baseDir   string
-	config    ServeConfig
-	mux       *http.ServeMux
-	sseHub    *SSEHub
-	http      *http.Server
+	db         *db.DB
+	sessionID  string
+	worktreeID string
+	baseDir    string
+	config     ServeConfig
+	mux        *http.ServeMux
+	sseHub     *SSEHub
+	http       *http.Server
 }
 
 // NewServer creates a new Server, registers all routes, and sets up the
@@ -44,11 +45,12 @@ func NewServer(database *db.DB, baseDir, sessionID string, config ServeConfig) *
 	}
 
 	s := &Server{
-		db:        database,
-		sessionID: sessionID,
-		baseDir:   baseDir,
-		config:    config,
-		mux:       http.NewServeMux(),
+		db:         database,
+		sessionID:  sessionID,
+		worktreeID: worktreeIDForBaseDir(baseDir),
+		baseDir:    baseDir,
+		config:     config,
+		mux:        http.NewServeMux(),
 	}
 
 	// Initialize SSE hub (requires database for change_token polling)
