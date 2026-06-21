@@ -5,6 +5,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -51,6 +52,13 @@ func Error(format string, args ...interface{}) {
 // Warning prints a warning message
 func Warning(format string, args ...interface{}) {
 	fmt.Println(warningStyle.Render("Warning: " + fmt.Sprintf(format, args...)))
+}
+
+// WarningErr prints a warning message to stderr. Use this instead of Warning
+// for out-of-band notices (e.g. background auto-sync) so the message does not
+// corrupt stdout when a command is emitting machine-readable JSON.
+func WarningErr(format string, args ...interface{}) {
+	fmt.Fprintln(os.Stderr, warningStyle.Render("Warning: "+fmt.Sprintf(format, args...)))
 }
 
 // Info prints an info message

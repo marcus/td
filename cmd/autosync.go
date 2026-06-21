@@ -9,13 +9,23 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	tdsync "github.com/marcus/td/internal/sync"
 	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/internal/syncconfig"
 )
 
-const autoSyncHTTPTimeout = 5 * time.Second
+const (
+	autoSyncHTTPTimeout = 5 * time.Second
+	// autoSyncPushBudget bounds the total wall-clock spent retrying a push so a
+	// sustained outage does not add unbounded tail latency to every mutating
+	// command. Transient blips recover within this window; anything longer is
+	// left for the next command's startup sync (or the monitor tick) to retry.
+	autoSyncPushBudget = 6 * time.Second
+	// autoSyncPushBackoff is the initial retry delay; it doubles each attempt.
+	autoSyncPushBackoff = 250 * time.Millisecond
+)
 
 var (
 	lastAutoSyncAt   time.Time
@@ -69,46 +79,48 @@ func AutoSyncEnabled() bool {
 	return syncconfig.GetAutoSyncEnabled()
 }
 
-// autoSyncOnce runs a push and optional pull silently.
-func autoSyncOnce() {
+// autoSyncOnce runs a push and optional pull silently. It returns the number of
+// local events that remain unsynced after the attempt (0 on any early return),
+// so callers can surface a "still pending" warning without re-opening the DB.
+func autoSyncOnce() int64 {
 	if !atomic.CompareAndSwapInt32(&autoSyncInFlight, 0, 1) {
 		slog.Debug("autosync: skipped, in flight")
-		return
+		return 0
 	}
 	defer atomic.StoreInt32(&autoSyncInFlight, 0)
 
 	if !AutoSyncEnabled() {
 		slog.Debug("autosync: disabled")
-		return
+		return 0
 	}
 	if !syncconfig.IsAuthenticated() {
 		slog.Debug("autosync: not authenticated")
-		return
+		return 0
 	}
 	dir := getBaseDir()
 	if dir == "" {
 		slog.Debug("autosync: no base dir")
-		return
+		return 0
 	}
 	database, err := db.Open(dir)
 	if err != nil {
 		slog.Debug("autosync: open db", "err", err)
-		return
+		return 0
 	}
 	defer database.Close()
 
 	syncState, err := database.GetSyncState()
 	if err != nil {
 		slog.Debug("autosync: get sync state", "err", err)
-		return
+		return 0
 	}
 	if syncState == nil {
 		slog.Debug("autosync: no sync state")
-		return
+		return 0
 	}
 	if syncState.SyncDisabled {
 		slog.Debug("autosync: sync disabled")
-		return
+		return 0
 	}
 
 	slog.Debug("autosync: starting push+pull")
@@ -116,7 +128,7 @@ func autoSyncOnce() {
 	deviceID, err := syncconfig.GetDeviceID()
 	if err != nil {
 		slog.Debug("autosync: device ID unavailable", "err", err)
-		return
+		return 0
 	}
 
 	serverURL := syncconfig.GetServerURL()
@@ -135,12 +147,21 @@ func autoSyncOnce() {
 		syncState, err = database.GetSyncState()
 		if err != nil || syncState == nil {
 			slog.Debug("autosync: reload sync state", "err", err)
-			return
+			return 0
 		}
 		if err := autoSyncPull(database, client, syncState, deviceID); err != nil {
 			slog.Debug("autosync: pull", "err", err)
 		}
 	}
+
+	// Report what still hasn't reached the remote. Non-zero means the push
+	// failed (transiently) and the change is stranded until the next attempt.
+	pending, err := database.CountPendingEvents()
+	if err != nil {
+		slog.Debug("autosync: count pending", "err", err)
+		return 0
+	}
+	return pending
 }
 
 // autoSyncAfterMutation runs a debounced push+pull after a mutating command.
@@ -154,7 +175,66 @@ func autoSyncAfterMutation() {
 	lastAutoSyncAt = time.Now()
 	autoSyncMu.Unlock()
 
-	autoSyncOnce()
+	// Surface the case where changes were written locally but did not reach the
+	// remote (transient error/timeout after retries). Without this the failure
+	// is silent (slog.Debug only) and the change sits unsynced until the next
+	// command or monitor tick — the main source of "it didn't show up" surprise.
+	// autoSyncOnce returns 0 when sync is disabled/unconfigured, so this never
+	// warns spuriously.
+	if pending := autoSyncOnce(); pending > 0 {
+		output.WarningErr("sync: %d local change(s) not yet pushed to remote (will retry on next td command)", pending)
+	}
+}
+
+// pushBatchWithRetry pushes one batch, retrying transient failures with
+// exponential backoff until the shared deadline. Unauthorized errors are
+// terminal and returned immediately. Each attempt's HTTP timeout is clamped to
+// the time remaining so a single attempt cannot run far past the budget.
+//
+// Note that when the server is slow (not fast-failing) the first attempt can
+// consume most of the budget, leaving room for at most one short retry — the
+// backoff/budget interaction only produces multiple retries against a
+// fast-failing server (connection refused, immediate 5xx).
+//
+// The caller's client.HTTP.Timeout is restored on return so a subsequent pull
+// on the same client is not left with a clamped timeout.
+func pushBatchWithRetry(client *syncclient.Client, projectID string, req *syncclient.PushRequest, deadline time.Time) (*syncclient.PushResponse, error) {
+	origTimeout := client.HTTP.Timeout
+	defer func() { client.HTTP.Timeout = origTimeout }()
+
+	backoff := autoSyncPushBackoff
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			// Out of budget. Guarantee at least one attempt; otherwise give up.
+			if attempt > 0 {
+				return nil, lastErr
+			}
+			remaining = autoSyncHTTPTimeout
+		}
+		if remaining < autoSyncHTTPTimeout {
+			client.HTTP.Timeout = remaining
+		} else {
+			client.HTTP.Timeout = autoSyncHTTPTimeout
+		}
+
+		resp, err := client.Push(projectID, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if errors.Is(err, syncclient.ErrUnauthorized) {
+			return nil, err
+		}
+
+		// Stop if there is no room left for a backoff plus a minimal attempt.
+		if time.Until(deadline) < backoff+autoSyncPushBackoff {
+			return nil, lastErr
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
 }
 
 // startupSyncSkipCommands lists commands that should not trigger startup auto-sync.
@@ -290,6 +370,9 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		return nil
 	}
 
+	// Bound the total time spent retrying across all batches.
+	deadline := time.Now().Add(autoSyncPushBudget)
+
 	var allAcks []tdsync.Ack
 	var maxActionID int64
 	var allHistoryEntries []db.SyncHistoryEntry
@@ -317,7 +400,7 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 			})
 		}
 
-		pushResp, err := client.Push(state.ProjectID, pushReq)
+		pushResp, err := pushBatchWithRetry(client, state.ProjectID, pushReq, deadline)
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
 				return fmt.Errorf("unauthorized")
