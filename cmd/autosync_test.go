@@ -171,7 +171,7 @@ func TestGetAutoSyncOnStart_Default(t *testing.T) {
 
 func TestAutoSyncOnStartup_SkipCommands(t *testing.T) {
 	// These commands should be skipped - verify the skip map
-	skipCmds := []string{"sync", "auth", "login", "version", "help"}
+	skipCmds := []string{"sync", "auth", "login", "version", "help", "handoff"}
 	for _, cmd := range skipCmds {
 		// We can't easily test autoSyncOnStartup directly since it calls autoSyncOnce
 		// which needs a real DB, but we can verify the skip logic is correct by

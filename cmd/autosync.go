@@ -138,6 +138,7 @@ func autoSyncOnce() int64 {
 
 	if err := autoSyncPush(database, client, syncState, deviceID); err != nil {
 		slog.Debug("autosync: push", "err", err)
+		return countPendingForAutoSync(database)
 	}
 
 	if syncconfig.GetAutoSyncPull() {
@@ -156,6 +157,10 @@ func autoSyncOnce() int64 {
 
 	// Report what still hasn't reached the remote. Non-zero means the push
 	// failed (transiently) and the change is stranded until the next attempt.
+	return countPendingForAutoSync(database)
+}
+
+func countPendingForAutoSync(database *db.DB) int64 {
 	pending, err := database.CountPendingEvents()
 	if err != nil {
 		slog.Debug("autosync: count pending", "err", err)
@@ -239,7 +244,7 @@ func pushBatchWithRetry(client *syncclient.Client, projectID string, req *synccl
 
 // startupSyncSkipCommands lists commands that should not trigger startup auto-sync.
 var startupSyncSkipCommands = map[string]bool{
-	"sync": true, "auth": true, "login": true, "version": true, "help": true,
+	"sync": true, "auth": true, "login": true, "version": true, "help": true, "handoff": true,
 }
 
 // autoSyncOnStartup runs a one-time push+pull at process start if configured.

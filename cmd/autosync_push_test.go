@@ -409,6 +409,56 @@ func TestAutoSyncPush_LeavesEventsPendingWhenServerDown(t *testing.T) {
 	}
 }
 
+func TestAutoSyncOnce_SkipsPullWhenPushFails(t *testing.T) {
+	database := setupAutoSyncTestDB(t, 4)
+
+	var pushAttempts int32
+	var pullAttempts int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			atomic.AddInt32(&pushAttempts, 1)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "unavailable", "message": "try again"})
+		case http.MethodGet:
+			atomic.AddInt32(&pullAttempts, 1)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(syncclient.PullResponse{})
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	oldBaseDirOverride := baseDirOverride
+	dir := database.BaseDir()
+	baseDirOverride = &dir
+	t.Cleanup(func() {
+		baseDirOverride = oldBaseDirOverride
+		atomic.StoreInt32(&autoSyncInFlight, 0)
+	})
+
+	atomic.StoreInt32(&autoSyncInFlight, 0)
+	t.Setenv("TD_AUTH_KEY", "test-key")
+	t.Setenv("TD_SYNC_URL", srv.URL)
+	t.Setenv("TD_SYNC_AUTO", "true")
+	t.Setenv("TD_SYNC_AUTO_PULL", "true")
+
+	pending := autoSyncOnce()
+
+	if pending != 4 {
+		t.Fatalf("expected 4 pending events after failed push, got %d", pending)
+	}
+	if atomic.LoadInt32(&pushAttempts) == 0 {
+		t.Fatal("expected push to be attempted")
+	}
+	if got := atomic.LoadInt32(&pullAttempts); got != 0 {
+		t.Fatalf("pull should be skipped after failed push, got %d attempts", got)
+	}
+}
+
 func TestPushBatchWithRetry_UnauthorizedNotRetried(t *testing.T) {
 	srv, attempts := flakyPushServer(t, 1<<30, http.StatusUnauthorized)
 	defer srv.Close()
