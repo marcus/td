@@ -1,8 +1,72 @@
 # Plan: Session and Worktree Flow Revisit
 
-Status: partially scheduled — lean phase scoped into epic td-124499 (2026-06-20)
+Status: partially scheduled — lean phase scoped into epic td-124499; session-scoped current-state follow-up scoped into epic td-af80e9 (2026-06-20)
 Created: 2026-06-19
 Related: docs/plans/orchestrator-review-closure-plan.md, docs/plans/review-policy-trusted-mode-plan.md, docs/multi-agent-ui-review.md
+
+## Decision Log (2026-06-20, Current-State Expansion)
+
+The user's current-context proposal is now expanded into a follow-up implementation epic: `td-af80e9` ("Session-scoped current state: DB-backed focus and work sessions"). This lives in this plan instead of a new document because the existing plan already owns the session/worktree architecture, and the new work implements previously deferred Recommended Model #1 and #2.
+
+Scope boundaries for `td-af80e9`:
+
+- **Proceed:** DB-backed `session_state` for `focused_issue_id` and `active_work_session_id`, scoped by `session_id + worktree_id`.
+- **Proceed:** worktree-aware state scope, because current `workdir.ResolveBaseDir` shares one main `.todos` DB across worktrees but session/work-session rows still lack `worktree_id`.
+- **Proceed:** CLI/API current-state migration for focus, start/resume, log, handoff, usage/status/current, `show`/`list` inference, `ws` active-work-session commands, and local `serve` focus handler.
+- **Proceed:** one-release read-only compatibility fallback from config-backed `focused_issue_id` and `active_work_session`.
+- **Proceed:** local-only/no sync for raw `session_state`.
+- **Do not touch:** `pkg/monitor` in this implementation.
+- **Do not touch:** `/Users/marcus/code/td-watch` in this implementation.
+- **Defer:** lineage-aware review policy and directed handoffs.
+
+Grounding updates from the current checkout:
+
+- `TD_CONTEXT_ID` / `match_context_id` already landed. `internal/session/session.go` reads `TD_CONTEXT_ID`, stores `MatchContextID`, and `internal/db/sessions.go` looks up by `branch + agent_type + agent_pid + match_context_id`. Treat Phase 2b as baseline, not part of this follow-up epic.
+- `internal/db/schema.go` is currently `SchemaVersion = 33`, and `sessions` has `match_context_id` but no `worktree_id`, `worktree_root`, or `repo_root`.
+- `work_sessions` still stores only `id`, `name`, `session_id`, timestamps, and SHAs; `internal/db/work_sessions.go` does not persist worktree metadata.
+- `internal/config/config.go` still owns `SetFocus/GetFocus/ClearFocus` and `SetActiveWorkSession/GetActiveWorkSession/ClearActiveWorkSession`, and the config model still has `focused_issue_id` and `active_work_session`.
+- CLI call sites still read config-backed current state in `cmd/focus.go`, `cmd/context.go`, `cmd/status.go`, `cmd/start.go`, `cmd/log.go`, `cmd/handoff.go`, `cmd/show.go`, `cmd/list.go`, `cmd/review.go`, `cmd/unstart.go`, and `cmd/ws.go`.
+- The local focus API is `internal/serve/handlers_write.go:HandleSetFocus`; it currently requires `ctx.BaseDir`, writes config, preserves response shape, and intentionally does not call `notifyChange`.
+- Sync allowlisting is explicit: `cmd/sync.go` has `baseSyncableEntities`, and `session_state` must stay out of that map. It should also stay out of `internal/events/taxonomy.go` and td-sync project/admin entity surfaces.
+
+Implementation sequence for `td-af80e9`:
+
+1. `td-83cfc9` — Add worktree identity plumbing for session-scoped state.
+   - Files/modules: `internal/workdir`, `internal/session`, `internal/db/schema.go`, `internal/db/migrations.go`, `internal/db/sessions.go`, `internal/db/work_sessions.go`, model structs as needed.
+   - Add stable `worktree_id`, readable `worktree_root`, and `repo_root`; include `worktree_id` in session identity while preserving legacy empty-worktree fallback for one release.
+
+2. `td-3d427b` — Add local-only `session_state` schema and helpers.
+   - Files/modules: schema/migrations plus DB helpers for get/upsert/clear by `session_id + worktree_id`.
+   - Table shape:
+
+     ```sql
+     CREATE TABLE session_state (
+         session_id TEXT NOT NULL,
+         worktree_id TEXT DEFAULT '',
+         focused_issue_id TEXT DEFAULT '',
+         active_work_session_id TEXT DEFAULT '',
+         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (session_id, worktree_id)
+     );
+     ```
+
+   - Keep `session_state` local-only: no sync taxonomy entry, no sync validator entry, no td-sync project/admin exposure.
+
+3. `td-e2f1ab` — Migrate CLI current-state commands to `session_state`.
+   - Files/modules: `cmd/focus.go`, `cmd/context.go`, `cmd/status.go`, `cmd/start.go`, `cmd/log.go`, `cmd/handoff.go`, `cmd/show.go`, `cmd/list.go`, `cmd/review.go`, `cmd/unstart.go`, `cmd/ws.go`, and corresponding command tests.
+   - Writes go to `session_state`; fallback reads from config only when the scoped DB value is absent.
+
+4. `td-dd7a11` — Migrate serve focus API to `session_state`.
+   - Files/modules: `internal/serve/context.go`, `internal/serve/handlers_write.go`, local serve integration tests, and project-route wiring only if needed for existing tests.
+   - Preserve the current local-root guard and response shape; do not invent remote synced focus state for td-sync.
+
+5. `td-8ea327` — Remove config current-state writes after compatibility window.
+   - Files/modules: compatibility helper and config/model cleanup after the release window.
+   - Keep monitor preference config fields; only remove current-work pointers when safe.
+
+6. `td-ae3a2a` — Proof: session_state current-context migration is isolated and green.
+   - Label: `proof`.
+   - Required proof: `env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI GOWORK=off go test ./...`, focused DB/session/cmd/serve tests, two-session/two-worktree smoke against a shared `.todos` DB, sync-boundary assertions, and git status/diff proof that `pkg/monitor` and `/Users/marcus/code/td-watch` were not modified.
 
 ## Decision Log (2026-06-20)
 
