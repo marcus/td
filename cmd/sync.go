@@ -666,14 +666,19 @@ func init() {
 	syncCmd.Flags().Bool("pull", false, "Pull only")
 	syncCmd.Flags().Bool("status", false, "Show sync status only")
 
-	// enable/disable must be reachable regardless of the SyncCLI gate.
+	// enable/disable and the read-only `status` diagnostic must be reachable
+	// regardless of the SyncCLI gate. Register them on exactly one parent (the
+	// full syncCmd when SyncCLI is on, else the minimal always-on parent) so we
+	// never double-register a command and panic. (td-78b482)
 	if features.IsEnabledForProcess(features.SyncCLI.Name) {
 		syncCmd.AddCommand(syncEnableCmd)
 		syncCmd.AddCommand(syncDisableCmd)
+		syncCmd.AddCommand(syncStatusCmd)
 		rootCmd.AddCommand(syncCmd)
 	} else {
 		syncAlwaysOnCmd.AddCommand(syncEnableCmd)
 		syncAlwaysOnCmd.AddCommand(syncDisableCmd)
+		syncAlwaysOnCmd.AddCommand(syncStatusCmd)
 		rootCmd.AddCommand(syncAlwaysOnCmd)
 	}
 }

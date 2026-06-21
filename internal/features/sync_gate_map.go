@@ -18,7 +18,7 @@ var SyncGateMap = []GateMapEntry{
 	{
 		Feature: SyncCLI.Name,
 		Surface: "cmd/sync.go",
-		Notes:   "Gates td sync command entry point",
+		Notes:   "Gates the full td sync entry point and its mutating subcommands (push/pull/init). The read-only `td sync status` diagnostic and the enable/disable kill-switch subcommands live on an always-on parent and are NOT gated (td-78b482, td-735875).",
 	},
 	{
 		Feature: SyncCLI.Name,
@@ -48,7 +48,7 @@ var SyncGateMap = []GateMapEntry{
 	{
 		Feature: SyncCLI.Name,
 		Surface: "cmd/doctor.go",
-		Notes:   "Gates sync diagnostics command",
+		Notes:   "NO LONGER GATED: td doctor is a read-only diagnostic registered ungated so a stranded project can always be diagnosed (td-78b482). Entry retained for traceability; the SyncCLI gate no longer applies to it.",
 	},
 	{
 		Feature: SyncAutosync.Name,
