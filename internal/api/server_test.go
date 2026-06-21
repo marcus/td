@@ -217,6 +217,103 @@ func TestPushSuccess(t *testing.T) {
 	}
 }
 
+func TestPushWorkSessionScrubsLocalMetadataFromStorageAndPull(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "push-work-session@test.com")
+
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{
+		Name: "work-session-scrub",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+
+	pushBody := PushRequest{
+		DeviceID:  "dev1",
+		SessionID: "sess1",
+		Events: []EventInput{
+			{
+				ClientActionID: 1,
+				ActionType:     "create",
+				EntityType:     "work_sessions",
+				EntityID:       "ws-local",
+				Payload: json.RawMessage(`{
+					"schema_version": 1,
+					"new_data": {
+						"id": "ws-local",
+						"name": "Local",
+						"session_id": "sess1",
+						"worktree_id": "wt-new",
+						"worktree_root": "/tmp/new-worktree",
+						"repo_root": "/tmp/new-repo"
+					},
+					"previous_data": {
+						"id": "ws-local",
+						"name": "Old",
+						"session_id": "sess1",
+						"worktree_id": "wt-old",
+						"worktree_root": "/tmp/old-worktree",
+						"repo_root": "/tmp/old-repo"
+					}
+				}`),
+				ClientTimestamp: "2025-01-01T00:00:00Z",
+			},
+		},
+	}
+
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	db, err := srv.dbPool.Get(project.ID)
+	if err != nil {
+		t.Fatalf("open project events db: %v", err)
+	}
+	var storedPayload json.RawMessage
+	if err := db.QueryRow(`SELECT payload FROM events WHERE entity_type='work_sessions' AND entity_id='ws-local'`).Scan(&storedPayload); err != nil {
+		t.Fatalf("query stored payload: %v", err)
+	}
+	assertAPIWorkSessionPayloadOmitsLocalFields(t, storedPayload)
+
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/pull?after_server_seq=0", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pull: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var pullResp PullResponse
+	if err := json.NewDecoder(w.Body).Decode(&pullResp); err != nil {
+		t.Fatalf("decode pull: %v", err)
+	}
+	if len(pullResp.Events) != 1 {
+		t.Fatalf("pull events: got %d, want 1", len(pullResp.Events))
+	}
+	assertAPIWorkSessionPayloadOmitsLocalFields(t, pullResp.Events[0].Payload)
+}
+
+func assertAPIWorkSessionPayloadOmitsLocalFields(t *testing.T, raw json.RawMessage) {
+	t.Helper()
+
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	for _, section := range []string{"new_data", "previous_data"} {
+		nested, ok := fields[section].(map[string]any)
+		if !ok {
+			t.Fatalf("payload missing object %q: %v", section, fields)
+		}
+		for _, key := range []string{"worktree_id", "worktree_root", "repo_root"} {
+			if _, ok := nested[key]; ok {
+				t.Fatalf("%s leaked %s in %v", section, key, nested)
+			}
+		}
+	}
+}
+
 // TestPushAndPullUpsertSyncCursor verifies that the push and pull endpoints
 // write per-device sync cursors to server.db so the admin "Sync Clients" tab
 // is populated. Regression test for the bug where active devices never

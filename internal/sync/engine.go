@@ -81,10 +81,11 @@ func InsertServerEventsAttached(tx *sql.Tx, schema string, events []Event) (Push
 			continue
 		}
 
+		payload := scrubLocalOnlySyncPayload(ev.EntityType, ev.Payload)
 		res, err := tx.Exec(insertSQL,
 			ev.DeviceID, ev.SessionID, ev.ClientActionID,
 			ev.ActionType, ev.EntityType, ev.EntityID,
-			ev.Payload, ev.ClientTimestamp,
+			payload, ev.ClientTimestamp,
 		)
 		if err != nil {
 			return result, fmt.Errorf("insert event %d: %w", ev.ClientActionID, err)
@@ -168,6 +169,7 @@ func GetEventsSince(tx *sql.Tx, afterSeq int64, limit int, excludeDevice string)
 		if err != nil {
 			return result, fmt.Errorf("parse timestamp seq=%d: %w", ev.ServerSeq, err)
 		}
+		ev.Payload = scrubLocalOnlySyncPayload(ev.EntityType, ev.Payload)
 
 		result.Events = append(result.Events, ev)
 		result.LastServerSeq = ev.ServerSeq
