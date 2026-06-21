@@ -135,6 +135,8 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
 			continue
 		}
+		wrapper.NewData = scrubLocalOnlySyncPayload(ev.EntityType, wrapper.NewData)
+		wrapper.PreviousData = scrubLocalOnlySyncPayload(ev.EntityType, wrapper.PreviousData)
 
 		// Build event with raw new_data as payload for ApplyEvent
 		applyEv := Event{
@@ -174,7 +176,7 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 				EntityType:    ev.EntityType,
 				EntityID:      ev.EntityID,
 				ServerSeq:     ev.ServerSeq,
-				LocalData:     res.OldData,
+				LocalData:     scrubLocalOnlySyncPayload(ev.EntityType, res.OldData),
 				RemoteData:    wrapper.NewData,
 				OverwrittenAt: time.Now().UTC(),
 			})

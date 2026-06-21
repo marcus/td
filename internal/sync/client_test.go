@@ -568,6 +568,105 @@ func TestApplyRemoteEventsScrubsWorkSessionLocalMetadata(t *testing.T) {
 	}
 }
 
+func TestApplyRemoteEventsScrubsWorkSessionConflictData(t *testing.T) {
+	db := setupClientDB(t)
+
+	_, err := db.Exec(`
+		INSERT INTO work_sessions (id, name, session_id, worktree_id, worktree_root, repo_root, start_sha)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, "ws-conflict", "Local work session", "ses-local", "wt-local", "/tmp/local-worktree", "/tmp/local-repo", "local-sha")
+	if err != nil {
+		t.Fatalf("seed work_session: %v", err)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data": map[string]any{
+			"id":            "ws-conflict",
+			"name":          "Remote work session",
+			"session_id":    "ses-remote",
+			"worktree_id":   "wt-remote",
+			"worktree_root": "/tmp/remote-worktree",
+			"repo_root":     "/tmp/remote-repo",
+			"start_sha":     "remote-sha",
+		},
+		"previous_data": map[string]any{
+			"id":            "ws-conflict",
+			"name":          "Old remote work session",
+			"session_id":    "ses-remote",
+			"worktree_id":   "wt-old",
+			"worktree_root": "/tmp/old-worktree",
+			"repo_root":     "/tmp/old-repo",
+			"start_sha":     "old-sha",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	events := []Event{{
+		ServerSeq:  88,
+		DeviceID:   "other-device",
+		ActionType: "create",
+		EntityType: "work_sessions",
+		EntityID:   "ws-conflict",
+		Payload:    payload,
+	}}
+
+	tx := beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator, &farPast)
+	if err != nil {
+		t.Fatalf("ApplyRemoteEvents: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	if result.Overwrites != 1 {
+		t.Fatalf("Overwrites=%d, want 1", result.Overwrites)
+	}
+	if len(result.Conflicts) != 1 {
+		t.Fatalf("Conflicts=%d, want 1", len(result.Conflicts))
+	}
+
+	c := result.Conflicts[0]
+	var remote map[string]any
+	if err := json.Unmarshal(c.RemoteData, &remote); err != nil {
+		t.Fatalf("unmarshal RemoteData: %v", err)
+	}
+	for _, key := range []string{"worktree_id", "worktree_root", "repo_root"} {
+		if _, ok := remote[key]; ok {
+			t.Fatalf("RemoteData leaked %s: %s", key, c.RemoteData)
+		}
+	}
+	if remote["name"] != "Remote work session" {
+		t.Fatalf("RemoteData name=%v, want Remote work session", remote["name"])
+	}
+
+	var local map[string]any
+	if err := json.Unmarshal(c.LocalData, &local); err != nil {
+		t.Fatalf("unmarshal LocalData: %v", err)
+	}
+	for _, key := range []string{"worktree_id", "worktree_root", "repo_root"} {
+		if _, ok := local[key]; ok {
+			t.Fatalf("LocalData leaked %s: %s", key, c.LocalData)
+		}
+	}
+	if local["name"] != "Local work session" {
+		t.Fatalf("LocalData name=%v, want Local work session", local["name"])
+	}
+
+	var worktreeID, worktreeRoot, repoRoot string
+	if err := db.QueryRow(`
+		SELECT worktree_id, worktree_root, repo_root FROM work_sessions WHERE id = ?
+	`, "ws-conflict").Scan(&worktreeID, &worktreeRoot, &repoRoot); err != nil {
+		t.Fatalf("read work_session: %v", err)
+	}
+	if worktreeID != "" || worktreeRoot != "" || repoRoot != "" {
+		t.Fatalf("remote metadata populated local fields: id=%q root=%q repo=%q", worktreeID, worktreeRoot, repoRoot)
+	}
+}
+
 func TestApplyRemoteEvents_PartialFailure(t *testing.T) {
 	db := setupClientDB(t)
 
