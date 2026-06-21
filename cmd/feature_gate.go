@@ -62,6 +62,14 @@ func runGatedSyncMutationHook(cmd *cobra.Command) {
 	if syncFeatureHooks.OnAfterMutation == nil {
 		return
 	}
+
+	// Independent of whether the autosync hook fires below, warn (throttled) when
+	// this project is configured for sync but the gate is closed and changes are
+	// piling up — otherwise that case is totally silent. strandedSyncShouldWarn
+	// no-ops for unconfigured projects and for the gate-OPEN case (autosync owns
+	// the warning there), so this is safe to call unconditionally.
+	warnIfSyncStranded(getBaseDir())
+
 	if !autosyncGateOpen(getBaseDir()) {
 		return
 	}

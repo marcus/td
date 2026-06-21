@@ -25,12 +25,19 @@ const (
 	autoSyncPushBudget = 6 * time.Second
 	// autoSyncPushBackoff is the initial retry delay; it doubles each attempt.
 	autoSyncPushBackoff = 250 * time.Millisecond
+	// strandedWarnInterval throttles the "configured but autosync off" warning so
+	// it is noticeable without spamming on every mutating command. The check is a
+	// single COUNT query, but the message would be noise if printed every time.
+	strandedWarnInterval = 3 * time.Minute
 )
 
 var (
 	lastAutoSyncAt   time.Time
 	autoSyncMu       sync.Mutex
 	autoSyncInFlight int32 // atomic flag: 1 = sync running
+
+	lastStrandedWarnAt time.Time
+	strandedWarnMu     sync.Mutex
 )
 
 // mutatingCommands lists commands that modify local data and should trigger auto-sync.
@@ -128,6 +135,67 @@ func projectSyncConfigured(baseDir string) bool {
 func globalKillSwitchOff() bool {
 	v := syncconfig.GetGlobalAutosyncOverride()
 	return v != nil && !*v
+}
+
+// strandedSyncShouldWarn is the pure decision for the "project is configured for
+// sync but autosync is gated OFF and changes are piling up" warning. It returns
+// (true, pending) only when the project is sync-configured, the autosync gate is
+// CLOSED (kill-switch engaged or sync_autosync explicitly false), and there is at
+// least one pending event that will not be pushed.
+//
+// It deliberately stays silent for the gate-OPEN case: that path is autosync's
+// job and surfaces its own "not yet pushed" warning after a failed push, so
+// warning here too would double-warn. Unconfigured projects (no sync_state) are
+// the normal majority case and must never warn.
+//
+// It must be cheap (a single COUNT query) and must never error-out the calling
+// command: any failure is treated as "do not warn" and logged at debug level.
+func strandedSyncShouldWarn(baseDir string) (bool, int64) {
+	if !projectSyncConfigured(baseDir) {
+		return false, 0
+	}
+	// Gate OPEN means autosync runs and owns the warning — don't double-warn.
+	if autosyncGateOpen(baseDir) {
+		return false, 0
+	}
+
+	database, err := db.Open(baseDir)
+	if err != nil {
+		slog.Debug("stranded-warn: open db", "err", err)
+		return false, 0
+	}
+	defer database.Close()
+
+	pending, err := database.CountPendingEvents()
+	if err != nil {
+		slog.Debug("stranded-warn: count pending", "err", err)
+		return false, 0
+	}
+	if pending <= 0 {
+		return false, 0
+	}
+	return true, pending
+}
+
+// warnIfSyncStranded runs the stranded-sync check and emits a throttled warning
+// when a sync-configured project has autosync gated off with pending changes.
+// The warning is debounced (strandedWarnInterval) so it is not printed on every
+// command. Never errors out the caller.
+func warnIfSyncStranded(baseDir string) {
+	shouldWarn, pending := strandedSyncShouldWarn(baseDir)
+	if !shouldWarn {
+		return
+	}
+
+	strandedWarnMu.Lock()
+	if time.Since(lastStrandedWarnAt) < strandedWarnInterval {
+		strandedWarnMu.Unlock()
+		return
+	}
+	lastStrandedWarnAt = time.Now()
+	strandedWarnMu.Unlock()
+
+	output.WarningErr("sync: this project is configured for sync but autosync is off — %d change(s) not being pushed. Run 'td sync status'.", pending)
 }
 
 // autoSyncOnce runs a push and optional pull silently. It returns the number of
