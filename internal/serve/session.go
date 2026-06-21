@@ -25,7 +25,7 @@ const (
 // If a matching session exists, its activity timestamp is bumped.
 // If none exists, a new session named "td-serve-web" is created.
 func GetOrCreateWebSession(database *db.DB) (*db.SessionRow, error) {
-	row, err := database.GetSessionByIdentity(webBranch, webAgentType, webAgentPID, "")
+	row, err := database.GetSessionByIdentity(webBranch, webAgentType, webAgentPID, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("lookup web session: %w", err)
 	}

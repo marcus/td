@@ -3,6 +3,8 @@
 package workdir
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,44 @@ const (
 	tdRootFile = ".td-root"
 	todosDir   = ".todos"
 )
+
+// WorktreeInfo describes the current checkout and the shared td repo root.
+type WorktreeInfo struct {
+	RepoRoot     string
+	WorktreeRoot string
+	WorktreeID   string
+}
+
+// CurrentWorktree returns worktree metadata for the current directory.
+func CurrentWorktree() (WorktreeInfo, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return WorktreeInfo{}, err
+	}
+	return WorktreeForPath(cwd)
+}
+
+// WorktreeForPath returns worktree metadata for dir. RepoRoot is the resolved
+// td base directory, while WorktreeRoot is the actual checkout root for dir.
+func WorktreeForPath(dir string) (WorktreeInfo, error) {
+	if dir == "" {
+		return WorktreeInfo{}, nil
+	}
+
+	worktreeRoot, err := gitTopLevel(dir)
+	if err != nil || worktreeRoot == "" {
+		worktreeRoot = dir
+	}
+
+	worktreeRoot = canonicalPath(worktreeRoot)
+	repoRoot := canonicalPath(ResolveBaseDir(worktreeRoot))
+
+	return WorktreeInfo{
+		RepoRoot:     repoRoot,
+		WorktreeRoot: worktreeRoot,
+		WorktreeID:   worktreeID(worktreeRoot),
+	}, nil
+}
 
 // ResolveBaseDir resolves td's project root with conservative heuristics:
 //  1. Honor .td-root in the current directory.
@@ -91,6 +131,26 @@ func readTdRoot(dir string) (string, bool) {
 func hasTodosDir(dir string) bool {
 	fi, err := os.Stat(filepath.Join(dir, todosDir))
 	return err == nil && fi.IsDir()
+}
+
+func canonicalPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(resolved)
+}
+
+func worktreeID(canonicalWorktreePath string) string {
+	sum := sha256.Sum256([]byte(canonicalWorktreePath))
+	return "wt_" + hex.EncodeToString(sum[:])[:12]
 }
 
 func gitTopLevel(dir string) (string, error) {

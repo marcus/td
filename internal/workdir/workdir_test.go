@@ -135,6 +135,82 @@ func TestResolveBaseDir_MainRepoUnchangedWithWorktrees(t *testing.T) {
 	assertSamePath(t, repo, got)
 }
 
+func TestWorktreeForPath_StableIDFromSubdir(t *testing.T) {
+	repo := initGitRepo(t)
+	if err := os.MkdirAll(filepath.Join(repo, ".todos"), 0755); err != nil {
+		t.Fatalf("create .todos: %v", err)
+	}
+
+	subdir := filepath.Join(repo, "nested", "dir")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatalf("create subdir: %v", err)
+	}
+
+	fromRoot, err := WorktreeForPath(repo)
+	if err != nil {
+		t.Fatalf("WorktreeForPath(repo): %v", err)
+	}
+	fromSubdir, err := WorktreeForPath(subdir)
+	if err != nil {
+		t.Fatalf("WorktreeForPath(subdir): %v", err)
+	}
+
+	if fromRoot.WorktreeID == "" {
+		t.Fatal("expected worktree_id")
+	}
+	if fromRoot.WorktreeID != fromSubdir.WorktreeID {
+		t.Fatalf("worktree_id should be stable from subdirs: root=%q subdir=%q",
+			fromRoot.WorktreeID, fromSubdir.WorktreeID)
+	}
+	assertSamePath(t, repo, fromSubdir.WorktreeRoot)
+	assertSamePath(t, repo, fromSubdir.RepoRoot)
+}
+
+func TestWorktreeForPath_DifferentRootsDiffer(t *testing.T) {
+	repoA := initGitRepo(t)
+	repoB := initGitRepo(t)
+
+	a, err := WorktreeForPath(repoA)
+	if err != nil {
+		t.Fatalf("WorktreeForPath(repoA): %v", err)
+	}
+	b, err := WorktreeForPath(repoB)
+	if err != nil {
+		t.Fatalf("WorktreeForPath(repoB): %v", err)
+	}
+
+	if a.WorktreeID == b.WorktreeID {
+		t.Fatalf("different worktree roots should differ, both got %q", a.WorktreeID)
+	}
+}
+
+func TestWorktreeForPath_ExternalWorktreeSharesRepoRoot(t *testing.T) {
+	repo := initGitRepo(t)
+	runCmd(t, repo, "git", "commit", "--allow-empty", "-m", "init")
+
+	if err := os.MkdirAll(filepath.Join(repo, ".todos"), 0755); err != nil {
+		t.Fatalf("create .todos: %v", err)
+	}
+
+	wtPath := filepath.Join(t.TempDir(), "wt")
+	runCmd(t, repo, "git", "worktree", "add", wtPath, "-b", "test-branch")
+
+	mainInfo, err := WorktreeForPath(repo)
+	if err != nil {
+		t.Fatalf("WorktreeForPath(repo): %v", err)
+	}
+	wtInfo, err := WorktreeForPath(filepath.Join(wtPath))
+	if err != nil {
+		t.Fatalf("WorktreeForPath(worktree): %v", err)
+	}
+
+	assertSamePath(t, repo, wtInfo.RepoRoot)
+	assertSamePath(t, wtPath, wtInfo.WorktreeRoot)
+	if mainInfo.WorktreeID == wtInfo.WorktreeID {
+		t.Fatalf("main and external worktrees should have distinct ids, both got %q", wtInfo.WorktreeID)
+	}
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 

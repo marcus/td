@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 33
+const SchemaVersion = 34
 
 const schema = `
 -- Issues table
@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS work_sessions (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     session_id TEXT NOT NULL,
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
     start_sha TEXT DEFAULT '',
@@ -127,6 +130,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     agent_pid INTEGER DEFAULT 0,
     context_id TEXT DEFAULT '',
     match_context_id TEXT DEFAULT '',
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
@@ -151,7 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_git_snapshots_issue ON git_snapshots(issue_id);
 CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
-CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id, worktree_id);
 `
 
 // BaseSchema returns the initial database schema DDL.
@@ -506,6 +512,13 @@ CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 		Description: "Add match_context_id to sessions for sub-agent session keying (td-64dc09)",
 		// Handled by custom Go code in migrations.go (migrateSessionMatchContextID)
 		// using a columnExists guard so re-running is safe.
+		SQL: "",
+	},
+	{
+		Version:     34,
+		Description: "Add worktree identity metadata to sessions and work sessions (td-83cfc9)",
+		// Handled by custom Go code in migrations.go (migrateWorktreeIdentity)
+		// using columnExists guards so re-running is safe.
 		SQL: "",
 	},
 }

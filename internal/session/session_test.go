@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 )
@@ -188,6 +189,84 @@ func TestContextIDSessionRefound(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateDifferentWorktreesDifferentSessions(t *testing.T) {
+	database := setupTestDB(t)
+
+	wtA := t.TempDir()
+	wtB := t.TempDir()
+
+	t.Setenv("TD_SESSION_ID", "same-agent")
+	t.Setenv("TD_CONTEXT_ID", "same-context")
+
+	chdir(t, wtA)
+	sa, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate wtA: %v", err)
+	}
+
+	chdir(t, wtB)
+	sb, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate wtB: %v", err)
+	}
+
+	if sa.ID == sb.ID {
+		t.Fatalf("same branch/fingerprint/context in different worktrees should create distinct sessions, both got %q", sa.ID)
+	}
+	if sa.WorktreeID == "" || sb.WorktreeID == "" {
+		t.Fatalf("expected worktree ids, got a=%q b=%q", sa.WorktreeID, sb.WorktreeID)
+	}
+	if sa.WorktreeID == sb.WorktreeID {
+		t.Fatalf("expected distinct worktree ids, both got %q", sa.WorktreeID)
+	}
+}
+
+func TestGetOrCreateFindsLegacyEmptyWorktreeSession(t *testing.T) {
+	database := setupTestDB(t)
+
+	wt := t.TempDir()
+	chdir(t, wt)
+
+	t.Setenv("TD_SESSION_ID", "legacy-agent")
+	t.Setenv("TD_CONTEXT_ID", "legacy-context")
+
+	now := time.Now().Truncate(time.Second)
+	legacy := &db.SessionRow{
+		ID:             "ses_legacywt",
+		Branch:         defaultBranch,
+		AgentType:      "explicit_legacy-agent",
+		AgentPID:       0,
+		MatchContextID: "legacy-context",
+		StartedAt:      now,
+		LastActivity:   now,
+	}
+	if err := database.UpsertSession(legacy); err != nil {
+		t.Fatalf("upsert legacy session: %v", err)
+	}
+
+	sess, err := GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	if sess.ID != legacy.ID {
+		t.Fatalf("expected legacy session to be re-found, got %q want %q", sess.ID, legacy.ID)
+	}
+	if sess.IsNew {
+		t.Fatalf("legacy fallback should reuse the old row")
+	}
+	if sess.WorktreeID == "" {
+		t.Fatalf("legacy fallback should backfill worktree_id")
+	}
+
+	row, err := database.GetSessionByID(legacy.ID)
+	if err != nil {
+		t.Fatalf("GetSessionByID: %v", err)
+	}
+	if row.WorktreeID != sess.WorktreeID {
+		t.Fatalf("database worktree_id not backfilled: got %q want %q", row.WorktreeID, sess.WorktreeID)
+	}
+}
+
 func TestMigrateLegacySessionCleanupOldFile(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
@@ -224,6 +303,20 @@ func TestMigrateLegacySessionCleanupOldFile(t *testing.T) {
 	if row == nil {
 		t.Fatal("migrated session should exist in DB")
 	}
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %s: %v", dir, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(old)
+	})
 }
 
 func TestMigrateBranchSessionCleanupOldFile(t *testing.T) {

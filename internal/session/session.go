@@ -14,6 +14,7 @@ import (
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
+	"github.com/marcus/td/internal/workdir"
 )
 
 const (
@@ -32,6 +33,9 @@ type Session struct {
 	AgentPID          int       `json:"agent_pid,omitempty"`        // stable parent agent process ID
 	ContextID         string    `json:"context_id,omitempty"`       // audit-only execution-context fingerprint
 	MatchContextID    string    `json:"match_context_id,omitempty"` // identity-key dimension fed by TD_CONTEXT_ID
+	WorktreeID        string    `json:"worktree_id,omitempty"`
+	WorktreeRoot      string    `json:"worktree_root,omitempty"`
+	RepoRoot          string    `json:"repo_root,omitempty"`
 	PreviousSessionID string    `json:"previous_session_id,omitempty"`
 	StartedAt         time.Time `json:"started_at"`
 	LastActivity      time.Time `json:"last_activity,omitempty"` // heartbeat for session liveness
@@ -163,10 +167,21 @@ func sessionFromRow(row *db.SessionRow) *Session {
 		AgentPID:          row.AgentPID,
 		ContextID:         row.ContextID,
 		MatchContextID:    row.MatchContextID,
+		WorktreeID:        row.WorktreeID,
+		WorktreeRoot:      row.WorktreeRoot,
+		RepoRoot:          row.RepoRoot,
 		PreviousSessionID: row.PreviousSessionID,
 		StartedAt:         row.StartedAt,
 		LastActivity:      row.LastActivity,
 	}
+}
+
+func currentWorktree() (workdir.WorktreeInfo, error) {
+	wt, err := workdir.CurrentWorktree()
+	if err != nil {
+		return workdir.WorktreeInfo{}, fmt.Errorf("resolve worktree identity: %w", err)
+	}
+	return wt, nil
 }
 
 // GetOrCreate returns the current session for the current git branch and agent.
@@ -178,6 +193,10 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
+	wt, err := currentWorktree()
+	if err != nil {
+		return nil, err
+	}
 
 	// One-time migration from filesystem (no-op after first run)
 	// Migrate from the resolved root dir and also from cwd (for worktrees)
@@ -189,12 +208,18 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 	// Look up existing session for this branch + agent fingerprint + context.
 	// The context dimension (TD_CONTEXT_ID) keeps distinct sub-agent contexts
 	// that share one process/branch/checkout from collapsing into one session.
-	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID(), wt.WorktreeID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup session: %w", err)
 	}
 
 	if row != nil {
+		if row.WorktreeID == "" && wt.WorktreeID != "" {
+			_ = database.UpdateSessionWorktreeMetadata(row.ID, wt.WorktreeID, wt.WorktreeRoot, wt.RepoRoot)
+			row.WorktreeID = wt.WorktreeID
+			row.WorktreeRoot = wt.WorktreeRoot
+			row.RepoRoot = wt.RepoRoot
+		}
 		// Found existing session - update heartbeat
 		now := time.Now()
 		_ = database.UpdateSessionActivity(row.ID, now)
@@ -205,15 +230,19 @@ func GetOrCreate(database *db.DB) (*Session, error) {
 	}
 
 	// No session found - create new one
-	return createSession(database, branch, fp, "")
+	return createSession(database, branch, fp, "", wt)
 }
 
 // Get returns the current session without creating one
 func Get(database *db.DB) (*Session, error) {
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
+	wt, err := currentWorktree()
+	if err != nil {
+		return nil, err
+	}
 
-	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID(), wt.WorktreeID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup session: %w", err)
 	}
@@ -227,15 +256,19 @@ func Get(database *db.DB) (*Session, error) {
 func ForceNewSession(database *db.DB) (*Session, error) {
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
+	wt, err := currentWorktree()
+	if err != nil {
+		return nil, err
+	}
 
 	// Get previous session ID if exists
 	var previousID string
-	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID())
+	row, err := database.GetSessionByIdentity(branch, fp.String(), fp.PID, matchContextID(), wt.WorktreeID)
 	if err == nil && row != nil {
 		previousID = row.ID
 	}
 
-	return createSession(database, branch, fp, previousID)
+	return createSession(database, branch, fp, previousID, wt)
 }
 
 // SetName sets the session name
@@ -275,7 +308,7 @@ func CleanupStaleSessions(database *db.DB, maxAge time.Duration) (int, error) {
 }
 
 // createSession creates a new session in the DB
-func createSession(database *db.DB, branch string, fp AgentFingerprint, previousID string) (*Session, error) {
+func createSession(database *db.DB, branch string, fp AgentFingerprint, previousID string, wt workdir.WorktreeInfo) (*Session, error) {
 	id, err := generateID()
 	if err != nil {
 		return nil, err
@@ -290,6 +323,9 @@ func createSession(database *db.DB, branch string, fp AgentFingerprint, previous
 		AgentPID:          fp.PID,
 		ContextID:         getContextID(),
 		MatchContextID:    matchContextID(),
+		WorktreeID:        wt.WorktreeID,
+		WorktreeRoot:      wt.WorktreeRoot,
+		RepoRoot:          wt.RepoRoot,
 		PreviousSessionID: previousID,
 		StartedAt:         now,
 		LastActivity:      now,

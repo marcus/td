@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// TestSchemaVersion_At33 confirms the current schema version is 33 and that
+// TestSchemaVersion_At34 confirms the current schema version is 34 and that
 // a freshly initialized database reports that version after migrations run.
-func TestSchemaVersion_At33(t *testing.T) {
-	if SchemaVersion != 33 {
-		t.Fatalf("SchemaVersion: want 33, got %d", SchemaVersion)
+func TestSchemaVersion_At34(t *testing.T) {
+	if SchemaVersion != 34 {
+		t.Fatalf("SchemaVersion: want 34, got %d", SchemaVersion)
 	}
 
 	dir := t.TempDir()
@@ -79,6 +79,27 @@ func TestMigration31_IssueReviewsTable_Shape(t *testing.T) {
 		}
 		if !got {
 			t.Errorf("issue_reviews is missing column %q", col)
+		}
+	}
+}
+
+func TestMigration34_WorktreeIdentityColumns_Present(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	for _, table := range []string{"sessions", "work_sessions"} {
+		for _, col := range []string{"worktree_id", "worktree_root", "repo_root"} {
+			exists, err := database.columnExists(table, col)
+			if err != nil {
+				t.Fatalf("columnExists(%s,%s): %v", table, col, err)
+			}
+			if !exists {
+				t.Errorf("expected %s.%s to exist after migration 34", table, col)
+			}
 		}
 	}
 }

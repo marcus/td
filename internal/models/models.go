@@ -163,13 +163,16 @@ type IssueDependency struct {
 
 // WorkSession represents a multi-issue work session
 type WorkSession struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	SessionID string     `json:"session_id"`
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	StartSHA  string     `json:"start_sha,omitempty"`
-	EndSHA    string     `json:"end_sha,omitempty"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	SessionID    string     `json:"session_id"`
+	WorktreeID   string     `json:"worktree_id,omitempty"`
+	WorktreeRoot string     `json:"worktree_root,omitempty"`
+	RepoRoot     string     `json:"repo_root,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+	StartSHA     string     `json:"start_sha,omitempty"`
+	EndSHA       string     `json:"end_sha,omitempty"`
 }
 
 // IssueReview represents a recorded review event against an issue.

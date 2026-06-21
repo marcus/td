@@ -282,6 +282,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 34 {
+				if err := db.migrateWorktreeIdentity(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 34 (worktree identity): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
@@ -323,13 +333,16 @@ CREATE TABLE sessions (
     agent_pid INTEGER DEFAULT 0,
     context_id TEXT DEFAULT '',
     match_context_id TEXT DEFAULT '',
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
     last_activity DATETIME
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
-CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id, worktree_id);
 `)
 		return err
 	}
@@ -357,6 +370,10 @@ CREATE TABLE sessions_new (
     agent_type TEXT DEFAULT '',
     agent_pid INTEGER DEFAULT 0,
     context_id TEXT DEFAULT '',
+    match_context_id TEXT DEFAULT '',
+    worktree_id TEXT DEFAULT '',
+    worktree_root TEXT DEFAULT '',
+    repo_root TEXT DEFAULT '',
     previous_session_id TEXT DEFAULT '',
     started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at DATETIME,
@@ -367,7 +384,7 @@ INSERT INTO sessions_new (id, name, context_id, previous_session_id, started_at,
 DROP TABLE sessions;
 ALTER TABLE sessions_new RENAME TO sessions;
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
-CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id, worktree_id);
 `)
 	return err
 }
@@ -399,6 +416,43 @@ CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_t
 `); err != nil {
 		return fmt.Errorf("rebuild idx_sessions_branch_agent: %w", err)
 	}
+	return nil
+}
+
+// migrateWorktreeIdentity adds current checkout metadata to sessions and work
+// sessions. Existing rows keep empty values, and session lookup has a one
+// release legacy fallback for those empty-worktree rows.
+func (db *DB) migrateWorktreeIdentity() error {
+	addTextColumn := func(table, column string) error {
+		exists, err := db.columnExists(table, column)
+		if err != nil {
+			return fmt.Errorf("check %s.%s column: %w", table, column, err)
+		}
+		if exists {
+			return nil
+		}
+		if _, err := db.conn.Exec(fmt.Sprintf(
+			`ALTER TABLE %s ADD COLUMN %s TEXT DEFAULT ''`, table, column)); err != nil {
+			return fmt.Errorf("add %s.%s column: %w", table, column, err)
+		}
+		return nil
+	}
+
+	for _, table := range []string{"sessions", "work_sessions"} {
+		for _, column := range []string{"worktree_id", "worktree_root", "repo_root"} {
+			if err := addTextColumn(table, column); err != nil {
+				return err
+			}
+		}
+	}
+
+	if _, err := db.conn.Exec(`
+DROP INDEX IF EXISTS idx_sessions_branch_agent;
+CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id, worktree_id);
+`); err != nil {
+		return fmt.Errorf("rebuild idx_sessions_branch_agent: %w", err)
+	}
+
 	return nil
 }
 
