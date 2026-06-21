@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 34
+const SchemaVersion = 35
 
 const schema = `
 -- Issues table
@@ -158,6 +158,16 @@ CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid, match_context_id, worktree_id);
+
+-- Session state table for local-only current focus/work-session state
+CREATE TABLE IF NOT EXISTS session_state (
+    session_id TEXT NOT NULL,
+    worktree_id TEXT DEFAULT '',
+    focused_issue_id TEXT DEFAULT '',
+    active_work_session_id TEXT DEFAULT '',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(session_id, worktree_id)
+);
 `
 
 // BaseSchema returns the initial database schema DDL.
@@ -520,5 +530,19 @@ CREATE INDEX IF NOT EXISTS idx_issues_due_date ON issues(due_date);
 		// Handled by custom Go code in migrations.go (migrateWorktreeIdentity)
 		// using columnExists guards so re-running is safe.
 		SQL: "",
+	},
+	{
+		Version:     35,
+		Description: "Add local-only session_state table (td-3d427b)",
+		SQL: `
+CREATE TABLE IF NOT EXISTS session_state (
+    session_id TEXT NOT NULL,
+    worktree_id TEXT DEFAULT '',
+    focused_issue_id TEXT DEFAULT '',
+    active_work_session_id TEXT DEFAULT '',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(session_id, worktree_id)
+);
+`,
 	},
 }

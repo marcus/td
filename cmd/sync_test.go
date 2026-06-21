@@ -44,6 +44,12 @@ func TestSyncEntityValidatorAcceptsAllEntities(t *testing.T) {
 	}
 }
 
+func TestSyncEntityValidatorRejectsSessionState(t *testing.T) {
+	if syncEntityValidator("session_state") {
+		t.Fatal("session_state must remain local-only and out of base syncable entities")
+	}
+}
+
 func TestCopyFileNonexistentSourceReturnsNil(t *testing.T) {
 	dir := t.TempDir()
 	err := copyFile(filepath.Join(dir, "nonexistent"), filepath.Join(dir, "dest"))

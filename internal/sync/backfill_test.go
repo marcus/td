@@ -391,6 +391,14 @@ func TestBackfillOrphanEntities_MultipleEntityTypes(t *testing.T) {
 	}
 }
 
+func TestSessionStateIsNotBackfilled(t *testing.T) {
+	for _, table := range syncableTables {
+		if table.Table == "session_state" {
+			t.Fatal("session_state must remain local-only and out of sync backfill tables")
+		}
+	}
+}
+
 func TestBackfillOrphanEntities_FullRoundTrip(t *testing.T) {
 	db := setupBackfillDB(t)
 

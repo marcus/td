@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// TestSchemaVersion_At34 confirms the current schema version is 34 and that
+// TestSchemaVersion_At35 confirms the current schema version is 35 and that
 // a freshly initialized database reports that version after migrations run.
-func TestSchemaVersion_At34(t *testing.T) {
-	if SchemaVersion != 34 {
-		t.Fatalf("SchemaVersion: want 34, got %d", SchemaVersion)
+func TestSchemaVersion_At35(t *testing.T) {
+	if SchemaVersion != 35 {
+		t.Fatalf("SchemaVersion: want 35, got %d", SchemaVersion)
 	}
 
 	dir := t.TempDir()
@@ -101,6 +101,108 @@ func TestMigration34_WorktreeIdentityColumns_Present(t *testing.T) {
 				t.Errorf("expected %s.%s to exist after migration 34", table, col)
 			}
 		}
+	}
+}
+
+func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	if _, err := database.conn.Exec(`DROP TABLE session_state`); err != nil {
+		t.Fatalf("drop session_state: %v", err)
+	}
+	if err := database.setSchemaVersionInternal(34); err != nil {
+		t.Fatalf("rewind schema version: %v", err)
+	}
+	if n, err := database.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations first: %v", err)
+	} else if n != 1 {
+		t.Fatalf("RunMigrations first count: got %d want 1", n)
+	}
+	assertSessionStateTableShape(t, database)
+
+	if err := database.setSchemaVersionInternal(34); err != nil {
+		t.Fatalf("rewind schema version second: %v", err)
+	}
+	if n, err := database.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations second: %v", err)
+	} else if n != 1 {
+		t.Fatalf("RunMigrations second count: got %d want 1", n)
+	}
+	assertSessionStateTableShape(t, database)
+}
+
+func assertSessionStateTableShape(t *testing.T, database *DB) {
+	t.Helper()
+	exists, err := database.tableExists("session_state")
+	if err != nil {
+		t.Fatalf("tableExists(session_state): %v", err)
+	}
+	if !exists {
+		t.Fatal("expected session_state table to exist")
+	}
+
+	type columnInfo struct {
+		name       string
+		columnType string
+		notNull    int
+		defaultVal sql.NullString
+		pk         int
+	}
+	rows, err := database.conn.Query(`PRAGMA table_info(session_state)`)
+	if err != nil {
+		t.Fatalf("PRAGMA table_info(session_state): %v", err)
+	}
+	defer rows.Close()
+
+	columns := map[string]columnInfo{}
+	for rows.Next() {
+		var cid int
+		var c columnInfo
+		if err := rows.Scan(&cid, &c.name, &c.columnType, &c.notNull, &c.defaultVal, &c.pk); err != nil {
+			t.Fatalf("scan column: %v", err)
+		}
+		columns[c.name] = c
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+
+	want := map[string]struct {
+		columnType string
+		pk         int
+	}{
+		"session_id":             {"TEXT", 1},
+		"worktree_id":            {"TEXT", 2},
+		"focused_issue_id":       {"TEXT", 0},
+		"active_work_session_id": {"TEXT", 0},
+		"updated_at":             {"DATETIME", 0},
+	}
+	for name, w := range want {
+		got, ok := columns[name]
+		if !ok {
+			t.Errorf("session_state missing column %q", name)
+			continue
+		}
+		if got.columnType != w.columnType {
+			t.Errorf("%s type: got %q want %q", name, got.columnType, w.columnType)
+		}
+		if got.pk != w.pk {
+			t.Errorf("%s pk position: got %d want %d", name, got.pk, w.pk)
+		}
+	}
+	if columns["session_id"].notNull != 1 {
+		t.Errorf("session_id should be NOT NULL")
+	}
+	if columns["updated_at"].notNull != 1 {
+		t.Errorf("updated_at should be NOT NULL")
+	}
+	if !columns["updated_at"].defaultVal.Valid || columns["updated_at"].defaultVal.String != "CURRENT_TIMESTAMP" {
+		t.Errorf("updated_at default: got %q want CURRENT_TIMESTAMP", columns["updated_at"].defaultVal.String)
 	}
 }
 

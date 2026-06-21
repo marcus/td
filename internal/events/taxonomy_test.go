@@ -69,6 +69,7 @@ func TestNormalizeEntityType(t *testing.T) {
 		{"issue_session_histories", EntityIssueSessionHistory, true},
 
 		// Invalid
+		{"session_state", "", false},
 		{"invalid", "", false},
 		{"unknown", "", false},
 		{"", "", false},
