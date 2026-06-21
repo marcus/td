@@ -28,11 +28,31 @@ func AddFeatureGatedCommand(featureName string, command *cobra.Command) {
 	}
 }
 
+// autosyncGateOpen decides whether the autosync hooks should run for the
+// project at baseDir (td-a4c721).
+//
+// Resolution order:
+//  1. Global kill-switch (td-735875, stubbed off for now) wins — if engaged,
+//     the gate is closed.
+//  2. The sync_autosync feature flag acts as an explicit override: when set
+//     explicitly (env or project config), its value decides outright.
+//  3. Otherwise (flag unset / source=default) the per-project sync config
+//     decides — a project that is actually configured for sync autosyncs.
+func autosyncGateOpen(baseDir string) bool {
+	if globalKillSwitchOff() {
+		return false
+	}
+	if v, explicit := features.ResolveExplicit(baseDir, features.SyncAutosync.Name); explicit {
+		return v
+	}
+	return projectSyncConfigured(baseDir)
+}
+
 func runGatedSyncStartupHook(cmd *cobra.Command) {
 	if syncFeatureHooks.OnStartup == nil {
 		return
 	}
-	if !features.IsEnabled(getBaseDir(), features.SyncAutosync.Name) {
+	if !autosyncGateOpen(getBaseDir()) {
 		return
 	}
 	syncFeatureHooks.OnStartup(resolveCommandName(cmd))
@@ -42,7 +62,7 @@ func runGatedSyncMutationHook(cmd *cobra.Command) {
 	if syncFeatureHooks.OnAfterMutation == nil {
 		return
 	}
-	if !features.IsEnabled(getBaseDir(), features.SyncAutosync.Name) {
+	if !autosyncGateOpen(getBaseDir()) {
 		return
 	}
 

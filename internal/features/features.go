@@ -42,11 +42,17 @@ var (
 		Description: "Enable sync/auth CLI commands for end users",
 	}
 
-	// SyncAutosync gates startup/post-mutation/monitor autosync behavior.
+	// SyncAutosync is an explicit override for the autosync hooks. As of
+	// td-a4c721 it is no longer the primary gate: autosync fires automatically
+	// when the project is actually configured for sync (sync_state + auth). This
+	// flag only matters when set EXPLICITLY (env or project config) — an explicit
+	// true forces the hooks on, an explicit false forces them off. When unset
+	// (source=default) the per-project sync config decides. The Default stays
+	// false so an untouched config does not count as an explicit override.
 	SyncAutosync = Feature{
 		Name:        "sync_autosync",
 		Default:     false,
-		Description: "Enable background autosync hooks",
+		Description: "Explicit override for autosync hooks (default: follow per-project sync config)",
 	}
 
 	// SyncMonitorPrompt gates the monitor sync prompt UX.
@@ -150,6 +156,18 @@ func IsEnabledForProcess(name string) bool {
 		return enabled
 	}
 	return getDefault(canonical)
+}
+
+// ResolveExplicit resolves a feature and reports whether the value was set
+// explicitly (env or project config) versus falling back to the registered
+// default. explicit is true when the resolution source is "env" or "config".
+//
+// This lets callers distinguish "explicitly set false" from "unset/default" —
+// the autosync gate (td-a4c721) uses this to treat sync_autosync as an explicit
+// override rather than a primary on/off switch.
+func ResolveExplicit(baseDir, name string) (value bool, explicit bool) {
+	v, source := Resolve(baseDir, name)
+	return v, source != "default"
 }
 
 // Resolve returns the resolved feature state and the source ("env", "config", "default").

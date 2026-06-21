@@ -53,17 +53,17 @@ var SyncGateMap = []GateMapEntry{
 	{
 		Feature: SyncAutosync.Name,
 		Surface: "cmd/root.go#PersistentPreRun",
-		Notes:   "Gates startup push/pull hook",
+		Notes:   "Explicit override for startup push/pull hook (default: per-project sync config decides; td-a4c721)",
 	},
 	{
 		Feature: SyncAutosync.Name,
 		Surface: "cmd/root.go#PersistentPostRun",
-		Notes:   "Gates post-mutation autosync hook",
+		Notes:   "Explicit override for post-mutation autosync hook (default: per-project sync config decides; td-a4c721)",
 	},
 	{
 		Feature: SyncAutosync.Name,
 		Surface: "cmd/monitor.go",
-		Notes:   "Gates monitor periodic autosync loop",
+		Notes:   "Explicit override for monitor periodic autosync loop (default: per-project sync config decides; td-a4c721)",
 	},
 	{
 		Feature: SyncMonitorPrompt.Name,

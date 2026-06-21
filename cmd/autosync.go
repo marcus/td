@@ -79,6 +79,53 @@ func AutoSyncEnabled() bool {
 	return syncconfig.GetAutoSyncEnabled()
 }
 
+// projectSyncConfigured reports whether the project at baseDir is actually
+// configured for sync — i.e. it has a sync_state row with a non-empty ProjectID
+// and sync is not disabled, AND credentials are present. This is the default
+// gate for autosync (td-a4c721): a configured project autosyncs even when the
+// sync_autosync feature flag is unset.
+//
+// It must be cheap and must never error-out the calling command: any failure
+// (no base dir, DB open error, query error) is treated as "not configured" and
+// logged at debug level only.
+func projectSyncConfigured(baseDir string) bool {
+	if baseDir == "" {
+		slog.Debug("projectSyncConfigured: no base dir")
+		return false
+	}
+	if !syncconfig.IsAuthenticated() {
+		slog.Debug("projectSyncConfigured: not authenticated")
+		return false
+	}
+	database, err := db.Open(baseDir)
+	if err != nil {
+		slog.Debug("projectSyncConfigured: open db", "err", err)
+		return false
+	}
+	defer database.Close()
+
+	state, err := database.GetSyncState()
+	if err != nil {
+		slog.Debug("projectSyncConfigured: get sync state", "err", err)
+		return false
+	}
+	if state == nil || state.ProjectID == "" || state.SyncDisabled {
+		slog.Debug("projectSyncConfigured: no usable sync state")
+		return false
+	}
+	return true
+}
+
+// globalKillSwitchOff reports whether a global autosync kill-switch is engaged.
+// When true, the autosync gate short-circuits regardless of per-project config
+// or the sync_autosync override.
+//
+// Stub for now: td-735875 will implement the real global kill-switch. Until then
+// this always returns false so the gate is never globally suppressed.
+func globalKillSwitchOff() bool {
+	return false
+}
+
 // autoSyncOnce runs a push and optional pull silently. It returns the number of
 // local events that remain unsynced after the attempt (0 on any early return),
 // so callers can surface a "still pending" warning without re-opening the DB.

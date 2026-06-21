@@ -60,6 +60,57 @@ func TestIsEnabled_ProjectConfigAndEnvPrecedence(t *testing.T) {
 	}
 }
 
+func TestResolveExplicit_Default(t *testing.T) {
+	dir := t.TempDir()
+	// Unset flag: source=default, so explicit must be false.
+	value, explicit := ResolveExplicit(dir, SyncAutosync.Name)
+	if explicit {
+		t.Fatalf("unset flag should not be explicit, got explicit=%v", explicit)
+	}
+	if value != SyncAutosync.Default {
+		t.Fatalf("unset flag should resolve to default %v, got %v", SyncAutosync.Default, value)
+	}
+}
+
+func TestResolveExplicit_Env(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "true")
+	value, explicit := ResolveExplicit(dir, SyncAutosync.Name)
+	if !explicit || !value {
+		t.Fatalf("env true should be explicit=true value=true, got explicit=%v value=%v", explicit, value)
+	}
+
+	t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "false")
+	value, explicit = ResolveExplicit(dir, SyncAutosync.Name)
+	if !explicit || value {
+		t.Fatalf("env false should be explicit=true value=false, got explicit=%v value=%v", explicit, value)
+	}
+}
+
+func TestResolveExplicit_Config(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := config.SetFeatureFlag(dir, SyncAutosync.Name, false); err != nil {
+		t.Fatalf("SetFeatureFlag: %v", err)
+	}
+	value, explicit := ResolveExplicit(dir, SyncAutosync.Name)
+	if !explicit {
+		t.Fatalf("config-set flag should be explicit, got explicit=%v", explicit)
+	}
+	if value {
+		t.Fatalf("config false should resolve to false, got %v", value)
+	}
+
+	if err := config.SetFeatureFlag(dir, SyncAutosync.Name, true); err != nil {
+		t.Fatalf("SetFeatureFlag: %v", err)
+	}
+	value, explicit = ResolveExplicit(dir, SyncAutosync.Name)
+	if !explicit || !value {
+		t.Fatalf("config true should be explicit=true value=true, got explicit=%v value=%v", explicit, value)
+	}
+}
+
 func TestDisableExperimentalKillSwitch(t *testing.T) {
 	t.Setenv("TD_ENABLE_FEATURE", "sync_cli")
 	if !IsEnabledForProcess(SyncCLI.Name) {
