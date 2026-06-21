@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -26,6 +25,12 @@ var focusCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		issueID := args[0]
 
 		// Verify issue exists
@@ -35,7 +40,7 @@ var focusCmd = &cobra.Command{
 			return err
 		}
 
-		if err := config.SetFocus(baseDir, issueID); err != nil {
+		if err := database.SetFocus(scope, issueID); err != nil {
 			output.Error("failed to set focus: %v", err)
 			return err
 		}
@@ -52,7 +57,20 @@ var unfocusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
-		if err := config.ClearFocus(baseDir); err != nil {
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		if err := database.ClearFocus(scope); err != nil {
 			output.Error("failed to clear focus: %v", err)
 			return err
 		}
@@ -100,10 +118,11 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 		})
 
 		// Check for active work session
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		scope := currentStateScope(baseDir, sess)
+		wsID, _ := database.GetActiveWorkSession(scope)
 
 		// Check for any focused issue
-		focusedID, _ := config.GetFocus(baseDir)
+		focusedID, _ := database.GetFocus(scope)
 
 		needsHandoff := len(inProgress) > 0 || wsID != ""
 

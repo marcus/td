@@ -50,6 +50,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
 		reason, _ := cmd.Flags().GetString("reason")
 
@@ -109,7 +110,10 @@ Examples:
 			})
 
 			// Clear focus if this was the focused issue
-			clearFocusIfNeeded(baseDir, issueID)
+			focusedID, _ := database.GetFocus(scope)
+			if focusedID == issueID {
+				_ = database.ClearFocus(scope)
+			}
 
 			if isJSON {
 				// Re-fetch the now-open issue and emit one JSON object per id

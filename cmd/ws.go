@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/input"
@@ -46,9 +45,10 @@ var wsStartCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
 		// Check for existing active work session
-		activeWS, _ := config.GetActiveWorkSession(baseDir)
+		activeWS, _ := database.GetActiveWorkSession(scope)
 		if activeWS != "" {
 			output.Error("work session already active: %s", activeWS)
 			return fmt.Errorf("work session already active")
@@ -75,7 +75,7 @@ var wsStartCmd = &cobra.Command{
 		}
 
 		// Set as active
-		config.SetActiveWorkSession(baseDir, ws.ID)
+		_ = database.SetActiveWorkSession(scope, ws.ID)
 
 		fmt.Printf("WORK SESSION STARTED: %s\n", ws.ID)
 		fmt.Printf("Name: %s\n", name)
@@ -107,8 +107,9 @@ var wsTagCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			output.Error("no active work session. Run 'td ws start <name>' first")
 			return fmt.Errorf("no active work session")
@@ -194,8 +195,9 @@ var wsUntagCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			output.Error("no active work session")
 			return fmt.Errorf("no active work session")
@@ -234,8 +236,9 @@ var wsLogCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			output.Error("no active work session")
 			return fmt.Errorf("no active work session")
@@ -310,7 +313,13 @@ var wsCurrentCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			fmt.Println("No active work session")
 			return nil
@@ -420,8 +429,9 @@ Flags support values, stdin (-), or file (@path):
 			output.Error("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			output.Error("no active work session")
 			return fmt.Errorf("no active work session")
@@ -518,7 +528,7 @@ Flags support values, stdin (-), or file (@path):
 			}
 
 			database.UpdateWorkSession(ws)
-			config.ClearActiveWorkSession(baseDir)
+			_ = database.ClearActiveWorkSession(scope)
 		}
 
 		fmt.Printf("HANDOFF RECORDED %s\n", wsID)
@@ -570,7 +580,13 @@ var wsEndCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		wsID, _ := database.GetActiveWorkSession(scope)
 		if wsID == "" {
 			output.Error("no active work session")
 			return fmt.Errorf("no active work session")
@@ -589,7 +605,7 @@ var wsEndCmd = &cobra.Command{
 		now := time.Now()
 		ws.EndedAt = &now
 		database.UpdateWorkSession(ws)
-		config.ClearActiveWorkSession(baseDir)
+		_ = database.ClearActiveWorkSession(scope)
 
 		output.Warning("No handoff recorded for %s", wsID)
 		if len(issueIDs) > 0 {
@@ -614,7 +630,13 @@ var wsListCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		activeWS, _ := config.GetActiveWorkSession(baseDir)
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		activeWS, _ := database.GetActiveWorkSession(scope)
 
 		sessions, err := database.ListWorkSessions(20)
 		if err != nil {

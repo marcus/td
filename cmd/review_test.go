@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
@@ -21,25 +20,31 @@ func TestClearFocusIfNeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	database.Close()
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "review-clear-focus")
+	sess, scope, err := getCurrentStateSession(database, dir)
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
 
 	// Set focus on an issue
 	targetID := "td-test123"
-	if err := config.SetFocus(dir, targetID); err != nil {
+	if err := database.SetFocus(scope, targetID); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
 	}
 
 	// Verify focus is set
-	focused, _ := config.GetFocus(dir)
+	focused, _ := database.GetFocus(scope)
 	if focused != targetID {
 		t.Fatalf("Focus not set: got %q, want %q", focused, targetID)
 	}
 
 	// Clear focus with matching ID
-	clearFocusIfNeeded(dir, targetID)
+	clearFocusIfNeeded(database, dir, sess, targetID)
 
 	// Verify focus is cleared
-	focused, _ = config.GetFocus(dir)
+	focused, _ = database.GetFocus(scope)
 	if focused != "" {
 		t.Errorf("Focus not cleared: got %q, want empty", focused)
 	}
@@ -53,19 +58,25 @@ func TestClearFocusIfNeededNonMatching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	database.Close()
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "review-keep-focus")
+	sess, scope, err := getCurrentStateSession(database, dir)
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
 
 	// Set focus on an issue
 	focusedID := "td-focused"
-	if err := config.SetFocus(dir, focusedID); err != nil {
+	if err := database.SetFocus(scope, focusedID); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
 	}
 
 	// Try to clear with different ID
-	clearFocusIfNeeded(dir, "td-different")
+	clearFocusIfNeeded(database, dir, sess, "td-different")
 
 	// Focus should still be set
-	focused, _ := config.GetFocus(dir)
+	focused, _ := database.GetFocus(scope)
 	if focused != focusedID {
 		t.Errorf("Focus was incorrectly cleared: got %q, want %q", focused, focusedID)
 	}
@@ -79,13 +90,19 @@ func TestClearFocusIfNeededNoFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	database.Close()
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "review-no-focus")
+	sess, scope, err := getCurrentStateSession(database, dir)
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
 
 	// Don't set any focus, just try to clear
-	clearFocusIfNeeded(dir, "td-any")
+	clearFocusIfNeeded(database, dir, sess, "td-any")
 
 	// Should not panic or error
-	focused, _ := config.GetFocus(dir)
+	focused, _ := database.GetFocus(scope)
 	if focused != "" {
 		t.Errorf("Unexpected focus found: %q", focused)
 	}

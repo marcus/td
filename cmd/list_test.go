@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
@@ -524,7 +523,12 @@ func TestResolveListIssueFilterID(t *testing.T) {
 	}
 	defer database.Close()
 
-	if err := config.SetFocus(dir, "td-focused"); err != nil {
+	t.Setenv("TD_SESSION_ID", "list-dot-focus")
+	_, scope, err := getCurrentStateSession(database, dir)
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
+	if err := database.SetFocus(scope, "td-focused"); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
 	}
 
@@ -749,7 +753,8 @@ func TestResolveListIssueFilterIDDotUsesActiveWorkSessionEpic(t *testing.T) {
 	if err := database.CreateWorkSession(ws); err != nil {
 		t.Fatalf("CreateWorkSession failed: %v", err)
 	}
-	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+	scope := currentStateScope(dir, sess)
+	if err := database.SetActiveWorkSession(scope, ws.ID); err != nil {
 		t.Fatalf("SetActiveWorkSession failed: %v", err)
 	}
 

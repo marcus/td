@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
@@ -51,6 +50,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
 		// Check for too many in-progress issues
 		inProgress, _ := database.ListIssues(db.ListIssuesOptions{
@@ -187,7 +187,7 @@ Examples:
 
 		// Set focus to first issue if single issue, or clear if multiple
 		if len(args) == 1 && started == 1 {
-			config.SetFocus(baseDir, args[0])
+			_ = database.SetFocus(scope, args[0])
 		}
 
 		// Show git state once at the end

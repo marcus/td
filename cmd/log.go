@@ -9,7 +9,6 @@ import (
 
 	"regexp"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -61,6 +60,7 @@ Supports stdin input for multi-line messages or piped input:
 			emitErr("%v", err)
 			return err
 		}
+		scope := currentStateScope(baseDir, sess)
 
 		// Parse args to determine issue ID and message
 		var issueID string
@@ -110,7 +110,7 @@ Supports stdin input for multi-line messages or piped input:
 				issueID, _ = cmd.Flags().GetString("task")
 			}
 			if issueID == "" {
-				issueID, err = config.GetFocus(baseDir)
+				issueID, err = database.GetFocus(scope)
 				if err != nil || issueID == "" {
 					emitErr("no issue specified and no focused issue")
 					if !isJSON {
@@ -172,7 +172,7 @@ Supports stdin input for multi-line messages or piped input:
 		}
 
 		// Get active work session if any
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 
 		log := &models.Log{
 			IssueID:       issueID,

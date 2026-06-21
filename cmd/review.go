@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -17,10 +16,11 @@ import (
 )
 
 // clearFocusIfNeeded clears focus if the focused issue matches
-func clearFocusIfNeeded(baseDir, issueID string) {
-	focusedID, _ := config.GetFocus(baseDir)
+func clearFocusIfNeeded(database *db.DB, baseDir string, sess *session.Session, issueID string) {
+	scope := currentStateScope(baseDir, sess)
+	focusedID, _ := database.GetFocus(scope)
 	if focusedID == issueID {
-		config.ClearFocus(baseDir)
+		_ = database.ClearFocus(scope)
 	}
 }
 
@@ -155,7 +155,7 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	}
 
 	// Clear focus if this was the focused issue
-	clearFocusIfNeeded(baseDir, issue.ID)
+	clearFocusIfNeeded(database, baseDir, sess, issue.ID)
 
 	return SubmitReviewResult{Success: true}
 }
@@ -1015,7 +1015,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					output.Warning("add log failed: %v", err)
 				}
 
-				clearFocusIfNeeded(baseDir, issueID)
+				clearFocusIfNeeded(database, baseDir, sess, issueID)
 				if jsonOutput {
 					refetched, ferr := database.GetIssue(issueID)
 					if ferr != nil {
@@ -1206,7 +1206,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			}
 
 			// Clear focus if this was the focused issue
-			clearFocusIfNeeded(baseDir, issueID)
+			clearFocusIfNeeded(database, baseDir, sess, issueID)
 
 			if jsonOutput {
 				refetched, ferr := database.GetIssue(issueID)
@@ -1425,7 +1425,21 @@ Examples:
 
 		// If no args provided, try to use focused issue
 		if len(args) == 0 {
-			focusedID, err := config.GetFocus(baseDir)
+			database, err := db.Open(baseDir)
+			if err != nil {
+				if isJSON {
+					output.JSONError(output.ErrCodeDatabaseError, err.Error())
+				} else {
+					output.Error("%v", err)
+				}
+				return err
+			}
+			focusedID := ""
+			_, scope, err := getCurrentStateSession(database, baseDir)
+			if err == nil {
+				focusedID, err = database.GetFocus(scope)
+			}
+			database.Close()
 			if err != nil || focusedID == "" {
 				if isJSON {
 					output.JSONError(output.ErrCodeInvalidInput, "no issue specified and no focused issue")
@@ -1623,7 +1637,7 @@ Examples:
 			}
 
 			// Clear focus if this was the focused issue
-			clearFocusIfNeeded(baseDir, issueID)
+			clearFocusIfNeeded(database, baseDir, sess, issueID)
 
 			if !isJSON {
 				if !eligibility.Allowed && selfCloseException != "" {

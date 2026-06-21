@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
@@ -35,8 +34,14 @@ Examples:
 
 		// If no args, try to show current work or provide helpful suggestions
 		if len(args) == 0 {
+			_, scope, err := getCurrentStateSession(database, baseDir)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+
 			// Try focused issue first
-			focusedID, _ := config.GetFocus(baseDir)
+			focusedID, _ := database.GetFocus(scope)
 			if focusedID != "" {
 				args = []string{focusedID}
 			} else {

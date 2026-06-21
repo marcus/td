@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -22,8 +21,21 @@ var resumeCmd = &cobra.Command{
 		// Show issue details (using show command)
 		showCmd.Run(cmd, args)
 
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		_, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		// Set focus
-		_ = config.SetFocus(baseDir, args[0])
+		_ = database.SetFocus(scope, args[0])
 		fmt.Printf("FOCUSED %s\n", args[0])
 
 		return nil
@@ -63,14 +75,16 @@ var usageCmd = &cobra.Command{
 		}
 
 		// Get focused issue
-		focusedID, _ := config.GetFocus(baseDir)
+		scope := currentStateScope(baseDir, sess)
+
+		focusedID, _ := database.GetFocus(scope)
 		var focusedIssue *models.Issue
 		if focusedID != "" {
 			focusedIssue, _ = database.GetIssue(focusedID)
 		}
 
 		// Get active work session
-		wsID, _ := config.GetActiveWorkSession(baseDir)
+		wsID, _ := database.GetActiveWorkSession(scope)
 		var activeWS *models.WorkSession
 		var wsIssues []string
 		if wsID != "" {

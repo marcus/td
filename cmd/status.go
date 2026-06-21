@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -40,21 +39,22 @@ Review buckets:
 		}
 
 		jsonOutput := jsonMode(cmd)
+		scope := currentStateScope(baseDir, sess)
 
 		if jsonOutput {
-			return outputStatusJSON(database, baseDir, sess.ID)
+			return outputStatusJSON(database, baseDir, sess.ID, scope)
 		}
 
-		return outputStatusDashboard(database, baseDir, sess.ID)
+		return outputStatusDashboard(database, baseDir, sess.ID, scope)
 	},
 }
 
 // outputStatusDashboard renders a dashboard view
-func outputStatusDashboard(database *db.DB, baseDir, sessionID string) error {
+func outputStatusDashboard(database *db.DB, baseDir, sessionID string, scope db.SessionStateScope) error {
 	fmt.Printf("SESSION: %s\n\n", sessionID)
 
 	// Get focused issue
-	focusedID, _ := config.GetFocus(baseDir)
+	focusedID, _ := database.GetFocus(scope)
 	if focusedID != "" {
 		issue, err := database.GetIssue(focusedID)
 		if err == nil {
@@ -173,13 +173,13 @@ func outputStatusDashboard(database *db.DB, baseDir, sessionID string) error {
 }
 
 // outputStatusJSON outputs status in JSON format
-func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
+func outputStatusJSON(database *db.DB, baseDir, sessionID string, scope db.SessionStateScope) error {
 	result := map[string]interface{}{
 		"session": sessionID,
 	}
 
 	// Get focused issue
-	focusedID, _ := config.GetFocus(baseDir)
+	focusedID, _ := database.GetFocus(scope)
 	if focusedID != "" {
 		issue, err := database.GetIssue(focusedID)
 		if err == nil {

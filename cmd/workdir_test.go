@@ -47,9 +47,11 @@ func runGit(t *testing.T, dir string, args ...string) {
 func saveAndRestoreGlobals(t *testing.T) {
 	t.Helper()
 	origBaseDir := baseDir
+	origBaseDirOverride := baseDirOverride
 	origWorkDirFlag := workDirFlag
 	t.Cleanup(func() {
 		baseDir = origBaseDir
+		baseDirOverride = origBaseDirOverride
 		workDirFlag = origWorkDirFlag
 	})
 }

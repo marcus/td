@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -749,19 +748,24 @@ func resolveListIssueFilterID(database *db.DB, baseDir, rawID, flagName string) 
 	}
 
 	if trimmedID == "." {
-		focusedID, err := config.GetFocus(baseDir)
+		sess, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve --%s . session: %w", flagName, err)
+		}
+
+		focusedID, err := database.GetFocus(scope)
 		if err != nil {
 			return "", fmt.Errorf("resolve --%s .: %w", flagName, err)
 		}
 		if strings.TrimSpace(focusedID) == "" {
 			var resolveErr error
-			if resolvedID, err := resolveListIssueFilterFromSession(database); err == nil && resolvedID != "" {
+			if resolvedID, err := resolveListIssueFilterFromSession(database, sess.ID); err == nil && resolvedID != "" {
 				return resolvedID, nil
 			} else if err != nil {
 				resolveErr = err
 			}
 
-			if resolvedID, err := resolveListIssueFilterFromWorkSession(database, baseDir); err == nil && resolvedID != "" {
+			if resolvedID, err := resolveListIssueFilterFromWorkSession(database, scope); err == nil && resolvedID != "" {
 				return resolvedID, nil
 			} else if err != nil {
 				resolveErr = err
@@ -778,17 +782,12 @@ func resolveListIssueFilterID(database *db.DB, baseDir, rawID, flagName string) 
 	return db.NormalizeIssueID(trimmedID), nil
 }
 
-func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
-	sess, err := session.GetOrCreate(database)
-	if err != nil {
-		return "", err
-	}
-
+func resolveListIssueFilterFromSession(database *db.DB, sessionID string) (string, error) {
 	issues, err := database.ListIssues(db.ListIssuesOptions{
 		// Review-phase work still needs to resolve the epic root when the
 		// current session has already moved the issue into review.
 		Status:      []models.Status{models.StatusInProgress, models.StatusInReview},
-		Implementer: sess.ID,
+		Implementer: sessionID,
 	})
 	if err != nil {
 		return "", err
@@ -799,7 +798,7 @@ func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
 
 	// Fall back to the session's logged issue history so the dot path keeps
 	// working after review transitions have cleared the focused work item.
-	sessionLogIDs, err := database.GetIssueSessionLog(sess.ID)
+	sessionLogIDs, err := database.GetIssueSessionLog(sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -807,8 +806,8 @@ func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
 	return resolveCommonIssueRootAncestorID(database, sessionLogIDs)
 }
 
-func resolveListIssueFilterFromWorkSession(database *db.DB, baseDir string) (string, error) {
-	wsID, err := config.GetActiveWorkSession(baseDir)
+func resolveListIssueFilterFromWorkSession(database *db.DB, scope db.SessionStateScope) (string, error) {
+	wsID, err := database.GetActiveWorkSession(scope)
 	if err != nil || strings.TrimSpace(wsID) == "" {
 		return "", err
 	}

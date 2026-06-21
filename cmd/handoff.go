@@ -6,13 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/input"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
-	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -69,9 +67,22 @@ Or use flags with values, stdin (-), or file (@path):
 			}
 		}
 
+		database, err := db.Open(baseDir)
+		if err != nil {
+			emitErr("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, scope, err := getCurrentStateSession(database, baseDir)
+		if err != nil {
+			emitErr("%v", err)
+			return err
+		}
+
 		if issueArg == "" {
 			// Infer from focused issue
-			focusedID, err := config.GetFocus(baseDir)
+			focusedID, err := database.GetFocus(scope)
 			if err != nil || focusedID == "" {
 				emitErr("no issue specified and no focused issue")
 				if !isJSON {
@@ -83,19 +94,6 @@ Or use flags with values, stdin (-), or file (@path):
 		}
 
 		if err := ValidateIssueID(issueArg, "handoff <issue-id> [message]"); err != nil {
-			emitErr("%v", err)
-			return err
-		}
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			emitErr("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		sess, err := session.GetOrCreate(database)
-		if err != nil {
 			emitErr("%v", err)
 			return err
 		}
