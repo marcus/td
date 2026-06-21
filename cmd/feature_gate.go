@@ -63,19 +63,22 @@ func runGatedSyncMutationHook(cmd *cobra.Command) {
 		return
 	}
 
-	// Independent of whether the autosync hook fires below, warn (throttled) when
-	// this project is configured for sync but the gate is closed and changes are
-	// piling up — otherwise that case is totally silent. strandedSyncShouldWarn
-	// no-ops for unconfigured projects and for the gate-OPEN case (autosync owns
-	// the warning there), so this is safe to call unconditionally.
-	warnIfSyncStranded(getBaseDir())
-
-	if !autosyncGateOpen(getBaseDir()) {
+	// Skip everything for non-mutating (read-only) commands: the stranded warning
+	// and the autosync hook both only concern commands that change local data.
+	commandName := resolveCommandName(cmd)
+	if syncFeatureHooks.IsMutatingCommand != nil && !syncFeatureHooks.IsMutatingCommand(commandName) {
 		return
 	}
 
-	commandName := resolveCommandName(cmd)
-	if syncFeatureHooks.IsMutatingCommand != nil && !syncFeatureHooks.IsMutatingCommand(commandName) {
+	// Independent of whether the autosync hook fires below, warn (throttled) when
+	// this project is configured for sync but the gate is closed and changes are
+	// piling up — otherwise that case is totally silent. strandedSyncShouldWarn
+	// short-circuits with NO DB work unless the gate is closed by an explicit OFF,
+	// and no-ops for unconfigured projects and the gate-OPEN case (autosync owns
+	// the warning there), so this is safe to call here.
+	warnIfSyncStranded(getBaseDir())
+
+	if !autosyncGateOpen(getBaseDir()) {
 		return
 	}
 

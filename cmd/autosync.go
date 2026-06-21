@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	tdsync "github.com/marcus/td/internal/sync"
@@ -140,22 +141,49 @@ func globalKillSwitchOff() bool {
 // strandedSyncShouldWarn is the pure decision for the "project is configured for
 // sync but autosync is gated OFF and changes are piling up" warning. It returns
 // (true, pending) only when the project is sync-configured, the autosync gate is
-// CLOSED (kill-switch engaged or sync_autosync explicitly false), and there is at
-// least one pending event that will not be pushed.
+// CLOSED by an explicit OFF (kill-switch engaged or sync_autosync explicitly
+// false), and there is at least one pending event that will not be pushed.
 //
 // It deliberately stays silent for the gate-OPEN case: that path is autosync's
 // job and surfaces its own "not yet pushed" warning after a failed push, so
 // warning here too would double-warn. Unconfigured projects (no sync_state) are
 // the normal majority case and must never warn.
 //
-// It must be cheap (a single COUNT query) and must never error-out the calling
-// command: any failure is treated as "do not warn" and logged at debug level.
+// Performance: this runs in PersistentPostRun on EVERY command (including
+// read-only ones), so it must avoid DB work on the hot path. It first consults
+// only DB-free signals — globalKillSwitchOff() and ResolveExplicit (which read
+// env + config.json, no DB) — to decide whether the gate is closed by an
+// explicit OFF. When the flag is unset, the gate is either open-and-syncing or
+// the project is unconfigured; neither warns, so we return immediately WITHOUT
+// opening the DB. Only the genuinely-stranded (explicit-off) path opens the DB,
+// and it does so exactly once: a single handle backs both the sync-config check
+// and the pending-count query.
+//
+// It must never error-out the calling command: any failure is treated as "do
+// not warn" and logged at debug level.
 func strandedSyncShouldWarn(baseDir string) (bool, int64) {
-	if !projectSyncConfigured(baseDir) {
+	// Step 1 (no DB): the warning can only fire when the gate is closed by an
+	// explicit OFF. If neither the kill-switch nor an explicit-false flag is in
+	// play, bail before touching the DB. This is the common/hot path.
+	explicitOff := globalKillSwitchOff()
+	if !explicitOff {
+		if v, explicit := features.ResolveExplicit(baseDir, features.SyncAutosync.Name); explicit && !v {
+			explicitOff = true
+		}
+	}
+	if !explicitOff {
 		return false, 0
 	}
-	// Gate OPEN means autosync runs and owns the warning — don't double-warn.
-	if autosyncGateOpen(baseDir) {
+
+	// Step 2 (one DB open): the gate is closed by an explicit OFF. Now confirm the
+	// project is actually configured for sync and count pending events, reusing a
+	// single DB handle for both queries.
+	if baseDir == "" {
+		slog.Debug("stranded-warn: no base dir")
+		return false, 0
+	}
+	if !syncconfig.IsAuthenticated() {
+		slog.Debug("stranded-warn: not authenticated")
 		return false, 0
 	}
 
@@ -165,6 +193,16 @@ func strandedSyncShouldWarn(baseDir string) (bool, int64) {
 		return false, 0
 	}
 	defer database.Close()
+
+	state, err := database.GetSyncState()
+	if err != nil {
+		slog.Debug("stranded-warn: get sync state", "err", err)
+		return false, 0
+	}
+	if state == nil || state.ProjectID == "" || state.SyncDisabled {
+		// Unconfigured project — the normal majority case, never warn.
+		return false, 0
+	}
 
 	pending, err := database.CountPendingEvents()
 	if err != nil {
