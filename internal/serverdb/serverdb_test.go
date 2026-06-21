@@ -483,6 +483,53 @@ func TestUpdateMemberRole(t *testing.T) {
 	}
 }
 
+func TestUpdateMemberRoleCannotDemoteLastOwner(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	reader, _ := db.CreateUser("r@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+	_, _ = db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
+
+	// Sole owner cannot demote themselves, even with other (non-owner) members.
+	err := db.UpdateMemberRole(p.ID, owner.ID, RoleReader)
+	if err == nil {
+		t.Fatal("expected error demoting last owner")
+	}
+	if !strings.Contains(err.Error(), "last owner") {
+		t.Fatalf("expected last-owner error, got %v", err)
+	}
+	// Role must be unchanged after the rejected demotion.
+	m, _ := db.GetMembership(p.ID, owner.ID)
+	if m.Role != RoleOwner {
+		t.Fatalf("expected role to remain owner, got %s", m.Role)
+	}
+
+	// With a second owner, demotion is allowed.
+	if err := db.UpdateMemberRole(p.ID, reader.ID, RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpdateMemberRole(p.ID, owner.ID, RoleReader); err != nil {
+		t.Fatalf("demotion should succeed with another owner present: %v", err)
+	}
+}
+
+func TestListMembersIncludesEmail(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("owner@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	members, err := db.ListMembers(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 {
+		t.Fatalf("expected 1 member, got %d", len(members))
+	}
+	if members[0].Email != "owner@test.com" {
+		t.Fatalf("expected member email owner@test.com, got %q", members[0].Email)
+	}
+}
+
 func TestRemoveMember(t *testing.T) {
 	db := newTestDB(t)
 	owner, _ := db.CreateUser("o@test.com")

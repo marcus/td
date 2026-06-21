@@ -10,6 +10,7 @@ import (
 type Membership struct {
 	ProjectID string
 	UserID    string
+	Email     string
 	Role      string
 	InvitedBy string
 	CreatedAt time.Time
@@ -75,7 +76,10 @@ func (db *ServerDB) GetMembership(projectID, userID string) (*Membership, error)
 // ListMembers returns all members of a project.
 func (db *ServerDB) ListMembers(projectID string) ([]*Membership, error) {
 	rows, err := db.conn.Query(
-		`SELECT project_id, user_id, role, invited_by, created_at FROM memberships WHERE project_id = ? ORDER BY created_at`,
+		`SELECT m.project_id, m.user_id, u.email, m.role, m.invited_by, m.created_at
+		FROM memberships m
+		JOIN users u ON u.id = m.user_id
+		WHERE m.project_id = ? ORDER BY m.created_at`,
 		projectID,
 	)
 	if err != nil {
@@ -86,7 +90,7 @@ func (db *ServerDB) ListMembers(projectID string) ([]*Membership, error) {
 	var members []*Membership
 	for rows.Next() {
 		m := &Membership{}
-		if err := rows.Scan(&m.ProjectID, &m.UserID, &m.Role, &m.InvitedBy, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ProjectID, &m.UserID, &m.Email, &m.Role, &m.InvitedBy, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan membership: %w", err)
 		}
 		members = append(members, m)
@@ -98,21 +102,54 @@ func (db *ServerDB) ListMembers(projectID string) ([]*Membership, error) {
 }
 
 // UpdateMemberRole changes a member's role.
+// Fails if demoting the member would leave the project with no owners.
 func (db *ServerDB) UpdateMemberRole(projectID, userID, newRole string) error {
 	if !isValidRole(newRole) {
 		return fmt.Errorf("invalid role: %s", newRole)
 	}
 
-	res, err := db.conn.Exec(
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Current role, to detect an owner being demoted within the tx.
+	var currentRole string
+	err = tx.QueryRow(
+		`SELECT role FROM memberships WHERE project_id = ? AND user_id = ?`,
+		projectID, userID,
+	).Scan(&currentRole)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("membership not found")
+	}
+	if err != nil {
+		return fmt.Errorf("get membership: %w", err)
+	}
+
+	// Demoting an owner: ensure at least one other owner remains.
+	if currentRole == RoleOwner && newRole != RoleOwner {
+		var ownerCount int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM memberships WHERE project_id = ? AND role = 'owner'`,
+			projectID,
+		).Scan(&ownerCount); err != nil {
+			return fmt.Errorf("count owners: %w", err)
+		}
+		if ownerCount <= 1 {
+			return fmt.Errorf("cannot demote last owner from project")
+		}
+	}
+
+	if _, err := tx.Exec(
 		`UPDATE memberships SET role = ? WHERE project_id = ? AND user_id = ?`,
 		newRole, projectID, userID,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("update member role: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("membership not found")
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }

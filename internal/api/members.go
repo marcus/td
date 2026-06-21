@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // AddMemberRequest is the JSON body for POST /v1/projects/{id}/members.
@@ -16,6 +17,7 @@ type AddMemberRequest struct {
 type MemberResponse struct {
 	ProjectID string `json:"project_id"`
 	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
 	Role      string `json:"role"`
 	InvitedBy string `json:"invited_by"`
 	CreatedAt string `json:"created_at"`
@@ -81,6 +83,7 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, MemberResponse{
 		ProjectID: m.ProjectID,
 		UserID:    m.UserID,
+		Email:     req.Email,
 		Role:      m.Role,
 		InvitedBy: m.InvitedBy,
 		CreatedAt: m.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -103,6 +106,7 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, MemberResponse{
 			ProjectID: m.ProjectID,
 			UserID:    m.UserID,
+			Email:     m.Email,
 			Role:      m.Role,
 			InvitedBy: m.InvitedBy,
 			CreatedAt: m.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -129,6 +133,10 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.UpdateMemberRole(projectID, targetUserID, req.Role); err != nil {
+		if strings.Contains(err.Error(), "last owner") {
+			writeError(w, http.StatusConflict, "last_owner", "a project must always have at least one owner")
+			return
+		}
 		logFor(r.Context()).Error("update member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to update member")
 		return
@@ -143,6 +151,10 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	targetUserID := r.PathValue("userID")
 
 	if err := s.store.RemoveMember(projectID, targetUserID); err != nil {
+		if strings.Contains(err.Error(), "last owner") {
+			writeError(w, http.StatusConflict, "last_owner", "a project must always have at least one owner")
+			return
+		}
 		logFor(r.Context()).Error("remove member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to remove member")
 		return
