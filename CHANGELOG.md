@@ -4,6 +4,21 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.51.0] - 2026-06-20
+
+### Sessions and worktrees
+- **Current focus and active work sessions are now session/worktree scoped.** CLI and serve-mode current-state paths use the local-only `session_state` table instead of shared config-file focus, so separate agents and worktrees can keep independent current work without clobbering each other. This includes the CLI focus/log/handoff/review/work-session paths and the serve API used by embedded clients.
+- **Session identity is safer for sub-agents and alternate worktrees.** Sessions now carry worktree metadata and context-aware identity so independent agent contexts can be tracked separately while local-only fields are kept out of sync payloads.
+- **`td context`/resume reliability improved.** Resume now correctly calls the show path so context lookup returns the expected issue details.
+
+### Sync
+- **Auto-sync failures are bounded and visible.** Push retries now use a bounded backoff and warn when local changes remain pending instead of silently stranding them.
+- **`td handoff` no longer waits on a startup pull and avoids redundant pulls after failed pushes.** Handoff still records local progress and attempts the post-mutation push, but an unhealthy sync endpoint now exits after the bounded push window with a pending-sync warning instead of paying multiple network timeouts.
+- **Local-only worktree/session metadata is scrubbed from sync events and conflicts.** Worktree identity remains useful locally without leaking or conflicting across devices.
+
+### Workflow
+- **Auto-review handoffs can be synthesized from session logs.** Review submission can preserve a useful handoff trail even when an explicit handoff was missing.
+
 ## [v0.50.1] - 2026-06-20
 
 ### Sync
