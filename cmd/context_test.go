@@ -8,9 +8,13 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-// TestResumeSetsFocus tests that resume command sets focus on an issue
-func TestResumeSetsFocus(t *testing.T) {
+// TestResumeRunESetsScopedFocus tests that resume command shows an issue and sets scoped focus.
+func TestResumeRunESetsScopedFocus(t *testing.T) {
 	dir := t.TempDir()
+	setTestBaseDir(t, dir)
+	t.Setenv("TD_SESSION_ID", "resume-focus-agent")
+	setTestContext(t, "ctx-resume-focus")
+
 	database, err := db.Initialize(dir)
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
@@ -21,19 +25,37 @@ func TestResumeSetsFocus(t *testing.T) {
 		Title:  "Issue to resume",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
-
-	// Set focus via config (simulating resume command)
-	if err := config.SetFocus(dir, issue.ID); err != nil {
-		t.Fatalf("SetFocus failed: %v", err)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	// Verify focus is set
-	focused, err := config.GetFocus(dir)
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("resumeCmd.RunE panicked: %v", r)
+		}
+	}()
+	if err := resumeCmd.RunE(resumeCmd, []string{issue.ID}); err != nil {
+		t.Fatalf("resumeCmd.RunE failed: %v", err)
+	}
+
+	_, scope, err := getCurrentStateSession(database, dir)
 	if err != nil {
-		t.Logf("GetFocus error: %v", err)
-	} else if focused != issue.ID {
-		t.Errorf("Expected focus %s, got %s", issue.ID, focused)
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
+	focused, err := database.GetFocus(scope)
+	if err != nil {
+		t.Fatalf("GetFocus failed: %v", err)
+	}
+	if focused != issue.ID {
+		t.Fatalf("Expected scoped focus %s, got %s", issue.ID, focused)
+	}
+
+	legacyFocus, err := config.GetFocus(dir)
+	if err != nil {
+		t.Fatalf("legacy GetFocus failed: %v", err)
+	}
+	if legacyFocus != "" {
+		t.Fatalf("resume wrote legacy config focus %q", legacyFocus)
 	}
 }
 
@@ -70,6 +92,10 @@ func TestResumeWithInProgressIssue(t *testing.T) {
 // TestResumePreservesIssueState tests that resume doesn't modify issue state
 func TestResumePreservesIssueState(t *testing.T) {
 	dir := t.TempDir()
+	setTestBaseDir(t, dir)
+	t.Setenv("TD_SESSION_ID", "resume-preserve-agent")
+	setTestContext(t, "ctx-resume-preserve")
+
 	database, err := db.Initialize(dir)
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
@@ -84,13 +110,14 @@ func TestResumePreservesIssueState(t *testing.T) {
 		Priority:    models.PriorityP1,
 		Points:      8,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
 
 	originalStatus := issue.Status
 
-	// Resume (just sets focus)
-	if err := config.SetFocus(dir, issue.ID); err != nil {
-		t.Fatalf("SetFocus failed: %v", err)
+	if err := resumeCmd.RunE(resumeCmd, []string{issue.ID}); err != nil {
+		t.Fatalf("resumeCmd.RunE failed: %v", err)
 	}
 
 	// Verify issue state is unchanged
@@ -228,16 +255,31 @@ func TestResumeWithClosedIssue(t *testing.T) {
 // TestResumeNonexistentIssue tests resume with non-existent issue
 func TestResumeNonexistentIssue(t *testing.T) {
 	dir := t.TempDir()
+	setTestBaseDir(t, dir)
+	t.Setenv("TD_SESSION_ID", "resume-missing-agent")
+	setTestContext(t, "ctx-resume-missing")
+
 	database, err := db.Initialize(dir)
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 	defer database.Close()
 
-	// Try to get non-existent issue
-	_, err = database.GetIssue("td-nonexistent")
+	err = resumeCmd.RunE(resumeCmd, []string{"td-nonexistent"})
 	if err == nil {
-		t.Error("Expected error for non-existent issue")
+		t.Fatal("Expected resume error for non-existent issue")
+	}
+
+	_, scope, err := getCurrentStateSession(database, dir)
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
+	focused, err := database.GetFocus(scope)
+	if err != nil {
+		t.Fatalf("GetFocus failed: %v", err)
+	}
+	if focused != "" {
+		t.Fatalf("resume should not focus missing issue, got %q", focused)
 	}
 }
 

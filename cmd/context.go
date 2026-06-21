@@ -19,7 +19,12 @@ var resumeCmd = &cobra.Command{
 		baseDir := getBaseDir()
 
 		// Show issue details (using show command)
-		showCmd.Run(cmd, args)
+		if showCmd.RunE == nil {
+			return fmt.Errorf("show command is not executable")
+		}
+		if err := showCmd.RunE(showCmd, args); err != nil {
+			return err
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
