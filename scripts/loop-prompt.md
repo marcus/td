@@ -158,11 +158,17 @@ Batch review loops:
 
 ```bash
 git add <specific files>
-git commit -m "feat: <summary> (td-<id>)"
+git commit -m "feat(cli): <summary> (td-<id>)"
 td review <id>
 ```
 
 Use `td review`, not `td close` — self-closing is blocked.
+
+Commit subjects should use `type(scope)?: summary`.
+
+- Include `(td-<id>)` for task work when you have it; it is recommended, not required for every commit.
+- `(#123)` references are also accepted at the end of the subject.
+- Examples: `feat(cli): add JSON output (td-a1b2c3)`, `fix(review): preserve trailers (#91)`, `docs: clarify install-hooks behavior`
 
 ## Rules
 
@@ -174,4 +180,4 @@ Use `td review`, not `td close` — self-closing is blocked.
 - **Don't break sync.** Deterministic IDs, proper event logging, no hard deletes.
 - **Session isolation is sacred.** Don't bypass review guards.
 - **If stuck, log and skip.** `td log <id> "Blocked: <reason>"` then `td block <id>`.
-- **Commit messages reference td.** Format: `feat|fix|chore: <summary> (td-<id>)`
+- **Commit messages follow `type(scope)?: summary`.** `(td-<id>)` is recommended for task work, not required for every commit.
