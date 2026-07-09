@@ -136,6 +136,36 @@ td context td-a1b2  # Refresh context when blocker resolves
 - `td log --blocker "..."` - Log blocker
 - `td show <id>` - View details
 - `td context <id>` - Full context for resuming
+- `td focus <id>` - Set current working issue
+- `td unfocus` - Clear focus
+- `td resume <id>` - Show context and set focus
+- `td due <id> <date>` - Set due date
+- `td defer <id> <date>` - Defer until a future date
+
+### Notes
+- `td note add "title"` - Create a note
+- `td note list` - List notes
+- `td note show <id>` - Display a note
+- `td note edit <id>` - Edit a note
+- `td note delete <id>` - Delete a note
+- `td note pin <id>` / `td note unpin <id>` - Pin/unpin
+- `td note archive <id>` / `td note unarchive <id>` - Archive/unarchive
+
+### Boards
+- `td board create "name"` - Create a board
+- `td board list` - List boards
+- `td board show <name>` - Show board issues
+- `td board edit <name>` - Edit board name or query
+- `td board delete <name>` - Delete a board
+- `td board move <issue> <position>` - Set issue position
+
+### Dependencies
+- `td dep add <issue> <depends-on>` - Add dependency
+- `td dep rm <issue> <depends-on>` - Remove dependency
+- `td dep <issue>` - Show dependencies
+- `td dep <issue> --blocking` - Show reverse dependencies
+- `td blocked-by <id>` - What issues wait on this one
+- `td depends-on <id>` - What this issue depends on
 
 ### Handing Off
 - `td handoff <id> --done "..." --remaining "..."` - Single issue
@@ -154,16 +184,33 @@ td context td-a1b2  # Refresh context when blocker resolves
 - `td list` - List all
 - `td list --status in_progress` - Filter by status
 - `td block <id>` - Mark as blocked
-- `td delete <id>` - Delete
+- `td unblock <id>` - Unblock back to open
+- `td delete <id>` - Soft-delete
+- `td restore <id>` - Restore soft-deleted issue
+- `td close <id>` - Close without review
+- `td reopen <id>` - Reopen closed issue
 
 ### File Tracking
 - `td link <id> <files...>` - Track files with issue
 - `td files <id>` - Show file changes
 
-### Other
-- `td monitor` - Live dashboard
+### Work Sessions
+- `td ws start "name"` - Start work session
+- `td ws tag <id>` - Associate issues (auto-starts)
+- `td ws untag <id>` - Remove from session
+- `td ws end` - End without handoff
+- `td ws show <id>` - Past session details
+- `td ws list` - List recent sessions
+
+### Utilities
+- `td monitor` - Live TUI dashboard
 - `td session --new "name"` - Force new session
 - `td undo` - Undo last action
+- `td errors` - View failed command attempts
+- `td search "query"` - Full-text search
+- `td query "TDQ"` - Search with TDQ language
+- `td tree` - Visualize parent/child relationships
+- `td export` - Export database
 
 See [quick_reference.md](references/quick_reference.md) for full command listing.
 

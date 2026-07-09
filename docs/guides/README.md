@@ -26,7 +26,7 @@ None yet.
 
 | Guide | Skill mapping | Coverage result |
 |---|---|---|
-| `docs/guides/cli-commands-guide.md` | `td-task-management/*` | Not covered (CLI implementation internals not in skill) |
+| `docs/guides/cli-commands-guide.md` | `td-task-management/*` | Partially covered (notes, boards, deps, work sessions, utilities now in quick_reference; CLI implementation internals not in skill) |
 | `docs/guides/collaboration.md` | `td-task-management/*` | Not covered (sync auth/project/member workflows missing) |
 | `docs/guides/declarative-modal-guide.md` | `td-task-management/*` | Not covered (modal API and monitor UI internals missing) |
 | `docs/guides/lipgloss-table-guide.md` | `td-task-management/*` | Not covered (table rendering/hit-testing internals missing) |
