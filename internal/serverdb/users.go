@@ -124,7 +124,10 @@ func (db *ServerDB) SetEmailVerified(userID string) error {
 	if err != nil {
 		return fmt.Errorf("set email verified: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set email verified: rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("user not found: %s", userID)
 	}
@@ -138,7 +141,10 @@ func (db *ServerDB) SetUserAdmin(email string, isAdmin bool) error {
 	if err != nil {
 		return fmt.Errorf("set user admin: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set user admin: rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("user not found: %s", email)
 	}
