@@ -20,7 +20,7 @@ Shows which commands are used most, frequency patterns, and usage over time.
 td stats security
 ```
 
-Shows self-close exceptions (when issues were closed without proper review workflow).
+Shows review workflow exceptions, such as administrative closes or legacy creator-approval exceptions.
 
 ## Error Tracking
 
@@ -29,6 +29,8 @@ td stats errors
 ```
 
 Shows failed command attempts - useful for debugging agent issues.
+
+For filters and cleanup commands, see [Troubleshooting](./troubleshooting.md#command-error-logs).
 
 ## Monitor Stats
 
@@ -50,4 +52,4 @@ Set this environment variable to disable local analytics collection.
 
 ## Data Storage
 
-All analytics stored in local SQLite database (`.todos/db.sqlite`). Nothing leaves your machine.
+All analytics are stored in the local SQLite database (`.todos/issues.db`). Nothing leaves your machine.

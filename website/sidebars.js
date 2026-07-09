@@ -12,6 +12,7 @@ const sidebars = {
         'epics',
         'work-sessions',
         'deferral',
+        'notes',
         'file-tracking',
       ],
     },
@@ -22,6 +23,13 @@ const sidebars = {
         'monitor',
         'kanban',
         'ai-integration',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Collaboration',
+      items: [
+        'sync',
       ],
     },
     {
@@ -39,6 +47,8 @@ const sidebars = {
       items: [
         'command-reference',
         'analytics',
+        'configuration',
+        'troubleshooting',
       ],
     },
   ],

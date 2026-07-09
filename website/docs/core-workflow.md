@@ -98,13 +98,13 @@ td exposes three policy modes via `review_policy_mode`:
 
 The legacy `balanced_review_policy` flag is **deprecated**; prefer `review_policy_mode=balanced` instead. Setting the legacy flag still works but emits a one-time deprecation warning.
 
-Set the mode per-project or via env:
+Use the default `delegated` mode unless your project needs a stricter policy. For one-off commands, set the environment override:
 
 ```bash
-td feature set review_policy_mode strict   # or balanced, or delegated
-# or, one-off:
 TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 ```
+
+For a persistent project override, set `feature_string_flags.review_policy_mode` in `.todos/config.json` to `strict`, `balanced`, or `delegated`.
 
 ### Balanced (Legacy) — Creator Exception
 
