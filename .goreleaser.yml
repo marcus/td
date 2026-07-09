@@ -30,10 +30,10 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^ci:"
-      - "^chore:"
+      - "^docs(\\([^)]+\\))?:"
+      - "^test(\\([^)]+\\))?:"
+      - "^ci(\\([^)]+\\))?:"
+      - "^chore(\\([^)]+\\))?:"
 
 # Note: GoReleaser does NOT publish the Homebrew formula (there is intentionally
 # no `brews:` block). The formula in marcus/homebrew-tap builds from source (to
