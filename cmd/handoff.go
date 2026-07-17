@@ -115,6 +115,7 @@ Or use flags with values, stdin (-), or file (@path):
 		remaining, _ := cmd.Flags().GetStringArray("remaining")
 		decisions, _ := cmd.Flags().GetStringArray("decision")
 		uncertain, _ := cmd.Flags().GetStringArray("uncertain")
+		explicitInput := len(done) > 0 || len(remaining) > 0 || len(decisions) > 0 || len(uncertain) > 0
 
 		var stdinUsed bool
 		handoff.Done, stdinUsed = input.ExpandFlagValues(done, stdinUsed)
@@ -125,6 +126,7 @@ Or use flags with values, stdin (-), or file (@path):
 		// Handle --note/-n or --message/-m flag for simple handoffs
 		note, _ := cmd.Flags().GetString("note")
 		message, _ := cmd.Flags().GetString("message")
+		explicitInput = explicitInput || note != "" || message != "" || messageArg != ""
 		if note != "" {
 			handoff.Done = append(handoff.Done, note)
 		}
@@ -138,7 +140,7 @@ Or use flags with values, stdin (-), or file (@path):
 		}
 
 		// Check if stdin has data (YAML format) - only if not already used by flag expansion
-		if !stdinUsed {
+		if !stdinUsed && !explicitInput {
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
 				parseHandoffInput(handoff)

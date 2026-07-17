@@ -73,6 +73,20 @@ td approve td-a1b2 --self-review --reason "Reviewed diff myself, tests pass"
 
 The reviewer (when delegated) must be independent; the closer is recorded separately for audit. A self-review is recorded as such.
 
+## Development Approach
+
+- Be pragmatic: `td` is a focused local tool, not an enterprise platform.
+- Use worktrees for major features, risky migrations, or parallel work. Make
+  quick localized fixes on the current branch when scope and verification are
+  clear.
+- One independent review and one rejection cycle is normally enough. Continue
+  only for a genuine P0 data-loss/security finding; track other observations as
+  follow-up work.
+- Test likely failures and important boundaries, not exhaustive hypothetical
+  states without a concrete use case.
+- Surface friction after the first surprising blocker or material scope growth.
+  Pause and explain it rather than silently turning a small fix into a subsystem.
+
 ## Build & Install
 
 ```bash

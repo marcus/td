@@ -3,10 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/spf13/pflag"
 )
 
 // TestParseHandoffInputEmpty tests parsing empty input
@@ -412,6 +415,76 @@ func TestHandoffPositionalMessage(t *testing.T) {
 	// Test with 3 args (should fail)
 	if err := args(handoffCmd, []string{"a", "b", "c"}); err == nil {
 		t.Error("Expected 3 args to fail")
+	}
+}
+
+func TestHandoffFlagsDoNotReadImplicitPipeStdin(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Flag handoff", Status: models.StatusInProgress}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = reader
+	doneFlag := handoffCmd.Flags().Lookup("done")
+	doneValues, ok := doneFlag.Value.(pflag.SliceValue)
+	if !ok {
+		t.Fatal("done flag does not implement pflag.SliceValue")
+	}
+	if err := doneValues.Replace([]string{}); err != nil {
+		t.Fatalf("reset done flag: %v", err)
+	}
+	doneFlag.Changed = false
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		_ = reader.Close()
+		_ = writer.Close()
+		_ = doneValues.Replace([]string{})
+		doneFlag.Changed = false
+	})
+
+	if err := handoffCmd.Flags().Set("done", "completed work"); err != nil {
+		t.Fatalf("set done flag: %v", err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- handoffCmd.RunE(handoffCmd, []string{issue.ID})
+	}()
+
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("handoffCmd.RunE failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		_ = writer.Close() // release the old buggy stdin read before failing
+		<-result
+		t.Fatal("flag-based handoff blocked reading implicit pipe stdin")
+	}
+
+	recorded, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if recorded == nil || len(recorded.Done) != 1 || recorded.Done[0] != "completed work" {
+		t.Fatalf("unexpected handoff: %+v", recorded)
 	}
 }
 
