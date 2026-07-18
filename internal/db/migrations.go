@@ -292,6 +292,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 36 {
+				if err := db.migrateNormalizeTimestamps(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 36 (normalize timestamps): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
@@ -1505,5 +1515,155 @@ CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, a
 		return fmt.Errorf("recreate action_log indexes: %w", err)
 	}
 
+	return tx.Commit()
+}
+
+// migrateNormalizeTimestamps rewrites timestamp values that were persisted in a
+// legacy Go time.Time.String() format (with a monotonic-clock suffix and/or a
+// zone name, e.g. "2026-07-18 07:29:04.7 -0700 PDT m=+0.10") into the canonical
+// SQLite layout that the modernc driver round-trips reliably.
+//
+// Root cause: td historically opened the DB without _time_format=sqlite, so
+// modernc's default writer serialized every bound time.Time with
+// time.Time.String(). Those values are fragile-to-unparseable on read and could
+// hard-fail a scan into time.Time/sql.NullTime (e.g. session lookup).
+//
+// It scans every DATE/DATETIME/TIMESTAMP column in the database and only
+// rewrites values that look like Go String() output, leaving canonical and
+// CURRENT_TIMESTAMP values untouched. Idempotent: a second run finds nothing.
+func (db *DB) migrateNormalizeTimestamps() error {
+	tables, err := db.listTables()
+	if err != nil {
+		return fmt.Errorf("list tables: %w", err)
+	}
+	for _, table := range tables {
+		cols, err := db.datetimeColumns(table)
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", table, err)
+		}
+		for _, col := range cols {
+			if err := db.normalizeTimestampColumn(table, col); err != nil {
+				return fmt.Errorf("normalize %s.%s: %w", table, col, err)
+			}
+		}
+	}
+	return nil
+}
+
+// listTables returns the user table names in the database.
+func (db *DB) listTables() ([]string, error) {
+	rows, err := db.conn.Query(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		tables = append(tables, name)
+	}
+	return tables, rows.Err()
+}
+
+// quoteIdent quotes a SQLite identifier (table/column name) by wrapping it in
+// double quotes and doubling any embedded double quote — the correct escaping
+// for SQLite identifiers (Go's %q uses backslash escapes, which SQLite does not
+// understand). Identifiers here come from td's own schema via sqlite_master /
+// PRAGMA, but quoting correctly keeps this safe if that ever changes.
+func quoteIdent(ident string) string {
+	return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
+}
+
+// datetimeColumns returns the columns of table whose declared type is a date or
+// time type (DATE/DATETIME/TIMESTAMP).
+func (db *DB) datetimeColumns(table string) ([]string, error) {
+	rows, err := db.conn.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, quoteIdent(table)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var (
+			cid       int
+			name, typ string
+			notNull   int
+			dfltValue sql.NullString
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
+			return nil, err
+		}
+		switch strings.ToUpper(strings.TrimSpace(typ)) {
+		case "DATE", "DATETIME", "TIMESTAMP":
+			cols = append(cols, name)
+		}
+	}
+	return cols, rows.Err()
+}
+
+// normalizeTimestampColumn rewrites legacy Go-format values in one column.
+// Raw text is read via CAST(... AS TEXT) so the driver's DATETIME auto-parsing
+// (which would choke on the bad values) is bypassed. All rows are read (and the
+// cursor closed) before any write, because the pool is pinned to a single
+// connection (maxOpen=1) and a concurrent read+write would deadlock. The rewrite
+// keys on rowid, which every td table has (none are declared WITHOUT ROWID).
+func (db *DB) normalizeTimestampColumn(table, col string) error {
+	qtable, qcol := quoteIdent(table), quoteIdent(col)
+	q := fmt.Sprintf(
+		`SELECT rowid, CAST(%s AS TEXT) FROM %s WHERE %s IS NOT NULL AND %s != ''`,
+		qcol, qtable, qcol, qcol)
+	rows, err := db.conn.Query(q)
+	if err != nil {
+		return err
+	}
+
+	type fix struct {
+		rowid int64
+		value string
+	}
+	var fixes []fix
+	for rows.Next() {
+		var rowid int64
+		var raw string
+		if err := rows.Scan(&rowid, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		if !LooksLikeGoTimeString(raw) {
+			continue
+		}
+		t, ok := ParseLenientTime(raw)
+		if !ok {
+			continue
+		}
+		fixes = append(fixes, fix{rowid: rowid, value: FormatCanonicalTime(t)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	if len(fixes) == 0 {
+		return nil
+	}
+
+	// Batch the rewrites in a single transaction to avoid one fsync per row.
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	upd := fmt.Sprintf(`UPDATE %s SET %s = ? WHERE rowid = ?`, qtable, qcol)
+	for _, f := range fixes {
+		if _, err := tx.Exec(upd, f.value, f.rowid); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
 	return tx.Commit()
 }

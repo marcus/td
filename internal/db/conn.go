@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -45,10 +46,23 @@ type OpenOptions struct {
 // The pool is pinned with SetMaxOpenConns(1) unless OpenOptions.MaxOpenConns
 // is set. ReadOnly connections open with mode=ro and skip write-only pragmas.
 func OpenSQLite(path string, opts OpenOptions) (*sql.DB, error) {
-	dsn := path
+	// _time_format=sqlite makes modernc write time.Time values using the
+	// canonical "2006-01-02 15:04:05.999999999-07:00" layout, which its
+	// read-side parser round-trips reliably. Without it, modernc's default
+	// writer uses time.Time.String() — emitting a monotonic-clock suffix
+	// ("m=+...") and a zone *name* ("PDT") that cannot be parsed back into a
+	// time.Time, corrupting every timestamp column. See internal/db/timeutil.go.
+	params := []string{"_time_format=sqlite"}
 	if opts.ReadOnly {
-		dsn = path + "?mode=ro"
+		params = append(params, "mode=ro")
 	}
+	// Append params with the correct separator in case the caller already
+	// passed a URI-style path containing a query string (e.g. ":memory:?cache=shared").
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	dsn := path + sep + strings.Join(params, "&")
 
 	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {

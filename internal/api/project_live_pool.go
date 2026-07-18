@@ -267,8 +267,13 @@ func (p *ProjectLivePool) openOrBootstrap(projectID string) (*tddb.DB, error) {
 // openExistingProjectDB opens an already-initialized project.db at
 // `{projectDir}/project.db`. We bypass tddb.Open (which expects
 // `.todos/issues.db`) and use OpenSQLite directly with the same FK + WAL
-// pragma policy the td CLI uses today; the schema migration step is unneeded
-// because the file was created via tddb.Initialize during bootstrap.
+// pragma policy the td CLI uses today.
+//
+// We DO run migrations here. Additive schema migrations are indeed unneeded for
+// a file created via tddb.Initialize at the current schema version, but
+// data-repair migrations (e.g. v36 timestamp normalization) must reach a
+// project.db that was bootstrapped before the fix shipped — RunMigrations is a
+// cheap no-op (one version check) when the file is already current.
 func openExistingProjectDB(projectDir string) (*tddb.DB, error) {
 	dbPath := filepath.Join(projectDir, "project.db")
 	conn, err := tddb.OpenSQLite(dbPath, tddb.OpenOptions{})
@@ -282,7 +287,12 @@ func openExistingProjectDB(projectDir string) (*tddb.DB, error) {
 		_ = conn.Close()
 		return nil, fmt.Errorf("mkdir .todos lock dir: %w", err)
 	}
-	return tddb.NewWithConn(conn, projectDir), nil
+	database := tddb.NewWithConn(conn, projectDir)
+	if _, err := database.RunMigrations(); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("migrate project.db: %w", err)
+	}
+	return database, nil
 }
 
 // replayEvents reads every row from the project's events.db (if it exists)

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 35
+const SchemaVersion = 36
 
 const schema = `
 -- Issues table
@@ -544,5 +544,13 @@ CREATE TABLE IF NOT EXISTS session_state (
     PRIMARY KEY(session_id, worktree_id)
 );
 `,
+	},
+	{
+		Version:     36,
+		Description: "Normalize legacy Go-format timestamps to canonical SQLite layout",
+		// Handled by custom Go code in migrations.go (migrateNormalizeTimestamps).
+		// Rewrites values written by modernc's default time.Time.String() writer;
+		// idempotent and safe to re-run.
+		SQL: "",
 	},
 }

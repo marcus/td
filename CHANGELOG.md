@@ -4,6 +4,18 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.51.2] - 2026-07-18
+
+### Bug Fixes
+- **Fixed timestamp corruption that could break session lookup** (`sql: Scan error on column ... "last_activity": unsupported Scan, storing driver.Value type string into type *time.Time`). Root cause: td opened SQLite without a `_time_format` DSN param, so modernc's default writer serialized every `time.Time` with `time.Time.String()` — emitting a monotonic-clock suffix (`m=+…`) and a zone *name* (`PDT`) that the driver cannot reliably parse back. This corrupted timestamps DB-wide but only surfaced on the strict-scan session-lookup path. The fix has four parts:
+  - **Prevent:** open the DB with `_time_format=sqlite`, so all writes use the canonical `2006-01-02 15:04:05.999999999-07:00` layout that round-trips reliably.
+  - **Tolerate:** session scans now use a lenient timestamp scanner that degrades gracefully (falls back to `started_at`/zero) instead of failing the whole lookup when a value is malformed.
+  - **Repair:** a new schema migration (v36) normalizes already-corrupted timestamps across every table to the canonical layout; idempotent and safe to re-run. The repair also reaches server-side `project.db` files on open.
+  - Regression and round-trip tests included.
+
+### Internal
+- Feature-flag tests are now isolated from the developer's shell environment (`TD_FEATURE_*` / `TD_ENABLE|DISABLE_*`), so exported flags no longer cause spurious test failures.
+
 ## [v0.51.1] - 2026-07-18
 
 ### Bug Fixes

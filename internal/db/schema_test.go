@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// TestSchemaVersion_At35 confirms the current schema version is 35 and that
+// TestSchemaVersion_At36 confirms the current schema version is 36 and that
 // a freshly initialized database reports that version after migrations run.
-func TestSchemaVersion_At35(t *testing.T) {
-	if SchemaVersion != 35 {
-		t.Fatalf("SchemaVersion: want 35, got %d", SchemaVersion)
+func TestSchemaVersion_At36(t *testing.T) {
+	if SchemaVersion != 36 {
+		t.Fatalf("SchemaVersion: want 36, got %d", SchemaVersion)
 	}
 
 	dir := t.TempDir()
@@ -115,13 +115,15 @@ func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
 	if _, err := database.conn.Exec(`DROP TABLE session_state`); err != nil {
 		t.Fatalf("drop session_state: %v", err)
 	}
+	// Rewinding to 34 replays migration 35 (session_state) and migration 36
+	// (timestamp normalization), so RunMigrations reports 2.
 	if err := database.setSchemaVersionInternal(34); err != nil {
 		t.Fatalf("rewind schema version: %v", err)
 	}
 	if n, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations first: %v", err)
-	} else if n != 1 {
-		t.Fatalf("RunMigrations first count: got %d want 1", n)
+	} else if n != 2 {
+		t.Fatalf("RunMigrations first count: got %d want 2", n)
 	}
 	assertSessionStateTableShape(t, database)
 
@@ -130,8 +132,8 @@ func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
 	}
 	if n, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations second: %v", err)
-	} else if n != 1 {
-		t.Fatalf("RunMigrations second count: got %d want 1", n)
+	} else if n != 2 {
+		t.Fatalf("RunMigrations second count: got %d want 2", n)
 	}
 	assertSessionStateTableShape(t, database)
 }

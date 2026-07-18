@@ -151,22 +151,33 @@ func (db *DB) DeleteStaleSessions(before time.Time) (int64, error) {
 
 func scanSessionRow(row *sql.Row) (*SessionRow, error) {
 	var s SessionRow
-	var lastActivity sql.NullTime
+	var startedAt, lastActivity lenientTime
 	err := row.Scan(&s.ID, &s.Name, &s.Branch, &s.AgentType, &s.AgentPID,
 		&s.ContextID, &s.MatchContextID, &s.WorktreeID, &s.WorktreeRoot,
-		&s.RepoRoot, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
+		&s.RepoRoot, &s.PreviousSessionID, &startedAt, &lastActivity)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	applySessionTimes(&s, startedAt, lastActivity)
+	return &s, nil
+}
+
+// applySessionTimes assigns started_at/last_activity from lenient scans,
+// tolerating rows written by older builds in an unparseable Go time.Time.String()
+// format. A malformed last_activity falls back to started_at; a malformed
+// started_at falls back to the zero time rather than failing the whole lookup.
+func applySessionTimes(s *SessionRow, startedAt, lastActivity lenientTime) {
+	if startedAt.Valid {
+		s.StartedAt = startedAt.Time
+	}
 	if lastActivity.Valid {
 		s.LastActivity = lastActivity.Time
 	} else {
 		s.LastActivity = s.StartedAt
 	}
-	return &s, nil
 }
 
 // fileSession mirrors the JSON format of filesystem session files
@@ -300,17 +311,13 @@ func (db *DB) MigrateFileSystemSessions(baseDir string) error {
 
 func scanSessionRows(rows *sql.Rows) (*SessionRow, error) {
 	var s SessionRow
-	var lastActivity sql.NullTime
+	var startedAt, lastActivity lenientTime
 	err := rows.Scan(&s.ID, &s.Name, &s.Branch, &s.AgentType, &s.AgentPID,
 		&s.ContextID, &s.MatchContextID, &s.WorktreeID, &s.WorktreeRoot,
-		&s.RepoRoot, &s.PreviousSessionID, &s.StartedAt, &lastActivity)
+		&s.RepoRoot, &s.PreviousSessionID, &startedAt, &lastActivity)
 	if err != nil {
 		return nil, err
 	}
-	if lastActivity.Valid {
-		s.LastActivity = lastActivity.Time
-	} else {
-		s.LastActivity = s.StartedAt
-	}
+	applySessionTimes(&s, startedAt, lastActivity)
 	return &s, nil
 }
