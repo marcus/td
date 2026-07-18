@@ -36,4 +36,6 @@ data/
 api.test
 
 .DS_store
+# Nightshift plan artifacts (keep out of version control)
+.nightshift-plan
 .todos/
