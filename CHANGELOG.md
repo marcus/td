@@ -4,6 +4,11 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.51.1] - 2026-07-18
+
+### Bug Fixes
+- **`td handoff` no longer consumes stdin when explicit input is given.** When any of `--done`/`--remaining`/`--decision`/`--uncertain`/`--note`/`--message` (or a message arg) is supplied, handoff no longer also tries to read piped stdin, which could block or misparse the handoff. Regression test included.
+
 ## [v0.51.0] - 2026-06-20
 
 ### Sessions and worktrees
