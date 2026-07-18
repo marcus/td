@@ -279,6 +279,12 @@ func autoSyncOnce() int64 {
 		slog.Debug("autosync: sync disabled")
 		return 0
 	}
+	// Match explicit sync's fail-closed behavior. Backfill runs as part of the
+	// push and must never interpret corrupt table pages as legitimate entities.
+	if err := database.QuickCheck(); err != nil {
+		slog.Warn("autosync: local database integrity check failed; sync skipped", "err", err)
+		return countPendingForAutoSync(database)
+	}
 
 	slog.Debug("autosync: starting push+pull")
 
@@ -477,6 +483,9 @@ func autoSyncApplyPullBatch(database *db.DB, events []tdsync.Event, deviceID str
 
 	result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, lastSyncAt)
 	if err != nil {
+		return fmt.Errorf("apply events: %w", err)
+	}
+	if err := failedRemoteEventsError(result); err != nil {
 		return fmt.Errorf("apply events: %w", err)
 	}
 

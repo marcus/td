@@ -30,6 +30,18 @@ func newWriteLocker(baseDir string) *writeLocker {
 	}
 }
 
+// WithMaintenanceLock runs fn while holding the same cross-process lock used
+// by normal CLI writes. It is intended for database-file maintenance (such as
+// snapshot replacement) that cannot safely overlap another td writer.
+func WithMaintenanceLock(baseDir string, fn func() error) error {
+	locker := newWriteLocker(ResolveBaseDir(baseDir))
+	if err := locker.acquire(5 * time.Second); err != nil {
+		return err
+	}
+	defer func() { _ = locker.release() }()
+	return fn()
+}
+
 // acquire attempts to get an exclusive write lock with the given timeout.
 // Returns an error with diagnostic info if the lock cannot be acquired.
 func (l *writeLocker) acquire(timeout time.Duration) error {

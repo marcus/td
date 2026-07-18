@@ -105,6 +105,14 @@ var syncCmd = &cobra.Command{
 			return runSyncStatus(database, client, syncState)
 		}
 
+		// Never push or apply events from a damaged database. In particular,
+		// orphan backfill interprets corrupt table pages as real entities and can
+		// otherwise upload that garbage before the first write reports SQLITE_CORRUPT.
+		if err := database.QuickCheck(); err != nil {
+			output.Error("local database is corrupt; sync aborted before making changes: %v", err)
+			return err
+		}
+
 		// Try snapshot bootstrap on first sync
 		bootstrapped := false
 		if !pushOnly && syncState.LastPulledServerSeq == 0 {
@@ -216,56 +224,155 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	backupPath := dbPath + ".pre-snapshot-backup"
 	baseDir := database.BaseDir()
 
-	// Close current DB before overwriting
-	database.Close()
-
-	// Backup existing DB
-	if err := copyFile(dbPath, backupPath); err != nil {
-		reopened, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("backup failed (%w) and reopen failed: %v", err, reopenErr)
-		}
-		return reopened, fmt.Errorf("backup db: %w", err)
+	// Stage and fully validate the replacement before touching the live DB.
+	// A header check alone accepts snapshots with damaged b-trees or indexes.
+	staged, err := os.CreateTemp(filepath.Dir(dbPath), ".issues.snapshot-*.db")
+	if err != nil {
+		return nil, fmt.Errorf("stage snapshot: %w", err)
+	}
+	stagedPath := staged.Name()
+	defer os.Remove(stagedPath)
+	if _, err := staged.Write(snapshot.Data); err != nil {
+		staged.Close()
+		return nil, fmt.Errorf("stage snapshot: %w", err)
+	}
+	if err := staged.Sync(); err != nil {
+		staged.Close()
+		return nil, fmt.Errorf("flush staged snapshot: %w", err)
+	}
+	if err := staged.Close(); err != nil {
+		return nil, fmt.Errorf("close staged snapshot: %w", err)
+	}
+	if err := os.Chmod(stagedPath, 0o644); err != nil {
+		return nil, fmt.Errorf("set staged snapshot permissions: %w", err)
+	}
+	if err := validateSQLiteFile(stagedPath); err != nil {
+		return nil, fmt.Errorf("invalid snapshot: %w", err)
 	}
 
-	// Write snapshot
-	if err := os.WriteFile(dbPath, snapshot.Data, 0644); err != nil {
-		os.Rename(backupPath, dbPath)
+	err = db.WithMaintenanceLock(baseDir, func() error {
+		// Merge every committed WAL frame while no other cooperating td writer
+		// can enter. A busy result means another connection still has SQLite
+		// pinned; abort without touching the live generation.
+		if err := checkpointSQLiteForReplacement(database); err != nil {
+			return fmt.Errorf("prepare database replacement: %w", err)
+		}
+		if err := database.Close(); err != nil {
+			return fmt.Errorf("close database for replacement: %w", err)
+		}
+
+		if err := copyFile(dbPath, backupPath); err != nil {
+			return fmt.Errorf("backup db: %w", err)
+		}
+
+		// The last SQLite connection removes clean WAL/SHM sidecars on close. If
+		// either still exists, another connection may still reference the old
+		// inode/generation. Do not delete them and rename underneath that process;
+		// fail closed and let the user stop it before retrying.
+		if err := requireSQLiteSidecarsAbsent(dbPath); err != nil {
+			return err
+		}
+
+		if err := os.Rename(stagedPath, dbPath); err != nil {
+			return fmt.Errorf("install snapshot: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		// The original file remains installed for every failure before Rename.
 		reopened, reopenErr := db.Open(baseDir)
 		if reopenErr != nil {
-			return nil, fmt.Errorf("write failed (%w) and reopen failed: %v", err, reopenErr)
+			return nil, fmt.Errorf("replacement failed (%w) and reopen failed: %v", err, reopenErr)
 		}
-		return reopened, fmt.Errorf("write snapshot: %w", err)
+		return reopened, err
 	}
 
-	// Reopen and update sync_state
+	// Open only after releasing the maintenance lock: db.Open runs migrations,
+	// which acquire the same non-reentrant cross-process lock.
 	reopened, err := db.Open(baseDir)
 	if err != nil {
-		os.Rename(backupPath, dbPath)
-		reopened2, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("reopen failed (%w) and restore reopen failed: %v", err, reopenErr)
+		restored, restoreErr := restoreBootstrapBackup(baseDir, dbPath, backupPath)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("reopen failed (%w) and restore failed: %v", err, restoreErr)
 		}
-		return reopened2, fmt.Errorf("reopen after bootstrap: %w", err)
+		return restored, fmt.Errorf("reopen after bootstrap: %w", err)
 	}
 
-	// Use INSERT OR REPLACE since the snapshot DB may not have a sync_state row
+	// Use INSERT OR REPLACE since the snapshot may not contain sync_state.
 	_, err = reopened.Conn().Exec(
 		`INSERT OR REPLACE INTO sync_state (project_id, last_pulled_server_seq, last_pushed_action_id, last_sync_at, sync_disabled)
 		 VALUES (?, ?, 0, CURRENT_TIMESTAMP, 0)`,
 		state.ProjectID, snapshot.SnapshotSeq,
 	)
 	if err != nil {
-		reopened.Close()
-		os.Rename(backupPath, dbPath)
-		reopened2, reopenErr := db.Open(baseDir)
-		if reopenErr != nil {
-			return nil, fmt.Errorf("sync_state update failed (%w) and restore reopen failed: %v", err, reopenErr)
+		_ = reopened.Close()
+		restored, restoreErr := restoreBootstrapBackup(baseDir, dbPath, backupPath)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("sync_state update failed (%w) and restore failed: %v", err, restoreErr)
 		}
-		return reopened2, fmt.Errorf("update sync_state: %w", err)
+		return restored, fmt.Errorf("update sync_state: %w", err)
 	}
 
 	fmt.Printf("Bootstrap complete (seq %d).\n", snapshot.SnapshotSeq)
+	return reopened, nil
+}
+
+func validateSQLiteFile(path string) error {
+	conn, err := db.OpenSQLite(path, db.OpenOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	database := db.NewWithConn(conn, filepath.Dir(path))
+	defer database.Close()
+	return database.QuickCheck()
+}
+
+func checkpointSQLiteForReplacement(database *db.DB) error {
+	var busy, logFrames, checkpointedFrames int
+	if err := database.Conn().QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(
+		&busy, &logFrames, &checkpointedFrames,
+	); err != nil {
+		return fmt.Errorf("checkpoint WAL: %w", err)
+	}
+	if busy != 0 || checkpointedFrames < logFrames {
+		return fmt.Errorf("database is busy (WAL frames=%d, checkpointed=%d); retry after other td processes exit",
+			logFrames, checkpointedFrames)
+	}
+	return nil
+}
+
+func requireSQLiteSidecarsAbsent(dbPath string) error {
+	for _, suffix := range []string{"-wal", "-shm"} {
+		path := dbPath + suffix
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("refusing database replacement while %s exists; stop other td processes and retry", path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func restoreBootstrapBackup(baseDir, dbPath, backupPath string) (*db.DB, error) {
+	if err := db.WithMaintenanceLock(baseDir, func() error {
+		// Do not restore underneath a process that opened the new generation
+		// during the unlocked db.Open/update window. Preserve both files and
+		// surface the error for manual recovery instead.
+		if err := requireSQLiteSidecarsAbsent(dbPath); err != nil {
+			return err
+		}
+		if err := os.Rename(backupPath, dbPath); err != nil {
+			return fmt.Errorf("restore backup: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	// As in installation, open after releasing the non-reentrant lock.
+	reopened, err := db.Open(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("reopen restored backup: %w", err)
+	}
 	return reopened, nil
 }
 
@@ -504,6 +611,11 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 			output.Error("apply events: %v", err)
 			return err
 		}
+		if err := failedRemoteEventsError(result); err != nil {
+			tx.Rollback()
+			output.Error("apply events: %v", err)
+			return err
+		}
 
 		// Store conflict records
 		if err := storeConflicts(tx, result.Conflicts); err != nil {
@@ -569,6 +681,15 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		}
 	}
 	return nil
+}
+
+func failedRemoteEventsError(result tdsync.ApplyResult) error {
+	if len(result.Failed) == 0 {
+		return nil
+	}
+	first := result.Failed[0]
+	return fmt.Errorf("%d remote event(s) failed (first: seq=%d: %v); batch rolled back and sync cursor preserved",
+		len(result.Failed), first.ServerSeq, first.Error)
 }
 
 // storeConflicts inserts conflict records into the sync_conflicts table.
