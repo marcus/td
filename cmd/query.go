@@ -79,6 +79,19 @@ RELATIVE DATES:
   today, yesterday, this_week, last_week, this_month
   -7d (7 days ago), -2w (2 weeks ago), -1m (1 month ago)
 
+DATE COMPARISONS:
+  A date names a whole calendar day, in your local timezone:
+    created < 2026-05-09     Created before the 9th
+    created <= 2026-05-09    Created on or before the 9th (includes the 9th)
+    created > 2026-05-09     Created after the 9th (excludes the 9th)
+    created = 2026-05-09     Created on the 9th
+  An hour offset (-6h) compares to the instant instead of the day.
+  An issue with no closed date matches no closed comparison.
+
+RESULT LIMITS:
+  Results are capped at 50 by default. When the cap drops matches, td says so
+  on stderr; use -n 0 for every match.
+
 EXAMPLES:
   td query "status = open"
   td query "type = bug AND priority <= P1"
@@ -161,17 +174,24 @@ BOARDS:
 			sortBy = strings.TrimPrefix(sortBy, "-")
 		}
 
-		opts := query.ExecuteOptions{
-			Limit:    limit,
-			SortBy:   sortBy,
-			SortDesc: sortDesc,
+		maxScan, _ := cmd.Flags().GetInt("max-scan")
+		if maxScan <= 0 {
+			maxScan = query.DefaultMaxResults
 		}
 
-		results, err := query.Execute(database, queryStr, sessionID, opts)
+		opts := query.ExecuteOptions{
+			Limit:      limit,
+			SortBy:     sortBy,
+			SortDesc:   sortDesc,
+			MaxResults: maxScan,
+		}
+
+		res, err := query.ExecuteDetailed(database, queryStr, sessionID, opts)
 		if err != nil {
 			output.Error("Query error: %v", err)
 			return err
 		}
+		results := res.Issues
 
 		// Output
 		outputFormat, _ := cmd.Flags().GetString("output")
@@ -183,7 +203,8 @@ BOARDS:
 				fmt.Println(issue.ID)
 			}
 		case "count":
-			fmt.Printf("%d\n", len(results))
+			// A count must never be a silently truncated one.
+			fmt.Printf("%d\n", res.Matched)
 		default: // "table"
 			for _, issue := range results {
 				fmt.Println(output.FormatIssueShort(&issue))
@@ -192,6 +213,15 @@ BOARDS:
 
 		if len(results) == 0 && outputFormat != "count" {
 			fmt.Printf("No issues matching query\n")
+		}
+
+		// Say so whenever the output is not the whole answer. Written to stderr
+		// so machine-readable output stays clean.
+		if res.Truncated {
+			output.WarningErr("showing %d of %d matches (--limit %d; use -n 0 for all)", len(results), res.Matched, limit)
+		}
+		if res.ScanLimited {
+			output.WarningErr("only the first %d issues were scanned; anything beyond that was not considered (raise with --max-scan)", maxScan)
 		}
 
 		return nil
@@ -339,7 +369,8 @@ func init() {
 	rootCmd.AddCommand(queryCmd)
 
 	queryCmd.Flags().StringP("output", "o", "table", "Output format: table, json, ids, count")
-	queryCmd.Flags().IntP("limit", "n", 50, "Limit results")
+	queryCmd.Flags().IntP("limit", "n", 50, "Limit results (0 = no limit; truncation is reported)")
+	queryCmd.Flags().Int("max-scan", query.DefaultMaxResults, "Maximum issues to scan before filtering")
 	queryCmd.Flags().String("sort", "", "Sort by field (prefix with - for descending)")
 	queryCmd.Flags().Bool("explain", false, "Show query parsing without executing")
 	queryCmd.Flags().Bool("examples", false, "Show query examples")

@@ -499,6 +499,89 @@ func (e *Evaluator) parseRelativeOffset(s string) string {
 	}
 }
 
+// dateLiteral is a resolved date on the right-hand side of a comparison.
+// dayOnly records whether the query named a day ("2026-05-09", "today", "-7d")
+// or an instant ("-3h"), which decides the granularity of the comparison.
+type dateLiteral struct {
+	t       time.Time
+	dayOnly bool
+}
+
+// dateLiteralLayouts are the layouts a resolved date literal can take, in the
+// order they are tried. resolveDate produces the first two; the ISO forms are
+// accepted so a caller-supplied timestamp also works.
+var dateLiteralLayouts = []struct {
+	layout  string
+	dayOnly bool
+}{
+	{"2006-01-02 15:04:05", false},
+	{"2006-01-02T15:04:05Z07:00", false},
+	{"2006-01-02T15:04:05", false},
+	{"2006-01-02", true},
+}
+
+// parseDateLiteral parses an already-resolved date literal in loc.
+func parseDateLiteral(s string, loc *time.Location) (dateLiteral, bool) {
+	for _, l := range dateLiteralLayouts {
+		if t, err := time.ParseInLocation(l.layout, s, loc); err == nil {
+			return dateLiteral{t: t, dayOnly: l.dayOnly}, true
+		}
+	}
+	return dateLiteral{}, false
+}
+
+// compareDates compares a timestamp against a date literal.
+//
+// A day-granular literal compares calendar days, so `created <= 2026-05-09`
+// includes everything that happened on the 9th and `created > 2026-05-09`
+// excludes it. Comparing instants instead would make `<=` identical to `<` and
+// `>` identical to `>=`, which is a trap rather than a feature. A literal that
+// carries a time compares instants.
+func compareDates(ts time.Time, lit dateLiteral, op string) bool {
+	var cmp int
+	if lit.dayOnly {
+		cmp = compareInt(dayOrdinal(ts), dayOrdinal(lit.t))
+	} else {
+		cmp = ts.Compare(lit.t)
+	}
+
+	switch op {
+	case OpEq:
+		return cmp == 0
+	case OpNeq:
+		return cmp != 0
+	case OpLt:
+		return cmp < 0
+	case OpGt:
+		return cmp > 0
+	case OpLte:
+		return cmp <= 0
+	case OpGte:
+		return cmp >= 0
+	default:
+		return false
+	}
+}
+
+// dayOrdinal collapses a timestamp to a sortable calendar day in its own
+// offset, so two timestamps written under different UTC offsets still compare
+// by the wall-clock day the user saw.
+func dayOrdinal(t time.Time) int {
+	y, m, d := t.Date()
+	return y*10000 + int(m)*100 + d
+}
+
+func compareInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // nodeToMatcher converts a node to an in-memory matcher function
 func (e *Evaluator) nodeToMatcher(n Node) (func(models.Issue) bool, error) {
 	switch node := n.(type) {
@@ -648,10 +731,37 @@ func (e *Evaluator) compareEqual(a, b interface{}) bool {
 			return a == nil
 		}
 	}
+	// Timestamps never string-compare usefully against a date literal
+	// ("2026-05-09 12:00:00 -0700 PDT" != "2026-05-09"), so compare them as
+	// dates. A NULL timestamp matches nothing.
+	if ts, isTime := a.(time.Time); isTime {
+		lit, ok := parseDateLiteral(fmt.Sprintf("%v", b), e.location())
+		if !ok {
+			return false
+		}
+		return compareDates(ts, lit, OpEq)
+	}
 	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 }
 
 func (e *Evaluator) compareOrder(a, b interface{}, op string) bool {
+	// Date comparison: a timestamp field against a resolved date literal.
+	// Without this the values fall through to toNumber(), which turns the
+	// timestamp into a Unix second count and the literal into 0 — making every
+	// `<` false and every `>` true regardless of the dates involved.
+	if ts, isTime := a.(time.Time); isTime {
+		lit, ok := parseDateLiteral(fmt.Sprintf("%v", b), e.location())
+		if !ok {
+			return false
+		}
+		return compareDates(ts, lit, op)
+	}
+	// A NULL timestamp (e.g. closed on an open issue) matches no ordering
+	// comparison, the same way SQL treats NULL.
+	if a == nil {
+		return false
+	}
+
 	// Handle priority comparison specially
 	if priorityA, okA := a.(string); okA {
 		if priorityB, okB := b.(string); okB {
@@ -677,6 +787,16 @@ func (e *Evaluator) compareOrder(a, b interface{}, op string) bool {
 	default:
 		return false
 	}
+}
+
+// location returns the timezone date literals are interpreted in. Timestamps
+// are stored with the offset that was local when they were written, so the
+// caller's local zone is the wall clock a query means.
+func (e *Evaluator) location() *time.Location {
+	if e.ctx != nil && !e.ctx.Now.IsZero() {
+		return e.ctx.Now.Location()
+	}
+	return time.Local
 }
 
 func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bool, error) {

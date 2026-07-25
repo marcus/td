@@ -23,17 +23,40 @@ type ExecuteOptions struct {
 	MaxResults int // Max issues to process in-memory (0 = DefaultMaxResults)
 }
 
-// Execute parses and executes a TDQ query
+// ExecuteResult carries the issues a query matched plus what was left out, so a
+// caller can tell a genuinely empty result apart from a truncated one.
+type ExecuteResult struct {
+	Issues []models.Issue
+	// Matched is the number of issues that matched before Limit was applied.
+	Matched int
+	// Truncated is true when Limit dropped matches from Issues.
+	Truncated bool
+	// ScanLimited is true when the pre-filter fetch hit MaxResults, so issues
+	// beyond that cap were never examined and Matched is a lower bound.
+	ScanLimited bool
+}
+
+// Execute parses and executes a TDQ query, returning only the issues.
+// Use ExecuteDetailed when the caller needs to report truncation.
 func Execute(database QuerySource, queryStr string, sessionID string, opts ExecuteOptions) ([]models.Issue, error) {
+	res, err := ExecuteDetailed(database, queryStr, sessionID, opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.Issues, nil
+}
+
+// ExecuteDetailed parses and executes a TDQ query
+func ExecuteDetailed(database QuerySource, queryStr string, sessionID string, opts ExecuteOptions) (ExecuteResult, error) {
 	// Parse the query
 	query, err := Parse(queryStr)
 	if err != nil {
-		return nil, fmt.Errorf("parse error: %w", err)
+		return ExecuteResult{}, fmt.Errorf("parse error: %w", err)
 	}
 
 	// Validate the query
 	if errs := query.Validate(); len(errs) > 0 {
-		return nil, fmt.Errorf("validation error: %v", errs[0])
+		return ExecuteResult{}, fmt.Errorf("validation error: %v", errs[0])
 	}
 
 	// Set memory limits
@@ -66,7 +89,7 @@ func Execute(database QuerySource, queryStr string, sessionID string, opts Execu
 	}
 	issues, err := database.ListIssues(fetchOpts)
 	if err != nil {
-		return nil, fmt.Errorf("database error: %w", err)
+		return ExecuteResult{}, fmt.Errorf("database error: %w", err)
 	}
 
 	var filtered []models.Issue
@@ -75,13 +98,13 @@ func Execute(database QuerySource, queryStr string, sessionID string, opts Execu
 		// which handles both cross-entity and regular fields with correct boolean logic
 		filtered, err = applyCrossEntityFilters(database, issues, query, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("cross-entity filter error: %w", err)
+			return ExecuteResult{}, fmt.Errorf("cross-entity filter error: %w", err)
 		}
 	} else {
 		// Pure regular-field queries: use in-memory matcher (faster, no DB lookups)
 		matcher, err := evaluator.ToMatcher()
 		if err != nil {
-			return nil, fmt.Errorf("matcher error: %w", err)
+			return ExecuteResult{}, fmt.Errorf("matcher error: %w", err)
 		}
 		for _, issue := range issues {
 			if matcher(issue) {
@@ -90,12 +113,19 @@ func Execute(database QuerySource, queryStr string, sessionID string, opts Execu
 		}
 	}
 
+	res := ExecuteResult{
+		Matched:     len(filtered),
+		ScanLimited: len(issues) >= maxResults,
+	}
+
 	// Apply limit after filtering
 	if opts.Limit > 0 && len(filtered) > opts.Limit {
 		filtered = filtered[:opts.Limit]
+		res.Truncated = true
 	}
+	res.Issues = filtered
 
-	return filtered, nil
+	return res, nil
 }
 
 func applyCrossEntityFilters(database QuerySource, issues []models.Issue, query *Query, ctx *EvalContext) ([]models.Issue, error) {
@@ -125,7 +155,7 @@ func applyCrossEntityFilters(database QuerySource, issues []models.Issue, query 
 
 // crossEntityPrefetch holds pre-fetched bulk data to avoid per-issue queries
 type crossEntityPrefetch struct {
-	reworkIDs        map[string]bool
+	reworkIDs          map[string]bool
 	issuesWithOpenDeps map[string]bool
 }
 

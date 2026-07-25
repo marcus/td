@@ -4,8 +4,10 @@ package query
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/models"
 )
@@ -623,8 +625,30 @@ func validateFieldExpr(f *FieldExpr, errs *[]error) {
 			return
 		}
 		subField := parts[1]
-		if _, ok := subFields[subField]; !ok {
+		subType, ok := subFields[subField]
+		if !ok {
 			*errs = append(*errs, fmt.Errorf("unknown field: %s.%s", baseName, subField))
+			return
+		}
+		fieldType = subType
+
+		// The cross-entity matcher only implements =, !=, ~ and !~. Ordering
+		// operators used to fall through and match nothing at all, which reads
+		// as "no results" rather than "not supported". Notes are excluded:
+		// they are matched by the note evaluator, which does support ordering.
+		if baseName != "note" && isOrderingOperator(f.Operator) {
+			*errs = append(*errs, fmt.Errorf("operator %s is not supported on %s (supported: =, !=, ~, !~)",
+				f.Operator, f.Field))
+			return
+		}
+	}
+
+	// Date fields must be compared against a date. Any other value would
+	// silently match nothing, so reject it here instead.
+	if fieldType == "date" {
+		if err := validateDateOperand(f); err != nil {
+			*errs = append(*errs, err)
+			return
 		}
 	}
 
@@ -639,6 +663,64 @@ func validateFieldExpr(f *FieldExpr, errs *[]error) {
 			}
 		}
 	}
+}
+
+func isOrderingOperator(op string) bool {
+	switch op {
+	case OpLt, OpGt, OpLte, OpGte:
+		return true
+	default:
+		return false
+	}
+}
+
+// relativeOffsetRegexp matches the relative date offsets resolveDate understands
+// (-7d, +3w, 12h, ...).
+var relativeOffsetRegexp = regexp.MustCompile(`^[-+]?[0-9]+[dwmh]$`)
+
+// validateDateOperand checks that a date field is compared against something
+// that actually resolves to a date. EMPTY/NULL are allowed (they test presence),
+// and ~ / !~ are rejected because substring matching a timestamp is never what
+// the caller meant.
+func validateDateOperand(f *FieldExpr) error {
+	if sv, ok := f.Value.(*SpecialValue); ok && (sv.Type == "empty" || sv.Type == "null") {
+		return nil
+	}
+
+	switch f.Operator {
+	case OpContains, OpNotContains:
+		return fmt.Errorf("operator %s is not supported on date field %s (use =, !=, <, <=, > or >=)",
+			f.Operator, f.Field)
+	}
+
+	raw := ""
+	switch v := f.Value.(type) {
+	case *DateValue:
+		raw = v.Raw
+	case string:
+		raw = v
+	default:
+		return fmt.Errorf("%s is a date field: expected a date like 2026-05-09, today or -7d, got %v",
+			f.Field, f.Value)
+	}
+
+	if isRelativeDate(raw) {
+		switch strings.ToLower(raw) {
+		case "today", "yesterday", "this_week", "last_week", "this_month", "last_month":
+			return nil
+		}
+		if relativeOffsetRegexp.MatchString(raw) {
+			return nil
+		}
+		return fmt.Errorf("%s: %q is not a valid relative date (expected today, yesterday, this_week, last_week, this_month, last_month, or an offset like -7d/+3w/-1m/-12h)",
+			f.Field, raw)
+	}
+
+	if _, ok := parseDateLiteral(raw, time.Local); !ok {
+		return fmt.Errorf("%s is a date field: expected a date like 2026-05-09, today or -7d, got %q",
+			f.Field, raw)
+	}
+	return nil
 }
 
 func validateFunctionCall(fn *FunctionCall, errs *[]error) {
