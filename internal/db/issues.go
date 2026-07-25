@@ -54,6 +54,9 @@ type ListIssuesOptions struct {
 	SurfacingOnly      bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
 	DueSoonDays        int  // Show issues due within N days (0 = disabled)
 	ExcludeHasOpenDeps bool // Hide issues that have unresolved (non-closed) dependencies
+	// SearchActivity widens Search to also match log messages and handoff
+	// content, not just id/title/description. Set by the `td search` path.
+	SearchActivity bool
 }
 
 // CreateIssue creates a new issue WITHOUT logging to action_log.
@@ -523,6 +526,25 @@ func ReadyToCloseByFilter(sessionID, mode string) (string, []interface{}) {
 	return sql, []interface{}{models.StatusInReview}
 }
 
+// searchActivityClause matches the issue's own text plus the work recorded
+// against it — log messages and handoff content.
+//
+// The handoff fields hold marshalled JSON arrays and are written as []byte, so
+// SQLite stores them with BLOB affinity. LIKE does not coerce a BLOB operand to
+// text, so it silently never matches; CAST(... AS TEXT) is what makes the
+// substring match actually happen. See handoffSearchExpr.
+const searchActivityClause = `(
+		id LIKE ? OR title LIKE ? OR description LIKE ?
+		OR EXISTS (SELECT 1 FROM logs WHERE logs.issue_id = issues.id AND logs.message LIKE ?)
+		OR EXISTS (SELECT 1 FROM handoffs WHERE handoffs.issue_id = issues.id
+			AND ` + handoffSearchExpr + `)
+	)`
+
+// handoffSearchExpr matches a pattern against any handoff content field.
+// Takes four identical pattern arguments.
+const handoffSearchExpr = `(CAST(done AS TEXT) LIKE ? OR CAST(remaining AS TEXT) LIKE ?
+		OR CAST(decisions AS TEXT) LIKE ? OR CAST(uncertain AS TEXT) LIKE ?)`
+
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	if opts.ParentID != "" {
@@ -615,9 +637,16 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 
 	// Search filter
 	if opts.Search != "" {
-		query += " AND (id LIKE ? OR title LIKE ? OR description LIKE ?)"
 		searchPattern := "%" + opts.Search + "%"
-		args = append(args, searchPattern, searchPattern, searchPattern)
+		if opts.SearchActivity {
+			query += " AND " + searchActivityClause
+			args = append(args, searchPattern, searchPattern, searchPattern,
+				searchPattern,
+				searchPattern, searchPattern, searchPattern, searchPattern)
+		} else {
+			query += " AND (id LIKE ? OR title LIKE ? OR description LIKE ?)"
+			args = append(args, searchPattern, searchPattern, searchPattern)
+		}
 	}
 
 	// Implementer filter

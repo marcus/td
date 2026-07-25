@@ -20,8 +20,12 @@ func (db *DB) SearchIssues(query string, opts ListIssuesOptions) ([]models.Issue
 	return db.ListIssues(opts)
 }
 
-// SearchIssuesRanked performs search with relevance scoring
+// SearchIssuesRanked performs search with relevance scoring.
+// Scope is the issue's own text plus the work logged against it: logs and
+// handoff content. Matches found only in that activity rank below matches in
+// the issue's title or description.
 func (db *DB) SearchIssuesRanked(query string, opts ListIssuesOptions) ([]SearchResult, error) {
+	opts.SearchActivity = true
 	issues, err := db.SearchIssues(query, opts)
 	if err != nil {
 		return nil, err
@@ -61,6 +65,11 @@ func (db *DB) SearchIssuesRanked(query string, opts ListIssuesOptions) ([]Search
 		} else if strings.Contains(labelsLower, queryLower) {
 			score = 20
 			matchField = "labels"
+		} else {
+			// The row came back, so the match is in the issue's activity.
+			// Name which one so results say what was actually searched.
+			score = 10
+			matchField = db.activityMatchField(issue.ID, query)
 		}
 
 		results = append(results, SearchResult{
@@ -79,4 +88,28 @@ func (db *DB) SearchIssuesRanked(query string, opts ListIssuesOptions) ([]Search
 	})
 
 	return results, nil
+}
+
+// activityMatchField reports whether a match came from a log or a handoff.
+// Returns "" when neither hit, which means the caller filtered the row in for
+// some other reason.
+func (db *DB) activityMatchField(issueID, query string) string {
+	pattern := "%" + query + "%"
+
+	var found int
+	err := db.conn.QueryRow(
+		`SELECT 1 FROM logs WHERE issue_id = ? AND message LIKE ? LIMIT 1`,
+		issueID, pattern).Scan(&found)
+	if err == nil {
+		return "log"
+	}
+
+	err = db.conn.QueryRow(
+		`SELECT 1 FROM handoffs WHERE issue_id = ? AND `+handoffSearchExpr+` LIMIT 1`,
+		issueID, pattern, pattern, pattern, pattern).Scan(&found)
+	if err == nil {
+		return "handoff"
+	}
+
+	return ""
 }

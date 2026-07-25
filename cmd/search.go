@@ -10,9 +10,16 @@ import (
 )
 
 var searchCmd = &cobra.Command{
-	Use:     "search [query]",
-	Short:   "Full-text search across issues",
-	Long:    `Search title, description, logs, and handoff content.`,
+	Use:   "search [query]",
+	Short: "Full-text search across issues",
+	Long: `Search issue id, title and description, plus the work recorded against
+each issue: log messages and handoff content (done, remaining, decisions,
+uncertain).
+
+Matches found only in logs or handoffs rank below matches in the issue's own
+title or description. Use --show-score to see which field matched.
+
+Comments are not searched; use 'td query "comment.text ~ ..."' for those.`,
 	GroupID: "query",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,13 +81,20 @@ var searchCmd = &cobra.Command{
 		for _, result := range results {
 			line := output.FormatIssueShort(&result.Issue)
 			if showScore {
-				line += fmt.Sprintf(" [score:%d]", result.Score)
+				line += fmt.Sprintf(" [score:%d", result.Score)
+				if result.MatchField != "" {
+					line += " " + result.MatchField
+				}
+				line += "]"
 			}
 			fmt.Println(line)
 		}
 
 		if len(results) == 0 {
+			// State the scope, so an empty result is not read as "this text
+			// exists nowhere in td".
 			fmt.Printf("No issues matching '%s'\n", query)
+			fmt.Printf("Searched: id, title, description, logs, handoffs. Comments are not searched (try: td query \"comment.text ~ %s\")\n", query)
 		}
 
 		return nil
