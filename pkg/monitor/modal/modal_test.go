@@ -653,7 +653,7 @@ func TestGettingStartedModalButtonClick(t *testing.T) {
 	m := New("Welcome to td!", WithWidth(60), WithHints(false)).
 		AddSection(Text("Task management for AI agents.")).
 		AddSection(Spacer()).
-		AddSection(Text("Press I to install td instructions to AGENTS.md")).
+		AddSection(Text("Press I to add compact td guidance to AGENTS.md")).
 		AddSection(Spacer()).
 		AddSection(Text("PROMPT: \"Use td to plan my feature and implement it.\"")).
 		AddSection(Spacer()).

@@ -6,157 +6,86 @@ sidebar_position: 10
 
 ## Overview
 
-td is designed for AI agents. Any agent that can run shell commands can use td for structured task management -- tracking issues, logging progress, handing off between contexts, and enforcing review before close.
+td gives coding agents durable task context across conversations: current work,
+useful progress, decisions, handoffs, and reviews. Any agent that can run shell
+commands can use it.
 
 Works with: Claude Code, Cursor, OpenAI Codex, GitHub Copilot, Gemini CLI, or any agent with shell access.
 
-## Setup for Claude Code
+## Project Guidance
 
-Add to your project's `CLAUDE.md`:
+`td init` can add this compact block to `AGENTS.md`, `CLAUDE.md`, or another
+recognized agent file:
 
 ```markdown
-## MANDATORY: Use `td` for Task Management
+## Working with td
 
-Run `td usage --new-session` at conversation start (or after /clear).
+td keeps task context durable across agent sessions. At the start of a new context, run `td usage --new-session -q` to see the current work.
 
-Sessions are automatic. Optional:
-- `td session "name"` to label the current session
-- `td session --new` to force a new session
+Use your judgment about how much tracking the task needs. For substantive work, use `td start <id>`, record useful progress or decisions with `td log`, hand off unfinished work with `td handoff <id>`, and submit completed work with `td review <id>`.
 
-Use `td usage -q` after first read.
+Prefer an independent review when practical. In the default trusted mode, self-review is allowed and audited:
+
+`td approve <id> --self-review --reason "..."`
+
+Run `td usage` for workflow guidance or `td <command> --help` for details.
 ```
 
-Claude Code reads `CLAUDE.md` at the start of every conversation, so this ensures td is always used.
-
-## Setup for Other Agents
-
-Add to your system prompt or project config:
-
-```
-Run `td usage --new-session` at conversation start.
-Use td commands to track work: td start, td log, td handoff, td review.
-```
-
-The key requirement is that the agent runs `td usage --new-session` before doing any work. This gives it full context on what to do next.
+The block intentionally leaves task-level judgment to the agent. It points to
+the normal lifecycle and keeps detailed or uncommon commands in on-demand help.
 
 ## The `td usage` Command
 
-`td usage` gives the agent everything it needs in one call:
-
-- Current session info
-- Focused issue with handoff state (what was done, what remains)
-- Issues awaiting review
-- Open issues by priority
-- Workflow instructions
-
-Flags:
-- `--new-session` -- start a fresh session (use at conversation start)
-- `-q` -- quiet mode, shorter output (use after first read)
-
-## Recommended Agent Workflow
+Start a new agent context with:
 
 ```bash
-td usage --new-session     # 1. Get context at start
-td start <id>              # 2. Begin work on an issue
-td log "progress msg"      # 3. Track progress as you go
-td handoff <id> --done "..." --remaining "..."  # 4. Before stopping
-td review <id>             # 5. Submit for review
+td usage --new-session -q
 ```
 
-Steps 3-4 are critical for multi-context work. Logs and handoffs persist across context windows, so the next agent picks up exactly where you left off.
+The compact output shows current work, handoffs, reviews, and available issues.
+Run `td usage` without `-q` when the workflow overview would help.
 
-## Session Isolation for Agents
-
-Each agent instance (terminal, context window) gets a unique session ID. This ensures:
-
-- Agent A's work is reviewed by an independent session (no self-review)
-- Handoffs between contexts are explicit and trackable
-- Review history shows which session implemented, which recorded the review, and which closed
-
-Sessions are created automatically based on the agent's terminal context. You can also force a new session with `td session --new` or label the current one with `td session "name"`. **Do not start a new session mid-work just to satisfy the review rules** — it defeats the audit trail.
-
-## Multi-Agent Workflows
-
-The core guardrail is simple: you cannot review your own implementation, but you can close after an independent review has been recorded. This naturally supports multi-agent workflows:
+## Typical Workflow
 
 ```bash
-# Agent 1 implements
-td start td-a1b2
-td log "implemented feature X"
-td handoff td-a1b2 --done "Built X with tests" --remaining "Needs review"
-td review td-a1b2
-
-# Agent 2 reviews (separate session)
-td reviewable
-td approve td-a1b2    # or: td reject td-a1b2 --reason "needs fix"
+td start <id>
+td log "Implemented the parser"        # When the progress will aid continuity
+td log --decision "Preserve comments"  # When the reasoning matters later
+td handoff <id> --done "..." --remaining "..."  # When another context will continue
+td review <id>
 ```
 
-### Review Policy Modes
+Use `td ws` commands when several related issues benefit from shared logs and a
+shared handoff.
 
-td supports three review policy modes via `review_policy_mode`:
+## Reviews
 
-- `delegated` — **default for new installs.** Review attestations; any session may close after an independent review is recorded.
-- `strict` — no prior involvement allowed on the reviewer.
-- `balanced` — strict, plus a creator-approval exception. Retained for projects that explicitly opt in.
+The default `trusted` policy prefers independent review while allowing an
+explicit, audited self-review.
 
-The legacy `balanced_review_policy` flag is deprecated; prefer `review_policy_mode=balanced` instead.
-
-Pin or change the mode:
+For an independent review:
 
 ```bash
-td feature set review_policy_mode strict     # or balanced, or delegated
-# or, one-off:
-TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
+td approve <id> --reason "Reviewed diff; tests pass"
 ```
 
-### Delegated Review: Orchestrator + Sub-Agents
-
-Under `delegated`, an orchestrator coordinates work across sub-agents. The review must come from a session that did not participate in implementation, but the close may be performed by any session — so the orchestrator can finish the task once a reviewer sub-agent records approval.
+When self-review is appropriate:
 
 ```bash
-# Orchestrator creates work
-td add "Refactor auth module" --type feature
-
-# Implementer sub-agent (separate session) does the work
-td start td-c3d4
-td log "refactored auth module"
-td handoff td-c3d4 --done "refactor" --remaining "none"
-
-# Orchestrator submits for review.
-td review td-c3d4
-
-# Reviewer sub-agent (separate session) records an approval without closing
-td approve td-c3d4 --record-only --reason "Reviewed diff, tests pass"
-
-# Orchestrator, implementer, or another session closes using the recorded approval
-td approve td-c3d4 --reason "Closing after recorded independent approval"
+td approve <id> --self-review --reason "Reviewed own diff; tests pass"
 ```
 
-Important details for orchestrators:
-
-- The orchestrator does not need to own an issue role to close after approval. The reviewer must be independent; the closer is recorded separately for audit.
-- The reviewer sub-agent cannot have implementation history on the issue. Fresh reviewer sessions are the safest choice.
-- A reviewer can also record a non-approving decision: `td approve <id> --record-only --decision changes_requested --reason "fix X"`.
-- Use `td reviewable --include-approved` to surface reviewed issues the current session can close.
-
-### Balanced (Legacy): Creator Exception
-
-Under `balanced`, if your orchestrator session *created* a task but a sub-agent *implemented* it, the orchestrator can approve with a reason. This is a legacy pattern; prefer the delegated flow above when it is available.
-
-```bash
-td add "Refactor auth module"                              # orchestrator
-td start td-c3d4                                           # sub-agent
-td review td-c3d4
-td approve td-c3d4 --reason "Reviewed diff, tests pass"    # orchestrator
-```
-
-Implementation self-approval remains blocked. Creator-exception approvals are logged to the security audit trail (`td security`).
+The `--self-review` flag requires a reason and records the review accordingly.
+Projects that require a hard independence boundary can set
+`review_policy_mode=delegated` or `strict`. Delegated mode also supports
+`--record-only` review followed by closure from another session. See
+`td approve --help` for the complete policy and closure options.
 
 ## Tips
 
-- **Always start with `td usage --new-session`** -- this is the single most important instruction for any agent.
-- **Log frequently** -- short, hyper-concise messages. These survive context resets.
-- **Handoff before stopping** -- if work is incomplete, `td handoff` captures state for the next agent.
-- **Do NOT start new sessions mid-work** -- sessions track implementers. A new session mid-task looks like a bypass of the review guardrails and breaks audit trails. Use a real reviewer sub-agent instead.
-- **Orchestrators: run `td review` yourself** -- it stamps `review_requested_by_session` so you retain close permission once a reviewer sub-agent records approval.
-- **Use quiet mode after first read** -- `td usage -q` avoids repeating workflow instructions every time.
+- Keep logs concise and add them when they will help a later context.
+- Leave a handoff when work will continue elsewhere.
+- Let sessions reflect real agent contexts; do not create one merely to make a
+  review appear independent.
+- Use `td context <id>` to refresh an issue and `td <command> --help` whenever
+  the next command is unclear.

@@ -389,7 +389,7 @@ func DefaultBindings() []Binding {
 		// ============================================================
 		{Key: "H", Command: CmdOpenGettingStarted, Context: ContextMain, Description: "Open getting started guide"},
 		{Key: "H", Command: CmdOpenGettingStarted, Context: ContextBoard, Description: "Open getting started guide"},
-		{Key: "I", Command: CmdInstallInstructions, Context: ContextGettingStarted, Description: "Install agent instructions"},
+		{Key: "I", Command: CmdInstallInstructions, Context: ContextGettingStarted, Description: "Add td guidance"},
 		{Key: "esc", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
 		{Key: "q", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
 

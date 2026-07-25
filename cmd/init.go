@@ -55,7 +55,7 @@ var initCmd = &cobra.Command{
 
 		fmt.Printf("Session: %s\n", sess.ID)
 
-		// Suggest adding td usage to agent file
+		// Offer to add compact td guidance to the agent file.
 		suggestAgentFileAddition(baseDir)
 
 		return nil
@@ -91,9 +91,32 @@ func addToGitignore(path string) {
 func suggestAgentFileAddition(baseDir string) {
 	fmt.Println()
 
-	// Check all agent files for existing td instructions (dedup)
+	if outdatedPath := agent.OutdatedMarkedInstructionsFile(baseDir); outdatedPath != "" {
+		fmt.Printf("Found older td guidance in %s. Update it?\n", filepath.Base(outdatedPath))
+		fmt.Println()
+		fmt.Println("Replacement text:")
+		fmt.Println("---")
+		fmt.Print(agent.InstructionText)
+		fmt.Println("---")
+		fmt.Println()
+		fmt.Print("Update file? [y/N]: ")
+
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToLower(response))
+		if response == "y" || response == "yes" {
+			if err := agent.InstallInstructions(outdatedPath); err != nil {
+				output.Error("failed to update %s: %v", filepath.Base(outdatedPath), err)
+			} else {
+				output.Success("Updated td guidance in %s", filepath.Base(outdatedPath))
+			}
+		}
+		return
+	}
+
+	// Check all agent files for existing td guidance (dedup).
 	if agent.AnyFileHasTDInstructions(baseDir) {
-		return // Already has td instructions somewhere
+		return // Already has td guidance somewhere
 	}
 
 	// Check for existing agent files
@@ -101,7 +124,7 @@ func suggestAgentFileAddition(baseDir string) {
 
 	if foundFile != "" {
 
-		fmt.Printf("Found %s. Add td instructions?\n", filepath.Base(foundFile))
+		fmt.Printf("Found %s. Add compact td guidance?\n", filepath.Base(foundFile))
 		fmt.Println()
 		fmt.Println("Text to add:")
 		fmt.Println("---")
@@ -118,12 +141,12 @@ func suggestAgentFileAddition(baseDir string) {
 			if err := agent.InstallInstructions(foundFile); err != nil {
 				output.Error("failed to update %s: %v", filepath.Base(foundFile), err)
 			} else {
-				output.Success("Added td instructions to %s", filepath.Base(foundFile))
+				output.Success("Added td guidance to %s", filepath.Base(foundFile))
 			}
 		}
 	} else {
 		// No agent file found, just show suggestion
-		fmt.Println("Tip: Add this to your CLAUDE.md, AGENTS.md, or similar agent file:")
+		fmt.Println("Optional: add this compact td guidance to CLAUDE.md, AGENTS.md, or a similar agent file:")
 		fmt.Println()
 		fmt.Print(agent.InstructionText)
 	}

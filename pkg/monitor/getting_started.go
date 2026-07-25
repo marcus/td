@@ -21,10 +21,12 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 	md.AddSection(modal.Text("Task management for AI agents."))
 	md.AddSection(modal.Spacer())
 
-	if m.AgentFileHasTD {
-		md.AddSection(modal.Text("\u2713 Agent instructions installed"))
+	if m.AgentFileTDNeedsUpdate {
+		md.AddSection(modal.Text("Updated td guidance is available for " + fileName))
+	} else if m.AgentFileHasTD {
+		md.AddSection(modal.Text("\u2713 td guidance installed"))
 	} else {
-		md.AddSection(modal.Text("Press I to install td instructions to " + fileName))
+		md.AddSection(modal.Text("Press I to add compact td guidance to " + fileName))
 	}
 	md.AddSection(modal.Spacer())
 
@@ -35,13 +37,17 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 	md.AddSection(modal.Spacer())
 
 	// Only show Install button if not already installed
-	if m.AgentFileHasTD {
+	if m.AgentFileHasTD && !m.AgentFileTDNeedsUpdate {
 		md.AddSection(modal.Buttons(
 			modal.Btn(" Close ", "close"),
 		))
 	} else {
+		actionLabel := " [I]nstall "
+		if m.AgentFileTDNeedsUpdate {
+			actionLabel = " [I] Update "
+		}
 		md.AddSection(modal.Buttons(
-			modal.Btn(" [I]nstall ", "install"),
+			modal.Btn(actionLabel, "install"),
 			modal.Btn(" Close ", "close"),
 		))
 	}

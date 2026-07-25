@@ -3,8 +3,119 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestInstructionTextContract(t *testing.T) {
+	for _, want := range []string{
+		InstructionStartMarker,
+		InstructionVersionMarker,
+		InstructionEndMarker,
+		"td usage --new-session -q",
+		"Use your judgment",
+		"td approve <id> --self-review --reason",
+		"td <command> --help",
+	} {
+		if !strings.Contains(InstructionText, want) {
+			t.Errorf("InstructionText missing %q", want)
+		}
+	}
+
+	for _, avoid := range []string{"MANDATORY", "Do NOT", "You cannot review your own"} {
+		if strings.Contains(InstructionText, avoid) {
+			t.Errorf("InstructionText contains legacy wording %q", avoid)
+		}
+	}
+
+	if words := len(strings.Fields(InstructionBody)); words > 110 {
+		t.Errorf("InstructionBody has %d words, want at most 110", words)
+	}
+
+	if version, ok := markedInstructionsVersion(InstructionText); !ok || version != InstructionVersion {
+		t.Errorf("InstructionText version = %d, %v; want %d, true", version, ok, InstructionVersion)
+	}
+}
+
+func TestInstallInstructionsReplacesMarkedBlock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	old := "# Project\n\n" +
+		InstructionStartMarker + "\n" +
+		"<!-- td-agent-instructions:version=1 -->\n\n" +
+		"Old td guidance.\n\n" +
+		InstructionEndMarker +
+		"\n\nKeep this project-specific guidance.\n"
+	if err := os.WriteFile(path, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallInstructions(path); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	if strings.Count(text, InstructionStartMarker) != 1 {
+		t.Fatalf("start marker count = %d, want 1", strings.Count(text, InstructionStartMarker))
+	}
+	if !strings.Contains(text, InstructionVersionMarker) {
+		t.Fatal("updated guidance is missing current version marker")
+	}
+	if strings.Contains(text, "Old td guidance.") {
+		t.Fatal("old marked guidance was not replaced")
+	}
+	if !strings.Contains(text, "Keep this project-specific guidance.") {
+		t.Fatal("project-specific guidance was not preserved")
+	}
+}
+
+func TestOutdatedMarkedInstructionsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	old := InstructionStartMarker + "\n" +
+		"<!-- td-agent-instructions:version=1 -->\n" +
+		"Old guidance\n" +
+		InstructionEndMarker + "\n"
+	if err := os.WriteFile(path, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := OutdatedMarkedInstructionsFile(dir); got != path {
+		t.Fatalf("OutdatedMarkedInstructionsFile = %q, want %q", got, path)
+	}
+
+	if err := InstallInstructions(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := OutdatedMarkedInstructionsFile(dir); got != "" {
+		t.Fatalf("updated guidance still reported as outdated: %q", got)
+	}
+
+	future := InstructionStartMarker + "\n" +
+		"<!-- td-agent-instructions:version=3 -->\n" +
+		"Future guidance\n" +
+		InstructionEndMarker + "\n"
+	if err := os.WriteFile(path, []byte(future), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := OutdatedMarkedInstructionsFile(dir); got != "" {
+		t.Fatalf("newer guidance must not be offered as an update: %q", got)
+	}
+	if err := InstallInstructions(path); err == nil {
+		t.Fatal("installing over newer guidance should return an error")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != future {
+		t.Fatal("installing over newer guidance changed its contents")
+	}
+}
 
 func TestKnownAgentFiles(t *testing.T) {
 	expected := []string{

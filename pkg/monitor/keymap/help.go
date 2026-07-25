@@ -141,7 +141,7 @@ func (r *Registry) GenerateHelp() string {
 	sb.WriteString("\nGETTING STARTED:\n")
 	gettingStartedBindings := []HelpBinding{
 		{Keys: "H", Description: "Open getting started guide"},
-		{Keys: "I", Description: "Install td instructions to agent file"},
+		{Keys: "I", Description: "Add td guidance to agent file"},
 	}
 	for _, b := range gettingStartedBindings {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
@@ -425,7 +425,7 @@ func CommandHelp(cmd Command) string {
 	case CmdOpenGettingStarted:
 		return "Open the getting started guide"
 	case CmdInstallInstructions:
-		return "Install td instructions to agent file"
+		return "Add td guidance to agent file"
 	default:
 		return string(cmd)
 	}

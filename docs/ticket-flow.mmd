@@ -76,21 +76,25 @@ sequenceDiagram
     TD-->>User: Issue submitted for review
 
     Note over User,Git: NEW SESSION STARTS
-    User->>TD: td usage --new-session
+    User->>TD: td usage --new-session -q
     TD->>Session: Create new session ID
     TD->>TD: Query issues in_review
     TD-->>User: Show reviewable issues
 
     Note over User,Git: REVIEW: APPROVE PATH
-    User->>TD: td approve td-abc123 [-m "reason"]
-    TD->>Session: Verify different session than implementer
-    alt Same session as implementer
-        TD-->>User: Error: cannot self-review
-    else Different session
+    User->>TD: td approve td-abc123 [--self-review --reason "..."]
+    TD->>Session: Determine independent or acknowledged self-review
+    alt Independent reviewer
         TD->>Issue: Set status: closed
         TD->>Issue: Set closed_at timestamp
         TD->>Issue: Record approval reason
         TD-->>User: Issue approved and closed
+    else Same session with --self-review and reason (trusted)
+        TD->>Issue: Record audited self-review
+        TD->>Issue: Set status: closed
+        TD-->>User: Issue self-reviewed and closed
+    else Same session without acknowledgement
+        TD-->>User: Show independent-review and --self-review options
     end
 
     Note over User,Git: REVIEW: REJECT PATH

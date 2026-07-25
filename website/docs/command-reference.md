@@ -57,13 +57,16 @@ The `--defer` and `--due` flags are also available on `td create` and `td update
 | Invocation | Effect |
 |------------|--------|
 | `td approve <id>` | Direct reviewer-close: caller must be an eligible reviewer with no active approval recorded |
-| `td approve <id> --record-only --reason "..."` | Record an approval review without closing. Caller must be an eligible reviewer |
-| `td approve <id> --record-only --decision changes_requested --reason "..."` | Record a non-approving review |
+| `td approve <id> --record-only --reason "..."` | In delegated mode, record an approval review without closing. Caller must be an eligible reviewer |
+| `td approve <id> --record-only --decision changes_requested --reason "..."` | In delegated mode, record a non-approving review |
 | `td approve <id> --reason "..."` (with existing approval) | Close using a recorded approval. Any session may close; non-reviewer closes require `--reason` |
 
 `td reviewable --include-approved` surfaces reviewed issues the current session can close — useful for orchestrators that delegated review to a sub-agent.
 
-Under `strict` and `balanced` modes, `--record-only` and `--decision` are unavailable; `td approve` performs a review-and-close in one step.
+`--record-only` and `--decision` are available only in `delegated` mode. In
+`trusted`, `strict`, and `balanced`, an independent `td approve` performs review
+and close in one step; trusted mode also supports explicit self-review with
+`--self-review --reason`.
 
 ## Agent-Safe Rich Text Input
 

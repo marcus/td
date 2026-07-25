@@ -1396,14 +1396,13 @@ Supports bulk operations:
 var closeCmd = &cobra.Command{
 	Use:     "close [issue-id...]",
 	Aliases: []string{"done", "complete"},
-	Short:   "Admin close: duplicates, won't-fix, cleanup (NOT for reviewed work)",
+	Short:   "Admin close for duplicates, won't-fix, or cleanup",
 	Long: `Closes the issue(s) directly. Admin-only scope: duplicates, won't-fix,
 or cleanup of never-implemented issues.
 
-DO NOT use 'td close' to finish reviewed implementation work. Reviewed work
-must flow through 'td review' -> 'td approve' so an independent review is
-recorded. An independent review is required; the close may be delegated to
-any session via 'td approve'.
+Use 'td review' -> 'td approve' to finish implemented work so its review path
+is recorded. Independent review is preferred; default trusted mode also allows
+an explicit, audited 'td approve --self-review --reason "..."'.
 
 Under review_policy_mode=delegated:
   - in_review issues cannot be closed via 'td close'; use 'td approve' instead.

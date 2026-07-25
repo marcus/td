@@ -660,15 +660,16 @@ type OpenIssueByIDMsg struct {
 
 // FirstRunCheckMsg carries the result of checking for first-time user setup.
 type FirstRunCheckMsg struct {
-	IsFirstRun      bool   // true if should show getting started modal
-	AgentFilePath   string // detected file path (may be empty)
-	HasInstructions bool   // true if agent file already has td instructions
+	IsFirstRun              bool   // true if should show getting started modal
+	AgentFilePath           string // detected file path (may be empty)
+	HasInstructions         bool   // true if an agent file already has td guidance
+	NeedsInstructionsUpdate bool   // true if a marked td block has an older version
 }
 
-// InstallInstructionsResultMsg carries the result of installing agent instructions.
+// InstallInstructionsResultMsg carries the result of installing agent guidance.
 type InstallInstructionsResultMsg struct {
 	Success bool
-	Message string // e.g. "Added td instructions to AGENTS.md"
+	Message string // e.g. "Added td guidance to AGENTS.md"
 }
 
 // SyncPromptDataMsg carries fetched sync projects for the sync prompt modal.

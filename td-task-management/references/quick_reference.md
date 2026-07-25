@@ -3,8 +3,8 @@
 ## Common Commands
 
 ### Getting Started
-- `td usage` - See current state, pending reviews, and next steps
-- `td usage -q` - Compact view (use after first read)
+- `td usage --new-session -q` - Start a new agent context with compact current state
+- `td usage` - See current state with workflow guidance
 - `td init` - Initialize td in a new project
 
 ### Single-Issue Workflow
@@ -13,9 +13,10 @@
 - `td log "message"` - Track progress
 - `td log --decision "chose X because Y"` - Log a decision
 - `td log --blocker "stuck on X"` - Log a blocker
-- `td handoff <id> --done "..." --remaining "..."` - Capture state before context ends
+- `td handoff <id> --done "..." --remaining "..."` - Capture state for another context
 - `td review <id>` - Submit for review
-- `td approve <id>` - Approve (different session only)
+- `td approve <id> --reason "..."` - Approve an independent review
+- `td approve <id> --self-review --reason "..."` - Record a trusted-mode self-review
 - `td reject <id> --reason "..."` - Reject back to author
 
 ### Multi-Issue Workflow
@@ -60,8 +61,8 @@ open → in_progress → in_review → closed
 
 ## Key Concepts
 
-**Sessions** - Every terminal/context gets an auto ID. Session that starts work ≠ session that reviews.
+**Sessions** - Every terminal/context gets an auto ID so implementation and review remain attributable.
 
 **Work Sessions (ws)** - Optional container for grouping related issues. Useful for agents handling multiple issues.
 
-**Handoffs** - Critical for agent handoffs. Use `--done`, `--remaining`, `--decision`, `--uncertain` to pass structured state.
+**Handoffs** - Use `--done`, `--remaining`, `--decision`, and `--uncertain` when another context will continue the work.

@@ -2349,12 +2349,12 @@ func (m Model) handleBoardPickerAction(action string) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// installAgentInstructions installs td instructions to the agent file
+// installAgentInstructions installs compact td guidance to the agent file.
 func (m Model) installAgentInstructions() (Model, tea.Cmd) {
 	return m, m.doInstallInstructions()
 }
 
-// doInstallInstructions returns a command that installs agent instructions
+// doInstallInstructions returns a command that installs agent guidance.
 func (m Model) doInstallInstructions() tea.Cmd {
 	return func() tea.Msg {
 		targetPath := m.AgentFilePath
@@ -2372,7 +2372,7 @@ func (m Model) doInstallInstructions() tea.Cmd {
 		}
 		return InstallInstructionsResultMsg{
 			Success: true,
-			Message: "Added td instructions to " + filepath.Base(targetPath),
+			Message: "Added td guidance to " + filepath.Base(targetPath),
 		}
 	}
 }
@@ -2380,7 +2380,11 @@ func (m Model) doInstallInstructions() tea.Cmd {
 // checkFirstRun returns a command that checks if this is a first-time run
 func (m Model) checkFirstRun() tea.Cmd {
 	return func() tea.Msg {
-		agentPath := agent.DetectAgentFile(m.BaseDir)
+		outdatedPath := agent.OutdatedMarkedInstructionsFile(m.BaseDir)
+		agentPath := outdatedPath
+		if agentPath == "" {
+			agentPath = agent.DetectAgentFile(m.BaseDir)
+		}
 		hasTD := agent.AnyFileHasTDInstructions(m.BaseDir)
 		// Suppress the modal once it has been shown in this project, even if the
 		// user declined to install instructions. This keeps td from re-prompting
@@ -2388,9 +2392,10 @@ func (m Model) checkFirstRun() tea.Cmd {
 		seen, _ := config.GetGettingStartedSeen(m.BaseDir)
 
 		return FirstRunCheckMsg{
-			IsFirstRun:      !seen && !hasTD, // Show only on the first open of a project without instructions
-			AgentFilePath:   agentPath,
-			HasInstructions: hasTD,
+			IsFirstRun:              !seen && !hasTD, // Show only on the first open of a project without instructions
+			AgentFilePath:           agentPath,
+			HasInstructions:         hasTD,
+			NeedsInstructionsUpdate: outdatedPath != "",
 		}
 	}
 }

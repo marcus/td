@@ -86,13 +86,20 @@ td approve td-a1b2                # Approve and close
 td reject td-a1b2 --reason "Missing error handling"  # Back to open
 ```
 
-**You cannot review your own implementation, but you can close after an independent review has been recorded.** An independent review is required; the close itself may be delegated to any session.
+Independent review is preferred when practical. In the default `trusted` mode,
+an implementer may instead acknowledge and record a self-review:
+
+```bash
+td approve td-a1b2 --self-review --reason "Reviewed own diff; tests pass"
+```
 
 ### Review Policy Modes
 
-td exposes three policy modes via `review_policy_mode`:
+td exposes four policy modes via `review_policy_mode`:
 
-- `delegated` — review attestations with delegated close. **Default for new installs.** Reviewer independence is enforced; any session may perform the final close once an independent approval review has been recorded.
+- `trusted` — **default for new installs.** Prefers independent review and
+  permits explicit, audited self-review with `--self-review --reason`.
+- `delegated` — review attestations with delegated close. Reviewer independence is enforced; any session may perform the final close once an independent approval review has been recorded.
 - `strict` — no prior involvement allowed on the reviewer at all. Preserved for orchestrators that want the legacy close-time session lock.
 - `balanced` — strict, plus a creator-approval exception (see below). Retained for projects that explicitly opt in.
 
@@ -101,7 +108,7 @@ The legacy `balanced_review_policy` flag is **deprecated**; prefer `review_polic
 Set the mode per-project or via env:
 
 ```bash
-td feature set review_policy_mode strict   # or balanced, or delegated
+td feature set review_policy_mode strict   # or trusted, delegated, balanced
 # or, one-off:
 TD_FEATURE_REVIEW_POLICY_MODE=strict td approve td-a1b2
 ```
@@ -177,14 +184,21 @@ Rejection sends an issue back to `in_progress` with a reason attached, so the im
 
 ## Session Isolation
 
-Every terminal or context window gets an automatic session ID. This powers the core review guardrail: the review must come from a session that did not participate in implementation.
+Every terminal or context window gets an automatic session ID. This keeps
+implementation, review, and closure attributable without dictating how much
+ceremony every task needs.
 
 Why this matters:
-- Forces structured handoffs between sessions rather than implicit assumptions
+- Supports structured handoffs between sessions
 - A fresh session reading the code with new eyes catches issues the implementer missed
-- Prevents a single long-lived session from both writing and rubber-stamping code
+- Distinguishes independent review from acknowledged self-review
 - Mirrors real code review, where a different person checks the work
 
-**Do not start a new session mid-work just to satisfy the review rules.** Sessions track implementers, and an artificial mid-task rotation defeats the audit trail. Use a real reviewer sub-agent or a separate agent context instead.
+Let sessions reflect real agent contexts. Creating a new session merely to make
+a review appear independent defeats the audit trail; use an independent context
+or acknowledge a trusted-mode self-review instead.
 
-Under `delegated` mode the *review* must be independent but the *close* may be delegated to any session — see [Review Workflow](#review-workflow) above. Under `balanced` mode, a creator-approval exception allows the same session that created a task to approve it once a different session implemented it.
+Under `delegated` mode the *review* must be independent but the *close* may be
+delegated to any session. Under `balanced` mode, a creator-approval exception
+allows the same session that created a task to approve it once a different
+session implemented it.

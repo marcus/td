@@ -1,79 +1,33 @@
 # CLAUDE.md
 
-## MANDATORY: Use td for Task Management
+<!-- td-agent-instructions:start -->
+<!-- td-agent-instructions:version=2 -->
 
-Run td usage --new-session at conversation start (or after /clear). This tells you what to work on next.
+## Working with td
 
-Sessions are automatic (based on terminal/agent context). Optional:
-- td session "name" to label the current session
-- td session --new to force a new session in the same context
+td keeps task context durable across agent sessions. At the start of a new context, run `td usage --new-session -q` to see the current work.
 
-Use td usage -q after first read.
+Use your judgment about how much tracking the task needs. For substantive work, use `td start <id>`, record useful progress or decisions with `td log`, hand off unfinished work with `td handoff <id>`, and submit completed work with `td review <id>`.
 
-## MANDATORY: Use `td` for Task Management
+Prefer an independent review when practical. In the default trusted mode, self-review is allowed and audited:
 
-Run `td usage --new-session` at conversation start (or after /clear). This tells you what to work on next.
+`td approve <id> --self-review --reason "..."`
 
-Sessions are automatic (based on your terminal/agent context). Optional:
-- `td session "name"` to label the current session
-- `td session --new` to force a new session in the same context
+Run `td usage` for workflow guidance or `td <command> --help` for details.
 
-Sessions track implementers so the audit trail records who did what. Use a real reviewer sub-agent or a separate agent context for independent review — don't spin up throwaway sessions just to game the review check.
-
-Use `td usage -q` after first read.
+<!-- td-agent-instructions:end -->
 
 ## Review Model (Trusted Review)
 
-The default mode is now **`trusted`**. Trusted keeps the delegated review-attestation model — **prefer delegating review to an independent sub-agent** — and adds a flag-gated, audited self-review escape hatch for when delegation is not practical.
+In trusted mode, an independent reviewer approves and closes with `td approve
+<id> --reason "..."`; self-review requires `--self-review --reason "..."`.
+Delegated mode supports `--record-only` review followed by closure from another
+session. Pin `review_policy_mode=delegated|strict` when a project needs a hard
+independence boundary. Do not create a throwaway session to make a review appear
+independent.
 
-The rules:
-
-- **Prefer an independent review.** A session that did not implement the issue reviews it (`td approve <id>`) or records an approval (`td approve <id> --record-only --reason "..."`). This is the norm; reach for it first.
-- **Any session may perform the final close after approval.** Once an independent review exists, any session may run `td approve <id> --reason "..."` to close. The close is audited via `closed_by_session`; pass `--reason` if the closer is not the reviewer-of-record.
-- **Self-review is allowed in trusted mode, but you must acknowledge it.** When you are the orchestrator/implementer and have already reviewed the diff yourself, approve+close with `td approve <id> --self-review --reason "..."`. The `--self-review` flag requires `--reason` and stamps `self_review` on the review row for audit. Do **not** fabricate a throwaway session to dodge the self-review acknowledgement — just acknowledge it.
-
-### Modes (`review_policy_mode`)
-
-Set with `td feature set review_policy_mode <mode>` (or `TD_FEATURE_REVIEW_POLICY_MODE=<mode>`).
-
-- `trusted` — **default.** Delegated review-attestation plus a flag-gated, audited self-review escape hatch (`td approve --self-review --reason "..."`). Prefer delegation; self-review when delegation is impractical.
-- `delegated` — review attestations + delegated close, with **no** self-review escape: the implementer cannot self-approve. Pin this for projects that want the hard wall.
-- `balanced` — strict, plus a creator-approval exception with `--reason`. Legacy default for projects that set `balanced_review_policy=true`.
-- `strict` — no prior involvement allowed at all.
-
-### Orchestrator / Sub-Agent Flow
-
-Preferred flow — orchestrator submits the issue for review, delegates the review to a reviewer sub-agent, then closes once the approval is recorded:
-
-```bash
-# Orchestrator creates work
-td add "Refactor auth" --type feature
-
-# Implementer sub-agent (separate session) does the work
-td start td-a1b2
-td log "implemented auth refactor"
-td handoff td-a1b2 --done "refactor" --remaining "none"
-
-# Orchestrator submits for review (this sets review_requested_by_session)
-td review td-a1b2
-
-# Reviewer sub-agent (separate session) records approval without closing
-td approve td-a1b2 --record-only --reason "Reviewed diff, tests pass"
-
-# Orchestrator, implementer, or another session closes using the recorded approval
-td approve td-a1b2 --reason "Closing after recorded independent approval"
-```
-
-Trusted-mode shortcut — when you (orchestrator/implementer) have reviewed the diff yourself and delegation is not practical, acknowledge the self-review instead of spawning a reviewer session:
-
-```bash
-td review td-a1b2
-td approve td-a1b2 --self-review --reason "Reviewed diff myself, tests pass"
-```
-
-The reviewer (when delegated) must be independent; the closer is recorded separately for audit. A self-review is recorded as such.
-
-**Keeping delegated reviews independent:** sub-agents spawned by one orchestrator share a branch, agent process, and checkout, so their `td` commands can collapse into a single session — making a delegated review look like a self-review. Give each sub-agent context its own session by exporting a distinct `TD_CONTEXT_ID` (e.g. `export TD_CONTEXT_ID=reviewer-<taskid>` then `td session --new`). Full details and the two fallback routes (`TD_SESSION_ID`, forthcoming worktree keying) are in [docs/multi-agent-sessions.md](docs/multi-agent-sessions.md).
+For delegated reviews, give each sub-agent context its own `TD_CONTEXT_ID`; see
+[docs/multi-agent-sessions.md](docs/multi-agent-sessions.md).
 
 ## Build & Install
 

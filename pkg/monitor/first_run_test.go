@@ -5,12 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/config"
 )
 
 // TestCheckFirstRun_SuppressedAfterSeen verifies the Getting Started modal is
 // shown only on the first open of a project and not on subsequent launches,
-// even when td instructions were never installed.
+// even when td guidance was never installed.
 func TestCheckFirstRun_SuppressedAfterSeen(t *testing.T) {
 	t.Run("first open with no instructions shows modal", func(t *testing.T) {
 		dir := t.TempDir()
@@ -51,6 +52,31 @@ func TestCheckFirstRun_SuppressedAfterSeen(t *testing.T) {
 		}
 		if !msg.HasInstructions {
 			t.Error("expected HasInstructions=true when AGENTS.md contains td usage")
+		}
+	})
+
+	t.Run("older marked guidance is available for update", func(t *testing.T) {
+		dir := t.TempDir()
+		old := agent.InstructionStartMarker + "\n" +
+			"<!-- td-agent-instructions:version=1 -->\n" +
+			"Old guidance\n" +
+			agent.InstructionEndMarker + "\n"
+		path := filepath.Join(dir, "AGENTS.md")
+		if err := os.WriteFile(path, []byte(old), 0644); err != nil {
+			t.Fatalf("write AGENTS.md failed: %v", err)
+		}
+		m := newTestModel()
+		m.BaseDir = dir
+
+		msg := m.checkFirstRun()().(FirstRunCheckMsg)
+		if msg.IsFirstRun {
+			t.Error("expected existing marked guidance to suppress automatic first-run modal")
+		}
+		if !msg.HasInstructions || !msg.NeedsInstructionsUpdate {
+			t.Fatalf("guidance state = has:%v update:%v, want true/true", msg.HasInstructions, msg.NeedsInstructionsUpdate)
+		}
+		if msg.AgentFilePath != path {
+			t.Fatalf("AgentFilePath = %q, want %q", msg.AgentFilePath, path)
 		}
 	})
 }

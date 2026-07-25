@@ -56,7 +56,9 @@ td handoff td-a1b2 \
   --uncertain "Should tokens expire on password change?"
 ```
 
-**Session isolation** — Every terminal/context window gets an ID (automatically). The session that writes code can't approve it. A different session has to review. This isn't process theater—it forces actual handoffs and catches the "works on my context" bugs.
+**Audited reviews** — Every terminal/context window gets an ID automatically.
+Independent review is preferred, while default trusted mode also permits an
+explicit, recorded self-review when that is the appropriate tradeoff.
 
 **Query-based boards** — Organize work with boards that filter issues using TDQ queries. View as swimlanes in the monitor for visual status tracking.
 
@@ -120,8 +122,9 @@ td version
 cd /path/to/your/project
 td init
 
-# For AI agents: Add this to your system prompt or CLAUDE.md:
-# "Run `td usage --new-session` at conversation start (or after /clear)."
+# For AI agents: add the compact guidance printed by `td init` to your
+# AGENTS.md, CLAUDE.md, or similar file. New contexts can start with:
+# `td usage --new-session -q`
 
 # Create your first issue
 td create "Add user auth" --type feature --priority P1
@@ -243,10 +246,13 @@ td handoff td-a1b2 --done "OAuth flow" --remaining "Token refresh"
 # Submit for review
 td review td-a1b2
 
-# Different session reviews
+# Review (independent when practical)
 td reviewable        # What can I review?
 td approve td-a1b2   # Ship it
 td reject td-a1b2 --reason "Missing error handling"  # Back to work
+
+# Trusted-mode self-review
+td approve td-a1b2 --self-review --reason "Reviewed own diff; tests pass"
 ```
 
 ## Boards
@@ -391,7 +397,10 @@ td add "Update comment" --minor
 
 Minor tasks bypass session-based review—you can approve your own work. Use sparingly for documentation fixes, typos, and other low-risk changes.
 
-For non-minor tasks, td now supports a balanced review policy (on by default): the creator can approve only if a different session implemented the issue, and the approval must include a reason. Implementers still cannot approve their own implementation.
+For non-minor tasks, the default `trusted` policy prefers independent review
+and permits explicit, audited self-review with `--self-review --reason`.
+Projects that require a hard independence boundary can select `delegated` or
+`strict`.
 
 ## Analytics & Stats
 

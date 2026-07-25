@@ -157,7 +157,8 @@ type Model struct {
 	GettingStartedModal        *modal.Modal   // Declarative modal instance
 	GettingStartedMouseHandler *mouse.Handler // Mouse handler for getting started modal
 	AgentFilePath              string         // Detected agent file path (may be empty)
-	AgentFileHasTD             bool           // Whether agent file already has td instructions
+	AgentFileHasTD             bool           // Whether an agent file already has td guidance
+	AgentFileTDNeedsUpdate     bool           // Whether marked td guidance has an older version
 	IsFirstRunInit             bool           // Whether we're in real first-run flow (not H-key reopen)
 
 	// Sync prompt modal state
@@ -711,6 +712,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FirstRunCheckMsg:
 		m.AgentFilePath = msg.AgentFilePath
 		m.AgentFileHasTD = msg.HasInstructions
+		m.AgentFileTDNeedsUpdate = msg.NeedsInstructionsUpdate
 		if msg.IsFirstRun {
 			m.IsFirstRunInit = true
 			m.GettingStartedOpen = true
@@ -728,6 +730,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMessage = msg.Message
 			m.StatusIsError = false
 			m.AgentFileHasTD = true
+			m.AgentFileTDNeedsUpdate = false
 			// Recreate modal to show updated state (checkmark)
 			if m.GettingStartedOpen {
 				m.GettingStartedModal = m.createGettingStartedModal()

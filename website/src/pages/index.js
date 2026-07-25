@@ -122,8 +122,8 @@ const features = [
   },
   {
     icon: <Shield size={28} />,
-    title: 'Session Isolation',
-    description: 'Different sessions must review. Catches "works on my context" bugs.',
+    title: 'Audited Reviews',
+    description: 'Prefer independent review, or explicitly record a trusted self-review.',
   },
   {
     icon: <Search size={28} />,
@@ -233,7 +233,7 @@ function WorkflowSection() {
           <div className="sc-workflow-cell">
             <div className="sc-workflow-item sc-workflow-item--agent sc-workflow-item--arrow-to-left">
               <div className="sc-workflow-item__title">Submit for review</div>
-              <div className="sc-workflow-item__desc">Different session must review—enforced isolation</div>
+              <div className="sc-workflow-item__desc">Prefer independent review; trusted self-review stays explicit</div>
               <code className="sc-workflow-item__code">td review td-a1b2</code>
             </div>
           </div>

@@ -2,31 +2,41 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
-// InstructionText is the mandatory td usage instructions to add to agent files.
-const InstructionText = `## MANDATORY: Use td for Task Management
+const (
+	// Versioned markers let future td releases update their own guidance without
+	// disturbing the rest of a project's agent file.
+	InstructionStartMarker   = "<!-- td-agent-instructions:start -->"
+	InstructionVersion       = 2
+	instructionVersionPrefix = "<!-- td-agent-instructions:version="
+	instructionVersionSuffix = " -->"
+	InstructionVersionMarker = instructionVersionPrefix + "2" + instructionVersionSuffix
+	InstructionEndMarker     = "<!-- td-agent-instructions:end -->"
 
-Run td usage --new-session at conversation start (or after /clear). This tells you what to work on next.
+	// InstructionBody is intentionally compact because agent files consume
+	// context on every turn. Detailed workflow guidance remains available from
+	// `td usage` and command-specific help.
+	InstructionBody = `## Working with td
 
-Sessions are automatic (based on terminal/agent context). Optional:
-- td session "name" to label the current session
-- td session --new to force a new session in the same context
+td keeps task context durable across agent sessions. At the start of a new context, run ` + "`td usage --new-session -q`" + ` to see the current work.
 
-Do NOT start a new session mid-work to satisfy td review rules. Use a real
-reviewer sub-agent or separate agent context. An independent review is required;
-the close may be delegated to any session.
+Use your judgment about how much tracking the task needs. For substantive work, use ` + "`td start <id>`" + `, record useful progress or decisions with ` + "`td log`" + `, hand off unfinished work with ` + "`td handoff <id>`" + `, and submit completed work with ` + "`td review <id>`" + `.
 
-You cannot review your own implementation, but you can close after an
-independent review has been recorded. Under review_policy_mode=delegated:
-  td approve <id> --record-only --reason "..."   # reviewer records approval
-  td approve <id> --reason "using recorded approval"  # any session closes
+Prefer an independent review when practical. In the default trusted mode, self-review is allowed and audited:
 
-Use td usage -q after first read.
-`
+` + "`td approve <id> --self-review --reason \"...\"`" + `
+
+Run ` + "`td usage`" + ` for workflow guidance or ` + "`td <command> --help`" + ` for details.`
+
+	// InstructionText is the complete versioned block installed in agent files.
+	InstructionText = InstructionStartMarker + "\n" + InstructionVersionMarker + "\n\n" + InstructionBody + "\n\n" + InstructionEndMarker + "\n"
+)
 
 // KnownAgentFiles lists agent instruction files in priority order.
 // AGENTS.md is preferred since td supports multiple agent types.
@@ -79,16 +89,18 @@ func PreferredAgentFile(baseDir string) string {
 	return agentsPath
 }
 
-// HasTDInstructions checks if the file already contains td instructions.
+// HasTDInstructions checks if the file already contains td guidance.
 func HasTDInstructions(path string) bool {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(content), "td usage")
+	text := string(content)
+	return strings.Contains(text, InstructionStartMarker) ||
+		strings.Contains(text, "td usage")
 }
 
-// AnyFileHasTDInstructions checks all known agent files in baseDir for td instructions.
+// AnyFileHasTDInstructions checks all known agent files in baseDir for td guidance.
 // Returns true if any file already contains the instructions (dedup check).
 func AnyFileHasTDInstructions(baseDir string) bool {
 	for _, name := range KnownAgentFiles {
@@ -100,7 +112,50 @@ func AnyFileHasTDInstructions(baseDir string) bool {
 	return false
 }
 
-// InstallInstructions adds td instructions to an agent file.
+// markedInstructionsVersion returns the version of a td-owned block. A marked
+// block without a parseable version is treated as version 0 by its caller.
+func markedInstructionsVersion(text string) (int, bool) {
+	start := strings.Index(text, instructionVersionPrefix)
+	if start == -1 {
+		return 0, false
+	}
+	valueStart := start + len(instructionVersionPrefix)
+	valueEndOffset := strings.Index(text[valueStart:], instructionVersionSuffix)
+	if valueEndOffset == -1 {
+		return 0, false
+	}
+	version, err := strconv.Atoi(text[valueStart : valueStart+valueEndOffset])
+	if err != nil {
+		return 0, false
+	}
+	return version, true
+}
+
+// OutdatedMarkedInstructionsFile returns the first recognized agent file with
+// a td-owned block from an older version. Unmarked legacy guidance is excluded
+// because td cannot safely determine which surrounding text it owns. Blocks
+// from newer td versions are left untouched to prevent accidental downgrades.
+func OutdatedMarkedInstructionsFile(baseDir string) string {
+	for _, name := range KnownAgentFiles {
+		path := filepath.Join(baseDir, name)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		text := string(content)
+		if !strings.Contains(text, InstructionStartMarker) ||
+			!strings.Contains(text, InstructionEndMarker) {
+			continue
+		}
+		version, ok := markedInstructionsVersion(text)
+		if !ok || version < InstructionVersion {
+			return path
+		}
+	}
+	return ""
+}
+
+// InstallInstructions adds or updates td guidance in an agent file.
 // Creates the file if it doesn't exist.
 func InstallInstructions(path string) error {
 	// If file doesn't exist, create it with just the instructions
@@ -113,8 +168,41 @@ func InstallInstructions(path string) error {
 		return os.WriteFile(path, []byte(InstructionText), 0644)
 	}
 
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := string(content)
+	if strings.Contains(text, InstructionStartMarker) &&
+		strings.Contains(text, InstructionEndMarker) {
+		if version, ok := markedInstructionsVersion(text); ok && version > InstructionVersion {
+			return fmt.Errorf("td guidance version %d is newer than supported version %d; leaving it unchanged", version, InstructionVersion)
+		}
+	}
+	if updated, ok := replaceMarkedInstructions(text); ok {
+		return os.WriteFile(path, []byte(updated), 0644)
+	}
+
 	// File exists - prepend instructions
 	return prependToFile(path, InstructionText)
+}
+
+// replaceMarkedInstructions updates only the block owned by td. Stable boundary
+// markers make upgrades safe; the version marker identifies the installed copy.
+func replaceMarkedInstructions(content string) (string, bool) {
+	start := strings.Index(content, InstructionStartMarker)
+	if start == -1 {
+		return "", false
+	}
+
+	endOffset := strings.Index(content[start:], InstructionEndMarker)
+	if endOffset == -1 {
+		return "", false
+	}
+	end := start + endOffset + len(InstructionEndMarker)
+
+	replacement := strings.TrimSuffix(InstructionText, "\n")
+	return content[:start] + replacement + content[end:], true
 }
 
 // prependToFile adds text at a smart location in the file.
