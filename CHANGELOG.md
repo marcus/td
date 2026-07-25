@@ -4,6 +4,23 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.53.0] - 2026-07-25
+
+### Query
+
+- **Fixed: `td query` date comparisons returned wrong answers, silently** (td-951238). Every comparison against `created`, `updated` or `closed` was wrong: `created < 2026-05-09` matched **nothing** and `created > 2026-05-09` matched **everything**, and neither reported a problem. Root cause: the in-memory matcher (the only path `Execute` actually uses) fell through to a numeric comparison that converted the timestamp to Unix seconds and the date literal to `0` — so every `<` was false and every `>` was true regardless of the dates involved. Equality was broken the same way, comparing `"2026-05-09 12:00:00 -0700 PDT"` against `"2026-05-09"` as strings. Verified against export ground truth on a 905-issue workspace: `created < 2026-05-09` now returns 441 and `created >= 2026-05-09` returns 464, matching the database exactly (both previously returned 0 and "everything"). The same helpers back `td note` queries, which were broken identically and are also fixed.
+- **Date comparisons now have defined granularity.** A bare date names a whole calendar day in your local timezone, so `created <= 2026-05-09` includes the 9th and `created > 2026-05-09` excludes it — `<=` and `<` are genuinely different operators. An hour offset (`-6h`) compares to the instant instead. Timestamps written under different UTC offsets still compare by the wall-clock day you saw.
+- **A timestamp that was never set matches no ordering comparison.** `closed < <date>` no longer treats an open issue's missing close date as the epoch, matching SQL's NULL semantics.
+- **Unusable predicates now error instead of returning an empty result set.** A silent zero cannot be told apart from "no matches", which is what made the bug above invisible. `created < banana`, `created ~ 2026`, a malformed date, and ordering operators on cross-entity fields (`log.timestamp < ...`) now fail with a message naming the problem.
+- **Result limits are stated, never silent.** `td query` still defaults to 50 results, but says `showing 50 of 441 matches` on stderr when the cap drops matches; `-n 0` returns everything. `-o count` now reports the true match count rather than the truncated one. The pre-filter scan cap is reported the same way and is adjustable with the new `--max-scan`.
+
+### Search
+
+- **Fixed: `td search` now searches what its help claims** (td-406d65). The help advertised logs and handoff content, but the SQL only matched id, title and description — so searching for a term an agent had written into a handoff returned nothing, with no signal that the material was never in scope. Search now also covers log messages and all four handoff fields (done, remaining, decisions, uncertain). Matches found only in that activity rank below matches in the issue's own title or description, and `--show-score` names the field that matched.
+- **Fixed: handoff content was unsearchable in SQL at all.** Handoff fields hold marshalled JSON written as `[]byte`, so SQLite stores them with BLOB affinity and a bare `LIKE` never matches them. The search SQL now casts to text.
+- **An empty search states its scope**, so "no results" is not read as "this text exists nowhere in td". Comments remain out of scope; the message points at `td query "comment.text ~ ..."`.
+- `td list --search` and every other caller keep the narrow issue-fields-only scope; only the `td search` path widened.
+
 ## [v0.52.0] - 2026-07-24
 
 ### Sync
