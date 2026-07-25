@@ -1,4 +1,4 @@
-.PHONY: help fmt test install tag release check-clean check-version install-hooks
+.PHONY: help fmt test install tag release check-clean check-version check-main check-pushed install-hooks
 
 SHELL := /bin/sh
 
@@ -14,16 +14,16 @@ help:
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
 		"  make install-hooks             # install git pre-commit hook" \
-		"  make test                      # go test ./..." \
+		"  make test                      # full tests with release-safe environment" \
 		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
-		"  make release VERSION=vX.Y.Z    # tag + push (triggers GoReleaser via GitHub Actions)"
+		"  make release VERSION=vX.Y.Z    # test + verify pushed main + tag + push"
 
 fmt:
 	gofmt -w .
 
 test:
-	go test ./...
+	env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI GOWORK=off go test ./...
 
 install:
 	@V="$(GIT_DESCRIBE)"; V=$${V:-dev}; \
@@ -31,15 +31,22 @@ install:
 	go install -ldflags "-X main.Version=$$V" .
 
 check-clean:
-	@git diff --quiet && git diff --cached --quiet || (echo "Error: working tree is not clean" && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "Error: working tree is not clean" && exit 1)
 
 check-version:
 	@test -n "$(VERSION)" || (echo "Error: VERSION is required (e.g. VERSION=v0.2.0)" && exit 1)
-	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+' || (echo "Error: VERSION should look like vX.Y.Z" && exit 1)
+	@echo "$(VERSION)" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' || (echo "Error: VERSION should look like vX.Y.Z without leading zeroes" && exit 1)
 
-tag: check-clean check-version
+check-main:
+	@test "$$(git branch --show-current)" = "main" || (echo "Error: releases must be cut from main" && exit 1)
+
+check-pushed:
+	@git remote get-url origin >/dev/null 2>&1 || (echo "Error: no 'origin' remote configured" && exit 1)
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || (echo "Error: HEAD must match origin/main; push main before releasing" && exit 1)
+
+tag: check-clean check-version check-main
 	@git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null && (echo "Error: tag $(VERSION) already exists" && exit 1) || true
-	git tag -a "$(VERSION)" -m "$(VERSION)"
+	git tag -a "$(VERSION)" -m "Release $(VERSION)"
 	repo=$$(git remote get-url origin 2>/dev/null || true); \
 	if [ -n "$$repo" ]; then \
 		echo "Created tag $(VERSION)"; \
@@ -47,8 +54,9 @@ tag: check-clean check-version
 		echo "Created tag $(VERSION) (no 'origin' remote found)"; \
 	fi
 
-release: tag
-	@git remote get-url origin >/dev/null 2>&1 || (echo "Error: no 'origin' remote configured" && exit 1)
+release: check-clean check-version check-main check-pushed
+	$(MAKE) test
+	$(MAKE) tag VERSION="$(VERSION)"
 	git push origin "$(VERSION)"
 
 install-hooks:

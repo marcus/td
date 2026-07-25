@@ -4,8 +4,23 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.52.0] - 2026-07-24
+
 ### Sync
 - **Autosync is now enabled per project, not via a feature flag.** Setting a project up for sync (`td login` + `td sync init`/`link`, giving it a usable `sync_state`) is all it takes for autosync to run — there is no longer a flag to flip to turn sync on. The `sync_autosync` feature flag and the new `config.json` `sync.autosync` field are optional **overrides / a global kill-switch**. Gate precedence: global kill-switch (explicit `false`) → explicit `sync_autosync` override → per-project configured (default). `td sync disable` / `td sync enable` write the tri-state global switch (shell-independent). `td sync status` is always available — run it first when sync seems stuck; it reports gate state + source, configured/authenticated, pending events, and last sync. Documented the per-project model, override precedence, the `~/.zshenv` vs `.zshrc` caveat for `TD_FEATURE_SYNC_AUTOSYNC`, and the upgrade path (legacy `sync.enabled: false` is ignored by the gate; already-authenticated projects are auto-configured with no re-login). See `docs/sync-client-guide.md` and `CLAUDE.md`.
+- **Sync now fails closed on SQLite corruption.** Explicit and automatic sync run an integrity check before reading or uploading local state, remote pull batches roll back if any event fails, and snapshot replacement validates the staged database before installation. Replacement also coordinates through the maintenance lock and refuses to overwrite a live SQLite generation with active WAL/SHM sidecars.
+
+### Project Members
+- Member listings now include email addresses, and owner-role updates refuse to demote the final project owner.
+
+### Agent Onboarding
+- Replaced the old mandatory agent instructions with compact, autonomy-respecting guidance that defaults to `td usage --new-session -q`, explains the normal tracked workflow, links to on-demand help, and accurately distinguishes trusted self-review from delegated review.
+- Installed guidance now uses a versioned td-owned block. Older marked blocks can be updated safely, while guidance written by a newer td release is detected and left untouched.
+
+### Release Process
+- `make test` now removes ambient sync feature overrides and disables workspace inheritance so release validation is reproducible.
+- `make release` validates strict semantic-version syntax, a clean `main`, and that `HEAD` matches `origin/main` before creating an annotated tag. It also runs the full release-safe test suite before pushing the tag.
+
 
 ## [v0.51.2] - 2026-07-18
 

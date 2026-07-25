@@ -33,35 +33,21 @@ For delegated reviews, give each sub-agent context its own `TD_CONTEXT_ID`; see
 
 ```bash
 go build -o td .           # Build locally
-go test ./...              # Test all
+make test                  # Test with the release-safe environment
 ```
 
 ## Version & Release
 
 ```bash
-# Commit changes with proper message
-git add .
-git commit -m "feat: description of changes
-
-Details here
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
-
-# Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
-git tag -a v0.3.0 -m "Release v0.3.0: description"
-
-# Push commit and tag
+# Update and commit CHANGELOG.md first, then:
 git push origin main
-git push origin v0.3.0
+make release VERSION=vX.Y.Z
 
-# Install locally with version
-go install -ldflags "-X main.Version=v0.3.0" ./...
-
-# Verify installation
-td version
+# Verify the release workflow, assets, Homebrew tap, and installed version.
 ```
+
+See [docs/guides/releasing-new-version.md](docs/guides/releasing-new-version.md)
+for the non-interactive runbook and complete verification checklist.
 
 ## Architecture
 

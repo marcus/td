@@ -31,7 +31,8 @@ two jobs:
 ## Prerequisites
 
 - On `main`, all intended commits already committed.
-- Tests passing (`go test ./...`).
+- Tests passing (`make test`, which sanitizes release-sensitive environment
+  overrides).
 - GitHub CLI authenticated (`gh auth status`).
 - `HOMEBREW_TAP_TOKEN` secret configured on the repo (already set; needed by the
   `update-homebrew-tap` job). You do not touch this during a normal release.
@@ -39,7 +40,8 @@ two jobs:
 A dirty working tree is fine for the **manual** tag commands below as long as
 everything you want *in the release* is committed — the tag points at a commit,
 so uncommitted local files (e.g. `.claude/settings.local.json`) are not included.
-`make tag`/`make release`, however, enforce a clean tree via `check-clean`.
+`make tag`/`make release`, however, enforce a completely clean tree (including
+untracked files) via `check-clean`.
 
 ## Versioning
 
@@ -70,7 +72,7 @@ git commit -m "docs: cut vX.Y.Z changelog (short description)"
 ### 2. Verify
 
 ```bash
-go test ./...
+make test
 # Optional: dry-run the build without publishing
 goreleaser release --snapshot --clean && ls dist/
 ```
@@ -85,16 +87,16 @@ on GitHub lags behind.
 git push origin main
 
 # Either the Makefile target (clean tree required) ...
-make release VERSION=vX.Y.Z      # creates annotated tag AND pushes the tag
+make release VERSION=vX.Y.Z      # tests, verifies pushed main, tags, and pushes
 
 # ... or do it by hand (no clean-tree check):
 git tag -a vX.Y.Z -m "Release vX.Y.Z: brief description"
 git push origin vX.Y.Z
 ```
 
-> ⚠️ `make release` only pushes the **tag**, not `main`. Always `git push origin
-> main` first. (See [`Makefile`](../../Makefile) — the `release` target is
-> `tag` + `git push origin "$(VERSION)"`.)
+> `make release` only pushes the **tag**, not `main`. Always `git push origin
+> main` first. The target now refuses to tag unless local `HEAD` exactly matches
+> `origin/main`.
 
 ### 4. Verify the release landed
 
@@ -120,7 +122,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 # 0. Preconditions
 test "$(git rev-parse --abbrev-ref HEAD)" = main
-go test ./...
+make test
 
 # 1. Decide version (minor bump shown; adjust for patch/major)
 LATEST=$(git describe --tags --abbrev=0)         # e.g. v0.46.0
@@ -135,9 +137,8 @@ git commit -m "docs: cut $VERSION changelog"
 # 3. Push main BEFORE tagging
 git push origin main
 
-# 4. Tag + push tag (manual form tolerates a dirty tree from local-only files)
-git tag -a "$VERSION" -m "Release $VERSION"
-git push origin "$VERSION"
+# 4. Re-run release-safe tests, verify pushed main, then tag + push
+make release VERSION="$VERSION"
 
 # 5. Watch CI to completion (non-interactive, fails the step on red)
 sleep 5
@@ -177,7 +178,7 @@ versions (`dev`, `devel+hash`) skip the check.
 
 ## Checklist
 
-- [ ] Tests pass (`go test ./...`)
+- [ ] Tests pass (`make test`)
 - [ ] `CHANGELOG.md` has a new `## [vX.Y.Z] - <real date>` entry, committed
 - [ ] Version follows semver (bumped from `git describe --tags --abbrev=0`)
 - [ ] `main` pushed **before** the tag
