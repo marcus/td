@@ -633,7 +633,7 @@ func TestReviewPolicyParity_Surfaces(t *testing.T) {
 				cliCloseModed := evaluateCloseEligibilityWithMode(
 					issue, r.sessionID,
 					r.wasAnyInvolved, r.hasImplementationHistory, r.effectiveIssueImplHistory(),
-					r.mode, r.hasActiveApproval, false,
+					r.mode, r.hasActiveApproval, false, "",
 				)
 				if cliCloseModed.Allowed != r.wantCloseAllowed {
 					t.Fatalf("cli %s close Allowed=%v, want %v (msg=%q)",

@@ -231,7 +231,7 @@ func evaluateCloseEligibility(issue *models.Issue, sessionID string, wasInvolved
 	// legacy signature preserves the pre-batch behavior where a post-decision
 	// veto handles the issue-wide impl-history gate.
 	mode := reviewpolicy.ModeStrict
-	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, false, false)
+	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, false, false, "")
 }
 
 // evaluateCloseEligibilityForBaseDir resolves the project review_policy_mode
@@ -249,13 +249,14 @@ func evaluateCloseEligibilityForBaseDir(
 	wasInvolved, wasImplementationInvolved, hasImplementationHistory bool,
 	hasActiveApproval bool,
 	selfReview bool,
+	attributedTo string,
 ) closeEligibility {
 	mode, err := resolveReviewPolicyMode(baseDir)
 	if err != nil {
 		// Fail-closed: unknown mode configurations drop to strict rules.
 		mode = reviewpolicy.ModeStrict
 	}
-	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, hasActiveApproval, selfReview)
+	return evaluateCloseEligibilityWithMode(issue, sessionID, wasInvolved, wasImplementationInvolved, hasImplementationHistory, mode, hasActiveApproval, selfReview, attributedTo)
 }
 
 // evaluateCloseEligibilityWithMode is the shared implementation behind
@@ -266,7 +267,7 @@ func evaluateCloseEligibilityForBaseDir(
 func evaluateCloseEligibilityWithMode(
 	issue *models.Issue, sessionID string,
 	wasInvolved, wasImplementationInvolved, hasImplementationHistory bool,
-	mode reviewpolicy.Mode, hasActiveApproval bool, selfReview bool,
+	mode reviewpolicy.Mode, hasActiveApproval bool, selfReview bool, attributedTo string,
 ) closeEligibility {
 	in := reviewpolicy.CloseEligibilityInput{
 		Mode:                      mode,
@@ -280,6 +281,7 @@ func evaluateCloseEligibilityWithMode(
 		WasAnyInvolved:            wasInvolved,
 		HasActiveApproval:         hasActiveApproval,
 		SelfReviewAcknowledged:    selfReview,
+		AttributedTo:              attributedTo,
 	}
 
 	decision := reviewpolicy.EvaluateCloseEligibility(in)

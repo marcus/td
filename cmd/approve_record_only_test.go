@@ -21,12 +21,23 @@ func runApproveCmd(t *testing.T, args []string, flags map[string]string) (string
 
 	// Reset flags that approve sets so leftover state from earlier tests
 	// doesn't leak in.
-	resetKeys := []string{"reason", "message", "comment", "note", "notes", "json", "all", "record-only", "decision", "self-review"}
-	for _, k := range resetKeys {
-		if f := approveCmd.Flags().Lookup(k); f != nil {
-			_ = approveCmd.Flags().Set(k, f.DefValue)
+	//
+	// Clearing Changed alongside the value is what makes this faithful: pflag
+	// sets Changed on every Set() call, so a reset-to-default would otherwise
+	// look identical to a user explicitly passing the default. approve
+	// distinguishes those — `--reviewed-by ""` is a rejected empty attribution,
+	// while omitting the flag is not — and without this the harness could only
+	// ever exercise the "explicitly passed" branch.
+	resetKeys := []string{"reason", "message", "comment", "note", "notes", "json", "all", "record-only", "decision", "self-review", "reviewed-by"}
+	resetFlags := func() {
+		for _, k := range resetKeys {
+			if f := approveCmd.Flags().Lookup(k); f != nil {
+				_ = approveCmd.Flags().Set(k, f.DefValue)
+				f.Changed = false
+			}
 		}
 	}
+	resetFlags()
 	for k, v := range flags {
 		if err := approveCmd.Flags().Set(k, v); err != nil {
 			t.Fatalf("set flag %s=%s: %v", k, v, err)
@@ -47,11 +58,7 @@ func runApproveCmd(t *testing.T, args []string, flags map[string]string) (string
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
-	for _, k := range resetKeys {
-		if f := approveCmd.Flags().Lookup(k); f != nil {
-			_ = approveCmd.Flags().Set(k, f.DefValue)
-		}
-	}
+	resetFlags()
 	return buf.String(), runErr
 }
 

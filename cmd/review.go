@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -564,13 +566,19 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
 }
 
+// maxReviewedByLen caps the --reviewed-by attribution. It is a label for a
+// human or an agent to read in review history, not a place to put the review
+// itself — that belongs in --reason. The cap keeps `td show` output and the
+// monitor's review rows readable.
+const maxReviewedByLen = 120
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues, or record a review",
-	Long: `Approves the issue(s). Prefer an independent review, but in the default
-trusted mode you may acknowledge a self-review with --self-review --reason "...".
-You can always close after an independent review has been recorded. 'td approve'
-operates in one of these modes:
+	Long: `Approves the issue(s). An independent reviewer can always approve. When
+you implemented the work yourself, the default trusted mode asks you to say who
+reviewed it — name them with --reviewed-by, or acknowledge a genuine self-review
+with --self-review --reason "...". 'td approve' operates in one of these modes:
 
   Mode A: Review + close (default)
     Caller is an eligible reviewer and no active approval exists.
@@ -588,26 +596,41 @@ operates in one of these modes:
     --reason is required if the closing session is not the same as the
     reviewer-of-record.
 
+  Attributed review (--reviewed-by "<who>")
+    Names who actually performed the review when that is not the session
+    recording it — typically a sub-agent reviewing under an orchestrator that
+    holds the session. The name is recorded on the review row so the audit
+    trail is true about both facts: who reviewed, and who wrote it down.
+
+    In trusted mode this also lets a session that implemented the work record
+    the approval, which is the point: an orchestrator should not have to claim
+    a self-review it did not perform. No --reason is required — the attribution
+    is the substance. td does not verify the name; it is an attestation.
+
+    If the reviewing sub-agent has its own session (TD_CONTEXT_ID), prefer
+    having IT approve or --record-only: that independence is mechanically
+    verified rather than asserted. See docs/multi-agent-sessions.md.
+
   Self-review (--self-review, trusted mode only)
-    When you implemented the issue (or have implementation history), trusted
-    mode lets you approve+close your own work in one step by acknowledging
-    the self-review with --self-review. It requires --reason and stamps
-    self_review on the recorded review row for audit. Prefer delegating
-    review to an independent session; this flag is the explicit escape hatch.
+    You reviewed your own work and nobody else looked at it. Requires --reason
+    and stamps the review row for audit. Mutually exclusive with --reviewed-by.
 
 Flag summary:
+  --reviewed-by "<who>"               name who performed the review
   --record-only                       record an approval review without closing
   --decision approved|changes_requested  review decision (use with --record-only)
-  --self-review                       acknowledge self-review of your own work (trusted mode); implies --reason
-  --reason "..."                      required for --record-only, delegated close, and --self-review
+  --self-review                       acknowledge review of your own work (trusted); implies --reason
+  --reason "..."                      required for --record-only, --self-review, and closing
+                                      on someone else's recorded approval (Mode C)
   --all                               approve all reviewable issues for this session
 
 Examples:
   td approve td-abc1 td-abc2 td-abc3                       # Approve multiple
   td approve --all                                         # Approve all reviewable
+  td approve td-abc1 --reviewed-by "code-reviewer sub-agent"
   td approve td-abc1 --record-only --reason "looks good"   # Record approval only
   td approve td-abc1 --record-only --decision changes_requested --reason "fix X"
-  td approve td-abc1 --self-review --reason "reviewed diff" # Trusted-mode self-review approve+close
+  td approve td-abc1 --self-review --reason "reviewed diff" # I reviewed my own work
 
 To surface issues reviewed by a sub-agent that you can close, use
   td reviewable --include-approved`,
@@ -637,6 +660,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 		all, _ := cmd.Flags().GetBool("all")
 		recordOnly, _ := cmd.Flags().GetBool("record-only")
 		selfReview, _ := cmd.Flags().GetBool("self-review")
+		reviewedByRaw, _ := cmd.Flags().GetString("reviewed-by")
+		reviewedBy := strings.TrimSpace(reviewedByRaw)
 		decisionFlag, _ := cmd.Flags().GetString("decision")
 		balancedPolicy := balancedReviewPolicyEnabled(baseDir)
 		mode, err := resolveReviewPolicyMode(baseDir)
@@ -660,8 +685,66 @@ To surface issues reviewed by a sub-agent that you can close, use
 			return fmt.Errorf("%s", msg)
 		}
 
+		// --reviewed-by and --self-review are mutually exclusive: they are
+		// different claims about who looked at the work. Asserting both is
+		// incoherent, and the policy layer resolves the pair by silently
+		// favoring attribution (which drops the --reason requirement), so this
+		// is rejected at the edge rather than left to evaluation order.
+		if reviewedBy != "" && selfReview {
+			msg := "--reviewed-by and --self-review are mutually exclusive: use --reviewed-by when someone else reviewed the work, --self-review when you reviewed your own"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+
+		// A blank attribution is a silent lie: it records "someone reviewed
+		// this" while naming nobody. Reject rather than storing "".
+		if cmd.Flags().Changed("reviewed-by") && reviewedBy == "" {
+			msg := "--reviewed-by requires a name (who performed the review?)"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+		if strings.ContainsFunc(reviewedBy, func(r rune) bool {
+			return r == '\n' || r == '\r' || (unicode.IsControl(r) && r != '\t')
+		}) {
+			// A newline in the attribution forges convincing extra entries in
+			// `td show`'s SESSION LOG. The name is a label, so there is no
+			// legitimate reason for it to contain control characters.
+			msg := "--reviewed-by must not contain newlines or control characters"
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+		// Count runes, not bytes: a cap reported in "characters" must mean
+		// characters, or a name in any non-Latin script is rejected early with
+		// a number the caller cannot reconcile.
+		if utf8.RuneCountInString(reviewedBy) > maxReviewedByLen {
+			msg := fmt.Sprintf("--reviewed-by is limited to %d characters (got %d)", maxReviewedByLen, utf8.RuneCountInString(reviewedBy))
+			if jsonOutput {
+				output.JSONError(output.ErrCodeInvalidInput, msg)
+			} else {
+				output.Error("%s", msg)
+			}
+			return fmt.Errorf("%s", msg)
+		}
+
 		// --self-review is only valid under trusted mode. In every other mode it
 		// errors clearly (mirrors the --record-only delegated guard above).
+		//
+		// --reviewed-by deliberately has NO such mode guard: it is attribution
+		// metadata that any mode may record. It only UNLOCKS an involved
+		// session's approval in trusted mode; elsewhere the eligibility
+		// decision ignores it and an ineligible session is still rejected.
 		if selfReview && mode != reviewpolicy.ModeTrusted {
 			msg := "--self-review requires review_policy_mode=trusted"
 			if jsonOutput {
@@ -860,7 +943,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				// balanced fallback would incorrectly block via WasAnyInvolved.
 				// Under trusted, an implementer may record a self-approval only by
 				// also passing --self-review, exactly as on the approve+close path.
-				eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplInvolved, mode, selfReview)
+				eligibility := evaluateApproveEligibilityWithAttribution(issue, sess.ID, wasInvolved, wasImplInvolved, mode, selfReview, reviewedBy)
 				if !eligibility.Allowed {
 					if !all {
 						if jsonOutput {
@@ -927,6 +1010,9 @@ To surface issues reviewed by a sub-agent that you can close, use
 				}
 
 				logMsg := fmt.Sprintf("Review recorded (%s): %s", decision, reason)
+				if eligibility.AttributedTo != "" {
+					logMsg = fmt.Sprintf("Review recorded (%s) by %s: %s", decision, eligibility.AttributedTo, reason)
+				}
 				if err := database.AddLog(&models.Log{
 					IssueID:   issueID,
 					SessionID: sess.ID,
@@ -941,10 +1027,19 @@ To surface issues reviewed by a sub-agent that you can close, use
 					if ferr != nil {
 						refetched = issue
 					}
-					_ = output.EmitIssue("review_recorded", refetched, map[string]any{
+					meta := map[string]any{
 						"reviewer": sess.ID,
 						"decision": decision,
-					})
+					}
+					if eligibility.AttributedTo != "" {
+						meta["reviewed_by"] = eligibility.AttributedTo
+					}
+					if eligibility.SelfReview {
+						meta["self_review"] = true
+					}
+					_ = output.EmitIssue("review_recorded", refetched, meta)
+				} else if eligibility.AttributedTo != "" {
+					fmt.Printf("REVIEW RECORDED %s (decision: %s, reviewed by %s, recorded by %s)\n", issueID, decision, eligibility.AttributedTo, sess.ID)
 				} else {
 					fmt.Printf("REVIEW RECORDED %s (decision: %s, reviewer: %s)\n", issueID, decision, sess.ID)
 				}
@@ -970,7 +1065,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					hasImplHistoryForIssue = true
 				}
 
-				closeDec := evaluateCloseEligibilityForBaseDir(baseDir, issue, sess.ID, wasInvolved, wasImplInvolved, hasImplHistoryForIssue, true /*hasActiveApproval*/, selfReview)
+				closeDec := evaluateCloseEligibilityForBaseDir(baseDir, issue, sess.ID, wasInvolved, wasImplInvolved, hasImplHistoryForIssue, true /*hasActiveApproval*/, selfReview, reviewedBy)
 				if !closeDec.Allowed {
 					msg := closeDec.RejectionMessage
 					if msg == "" {
@@ -988,6 +1083,23 @@ To surface issues reviewed by a sub-agent that you can close, use
 				}
 
 				reason := approvalReason(cmd)
+
+				// Mode C closes on an approval that was already recorded, so
+				// there is no new review row to attribute. Silently accepting
+				// the flag here would let a caller believe it credited a
+				// reviewer when nothing was written.
+				if reviewedBy != "" {
+					msg := fmt.Sprintf("--reviewed-by is ignored for %s: it already has a recorded approval by %s (review %s), and this close records no new review", issueID, activeApproval.ReviewerSession, activeApproval.ID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeInvalidInput, msg)
+					} else if !all {
+						output.Error("%s", msg)
+						output.Error("  Drop --reviewed-by to close on the existing approval, or use --record-only to record a new one.")
+					}
+					skipped++
+					continue
+				}
+
 				closerIsReviewer := activeApproval.ReviewerSession == sess.ID
 				if !closerIsReviewer && reason == "" {
 					msg := fmt.Sprintf("close-using-recorded-approval requires --reason when closer (%s) != reviewer (%s) for %s", sess.ID, activeApproval.ReviewerSession, issueID)
@@ -1110,7 +1222,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// balanced's WasAnyInvolved block. In trusted mode the --self-review
 			// flag converts the implementer self-review rejection into an
 			// audited allow.
-			eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplementationInvolved, mode, selfReview)
+			eligibility := evaluateApproveEligibilityWithAttribution(issue, sess.ID, wasInvolved, wasImplementationInvolved, mode, selfReview, reviewedBy)
 			if !eligibility.Allowed {
 				if !all { // Only show error for explicit requests
 					if jsonOutput {
@@ -1195,6 +1307,13 @@ To surface issues reviewed by a sub-agent that you can close, use
 					agentInfo = "Unknown Agent"
 				}
 				logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION: %s)", agentInfo, reason)
+				if eligibility.AttributedTo != "" {
+					// Balanced mode's creator exception can also carry an
+					// attribution. Keep it in the message rather than letting
+					// the branch order silently drop it from the human log
+					// while JSON and the review row still record it.
+					logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION, reviewed by %s: %s)", agentInfo, eligibility.AttributedTo, reason)
+				}
 				logType = models.LogTypeSecurity
 				db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
@@ -1202,7 +1321,43 @@ To surface issues reviewed by a sub-agent that you can close, use
 					AgentType: sess.AgentType,
 					Reason:    "creator_approval_exception: " + reason,
 				})
+			} else if eligibility.AttributedTo != "" {
+				// Attributed approval: an involved session recorded a review
+				// someone else performed. This is the expected path for
+				// orchestrated work, so the issue log stays a normal progress
+				// entry naming the reviewer — tagging every orchestrated close
+				// SECURITY would drown the signal that tag exists for.
+				//
+				// The out-of-band audit trail in .todos/security-events still
+				// records it: the row was written by a session that
+				// implemented the work, and that stays worth being able to
+				// grep for, whoever the review is credited to.
+				logMsg = fmt.Sprintf("Approved (reviewed by %s)", eligibility.AttributedTo)
+				if reason != "" {
+					logMsg += ": " + reason
+				}
+				// Only record to the audit file when an INVOLVED session wrote
+				// the row (eligibility.SelfReview). That is the fact worth
+				// being able to grep for, and it is the compensating control
+				// for not tagging the issue log SECURITY on this path.
+				//
+				// An independent session crediting a colleague is unremarkable
+				// and must not land here, or the file fills with noise and
+				// stops being useful for the case it exists to surface.
+				if eligibility.SelfReview {
+					db.LogSecurityEvent(baseDir, db.SecurityEvent{
+						IssueID:   issueID,
+						SessionID: sess.ID,
+						AgentType: sess.AgentType,
+						Reason:    "attributed_review by " + eligibility.AttributedTo + ": " + reason,
+					})
+				}
 			} else if eligibility.SelfReview {
+				// Genuine self-review: nobody else looked at this. Note the
+				// guard order — eligibility.SelfReview is now true for the
+				// attributed path too (it means "recorded by an involved
+				// session"), so the AttributedTo branch above must come first
+				// or attributed approvals would be logged as self-reviews.
 				agentInfo := sess.AgentType
 				if agentInfo == "" {
 					agentInfo = "Unknown Agent"
@@ -1234,11 +1389,25 @@ To surface issues reviewed by a sub-agent that you can close, use
 				if ferr != nil {
 					refetched = issue
 				}
-				_ = output.EmitIssue("approved", refetched, map[string]any{
-					"reviewer": sess.ID,
-				})
+				meta := map[string]any{"reviewer": sess.ID}
+				if eligibility.AttributedTo != "" {
+					meta["reviewed_by"] = eligibility.AttributedTo
+				}
+				if eligibility.SelfReview {
+					meta["self_review"] = true
+				}
+				_ = output.EmitIssue("approved", refetched, meta)
 			} else if eligibility.CreatorException {
-				fmt.Printf("APPROVED %s (reviewer: %s, creator exception)\n", issueID, sess.ID)
+				if eligibility.AttributedTo != "" {
+					fmt.Printf("APPROVED %s (reviewed by %s, recorded by %s, creator exception)\n", issueID, eligibility.AttributedTo, sess.ID)
+				} else {
+					fmt.Printf("APPROVED %s (reviewer: %s, creator exception)\n", issueID, sess.ID)
+				}
+			} else if eligibility.AttributedTo != "" {
+				// Name the reviewer first — that is the claim being made — and
+				// the recording session second, so the record reads honestly:
+				// X reviewed it, this session wrote it down.
+				fmt.Printf("APPROVED %s (reviewed by %s, recorded by %s)\n", issueID, eligibility.AttributedTo, sess.ID)
 			} else if eligibility.SelfReview {
 				fmt.Printf("APPROVED %s (reviewer: %s, self-review)\n", issueID, sess.ID)
 			} else {
@@ -1744,6 +1913,7 @@ func init() {
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated/trusted mode)")
 	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
+	approveCmd.Flags().String("reviewed-by", "", "Name who performed the review (e.g. a sub-agent). Records the attribution; in trusted mode it also lets an involved session approve")
 	approveCmd.Flags().String("decision", "", "Review decision: approved (default) | changes_requested (use with --record-only)")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")
 	rejectCmd.Flags().StringP("comment", "c", "", "Reason for rejection (alias for --reason)")
