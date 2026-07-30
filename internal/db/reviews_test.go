@@ -30,7 +30,7 @@ func TestCreateIssueReview_ReturnsIDAndPersists(t *testing.T) {
 
 	seedIssueForReviewTests(t, database, "td-rvtest1")
 
-	id, err := database.CreateIssueReview("td-rvtest1", "ses-reviewer", "approved", "looks good", "ses-orch", false)
+	id, err := database.CreateIssueReview(NewReview{IssueID: "td-rvtest1", ReviewerSession: "ses-reviewer", Decision: "approved", Summary: "looks good", RequestedBySession: "ses-orch"})
 	if err != nil {
 		t.Fatalf("CreateIssueReview: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestGetActiveApprovalReview_IgnoresChangesRequested(t *testing.T) {
 
 	seedIssueForReviewTests(t, database, "td-rvcr")
 
-	if _, err := database.CreateIssueReview("td-rvcr", "ses-r", "changes_requested", "needs fixes", "", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: "td-rvcr", ReviewerSession: "ses-r", Decision: "changes_requested", Summary: "needs fixes"}); err != nil {
 		t.Fatalf("CreateIssueReview: %v", err)
 	}
 	got, err := database.GetActiveApprovalReview("td-rvcr")
@@ -114,12 +114,12 @@ func TestGetActiveApprovalReview_ReturnsLatestApproval(t *testing.T) {
 
 	seedIssueForReviewTests(t, database, "td-rvactive")
 
-	if _, err := database.CreateIssueReview("td-rvactive", "ses-a", "approved", "first pass", "", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: "td-rvactive", ReviewerSession: "ses-a", Decision: "approved", Summary: "first pass"}); err != nil {
 		t.Fatalf("first approve: %v", err)
 	}
 	// Sleep to make sure timestamps differ at millisecond resolution.
 	time.Sleep(10 * time.Millisecond)
-	id2, err := database.CreateIssueReview("td-rvactive", "ses-b", "approved", "second pass", "", false)
+	id2, err := database.CreateIssueReview(NewReview{IssueID: "td-rvactive", ReviewerSession: "ses-b", Decision: "approved", Summary: "second pass"})
 	if err != nil {
 		t.Fatalf("second approve: %v", err)
 	}
@@ -149,12 +149,12 @@ func TestListIssueReviews_ChronologicalOrder(t *testing.T) {
 
 	seedIssueForReviewTests(t, database, "td-rvhist")
 
-	id1, err := database.CreateIssueReview("td-rvhist", "ses-a", "changes_requested", "first", "", false)
+	id1, err := database.CreateIssueReview(NewReview{IssueID: "td-rvhist", ReviewerSession: "ses-a", Decision: "changes_requested", Summary: "first"})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	time.Sleep(10 * time.Millisecond)
-	id2, err := database.CreateIssueReview("td-rvhist", "ses-b", "approved", "second", "", false)
+	id2, err := database.CreateIssueReview(NewReview{IssueID: "td-rvhist", ReviewerSession: "ses-b", Decision: "approved", Summary: "second"})
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestSupersedeActiveReviews_MarksActive_LeavesSupersededAlone(t *testing.T) 
 
 	seedIssueForReviewTests(t, database, "td-rvsup")
 
-	id1, err := database.CreateIssueReview("td-rvsup", "ses-a", "approved", "first", "", false)
+	id1, err := database.CreateIssueReview(NewReview{IssueID: "td-rvsup", ReviewerSession: "ses-a", Decision: "approved", Summary: "first"})
 	if err != nil {
 		t.Fatalf("create 1: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestSupersedeActiveReviews_MarksActive_LeavesSupersededAlone(t *testing.T) 
 	if err := database.SupersedeActiveReviews("td-rvsup"); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
-	id2, err := database.CreateIssueReview("td-rvsup", "ses-b", "approved", "second", "", false)
+	id2, err := database.CreateIssueReview(NewReview{IssueID: "td-rvsup", ReviewerSession: "ses-b", Decision: "approved", Summary: "second"})
 	if err != nil {
 		t.Fatalf("create 2: %v", err)
 	}
@@ -253,7 +253,7 @@ func seedInReviewWithApproval(t *testing.T, id string) *DB {
 	if err != nil {
 		t.Fatalf("seed issue: %v", err)
 	}
-	if _, err := database.CreateIssueReview(id, "ses-reviewer", "approved", "looks good", "ses-orch", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: id, ReviewerSession: "ses-reviewer", Decision: "approved", Summary: "looks good", RequestedBySession: "ses-orch"}); err != nil {
 		t.Fatalf("seed approval: %v", err)
 	}
 	return database

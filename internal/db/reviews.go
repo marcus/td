@@ -8,10 +8,32 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
+// NewReview describes a review row to append. It replaced a positional
+// signature that had grown to six arguments and was about to take a seventh —
+// at that width a caller transposing SelfReview and an attribution string
+// would compile fine and write a false audit record.
+type NewReview struct {
+	IssueID            string
+	ReviewerSession    string // the session recording the row
+	Decision           string // reviewpolicy.Decision* constant
+	Summary            string
+	RequestedBySession string
+
+	// SelfReview marks the row as recorded by an implementation-involved
+	// session. Callers must stamp this from the reviewpolicy decision, never
+	// from raw user input, or a request could forge the flag in either
+	// direction.
+	SelfReview bool
+
+	// ReviewedBy names who performed the review when that differs from
+	// ReviewerSession. Empty means the recording session reviewed it itself.
+	ReviewedBy string
+}
+
 // CreateIssueReview inserts a new review row and returns its id. The caller
 // is responsible for superseding any prior active review (see
 // SupersedeActiveReviews) — this helper only appends history.
-func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, requestedBySession string, selfReview bool) (string, error) {
+func (db *DB) CreateIssueReview(rv NewReview) (string, error) {
 	var id string
 	err := db.withWriteLock(func() error {
 		newID, err := generateTextID(reviewIDPrefix)
@@ -19,9 +41,10 @@ func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, req
 			return fmt.Errorf("generate review id: %w", err)
 		}
 		_, err = db.conn.Exec(`
-			INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, newID, NormalizeIssueID(issueID), reviewerSession, decision, summary, requestedBySession, time.Now(), selfReview)
+			INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review, reviewed_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, newID, NormalizeIssueID(rv.IssueID), rv.ReviewerSession, rv.Decision, rv.Summary,
+			rv.RequestedBySession, time.Now(), rv.SelfReview, rv.ReviewedBy)
 		if err != nil {
 			return fmt.Errorf("insert issue_reviews: %w", err)
 		}
@@ -38,7 +61,7 @@ func (db *DB) CreateIssueReview(issueID, reviewerSession, decision, summary, req
 // active approval and is therefore skipped.
 func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, error) {
 	row := db.conn.QueryRow(`
-		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review
+		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review, reviewed_by
 		FROM issue_reviews
 		WHERE issue_id = ?
 		  AND superseded_at IS NULL
@@ -48,9 +71,9 @@ func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, erro
 	`, NormalizeIssueID(issueID))
 
 	var r models.IssueReview
-	var summary, requestedBy sql.NullString
+	var summary, requestedBy, reviewedBy sql.NullString
 	var supersededAt sql.NullTime
-	if err := row.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview); err != nil {
+	if err := row.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview, &reviewedBy); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -58,6 +81,7 @@ func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, erro
 	}
 	r.Summary = summary.String
 	r.RequestedBySession = requestedBy.String
+	r.ReviewedBy = reviewedBy.String
 	if supersededAt.Valid {
 		r.SupersededAt = &supersededAt.Time
 	}
@@ -69,7 +93,7 @@ func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, erro
 // caller can render full history.
 func (db *DB) ListIssueReviews(issueID string) ([]*models.IssueReview, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review
+		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review, reviewed_by
 		FROM issue_reviews
 		WHERE issue_id = ?
 		ORDER BY created_at ASC
@@ -82,13 +106,14 @@ func (db *DB) ListIssueReviews(issueID string) ([]*models.IssueReview, error) {
 	var reviews []*models.IssueReview
 	for rows.Next() {
 		var r models.IssueReview
-		var summary, requestedBy sql.NullString
+		var summary, requestedBy, reviewedBy sql.NullString
 		var supersededAt sql.NullTime
-		if err := rows.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview); err != nil {
+		if err := rows.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary, &requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview, &reviewedBy); err != nil {
 			return nil, err
 		}
 		r.Summary = summary.String
 		r.RequestedBySession = requestedBy.String
+		r.ReviewedBy = reviewedBy.String
 		if supersededAt.Valid {
 			r.SupersededAt = &supersededAt.Time
 		}

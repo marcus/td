@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
@@ -600,14 +601,14 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			// effort: a write error must not roll back the transition. The
 			// self_review flag is stamped from the policy decision so a
 			// trusted-mode self-review is auditable.
-			_, _ = c.DB.CreateIssueReview(
-				issue.ID,
-				c.SessionID,
-				reviewpolicy.DecisionApproved,
-				approveBody.Reason,
-				issue.ReviewRequestedBySession,
-				decisionSelfReview,
-			)
+			_, _ = c.DB.CreateIssueReview(db.NewReview{
+				IssueID:            issue.ID,
+				ReviewerSession:    c.SessionID,
+				Decision:           reviewpolicy.DecisionApproved,
+				Summary:            approveBody.Reason,
+				RequestedBySession: issue.ReviewRequestedBySession,
+				SelfReview:         decisionSelfReview,
+			})
 		},
 		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
 			var cr transitionCascadeResult

@@ -104,3 +104,32 @@ func (db *DB) migrateSelfReviewColumn() error {
 	}
 	return nil
 }
+
+// migrateReviewedByColumn is migration 37. It adds the reviewed_by attribution
+// column to issue_reviews: who actually performed the review, as asserted by
+// the recording session (--reviewed-by).
+//
+// Existing rows default to ” — correct by construction, since before this
+// column every review was performed by the session that recorded it, and
+// self_review already distinguishes an involved recorder from an independent
+// one. No backfill is needed or possible.
+//
+// The empty-string default (rather than NULL) keeps the column readable into a
+// plain Go string and matches how sync's getTextEmptyDefaultColumns treats TEXT
+// columns with empty defaults, so a payload that omits the field applies
+// cleanly on a peer.
+//
+// Idempotent: the columnExists guard skips the ALTER when the column already
+// exists, mirroring migrations 31 and 32.
+func (db *DB) migrateReviewedByColumn() error {
+	hasReviewedBy, err := db.columnExists("issue_reviews", "reviewed_by")
+	if err != nil {
+		return fmt.Errorf("check issue_reviews.reviewed_by: %w", err)
+	}
+	if !hasReviewedBy {
+		if _, err := db.conn.Exec(`ALTER TABLE issue_reviews ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("add issue_reviews.reviewed_by: %w", err)
+		}
+	}
+	return nil
+}

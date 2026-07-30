@@ -523,7 +523,13 @@ func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Mo
 	// reviewer-close from cascaded close. Best-effort: a missing review
 	// write does not block the approve. selfReview stamps the audit bit
 	// identically to the CLI.
-	_, _ = m.DB.CreateIssueReview(issue.ID, m.SessionID, reviewpolicy.DecisionApproved, "", issue.ReviewRequestedBySession, selfReview)
+	_, _ = m.DB.CreateIssueReview(db.NewReview{
+		IssueID:            issue.ID,
+		ReviewerSession:    m.SessionID,
+		Decision:           reviewpolicy.DecisionApproved,
+		RequestedBySession: issue.ReviewRequestedBySession,
+		SelfReview:         selfReview,
+	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic).
 	// Reuse the `now` captured above so the whole cascade shares one
@@ -555,14 +561,13 @@ func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Mo
 				// output can distinguish them from individually-reviewed
 				// closes. This is the "Cascade exemption" contract in the
 				// plan's close-path-hardening section.
-				_, _ = m.DB.CreateIssueReview(
-					child.ID,
-					m.SessionID,
-					reviewpolicy.DecisionApprovedByParentCascade,
-					"Cascaded approval from "+issue.ID,
-					child.ReviewRequestedBySession,
-					false,
-				)
+				_, _ = m.DB.CreateIssueReview(db.NewReview{
+					IssueID:            child.ID,
+					ReviewerSession:    m.SessionID,
+					Decision:           reviewpolicy.DecisionApprovedByParentCascade,
+					Summary:            "Cascaded approval from " + issue.ID,
+					RequestedBySession: child.ReviewRequestedBySession,
+				})
 				m.DB.CascadeUnblockDependents(child.ID, m.SessionID)
 			}
 		}
@@ -869,7 +874,13 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 	}
 	_ = m.DB.SupersedeActiveReviews(issueID)
 
-	reviewID, err := m.DB.CreateIssueReview(issueID, m.SessionID, decision, reason, issue.ReviewRequestedBySession, false)
+	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
+		IssueID:            issueID,
+		ReviewerSession:    m.SessionID,
+		Decision:           decision,
+		Summary:            reason,
+		RequestedBySession: issue.ReviewRequestedBySession,
+	})
 	if err != nil {
 		m.closeRecordReviewModal()
 		return m, nil

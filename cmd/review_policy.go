@@ -22,10 +22,16 @@ type approveEligibility struct {
 	RequiresReason   bool
 	RejectionMessage string
 
-	// SelfReview is true when the trusted-mode self-review path applied: the
-	// caller is the implementer (or has implementation history) and passed
-	// --self-review. Callers stamp it on the recorded review row.
+	// SelfReview is true when the row is being recorded by a session with
+	// implementation history — either an acknowledged --self-review or an
+	// attributed --reviewed-by approval. Callers stamp it on the recorded
+	// review row.
 	SelfReview bool
+
+	// AttributedTo echoes the --reviewed-by attestation from the policy
+	// decision so callers stamp the review row from the decision rather than
+	// from the raw flag value.
+	AttributedTo string
 }
 
 type closeEligibility struct {
@@ -142,6 +148,13 @@ func evaluateApproveEligibility(issue *models.Issue, sessionID string, wasInvolv
 // balanced/strict rejection strings while letting delegated mode apply its
 // own rule (prior reviewers may re-review).
 func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved bool, mode reviewpolicy.Mode, selfReview bool) approveEligibility {
+	return evaluateApproveEligibilityWithAttribution(issue, sessionID, wasInvolved, wasImplementationInvolved, mode, selfReview, "")
+}
+
+// evaluateApproveEligibilityWithAttribution is the full-fidelity variant that
+// also carries the --reviewed-by attestation. evaluateApproveEligibilityWithMode
+// delegates to it with an empty attribution so existing callers are unaffected.
+func evaluateApproveEligibilityWithAttribution(issue *models.Issue, sessionID string, wasInvolved, wasImplementationInvolved bool, mode reviewpolicy.Mode, selfReview bool, attributedTo string) approveEligibility {
 	balancedPolicy := mode == reviewpolicy.ModeBalanced
 
 	in := reviewpolicy.ReviewerEligibilityInput{
@@ -153,6 +166,7 @@ func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, w
 		HasImplementationHistory: wasImplementationInvolved,
 		WasAnyInvolved:           wasInvolved,
 		SelfReviewAcknowledged:   selfReview,
+		AttributedTo:             attributedTo,
 	}
 	decision := reviewpolicy.EvaluateReviewerEligibility(in)
 
@@ -166,6 +180,7 @@ func evaluateApproveEligibilityWithMode(issue *models.Issue, sessionID string, w
 			CreatorException: decision.CreatorException,
 			RequiresReason:   decision.RequiresReason,
 			SelfReview:       decision.SelfReview,
+			AttributedTo:     decision.AttributedTo,
 		}
 	}
 

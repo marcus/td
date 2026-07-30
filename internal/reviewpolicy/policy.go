@@ -46,15 +46,25 @@ const (
 	// eligible reviewers. Close-after-recorded-approval is wired in Step 2.
 	ModeDelegated Mode = "delegated"
 
-	// ModeTrusted is delegated plus a flag-gated, audited self-review escape
-	// hatch. It keeps the delegated reviewer-independence norm — an
-	// independent session is always the preferred reviewer — but allows the
-	// implementer (or any session with implementation history) to record an
-	// approval and direct-close their own work IF they explicitly acknowledge
-	// the self-review with the --self-review flag and supply a --reason. The
-	// acknowledgement is stamped on the review row for audit. Without the
-	// flag, trusted mode behaves exactly like delegated and rejects the
-	// self-review with a teaching message.
+	// ModeTrusted is delegated plus an audited acknowledgement path for the
+	// implementer. It keeps the delegated reviewer-independence norm — an
+	// independent session is always the preferred reviewer — but lets a session
+	// with implementation history record an approval and direct-close its own
+	// work if it states, on the record, who reviewed it:
+	//
+	//   --reviewed-by "<who>"  the review is credited to a named party (a
+	//                          sub-agent, a person, a tool). The expected path
+	//                          for orchestrated work, where the orchestrator
+	//                          holds the session but a sub-agent did the review.
+	//   --self-review          the recorder reviewed their own work. Requires a
+	//                          --reason, since nothing else vouches for it.
+	//
+	// Both stamp the review row for audit. Neither is verifiable by td: this is
+	// an honesty guardrail, not a mechanical one, and that is deliberate. A
+	// project that needs a mechanical independence boundary pins
+	// review_policy_mode=delegated or strict, where an involved session cannot
+	// approve at all. Without either acknowledgement, trusted behaves exactly
+	// like delegated and rejects with a teaching message.
 	ModeTrusted Mode = "trusted"
 )
 
@@ -96,10 +106,12 @@ const (
 
 	// ReasonTrustedSelfReviewNeedsFlag is the teaching base string used when a
 	// session that implemented (or has implementation history) tries to review
-	// in trusted mode without acknowledging the self-review. It names BOTH the
-	// preferred norm (delegate to an independent session) and the explicit
-	// escape hatch. Callers append the issue ID via the format helper below.
-	ReasonTrustedSelfReviewNeedsFlag = "you implemented this issue; reviewing it is a self-review. Prefer delegating the review to an independent session. To self-review anyway, re-run with --self-review --reason \"...\""
+	// in trusted mode without saying who reviewed the work. It leads with
+	// attribution because that is now the expected path for orchestrated work:
+	// a sub-agent reviews, the orchestrator records who did it. Genuine
+	// self-review is the second option, not the first. Callers append the
+	// issue ID via the format helper below.
+	ReasonTrustedSelfReviewNeedsFlag = "you implemented this issue, so approving it needs an attribution. If a sub-agent or another party reviewed it, name them: --reviewed-by \"<who>\". If you reviewed your own work, say so: --self-review --reason \"...\""
 
 	ReasonPriorInvolvement = "you were involved with this issue (created, started, or previously worked on)"
 	ReasonIssueNotInReview = "issue is not in review"
@@ -129,6 +141,22 @@ type ReviewerEligibilityInput struct {
 	// audited allow.
 	SelfReviewAcknowledged bool
 
+	// AttributedTo names who actually performed the review, as asserted by the
+	// recording session (--reviewed-by). It is deliberately unverifiable: td
+	// cannot confirm that a named sub-agent exists or read anything. Its value
+	// is that the audit record stops being false when an orchestrator records
+	// a review a sub-agent performed.
+	//
+	// It NEVER grants permission on its own. In trusted mode it satisfies the
+	// same involved-session acknowledgement that SelfReviewAcknowledged does;
+	// in every other mode it is metadata the caller may still record, and the
+	// eligibility decision ignores it.
+	//
+	// Callers are responsible for trimming and rejecting blank values before
+	// populating this field — the policy layer treats any non-empty string as
+	// a valid attestation.
+	AttributedTo string
+
 	// WasAnyInvolved mirrors the old WasSessionInvolved helper (any history
 	// row at all, including created/reviewed). Required for strict mode
 	// parity with the current cmd/review_policy.go:evaluateApproveEligibility
@@ -154,11 +182,22 @@ type ReviewerEligibility struct {
 	RequiresReason   bool
 	RejectionMessage string
 
-	// SelfReview marks the trusted-mode path where an implementer (or session
-	// with implementation history) approved their own work after explicitly
-	// acknowledging it with --self-review. Callers stamp it on the review row
-	// for audit.
+	// SelfReview marks a review recorded by a session that implemented the work
+	// (or has implementation history). It is true for BOTH trusted-mode
+	// acknowledgement paths — --self-review and --reviewed-by — because in both
+	// cases the row was written by an involved session, which is the audit fact
+	// the column has always recorded. AttributedTo is what distinguishes them:
+	//
+	//   SelfReview && AttributedTo == ""  -> the recorder reviewed their own work
+	//   SelfReview && AttributedTo != ""  -> an involved recorder, review credited elsewhere
+	//   !SelfReview                       -> recorded by an independent session
 	SelfReview bool
+
+	// AttributedTo echoes the caller's attribution back so every surface stamps
+	// the review row from the policy decision rather than from raw input. An
+	// independent session may also supply one (crediting a reviewer without
+	// needing the acknowledgement), so this can be set with SelfReview false.
+	AttributedTo string
 }
 
 // EvaluateReviewerEligibility decides whether the current session may record
@@ -172,9 +211,11 @@ func EvaluateReviewerEligibility(in ReviewerEligibilityInput) ReviewerEligibilit
 	}
 
 	// Minor tasks intentionally bypass all self-review restrictions in every
-	// policy mode. This mirrors the existing short-circuit.
+	// policy mode. This mirrors the existing short-circuit. Attribution is
+	// still echoed through: a minor task reviewed by a named party should say
+	// so on the record.
 	if in.Issue.Minor {
-		return ReviewerEligibility{Allowed: true}
+		return ReviewerEligibility{Allowed: true, AttributedTo: in.AttributedTo}
 	}
 
 	switch in.Mode {
@@ -201,7 +242,7 @@ func evaluateReviewerStrict(in ReviewerEligibilityInput) ReviewerEligibility {
 			RejectionMessage: fmt.Sprintf("cannot approve: %s (%s)", ReasonPriorInvolvement, in.Issue.ID),
 		}
 	}
-	return ReviewerEligibility{Allowed: true}
+	return ReviewerEligibility{Allowed: true, AttributedTo: in.AttributedTo}
 }
 
 func evaluateReviewerBalanced(in ReviewerEligibilityInput) ReviewerEligibility {
@@ -219,6 +260,7 @@ func evaluateReviewerBalanced(in ReviewerEligibilityInput) ReviewerEligibility {
 			Allowed:          true,
 			CreatorException: true,
 			RequiresReason:   true,
+			AttributedTo:     in.AttributedTo,
 		}
 	}
 
@@ -228,7 +270,7 @@ func evaluateReviewerBalanced(in ReviewerEligibilityInput) ReviewerEligibility {
 		}
 	}
 
-	return ReviewerEligibility{Allowed: true}
+	return ReviewerEligibility{Allowed: true, AttributedTo: in.AttributedTo}
 }
 
 func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility {
@@ -246,7 +288,7 @@ func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility 
 			RejectionMessage: fmt.Sprintf("cannot approve: %s of %s", ReasonImplementerCannotReview, in.Issue.ID),
 		}
 	}
-	return ReviewerEligibility{Allowed: true}
+	return ReviewerEligibility{Allowed: true, AttributedTo: in.AttributedTo}
 }
 
 // evaluateReviewerTrusted implements the trusted-mode reviewer predicate. It is
@@ -260,12 +302,33 @@ func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility 
 // started history) still needs no flag, exactly as in delegated mode.
 func evaluateReviewerTrusted(in ReviewerEligibilityInput) ReviewerEligibility {
 	if !(in.SessionIsImplementer || in.HasImplementationHistory) {
-		// Independent session: eligible reviewer, no flag, not a self-review.
-		return ReviewerEligibility{Allowed: true}
+		// Independent session: eligible reviewer, no acknowledgement needed and
+		// not a self-review. It may still credit a reviewer by name, so echo
+		// any attribution through for the audit record.
+		return ReviewerEligibility{Allowed: true, AttributedTo: in.AttributedTo}
+	}
+
+	// Attributed review: the recording session implemented the work but names
+	// someone else as the reviewer. This is the expected path for an
+	// orchestrator recording a sub-agent's review. The row is stamped
+	// SelfReview (an involved session wrote it) AND AttributedTo (the review is
+	// credited elsewhere) so the record is literally true about both facts.
+	//
+	// No reason is required: the attribution is the substance, and this is the
+	// default path for orchestrated work — forcing a second string here is
+	// friction on the common case.
+	if in.AttributedTo != "" {
+		return ReviewerEligibility{
+			Allowed:      true,
+			SelfReview:   true,
+			AttributedTo: in.AttributedTo,
+		}
 	}
 
 	if in.SelfReviewAcknowledged {
 		// Acknowledged self-review: allow, mark it for audit, require a reason.
+		// Unlike the attributed path this one asserts nobody else looked at the
+		// work, so the reason carries what was actually checked.
 		return ReviewerEligibility{
 			Allowed:        true,
 			SelfReview:     true,
@@ -273,8 +336,8 @@ func evaluateReviewerTrusted(in ReviewerEligibilityInput) ReviewerEligibility {
 		}
 	}
 
-	// Self-review without acknowledgement: reject with a teaching message that
-	// names both the preferred norm and the explicit escape hatch.
+	// Involved session with no attestation at all: reject with a teaching
+	// message that leads with attribution and offers self-review second.
 	return ReviewerEligibility{
 		RejectionMessage: fmt.Sprintf("cannot approve: %s (%s)", ReasonTrustedSelfReviewNeedsFlag, in.Issue.ID),
 	}
@@ -300,6 +363,12 @@ type CloseEligibilityInput struct {
 	// only has an effect in trusted mode's direct review+close path (Case 2),
 	// where it lets the implementer approve+close their own work in one action.
 	SelfReviewAcknowledged bool
+
+	// AttributedTo is the --reviewed-by attestation. Like
+	// SelfReviewAcknowledged it only matters on the trusted direct
+	// review+close path, where it satisfies the involved-session
+	// acknowledgement without claiming the recorder did the review.
+	AttributedTo string
 }
 
 // CloseEligibility is the decision returned by EvaluateCloseEligibility.
@@ -447,11 +516,14 @@ func evaluateCloseTrusted(in CloseEligibilityInput) CloseEligibility {
 			SessionIsCreator:         in.SessionIsCreator,
 			HasImplementationHistory: in.HasImplementationHistory,
 			SelfReviewAcknowledged:   in.SelfReviewAcknowledged,
+			AttributedTo:             in.AttributedTo,
 		})
 		if rev.Allowed {
-			// A self-review close always requires a reason for audit; an
-			// independent direct close inherits the reviewer decision (no
-			// reason forced here beyond what callers already apply).
+			// An unattributed self-review close requires a reason for audit. An
+			// attributed close does not (the attribution is the substance), and
+			// an independent direct close inherits the reviewer decision — in
+			// both cases RequiresReason comes straight from the reviewer
+			// predicate so the two decisions cannot drift.
 			return CloseEligibility{Allowed: true, RequiresReason: rev.RequiresReason}
 		}
 		return CloseEligibility{RejectionMessage: "cannot close: " + rev.RejectionMessage}

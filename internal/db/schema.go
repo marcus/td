@@ -1,7 +1,13 @@
 package db
 
-// SchemaVersion is the current database schema version
-const SchemaVersion = 36
+// SchemaVersion is the current database schema version.
+//
+// It MUST equal the highest Version in Migrations. RunMigrations short-circuits
+// on `currentVersion >= SchemaVersion`, so appending a migration without
+// bumping this const means the migration never runs on any existing database —
+// only on fresh ones, which start at 0. TestSchemaVersionMatchesMigrations
+// enforces the invariant.
+const SchemaVersion = 37
 
 const schema = `
 -- Issues table
@@ -551,6 +557,13 @@ CREATE TABLE IF NOT EXISTS session_state (
 		// Handled by custom Go code in migrations.go (migrateNormalizeTimestamps).
 		// Rewrites values written by modernc's default time.Time.String() writer;
 		// idempotent and safe to re-run.
+		SQL: "",
+	},
+	{
+		Version:     37,
+		Description: "Add reviewed_by attribution column to issue_reviews",
+		// Handled by custom Go code in reviews_migration.go (migrateReviewedByColumn)
+		// using a columnExists guard so re-running is safe.
 		SQL: "",
 	},
 }

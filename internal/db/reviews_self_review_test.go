@@ -29,7 +29,7 @@ func TestMigration_SelfReviewColumnExistsWithDefaultZero(t *testing.T) {
 
 	// A review created without acknowledging self-review must default to 0.
 	seedIssueForReviewTests(t, database, "td-srdef")
-	id, err := database.CreateIssueReview("td-srdef", "ses-r", "approved", "", "", false)
+	id, err := database.CreateIssueReview(NewReview{IssueID: "td-srdef", ReviewerSession: "ses-r", Decision: "approved"})
 	if err != nil {
 		t.Fatalf("CreateIssueReview: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestCreateIssueReview_SelfReviewRoundTrips(t *testing.T) {
 	defer database.Close()
 
 	seedIssueForReviewTests(t, database, "td-srtrue")
-	if _, err := database.CreateIssueReview("td-srtrue", "ses-impl", "approved", "self-reviewed", "ses-impl", true); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: "td-srtrue", ReviewerSession: "ses-impl", Decision: "approved", Summary: "self-reviewed", RequestedBySession: "ses-impl", SelfReview: true}); err != nil {
 		t.Fatalf("CreateIssueReview: %v", err)
 	}
 

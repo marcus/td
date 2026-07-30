@@ -6,13 +6,15 @@ import (
 	"time"
 )
 
-// TestSchemaVersion_At36 confirms the current schema version is 36 and that
-// a freshly initialized database reports that version after migrations run.
-func TestSchemaVersion_At36(t *testing.T) {
-	if SchemaVersion != 36 {
-		t.Fatalf("SchemaVersion: want 36, got %d", SchemaVersion)
-	}
-
+// TestSchemaVersion_FreshDatabase confirms a freshly initialized database
+// reports the current SchemaVersion after migrations run.
+//
+// The version is no longer hardcoded here: TestSchemaVersionMatchesMigrations
+// pins SchemaVersion against the migration list, which is the invariant that
+// actually matters. A literal in this test only ever produced a mechanical
+// edit on every migration, and it did not catch the one failure mode that
+// counts — a migration appended without bumping the const.
+func TestSchemaVersion_FreshDatabase(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)
 	if err != nil {
@@ -115,15 +117,24 @@ func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
 	if _, err := database.conn.Exec(`DROP TABLE session_state`); err != nil {
 		t.Fatalf("drop session_state: %v", err)
 	}
-	// Rewinding to 34 replays migration 35 (session_state) and migration 36
-	// (timestamp normalization), so RunMigrations reports 2.
+	// Rewinding to 34 replays every migration above 34. Derive the expected
+	// count rather than hardcoding it: this assertion is about migration 35
+	// replaying idempotently, and a literal here means every future migration
+	// breaks an unrelated test.
+	wantReplayed := 0
+	for _, m := range Migrations {
+		if m.Version > 34 {
+			wantReplayed++
+		}
+	}
+
 	if err := database.setSchemaVersionInternal(34); err != nil {
 		t.Fatalf("rewind schema version: %v", err)
 	}
 	if n, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations first: %v", err)
-	} else if n != 2 {
-		t.Fatalf("RunMigrations first count: got %d want 2", n)
+	} else if n != wantReplayed {
+		t.Fatalf("RunMigrations first count: got %d want %d", n, wantReplayed)
 	}
 	assertSessionStateTableShape(t, database)
 
@@ -132,8 +143,8 @@ func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
 	}
 	if n, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations second: %v", err)
-	} else if n != 2 {
-		t.Fatalf("RunMigrations second count: got %d want 2", n)
+	} else if n != wantReplayed {
+		t.Fatalf("RunMigrations second count: got %d want %d", n, wantReplayed)
 	}
 	assertSessionStateTableShape(t, database)
 }
@@ -274,5 +285,71 @@ func TestMigration31_ClosedBySessionBackfill(t *testing.T) {
 	}
 	if untouchedClosedBy != "" {
 		t.Errorf("untouched row closed_by_session: want empty, got %q", untouchedClosedBy)
+	}
+}
+
+// TestSchemaVersionMatchesMigrations guards the invariant that made migration
+// 37 a no-op on every existing database: RunMigrations short-circuits on
+// `currentVersion >= SchemaVersion`, so a migration appended to Migrations
+// without bumping the const runs only on fresh databases and silently never
+// runs on real ones. Every db test starts from Initialize(t.TempDir()) at
+// version 0, so nothing else in the suite catches it.
+func TestSchemaVersionMatchesMigrations(t *testing.T) {
+	if len(Migrations) == 0 {
+		t.Fatal("Migrations is empty")
+	}
+	highest := 0
+	for _, m := range Migrations {
+		if m.Version > highest {
+			highest = m.Version
+		}
+	}
+	if SchemaVersion != highest {
+		t.Fatalf("SchemaVersion = %d but the highest migration is %d; "+
+			"bump SchemaVersion or the new migration will never run on an existing database",
+			SchemaVersion, highest)
+	}
+}
+
+// TestMigrationsAppliedToExistingDatabase is the behavioral counterpart: a
+// database already at the previous version must actually receive the newest
+// migration. This is the check that would have failed on the as-submitted
+// td-478958 change.
+func TestMigrationsAppliedToExistingDatabase(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	// Rewind to the second-highest migration version, simulating a database
+	// created by the previous release.
+	prev := 0
+	for _, m := range Migrations {
+		if m.Version < SchemaVersion && m.Version > prev {
+			prev = m.Version
+		}
+	}
+	if prev == 0 {
+		t.Skip("need at least two migrations")
+	}
+	if err := database.setSchemaVersionInternal(prev); err != nil {
+		t.Fatalf("rewind to %d: %v", prev, err)
+	}
+
+	n, err := database.RunMigrations()
+	if err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+	if n == 0 {
+		t.Fatalf("RunMigrations applied nothing from version %d; the newest migration would never reach an existing database", prev)
+	}
+	got, err := database.GetSchemaVersion()
+	if err != nil {
+		t.Fatalf("GetSchemaVersion: %v", err)
+	}
+	if got != SchemaVersion {
+		t.Fatalf("schema version after migrating: got %d, want %d", got, SchemaVersion)
 	}
 }

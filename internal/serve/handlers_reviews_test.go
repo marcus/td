@@ -229,7 +229,7 @@ func TestIntegration_Approve_CloseAfterReview(t *testing.T) {
 
 	// Another session records an approval review directly in DB (simulates a
 	// different reviewer having recorded review).
-	_, err = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "looks good", sess.ID, false)
+	_, err = database.CreateIssueReview(db.NewReview{IssueID: issueID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved, Summary: "looks good", RequestedBySession: sess.ID})
 	if err != nil {
 		t.Fatalf("create review: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestIntegration_Approve_CloseAfterReview_RequiresReason(t *testing.T) {
 	issue.ReviewRequestedBySession = sess.ID
 	_ = database.UpdateIssue(issue)
 
-	_, _ = database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", sess.ID, false)
+	_, _ = database.CreateIssueReview(db.NewReview{IssueID: issueID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved, RequestedBySession: sess.ID})
 	issue, _ = database.GetIssue(issueID)
 	issue.ReviewerSession = "ses-reviewer"
 	_ = database.UpdateIssue(issue)
@@ -293,7 +293,7 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	setDelegatedMode(t, database.BaseDir())
 
 	issueID := seedInReviewIssue(t, database, "ses-other-impl")
-	reviewID, err := database.CreateIssueReview(issueID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "", false)
+	reviewID, err := database.CreateIssueReview(db.NewReview{IssueID: issueID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved})
 	if err != nil {
 		t.Fatalf("create review: %v", err)
 	}
@@ -633,8 +633,7 @@ func TestIntegration_Approve_CloseAfterReview_TrustedMode(t *testing.T) {
 	issueID := seedInReviewIssue(t, database, implSession)
 
 	// An independent session records the approval.
-	if _, err := database.CreateIssueReview(issueID, "ses-independent-reviewer",
-		reviewpolicy.DecisionApproved, "reviewed the diff", implSession, false); err != nil {
+	if _, err := database.CreateIssueReview(db.NewReview{IssueID: issueID, ReviewerSession: "ses-independent-reviewer", Decision: reviewpolicy.DecisionApproved, Summary: "reviewed the diff", RequestedBySession: implSession}); err != nil {
 		t.Fatalf("create review: %v", err)
 	}
 	issue, _ := database.GetIssue(issueID)

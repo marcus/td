@@ -187,11 +187,25 @@ type IssueReview struct {
 	RequestedBySession string     `json:"requested_by_session,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
-	// SelfReview marks an approval that was recorded by the issue's
-	// implementer-of-record (or a session with substantive implementation
-	// history) acknowledging they reviewed their own work. It is an audit
+	// SelfReview marks a review recorded by the issue's implementer-of-record
+	// (or a session with substantive implementation history). It is an audit
 	// attribute of an approved row, not a distinct decision type.
+	//
+	// Read it together with ReviewedBy — SelfReview alone means "an involved
+	// session wrote this row", which is only a self-review in the literal sense
+	// when no other reviewer is credited.
 	SelfReview bool `json:"self_review"`
+
+	// ReviewedBy names who actually performed the review, as asserted by the
+	// recording session via --reviewed-by. Empty means the recording session
+	// reviewed it itself. td does not and cannot verify this value; it exists
+	// so an orchestrator recording a sub-agent's review writes a true record
+	// instead of claiming a self-review it did not perform.
+	//
+	//   SelfReview=false, ReviewedBy=""   independent session reviewed it
+	//   SelfReview=true,  ReviewedBy=""   the recorder reviewed their own work
+	//   SelfReview=true,  ReviewedBy="X"  involved recorder, X did the review
+	ReviewedBy string `json:"reviewed_by,omitempty"`
 }
 
 // IssueSessionHistory tracks all sessions that touched an issue

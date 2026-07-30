@@ -28,7 +28,7 @@ func TestReadyToCloseByFilter_DelegatedMode(t *testing.T) {
 	a.ImplementerSession = "ses-impl"
 	a.ReviewRequestedBySession = "ses-closer"
 	_ = database.UpdateIssue(a)
-	if _, err := database.CreateIssueReview(a.ID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "ses-closer", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: a.ID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved, RequestedBySession: "ses-closer"}); err != nil {
 		t.Fatalf("create review for A: %v", err)
 	}
 
@@ -41,7 +41,7 @@ func TestReadyToCloseByFilter_DelegatedMode(t *testing.T) {
 	b.Status = models.StatusInReview
 	b.ImplementerSession = "ses-impl"
 	_ = database.UpdateIssue(b)
-	if _, err := database.CreateIssueReview(b.ID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: b.ID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved}); err != nil {
 		t.Fatalf("create review for B: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestReadyToCloseByFilter_StrictIsEmpty(t *testing.T) {
 	iss.Status = models.StatusInReview
 	iss.ReviewRequestedBySession = "ses-closer"
 	_ = database.UpdateIssue(iss)
-	_, _ = database.CreateIssueReview(iss.ID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "ses-closer", false)
+	_, _ = database.CreateIssueReview(NewReview{IssueID: iss.ID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved, RequestedBySession: "ses-closer"})
 
 	results, err := database.ListIssues(ListIssuesOptions{
 		ReadyToCloseBy:   "ses-closer",
@@ -288,7 +288,7 @@ func TestReadyToCloseByFilter_TrustedMode(t *testing.T) {
 	a.ImplementerSession = "ses-impl"
 	a.ReviewRequestedBySession = "ses-closer"
 	_ = database.UpdateIssue(a)
-	if _, err := database.CreateIssueReview(a.ID, "ses-reviewer", reviewpolicy.DecisionApproved, "", "ses-closer", false); err != nil {
+	if _, err := database.CreateIssueReview(NewReview{IssueID: a.ID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved, RequestedBySession: "ses-closer"}); err != nil {
 		t.Fatalf("create review for A: %v", err)
 	}
 

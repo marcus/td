@@ -615,8 +615,10 @@ func TestEvaluateReviewerEligibility_Trusted(t *testing.T) {
 }
 
 // TestEvaluateReviewerEligibility_Trusted_TeachingMessage asserts the rejection
-// for an unflagged self-review names BOTH the preferred delegate path and the
-// explicit --self-review escape hatch, plus the issue ID.
+// for an unattested approval names BOTH acknowledgement paths plus the issue
+// ID. --reviewed-by must come first: it is the expected path for orchestrated
+// work, and an agent that reads only the start of the message should reach for
+// attribution rather than claiming a self-review it did not perform.
 func TestEvaluateReviewerEligibility_Trusted_TeachingMessage(t *testing.T) {
 	issue := inReview("ses-creator", "ses-impl")
 	got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
@@ -626,13 +628,150 @@ func TestEvaluateReviewerEligibility_Trusted_TeachingMessage(t *testing.T) {
 		SessionIsImplementer: true,
 	})
 	if got.Allowed {
-		t.Fatal("implementer without flag should be rejected")
+		t.Fatal("implementer without an attestation should be rejected")
 	}
 	msg := got.RejectionMessage
-	for _, want := range []string{"independent", "--self-review", "--reason", issue.ID} {
+	for _, want := range []string{"--reviewed-by", "--self-review", "--reason", issue.ID} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("teaching message missing %q: %s", want, msg)
 		}
+	}
+	if strings.Index(msg, "--reviewed-by") > strings.Index(msg, "--self-review") {
+		t.Errorf("--reviewed-by must be offered before --self-review: %s", msg)
+	}
+}
+
+// TestEvaluateReviewerEligibility_Trusted_Attribution covers the --reviewed-by
+// path: an implementation-involved session may approve when it names who
+// reviewed the work. The row records BOTH facts — an involved session wrote it
+// (SelfReview) and the review is credited elsewhere (AttributedTo) — so neither
+// field is a lie. No reason is required; the attribution is the substance.
+func TestEvaluateReviewerEligibility_Trusted_Attribution(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+
+	got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
+		Mode:                 ModeTrusted,
+		Issue:                issue,
+		SessionID:            "ses-impl",
+		SessionIsImplementer: true,
+		AttributedTo:         "code-reviewer sub-agent",
+	})
+	if !got.Allowed {
+		t.Fatalf("attributed approval should be allowed: %s", got.RejectionMessage)
+	}
+	if !got.SelfReview {
+		t.Error("an involved session's row must still be stamped SelfReview for audit")
+	}
+	if got.AttributedTo != "code-reviewer sub-agent" {
+		t.Errorf("AttributedTo = %q, want the attribution echoed back", got.AttributedTo)
+	}
+	if got.RequiresReason {
+		t.Error("attributed approval must not require a reason")
+	}
+
+	// Implementation history without being the implementer-of-record takes the
+	// same path.
+	got = EvaluateReviewerEligibility(ReviewerEligibilityInput{
+		Mode:                     ModeTrusted,
+		Issue:                    issue,
+		SessionID:                "ses-helper",
+		HasImplementationHistory: true,
+		AttributedTo:             "reviewer-2",
+	})
+	if !got.Allowed || !got.SelfReview || got.AttributedTo != "reviewer-2" {
+		t.Errorf("impl-history session with attribution: got %+v", got)
+	}
+}
+
+// TestEvaluateReviewerEligibility_AttributionNeverGrants is the security
+// property of the whole design: --reviewed-by is an audit record, not a
+// permission. Only trusted mode treats it as an acknowledgement; the modes that
+// exist to enforce a mechanical independence boundary must ignore it entirely.
+func TestEvaluateReviewerEligibility_AttributionNeverGrants(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+
+	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated, Mode("bogus")} {
+		got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
+			Mode:                 mode,
+			Issue:                issue,
+			SessionID:            "ses-impl",
+			SessionIsImplementer: true,
+			WasAnyInvolved:       true,
+			AttributedTo:         "some sub-agent",
+		})
+		if got.Allowed {
+			t.Errorf("mode %s: attribution must not grant approval to the implementer", mode)
+		}
+	}
+}
+
+// TestEvaluateReviewerEligibility_AttributionEchoedWhenIndependent covers an
+// independent session crediting someone else — allowed in every mode, and
+// never mistaken for a self-review.
+func TestEvaluateReviewerEligibility_AttributionEchoedWhenIndependent(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+
+	for _, mode := range []Mode{ModeDelegated, ModeTrusted} {
+		got := EvaluateReviewerEligibility(ReviewerEligibilityInput{
+			Mode:         mode,
+			Issue:        issue,
+			SessionID:    "ses-outsider",
+			AttributedTo: "human reviewer",
+		})
+		if !got.Allowed {
+			t.Errorf("mode %s: independent session should be allowed: %s", mode, got.RejectionMessage)
+		}
+		if got.SelfReview {
+			t.Errorf("mode %s: independent session's row must not be stamped SelfReview", mode)
+		}
+		if got.AttributedTo != "human reviewer" {
+			t.Errorf("mode %s: AttributedTo = %q, want it echoed", mode, got.AttributedTo)
+		}
+	}
+}
+
+// TestEvaluateCloseEligibility_Trusted_Attribution covers the direct
+// review+close fast path (Case 2): attribution satisfies the involved-session
+// acknowledgement for closing too, and does not force a reason the way an
+// unattributed self-review does.
+func TestEvaluateCloseEligibility_Trusted_Attribution(t *testing.T) {
+	issue := inReview("ses-creator", "ses-impl")
+
+	got := EvaluateCloseEligibility(CloseEligibilityInput{
+		Mode:                 ModeTrusted,
+		Issue:                issue,
+		SessionID:            "ses-impl",
+		SessionIsImplementer: true,
+		AttributedTo:         "code-reviewer sub-agent",
+	})
+	if !got.Allowed {
+		t.Fatalf("attributed close should be allowed: %s", got.RejectionMessage)
+	}
+	if got.RequiresReason {
+		t.Error("attributed close must not require a reason")
+	}
+
+	// Same session, no attestation at all -> still rejected.
+	got = EvaluateCloseEligibility(CloseEligibilityInput{
+		Mode:                 ModeTrusted,
+		Issue:                issue,
+		SessionID:            "ses-impl",
+		SessionIsImplementer: true,
+	})
+	if got.Allowed {
+		t.Error("implementer with no attestation must not close")
+	}
+
+	// Unattributed self-review still requires a reason.
+	got = EvaluateCloseEligibility(CloseEligibilityInput{
+		Mode:                   ModeTrusted,
+		Issue:                  issue,
+		SessionID:              "ses-impl",
+		SessionIsImplementer:   true,
+		SelfReviewAcknowledged: true,
+	})
+	if !got.Allowed || !got.RequiresReason {
+		t.Errorf("acknowledged self-review close: got %+v, want allowed with RequiresReason", got)
 	}
 }
 
@@ -803,5 +942,71 @@ func TestRejectionReasonConstantsNonEmpty(t *testing.T) {
 		if strings.TrimSpace(v) == "" {
 			t.Errorf("constant %s is empty", name)
 		}
+	}
+}
+
+// TestEvaluateCloseEligibility_AttributionNeverGrants is the close-path twin of
+// TestEvaluateReviewerEligibility_AttributionNeverGrants. An independent review
+// of td-478958 mutated the close predicates to honor AttributedTo and the whole
+// suite still passed — the reviewer-path test alone does not cover close.
+//
+// The property: attribution is an audit record, not a permission. Only trusted
+// mode treats it as an acknowledgement. Strict, balanced, delegated, and any
+// misconfigured mode must ignore it entirely on the close path too, or a
+// project that pinned a mode specifically for a mechanical independence
+// boundary loses that boundary to a free-text string.
+func TestEvaluateCloseEligibility_AttributionNeverGrants(t *testing.T) {
+	for _, mode := range []Mode{ModeStrict, ModeBalanced, ModeDelegated, Mode("bogus")} {
+		// in_review, no recorded approval: the implementer must not be able to
+		// close by naming a reviewer.
+		got := EvaluateCloseEligibility(CloseEligibilityInput{
+			Mode:                 mode,
+			Issue:                inReview("ses-creator", "ses-impl"),
+			SessionID:            "ses-impl",
+			SessionIsImplementer: true,
+			WasAnyInvolved:       true,
+			AttributedTo:         "some sub-agent",
+		})
+		if got.Allowed {
+			t.Errorf("mode %s (in_review): attribution must not grant close to the implementer", mode)
+		}
+
+		// Still open / never submitted for review: attribution must not
+		// short-circuit the non-in_review gate either.
+		openIssue := inReview("ses-creator", "ses-impl")
+		openIssue.Status = models.StatusInProgress
+		got = EvaluateCloseEligibility(CloseEligibilityInput{
+			Mode:                     mode,
+			Issue:                    openIssue,
+			SessionID:                "ses-impl",
+			SessionIsImplementer:     true,
+			HasImplementationHistory: true,
+			WasAnyInvolved:           true,
+			AttributedTo:             "some sub-agent",
+		})
+		if got.Allowed {
+			t.Errorf("mode %s (in_progress): attribution must not grant close outside in_review", mode)
+		}
+	}
+}
+
+// TestEvaluateCloseEligibility_Trusted_AttributionScope pins where attribution
+// DOES apply in trusted mode: the in_review direct review+close fast path, and
+// nowhere else. An in_progress issue is not closeable by naming a reviewer —
+// the work was never submitted for review at all.
+func TestEvaluateCloseEligibility_Trusted_AttributionScope(t *testing.T) {
+	inProgress := inReview("ses-creator", "ses-impl")
+	inProgress.Status = models.StatusInProgress
+
+	got := EvaluateCloseEligibility(CloseEligibilityInput{
+		Mode:                     ModeTrusted,
+		Issue:                    inProgress,
+		SessionID:                "ses-impl",
+		SessionIsImplementer:     true,
+		HasImplementationHistory: true,
+		AttributedTo:             "code-reviewer sub-agent",
+	})
+	if got.Allowed {
+		t.Error("trusted: attribution must not close an issue that was never submitted for review")
 	}
 }
