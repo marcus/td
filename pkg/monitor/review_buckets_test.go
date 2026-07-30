@@ -11,7 +11,7 @@ import (
 )
 
 // TestCategorizeInReviewIssue_DelegatedBuckets verifies the Step-3 split
-// between the four delegated-mode buckets. The Test drives
+// between the four buckets under delegated and trusted. The Test drives
 // categorizeInReviewIssue directly (no DB) so the classification logic can be
 // exercised without seeding issue_reviews.
 func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
@@ -30,6 +30,7 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 		hasActiveApproval    bool
 		reviewerSession      string
 		reviewRequestSession string
+		minor                bool
 		mode                 reviewpolicy.Mode
 		want                 TaskListCategory
 	}{
@@ -57,6 +58,49 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 			hasActiveApproval: true,
 			want:              CategoryReadyToClose,
 		},
+		// Trusted (the default) joined the four-bucket split when --record-only
+		// was opened to it. Every trusted row below must match its delegated
+		// twin: the mode is threaded into the reviewpolicy inputs, so any
+		// divergence between these pairs means the threading regressed.
+		{
+			name:      "trusted: uninvolved → reviewable",
+			sessionID: "ses-reviewer", mode: reviewpolicy.ModeTrusted,
+			want: CategoryReviewable,
+		},
+		{
+			name:      "trusted: implementer, no approval → pending_review",
+			sessionID: "ses-impl", mode: reviewpolicy.ModeTrusted,
+			hasImplHistory: true, wasAnyInvolved: true,
+			want: CategoryPendingReview,
+		},
+		{
+			name:      "trusted: implementer + active approval → ready to close",
+			sessionID: "ses-impl", mode: reviewpolicy.ModeTrusted,
+			hasImplHistory: true, wasAnyInvolved: true, hasActiveApproval: true,
+			want: CategoryReadyToClose,
+		},
+		{
+			name:      "trusted: bystander + active approval → ready to close",
+			sessionID: "ses-bystander", mode: reviewpolicy.ModeTrusted,
+			hasActiveApproval: true,
+			want:              CategoryReadyToClose,
+		},
+		{
+			// Implementation history without being the implementer-of-record
+			// still can't review under trusted without --self-review.
+			name:      "trusted: impl history, not implementer-of-record → pending_review",
+			sessionID: "ses-helper", mode: reviewpolicy.ModeTrusted,
+			hasImplHistory: true, wasAnyInvolved: true,
+			want: CategoryPendingReview,
+		},
+		{
+			// Minor bypasses review in every mode, so even the implementer is
+			// an eligible reviewer.
+			name:      "trusted: minor + implementer → reviewable",
+			sessionID: "ses-impl", mode: reviewpolicy.ModeTrusted,
+			hasImplHistory: true, wasAnyInvolved: true, minor: true,
+			want: CategoryReviewable,
+		},
 		{
 			name:      "strict: uninvolved → reviewable (legacy behavior)",
 			sessionID: "ses-reviewer", mode: reviewpolicy.ModeStrict,
@@ -76,6 +120,7 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 			issue := *baseIssue
 			issue.ReviewerSession = tc.reviewerSession
 			issue.ReviewRequestedBySession = tc.reviewRequestSession
+			issue.Minor = tc.minor
 			got := categorizeInReviewIssue(&issue, tc.sessionID, tc.mode,
 				tc.hasImplHistory, tc.wasAnyInvolved, tc.hasActiveApproval)
 			if got != tc.want {

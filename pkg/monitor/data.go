@@ -33,14 +33,22 @@ func resolveMonitorPolicyMode(baseDir string) reviewpolicy.Mode {
 // whether the issue carries an active approval. The decision routes through
 // reviewpolicy so CLI / monitor / serve stay aligned.
 //
-// Buckets under delegated mode:
+// Buckets under delegated and trusted mode:
 //   - CategoryReviewable — session is eligible reviewer, no active approval
 //   - CategoryReadyToClose — active approval exists and can be closed
 //   - CategoryPendingReview — session implemented / participated; waiting on reviewer
 //   - CategoryPendingOther — uninvolved session; waiting on some other reviewer
 //
-// Under strict/balanced the plan's two new buckets collapse back to the
-// existing Reviewable / PendingReview pair so the default UX is unchanged.
+// Under strict/balanced the four buckets collapse back to the Reviewable /
+// PendingReview pair.
+//
+// Trusted (the default) was moved onto the four-bucket split when --record-only
+// was opened to it: a recorded approval must surface as ready-to-close, or the
+// attestation the orchestrator just collected is invisible in the UI. Trusted
+// resolves identically to delegated in every case — the mode is threaded into
+// the reviewpolicy inputs rather than hardcoded, so trusted's reviewer
+// predicate (which rejects an unacknowledged self-review) drives the
+// Reviewable/PendingReview split.
 func categorizeInReviewIssue(
 	issue *models.Issue,
 	sessionID string,
@@ -52,11 +60,16 @@ func categorizeInReviewIssue(
 	isReviewerOfRecord := issue.ReviewerSession != "" && issue.ReviewerSession == sessionID
 	isReviewRequester := issue.ReviewRequestedBySession != "" && issue.ReviewRequestedBySession == sessionID
 
-	// Delegated mode split: distinguish ready-to-close from reviewable.
-	if mode == reviewpolicy.ModeDelegated {
+	// Delegated/trusted split: distinguish ready-to-close from reviewable.
+	// Trusted is delegated plus the self-review escape hatch and shares its
+	// close-on-recorded-approval rule, so a recorded approval must surface as
+	// ready-to-close in both. The mode is threaded into the policy inputs
+	// rather than hardcoded so trusted's reviewer predicate (which rejects an
+	// unacknowledged self-review) applies to the reviewable bucket.
+	if mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted {
 		if hasActiveApproval {
 			closeDec := reviewpolicy.EvaluateCloseEligibility(reviewpolicy.CloseEligibilityInput{
-				Mode:                      reviewpolicy.ModeDelegated,
+				Mode:                      mode,
 				Issue:                     issue,
 				SessionID:                 sessionID,
 				SessionIsImplementer:      isImpl,
@@ -76,7 +89,7 @@ func categorizeInReviewIssue(
 		}
 		// No active approval yet: reviewer eligibility rules.
 		revDec := reviewpolicy.EvaluateReviewerEligibility(reviewpolicy.ReviewerEligibilityInput{
-			Mode:                     reviewpolicy.ModeDelegated,
+			Mode:                     mode,
 			Issue:                    issue,
 			SessionID:                sessionID,
 			SessionIsImplementer:     isImpl,
@@ -292,7 +305,7 @@ func classifyInReviewForData(database *db.DB, issue *models.Issue, sessionID str
 		wasAny = v
 	}
 	hasActiveApproval := false
-	if mode == reviewpolicy.ModeDelegated {
+	if mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted {
 		if rev, err := database.GetActiveApprovalReview(issue.ID); err == nil && rev != nil {
 			hasActiveApproval = true
 		}

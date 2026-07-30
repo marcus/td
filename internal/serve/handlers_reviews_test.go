@@ -542,6 +542,132 @@ func TestIntegration_Approve_TrustedNonImplementer_NoSelfReview(t *testing.T) {
 	}
 }
 
+// TestIntegration_Reviews_TrustedMode_Allowed asserts the record-review
+// endpoint works in the default trusted mode. It used to 409 outside delegated
+// mode, which left trusted able to CLOSE on a recorded approval it could not
+// create.
+func TestIntegration_Reviews_TrustedMode_Allowed(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision": reviewpolicy.DecisionApproved,
+		"summary":  "reviewed the diff",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	final, _ := database.GetIssue(issueID)
+	if final.Status != models.StatusInReview {
+		t.Fatalf("status=%v want in_review (record-only must not close)", final.Status)
+	}
+	active, err := database.GetActiveApprovalReview(issueID)
+	if err != nil || active == nil {
+		t.Fatalf("expected an active approval review, got %v (err=%v)", active, err)
+	}
+	if active.SelfReview {
+		t.Fatalf("independent record-only review must not be flagged self_review: %+v", active)
+	}
+}
+
+// TestIntegration_Reviews_TrustedMode_ImplementerNeedsAck mirrors the CLI: an
+// implementation-involved session cannot silently attest to its own work on the
+// record-only path, but may with an explicit self_review acknowledgement.
+func TestIntegration_Reviews_TrustedMode_ImplementerNeedsAck(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision": reviewpolicy.DecisionApproved,
+		"summary":  "my own work",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status=%d, want 403 without self_review ack", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if active, _ := database.GetActiveApprovalReview(issueID); active != nil {
+		t.Fatal("expected no review row for an unacknowledged self-review")
+	}
+
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision":    reviewpolicy.DecisionApproved,
+		"summary":     "reviewed my own diff",
+		"self_review": true,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d, want 201 with self_review ack", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	active, _ := database.GetActiveApprovalReview(issueID)
+	if active == nil {
+		t.Fatal("expected a recorded review")
+	}
+	if !active.SelfReview {
+		t.Fatalf("acknowledged self-review must be stamped self_review: %+v", active)
+	}
+}
+
+// TestIntegration_Approve_CloseAfterReview_TrustedMode is the end-to-end
+// regression for the whole point of opening record-only to trusted: the
+// implementer records nothing, an independent session attests, and the
+// implementer then closes on that attestation — with no self_review claim
+// anywhere. handledCloseAfterReview used to be delegated-only, so this
+// dead-ended at 403 in the default mode and left the recorded approval
+// unusable on the API.
+func TestIntegration_Approve_CloseAfterReview_TrustedMode(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	// The web session is the IMPLEMENTER here — the session that, without a
+	// recorded approval, would be forced into --self-review.
+	implSession := webSessionID(t, database)
+	issueID := seedInReviewIssue(t, database, implSession)
+
+	// An independent session records the approval.
+	if _, err := database.CreateIssueReview(issueID, "ses-independent-reviewer",
+		reviewpolicy.DecisionApproved, "reviewed the diff", implSession, false); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+	issue, _ := database.GetIssue(issueID)
+	issue.ReviewerSession = "ses-independent-reviewer"
+	_ = database.UpdateIssue(issue)
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reason": "landing after reviewer sign-off",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200 (implementer closing on an independent approval)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	final, _ := database.GetIssue(issueID)
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%v want closed", final.Status)
+	}
+	if final.ClosedBySession != implSession {
+		t.Fatalf("closed_by_session=%q want %q", final.ClosedBySession, implSession)
+	}
+	if final.ReviewerSession != "ses-independent-reviewer" {
+		t.Fatalf("reviewer_session=%q want the independent reviewer", final.ReviewerSession)
+	}
+	// No self-review was claimed or recorded anywhere in this flow.
+	reviews, _ := database.ListIssueReviews(issueID)
+	for _, rv := range reviews {
+		if rv.SelfReview {
+			t.Fatalf("no row should be flagged self_review in this flow: %+v", rv)
+		}
+	}
+}
+
 // asString coerces an interface map value to a string for assertions.
 func asString(v interface{}) string {
 	s, _ := v.(string)

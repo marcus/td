@@ -809,8 +809,8 @@ func (m Model) recordReviewAction() (tea.Model, tea.Cmd) {
 	}
 
 	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
-	if inputs.Mode != reviewpolicy.ModeDelegated {
-		m.StatusMessage = "record-review is only available under review_policy_mode=delegated"
+	if inputs.Mode != reviewpolicy.ModeDelegated && inputs.Mode != reviewpolicy.ModeTrusted {
+		m.StatusMessage = "record-review requires review_policy_mode=delegated or trusted"
 		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 	}

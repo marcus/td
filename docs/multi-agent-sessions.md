@@ -51,12 +51,11 @@ td approve td-a1b2 --reason "Reviewed diff, tests pass"
 # No --self-review needed: this is a genuinely independent session.
 ```
 
-> In the default `trusted` mode, an independent reviewer session closes directly
-> with `td approve <id> --reason "..."`. In `delegated` mode (not the default), a
-> reviewer can instead record approval *without* closing via
-> `td approve <id> --record-only --reason "..."`, and another session performs the
-> close later. `--record-only` requires `review_policy_mode=delegated`; it is
-> hard-rejected in `trusted` mode.
+> An independent reviewer session can either close directly with
+> `td approve <id> --reason "..."`, or record the approval *without* closing via
+> `td approve <id> --record-only --reason "..."` and let another session perform
+> the close later. Both the default `trusted` mode and `delegated` mode support
+> record-only; `strict` and `balanced` reject it.
 
 The implementer context, meanwhile, uses its own value (or none):
 
@@ -115,13 +114,16 @@ route 1 or 2.
    (e.g. `impl-<taskid>`, `reviewer-<taskid>`) before the sub-agent runs any
    `td` command.
 2. In the reviewer context, run `td session --new` so the independent session is
-   materialized, then `td approve <id> --reason "..."` (a genuinely independent
-   session closes directly in the default `trusted` mode; use `--record-only` only
-   in `delegated` mode).
-3. In `trusted` mode the independent `td approve` in step 2 already closes the
-   issue. In `delegated` mode, step 2 only records the approval (`--record-only`),
-   and the orchestrator (or any session) performs the final close using that
-   recorded independent approval. See the review-model section in `CLAUDE.md`.
+   materialized, then either:
+   - `td approve <id> --reason "..."` — the independent session reviews and
+     closes in one step, or
+   - `td approve <id> --record-only --reason "..."` — the independent session
+     attests only, and the orchestrator (or any session) performs the final
+     close with `td approve <id> --reason "..."` using that recorded approval.
+3. Prefer record-only when the orchestrator wants to sequence the close itself
+   (e.g. batching, or landing a commit first). Either way the approval on record
+   came from a session that did not implement the work, which is the property
+   that matters. See the review-model section in `CLAUDE.md`.
 
 This keeps delegated reviews genuinely independent instead of collapsing into the
 orchestrator's session.

@@ -241,10 +241,11 @@ var reviewCmd = &cobra.Command{
 auto-created (consider using 'td handoff' for better documentation).
 
 The submitting session is recorded as 'review_requested_by_session' on the
-issue. Under review_policy_mode=delegated, an active independent approval is
-the close gate, so any session may close after a reviewer records approval.
-Under review_policy_mode=trusted, the implementer may instead approve+close
-their own work with 'td approve --self-review --reason "..."'.
+issue. Under review_policy_mode=delegated and the default trusted mode, an
+active independent approval is the close gate: a reviewer records it with
+'td approve <id> --record-only --reason "..."' and any session may then close.
+Under trusted mode the implementer may instead approve+close their own work
+with 'td approve --self-review --reason "..."'.
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -575,7 +576,7 @@ operates in one of these modes:
     Caller is an eligible reviewer and no active approval exists.
     Records the approval AND closes the issue in one transaction.
 
-  Mode B: Record-only approval (--record-only, delegated mode only)
+  Mode B: Record-only approval (--record-only, delegated/trusted mode)
     Caller is an eligible reviewer. Records an approval review without
     closing. Requires --reason. Use this when a reviewer sub-agent should
     attest the work and the orchestrator / implementer / review-requester
@@ -644,9 +645,13 @@ To surface issues reviewed by a sub-agent that you can close, use
 			return err
 		}
 
-		// Record-only is only meaningful under delegated mode.
-		if recordOnly && mode != reviewpolicy.ModeDelegated {
-			msg := "--record-only requires review_policy_mode=delegated"
+		// Record-only is meaningful under delegated and trusted modes. Trusted
+		// is delegated plus the self-review escape hatch, and its Mode C close
+		// path (below) already accepts a recorded approval — withholding the
+		// ability to CREATE that approval left the default mode able to close
+		// on an attestation it could not write.
+		if recordOnly && mode != reviewpolicy.ModeDelegated && mode != reviewpolicy.ModeTrusted {
+			msg := "--record-only requires review_policy_mode=delegated or trusted"
 			if jsonOutput {
 				output.JSONError(output.ErrCodeInvalidInput, msg)
 			} else {
@@ -849,10 +854,12 @@ To surface issues reviewed by a sub-agent that you can close, use
 					wasImplInvolved = true
 				}
 
-				// Record-only is delegated-mode-only (gated above), so pass mode
-				// directly instead of hardcoding balanced. Under delegated a prior
-				// reviewer may re-review after a reject/re-review cycle; the
+				// Record-only runs under delegated or trusted (gated above), so
+				// pass mode directly instead of hardcoding balanced. Under both a
+				// prior reviewer may re-review after a reject/re-review cycle; the
 				// balanced fallback would incorrectly block via WasAnyInvolved.
+				// Under trusted, an implementer may record a self-approval only by
+				// also passing --self-review, exactly as on the approve+close path.
 				eligibility := evaluateApproveEligibilityWithMode(issue, sess.ID, wasInvolved, wasImplInvolved, mode, selfReview)
 				if !eligibility.Allowed {
 					if !all {
@@ -1721,7 +1728,7 @@ func init() {
 	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
-	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated mode)")
+	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated/trusted mode)")
 	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
 	approveCmd.Flags().String("decision", "", "Review decision: approved (default) | changes_requested (use with --record-only)")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")

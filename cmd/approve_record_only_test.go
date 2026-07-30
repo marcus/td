@@ -333,13 +333,184 @@ func TestApproveRecordOnlyUnderStrictModeRejected(t *testing.T) {
 	if runErr == nil {
 		t.Fatal("expected error under strict mode")
 	}
-	if !strings.Contains(out, "record-only requires review_policy_mode=delegated") {
-		t.Fatalf("expected delegated-mode rejection, got %q", out)
+	if !strings.Contains(out, "record-only requires review_policy_mode=delegated or trusted") {
+		t.Fatalf("expected delegated/trusted-mode rejection, got %q", out)
 	}
 
 	active, _ := database.GetActiveApprovalReview(issue.ID)
 	if active != nil {
 		t.Fatal("expected no review row under strict mode")
+	}
+}
+
+// TestApproveRecordOnlyUnderTrustedMode covers the default-mode record-only
+// path. Trusted is delegated plus the self-review escape hatch, and its Mode C
+// close already accepts a recorded approval — so an independent session must be
+// able to create one without pinning review_policy_mode=delegated.
+func TestApproveRecordOnlyUnderTrustedMode(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	reviewerID := currentSessionID(t, database)
+	if implID == reviewerID {
+		t.Fatal("expected two distinct sessions; got the same id")
+	}
+
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	out, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "reviewed the diff",
+	})
+	if err != nil {
+		t.Fatalf("approve --record-only in trusted mode: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "REVIEW RECORDED "+issue.ID) {
+		t.Fatalf("expected REVIEW RECORDED output, got %q", out)
+	}
+
+	got, _ := database.GetIssue(issue.ID)
+	if got.Status != models.StatusInReview {
+		t.Fatalf("status = %s, want in_review", got.Status)
+	}
+	if got.ClosedAt != nil {
+		t.Fatal("ClosedAt must remain nil for record-only")
+	}
+
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil {
+		t.Fatalf("expected active approval review, got %v (err=%v)", active, err)
+	}
+	if active.ReviewerSession != reviewerID {
+		t.Fatalf("reviewer = %q, want %q", active.ReviewerSession, reviewerID)
+	}
+	if active.SelfReview {
+		t.Fatal("independent record-only review must not be flagged self_review")
+	}
+}
+
+// TestApproveRecordOnlyTrusted_ThenImplementerCloses is the workflow the gate
+// used to make impossible in the default mode: a reviewer sub-agent attests,
+// and the implementer/orchestrator closes on that attestation without ever
+// claiming a self-review.
+func TestApproveRecordOnlyTrusted_ThenImplementerCloses(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	reviewerID := currentSessionID(t, database)
+	if _, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "reviewed the diff",
+	}); err != nil {
+		t.Fatalf("record-only: %v", err)
+	}
+
+	// Implementer closes using the recorded independent approval.
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	out, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"reason": "landing after reviewer sign-off",
+	})
+	if err != nil {
+		t.Fatalf("close after recorded approval: %v\n%s", err, out)
+	}
+
+	got, _ := database.GetIssue(issue.ID)
+	if got.Status != models.StatusClosed {
+		t.Fatalf("status = %s, want closed", got.Status)
+	}
+	if got.ClosedBySession != implID {
+		t.Fatalf("ClosedBySession = %q, want %q", got.ClosedBySession, implID)
+	}
+	if got.ReviewerSession != reviewerID {
+		t.Fatalf("ReviewerSession = %q, want the independent reviewer %q", got.ReviewerSession, reviewerID)
+	}
+}
+
+// TestApproveRecordOnlyTrusted_ImplementerNeedsSelfReview keeps the trusted
+// reviewer predicate honest on the record-only path: an implementation-involved
+// session still cannot silently attest to its own work.
+func TestApproveRecordOnlyTrusted_ImplementerNeedsSelfReview(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	out, _ := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "my own work",
+	})
+	// NOTE: runErr is intentionally not asserted here. Per-issue rejections
+	// inside approve's loop increment `skipped` and `continue`; the command
+	// still returns nil (see also TestApproveRecordOnlyWithoutReasonFails).
+	// The observable contract is the error message plus the absence of a
+	// review row, which is what this asserts. See td-f9cfab for whether a
+	// single-ID rejection should exit non-zero.
+	if !strings.Contains(out, "self-review") {
+		t.Fatalf("expected the trusted self-review teaching message, got %q", out)
+	}
+	if active, _ := database.GetActiveApprovalReview(issue.ID); active != nil {
+		t.Fatal("expected no review row for an unacknowledged self-review")
+	}
+
+	// With the acknowledgement it records, flagged for audit.
+	out, err = runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"self-review": "true",
+		"reason":      "reviewed my own diff",
+	})
+	if err != nil {
+		t.Fatalf("record-only --self-review: %v\n%s", err, out)
+	}
+	active, _ := database.GetActiveApprovalReview(issue.ID)
+	if active == nil {
+		t.Fatal("expected a recorded review")
+	}
+	if !active.SelfReview {
+		t.Fatal("acknowledged self-review must be flagged self_review for audit")
+	}
+	if active.ReviewerSession != implID {
+		t.Fatalf("reviewer = %q, want %q", active.ReviewerSession, implID)
 	}
 }
 
@@ -831,4 +1002,92 @@ func TestApproveRecordOnly_DelegatedRepeatReviewerAllowed(t *testing.T) {
 	// Guard: ensure reviewpolicy helper agrees so the parity suite stays aligned.
 	_ = features.ReviewPolicyMode // keep import
 	_ = reviewpolicy.ModeDelegated
+}
+
+// TestApproveRecordOnlyUnderBalancedModeRejected pairs with the strict-mode
+// case: only delegated and trusted support recording an approval without
+// closing. Balanced must reject with the same message.
+func TestApproveRecordOnlyUnderBalancedModeRejected(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setBalancedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	out, runErr := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "should not work",
+	})
+	if runErr == nil {
+		t.Fatal("expected error under balanced mode")
+	}
+	if !strings.Contains(out, "record-only requires review_policy_mode=delegated or trusted") {
+		t.Fatalf("expected delegated/trusted-mode rejection, got %q", out)
+	}
+	if active, _ := database.GetActiveApprovalReview(issue.ID); active != nil {
+		t.Fatal("expected no review row under balanced mode")
+	}
+}
+
+// TestApproveRecordOnlyTrusted_ChangesRequested covers the non-approving
+// record-only decision in the default mode.
+func TestApproveRecordOnlyTrusted_ChangesRequested(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	out, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"decision":    reviewpolicy.DecisionChangesRequested,
+		"reason":      "needs a null check",
+	})
+	if err != nil {
+		t.Fatalf("record-only changes_requested in trusted mode: %v\n%s", err, out)
+	}
+
+	got, _ := database.GetIssue(issue.ID)
+	if got.Status != models.StatusInReview {
+		t.Fatalf("status = %s, want in_review", got.Status)
+	}
+	// changes_requested must NOT masquerade as an approval.
+	if active, _ := database.GetActiveApprovalReview(issue.ID); active != nil {
+		t.Fatalf("changes_requested must not produce an active approval, got %+v", active)
+	}
+	if got.ReviewerSession != "" {
+		t.Fatalf("ReviewerSession = %q, want empty for changes_requested", got.ReviewerSession)
+	}
+
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("expected exactly one review row, got %d (err=%v)", len(reviews), err)
+	}
+	if reviews[0].Decision != reviewpolicy.DecisionChangesRequested {
+		t.Fatalf("decision = %s, want changes_requested", reviews[0].Decision)
+	}
 }

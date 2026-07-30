@@ -189,7 +189,7 @@ func canApprove(ctx HandlerContext, issue *models.Issue) bool {
 			mode = m
 		}
 	}
-	if mode == reviewpolicy.ModeDelegated {
+	if mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted {
 		if active, err := ctx.DB.GetActiveApprovalReview(issue.ID); err == nil && active != nil {
 			if serveCloseDecision(ctx, issue, false).Allowed {
 				return true
@@ -639,7 +639,11 @@ func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.
 			mode = m
 		}
 	}
-	if mode != reviewpolicy.ModeDelegated {
+	// Delegated and trusted both close on a recorded approval. Trusted is
+	// delegated plus the self-review escape hatch (reviewpolicy.evaluateCloseTrusted
+	// Case 1 is identical to delegated's), so withholding this path left the
+	// API able to RECORD an approval it could then never act on.
+	if mode != reviewpolicy.ModeDelegated && mode != reviewpolicy.ModeTrusted {
 		return false
 	}
 	active, err := ctx.DB.GetActiveApprovalReview(issue.ID)

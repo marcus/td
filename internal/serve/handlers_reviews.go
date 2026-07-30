@@ -17,6 +17,13 @@ import (
 type reviewRecordBody struct {
 	Decision string `json:"decision"`
 	Summary  string `json:"summary"`
+
+	// SelfReview is the API equivalent of the CLI's --self-review on the
+	// record-only path. It only has an effect in trusted mode, where it lets
+	// an implementation-involved session record an acknowledged self-approval
+	// without closing. Without it, trusted mode rejects that session exactly
+	// as delegated does.
+	SelfReview bool `json:"self_review"`
 }
 
 // IssueReviewSummary is the nested DTO used for the issue's active approval
@@ -58,17 +65,17 @@ func IssueReviewToDTO(r *models.IssueReview) IssueReviewDTO {
 }
 
 // HandleRecordReview implements POST /v1/issues/{id}/reviews. Under the
-// delegated policy mode, it records an approval (or changes_requested) review
-// without closing the issue. Rejects with 409 when the mode isn't delegated
-// so clients get a clear signal rather than a silent success that doesn't
-// unblock the close-after-review flow.
+// delegated and trusted policy modes, it records an approval (or
+// changes_requested) review without closing the issue. Rejects with 409 under
+// strict/balanced so clients get a clear signal rather than a silent success
+// that doesn't unblock the close-after-review flow.
 //
 // Status codes:
 //   - 201 Created on success
 //   - 400 on missing summary / invalid decision / unknown issue
 //   - 403 on ineligible reviewer
 //   - 404 when issue doesn't exist
-//   - 409 when mode != delegated or an active approval already exists
+//   - 409 when mode is strict/balanced, or an active approval already exists
 func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := r.PathValue("id")
 	if issueID == "" {
@@ -101,8 +108,13 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 			mode = m
 		}
 	}
-	if mode != reviewpolicy.ModeDelegated {
-		WriteError(w, ErrConflict, "record-only review requires review_policy_mode=delegated", http.StatusConflict)
+	// Delegated and trusted both support recording an approval without
+	// closing. Trusted is delegated plus the self-review escape hatch, so the
+	// close-using-recorded-approval path accepts these rows in both modes (see
+	// handledCloseAfterReview in handlers_transitions.go, which was opened to
+	// trusted in the same change). Mirrors the CLI gate in cmd/review.go.
+	if mode != reviewpolicy.ModeDelegated && mode != reviewpolicy.ModeTrusted {
+		WriteError(w, ErrConflict, "record-only review requires review_policy_mode=delegated or trusted", http.StatusConflict)
 		return
 	}
 
@@ -128,8 +140,10 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Reviewer eligibility — share the same decision path as approve.
-	decision := serveReviewerDecision(ctx, issue, false)
+	// Reviewer eligibility — share the same decision path as approve. The
+	// self_review acknowledgement is threaded through so the CLI's
+	// "--record-only --self-review" combination has an API equivalent.
+	decision := serveReviewerDecision(ctx, issue, body.SelfReview)
 	if !decision.Allowed {
 		WriteError(w, ErrForbidden, decision.RejectionMessage, http.StatusForbidden)
 		return
@@ -155,7 +169,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	}
 	_ = ctx.DB.SupersedeActiveReviews(issue.ID)
 
-	reviewID, err := ctx.DB.CreateIssueReview(issue.ID, ctx.SessionID, body.Decision, body.Summary, issue.ReviewRequestedBySession, false)
+	reviewID, err := ctx.DB.CreateIssueReview(issue.ID, ctx.SessionID, body.Decision, body.Summary, issue.ReviewRequestedBySession, decision.SelfReview)
 	if err != nil {
 		slog.Error("create issue review", "err", err, "id", issue.ID)
 		WriteError(w, ErrInternal, "failed to record review", http.StatusInternalServerError)
