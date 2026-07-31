@@ -568,6 +568,11 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
 }
 
+// errApproveAllSkipped signals "every named issue was rejected" purely so the
+// process exits non-zero. It is silenced before reaching cobra's error printer;
+// the actionable message was already written by the per-issue path.
+var errApproveAllSkipped = fmt.Errorf("no issues approved: %w", errSilentExit)
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues, or record a review",
@@ -835,6 +840,11 @@ To surface issues reviewed by a sub-agent that you can close, use
 
 		approved := 0
 		skipped := 0
+		// noop counts outcomes that are neither success nor failure: an issue
+		// that is already approved and closed. Re-approving one is idempotent
+		// by design, so it must not make the command exit non-zero, and it is
+		// tracked separately rather than folded into skipped.
+		noop := 0
 		for _, issueID := range issueIDs {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
@@ -863,7 +873,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				} else if !all {
 					output.Warning("%s", message)
 				}
-				skipped++
+				noop++
 				continue
 			}
 
@@ -1457,6 +1467,28 @@ To surface issues reviewed by a sub-agent that you can close, use
 		if len(issueIDs) > 1 && !jsonOutput {
 			fmt.Printf("\nApproved %d, skipped %d\n", approved, skipped)
 		}
+
+		// Exit non-zero when everything the caller explicitly named was
+		// skipped. Rejections inside the loop print to stderr but used to
+		// leave the exit code at 0, so `td approve <id> || handle_failure`
+		// reported success for a command that did nothing — backwards for a
+		// tool whose primary user is an agent reading exit codes.
+		//
+		// --all is deliberately exempt: there the caller asked for "whatever
+		// is ready", and finding nothing ready is not a failure. Same for a
+		// bulk list where at least one issue was approved.
+		// Note there is no `&& noop == 0` term: a batch of one already-closed
+		// issue and one rejected issue must still fail. The idempotent case is
+		// already covered because a lone closed issue increments noop and
+		// leaves skipped at 0.
+		if !all && approved == 0 && skipped > 0 {
+			// The per-issue error was already emitted (JSON envelope or
+			// stderr). Returning a bare sentinel here sets the exit code
+			// without printing a second envelope, which would make --json
+			// output unparseable, or a cobra usage dump, which would bury the
+			// teaching message the rejection just printed.
+			return errApproveAllSkipped
+		}
 		return nil
 	},
 }
@@ -1932,6 +1964,7 @@ func init() {
 	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
+	approveCmd.SilenceUsage = true
 	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated/trusted mode)")
 	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
 	approveCmd.Flags().String("reviewed-by", "", "Name who performed the review (e.g. a sub-agent). Records the attribution; in trusted mode it also lets an involved session approve")

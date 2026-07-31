@@ -1098,3 +1098,99 @@ func TestApproveRecordOnlyTrusted_ChangesRequested(t *testing.T) {
 		t.Fatalf("decision = %s, want changes_requested", reviews[0].Decision)
 	}
 }
+
+// TestApproveExitsNonZeroWhenNamedIssueRejected covers the exit-code contract.
+// Rejections inside approve's per-issue loop print to stderr but used to leave
+// the exit code at 0, so `td approve <id> || handle_failure` reported success
+// for a command that did nothing — backwards for a tool whose primary user is
+// an agent reading exit codes.
+func TestApproveExitsNonZeroWhenNamedIssueRejected(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	// Implementer with no attestation: rejected, and the command must say so
+	// through its exit status, not only on stderr.
+	_, runErr := runApproveCmd(t, []string{issue.ID}, nil)
+	if runErr == nil {
+		t.Fatal("expected a non-nil error when the only named issue was rejected")
+	}
+	if got, _ := database.GetIssue(issue.ID); got.Status != models.StatusInReview {
+		t.Errorf("status = %s, want in_review", got.Status)
+	}
+}
+
+// TestApproveIdempotentCloseStillExitsZero pins the distinction the exit-code
+// change must not flatten: re-approving an already-closed issue is a no-op by
+// design, not a failure. An agent retrying a command it is unsure completed
+// should not be told it failed.
+func TestApproveIdempotentCloseStillExitsZero(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	if _, err := runApproveCmd(t, []string{issue.ID}, map[string]string{"reason": "looks good"}); err != nil {
+		t.Fatalf("first approve: %v", err)
+	}
+	if _, err := runApproveCmd(t, []string{issue.ID}, nil); err != nil {
+		t.Errorf("re-approving a closed issue must remain a zero-exit no-op, got: %v", err)
+	}
+}
+
+// TestApproveAllExitsZeroWhenNothingReady keeps --all exempt: there the caller
+// asked for "whatever is ready", and finding nothing ready is not a failure.
+func TestApproveAllExitsZeroWhenNothingReady(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	// The implementer's own work is not approvable without an attestation, so
+	// --all finds it and skips it.
+	_, runErr := runApproveCmd(t, []string{}, map[string]string{"all": "true"})
+	if runErr != nil {
+		t.Errorf("--all must not fail when nothing is ready, got: %v", runErr)
+	}
+	if got, _ := database.GetIssue(issue.ID); got.Status != models.StatusInReview {
+		t.Errorf("status = %s, want in_review", got.Status)
+	}
+}

@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -68,6 +69,10 @@ func initLogFile() *os.File {
 }
 
 // Execute runs the root command
+// errSilentExit marks an error whose message has already been delivered by the
+// command itself. Execute sets the exit code and prints nothing further.
+var errSilentExit = errors.New("td: silent exit")
+
 func Execute() {
 	if f := initLogFile(); f != nil {
 		defer f.Close()
@@ -83,6 +88,15 @@ func Execute() {
 
 	if err != nil {
 		args := os.Args[1:]
+
+		// Some commands report their failure fully through their own output
+		// (per-issue errors, JSON envelopes) and return a sentinel purely to
+		// set the exit code. Printing anything more would emit a second JSON
+		// envelope — making --json output unparseable — or repeat a message the
+		// command already tailored.
+		if errors.Is(err, errSilentExit) {
+			os.Exit(1)
+		}
 
 		// Log agent error for analysis
 		logAgentError(args, err.Error())
