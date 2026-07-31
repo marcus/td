@@ -4,6 +4,8 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.54.0] - 2026-07-30
+
 ### Review attribution
 
 - **`td approve --reviewed-by "<who>"` records who actually performed a review** (td-0bc752). `issue_reviews.reviewer_session` conflated two different facts — who reviewed the work, and which session wrote the row down. Those were the same thing when one session meant one agent; they diverge as soon as an orchestrator records a review its sub-agent performed, and `--self-review` then forces that orchestrator to write a record that is false. Good models balk at that, correctly, and the work stalls. Attribution is stored in a new `issue_reviews.reviewed_by` column and requires no `--reason`; the attribution is the substance. Available on the CLI, the API (`reviewed_by` on `/approve` and `/reviews`), and the monitor.
@@ -14,13 +16,18 @@ All notable changes to td are documented in this file.
 ### Fixed
 
 - **`--record-only` now works in the default `trusted` mode** (td-1748a6). It was rejected outside `delegated`, while the close-after-recorded-approval path already accepted `trusted` — so the default mode could close on an attestation it was not allowed to create. The API's close-after-recorded-approval path was delegated-only in the same way, leaving a recorded approval unusable through `/approve`.
+- **Review rows now sync between machines** (td-02ae9f). `issue_reviews` had a fully built apply path but nothing that emitted the events, so reviews never left the machine that created them and close-after-recorded-approval silently did not work across two hosts — the exact topology this release recommends. Creates, supersedes, and undo now emit atomic lifecycle events, with cross-peer coverage in the sync harness.
+- **The monitor no longer silently discards typed text** (td-5d602a). Modal inputs were captured on a by-value receiver's copy, so typed text reached the modal but not the code that read it, and the first characters were swallowed before the input took focus. A close reason typed into the monitor was discarded outright and record-review did not work at all. Initial typing, bracketed paste, and Ctrl+V are all fixed.
+- **The monitor writes `security_events.jsonl` entries** for involved-session approvals (td-b718ba), matching the CLI and API. It was the one surface with no audit-file coverage.
+- **`td approve`, `start`, `reject`, and `close` report rejections through their exit code** (td-f9cfab, td-b76671). A rejected command printed to stderr and exited 0, so `td approve <id> || handle_failure` reported success for a command that did nothing — backwards for a tool whose primary user reads exit codes. Idempotent no-ops (re-approving an already-closed issue) deliberately still exit 0.
+- **Free text can no longer forge log entries in terminal output** (td-1ea790). Descriptions, acceptance criteria, handoff items, review summaries, and log messages are sanitized before rendering in `td show` and `td list --long`: escape sequences are stripped (an `ESC[E` moves the cursor with no newline in the data), carriage returns are normalized, and multi-line text is marked as a continuation of its entry rather than reading as a new one. This matters more than it used to now that an unverifiable attestation is what stands in for mechanical review independence — a reader who cannot trust the log cannot audit the attestation.
 - The monitor's ready-to-close bucket, its record-review action, and `td reviewable`'s SQL now agree with the policy layer under `trusted` instead of silently diverging from it.
 
 ### Known limitations
 
-- **Review rows do not sync between machines** (td-02ae9f). The apply path exists and is tested, but nothing emits the events, so `issue_reviews` never leaves the machine that created it. Close-after-recorded-approval therefore works within a machine and not across two. Single-host workflows are unaffected. Pre-existing, not introduced here.
-- **Monitor text inputs silently drop characters** (td-5d602a). A modal's input is captured on a by-value receiver's copy, so typed text reaches the modal but not the code that reads it, and the first characters are swallowed before the input takes focus. The approve-attribution prompt is fixed; the monitor's close-confirm and record-review modals are not — a close reason typed into the monitor is currently discarded, and record-review from the monitor does not work at all.
-- **The monitor writes no `security_events.jsonl` entry** for an involved-session approval (td-b718ba). It is the one surface without audit-file coverage; the CLI and API both write it.
+- **Issue titles are not sanitized** for terminal rendering (td-c0e73c). Description, acceptance, handoff, review-summary and log text all are, but a title carrying an escape sequence can still forge a line at the top of `td show` and in plain `td list`. Pre-existing and unchanged by this release.
+- **The monitor's activity feed and `td query` output are not sanitized** (td-c0e73c). `td query` renders short-form only, so it never emits the prose blocks that carry the vector.
+- **`td unstart`, `block`, `reopen`, and `unblock` still exit 0 on rejection** (td-34c833). The commands fixed above cover the main workflow paths.
 
 ## [v0.53.0] - 2026-07-25
 
