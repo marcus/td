@@ -518,23 +518,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFormUpdate(msg)
 	}
 
-	// Bubble Tea v2 delivers bracketed paste as a non-key PasteMsg. Route it
-	// through the declarative modal so it updates the input pointer owned by
-	// that modal, not the aliased textinput field on this returned Model copy.
-	if _, isPaste := msg.(tea.PasteMsg); isPaste {
-		switch {
-		case m.CloseConfirmOpen && m.CloseConfirmModal != nil:
-			_, cmd := m.CloseConfirmModal.HandleMsg(msg)
-			return m, cmd
-		case m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil:
-			_, cmd := m.SelfReviewConfirmModal.HandleMsg(msg)
-			return m, cmd
-		case m.RecordReviewOpen && m.RecordReviewModal != nil:
-			_, cmd := m.RecordReviewModal.HandleMsg(msg)
-			return m, cmd
-		}
-	}
-
 	// Board editor mode: forward non-key messages to inputs (cursor blink, etc.)
 	if m.BoardEditorOpen && m.BoardEditorMode != "info" {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
@@ -559,54 +542,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Close confirmation mode: forward non-key messages to textinput (cursor blink, etc.)
-	// Key messages are handled in handleKey() via the declarative modal
-	if m.CloseConfirmOpen {
+	// Route non-key messages through declarative modals, which own the input
+	// pointers that rendering and executors read. This intentionally does not
+	// inspect the concrete message type: bubbles/textinput uses private
+	// messages for Ctrl+V clipboard results in addition to tea.PasteMsg.
+	if m.CloseConfirmOpen && m.CloseConfirmModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var inputCmd tea.Cmd
-			m.CloseConfirmInput, inputCmd = m.CloseConfirmInput.Update(msg)
-			if inputCmd != nil {
-				return m, inputCmd
+			_, cmd := m.CloseConfirmModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}
 
 	// Attribution prompt: forward non-key messages to textinput (cursor blink).
 	// Key messages are handled in handleKey() via the declarative modal.
-	if m.SelfReviewConfirmOpen {
+	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var cmds []tea.Cmd
-			var inputCmd tea.Cmd
-			m.SelfReviewConfirmInput, inputCmd = m.SelfReviewConfirmInput.Update(msg)
-			if inputCmd != nil {
-				cmds = append(cmds, inputCmd)
-			}
-			m.SelfReviewReasonInput, inputCmd = m.SelfReviewReasonInput.Update(msg)
-			if inputCmd != nil {
-				cmds = append(cmds, inputCmd)
-			}
-			if len(cmds) > 0 {
-				return m, tea.Batch(cmds...)
+			_, cmd := m.SelfReviewConfirmModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}
 
 	// Record-review mode: forward non-key messages to textinput (cursor blink).
 	// Key messages are handled in handleKey() via the declarative modal.
-	if m.RecordReviewOpen {
+	if m.RecordReviewOpen && m.RecordReviewModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var cmds []tea.Cmd
-			var inputCmd tea.Cmd
-			m.RecordReviewInput, inputCmd = m.RecordReviewInput.Update(msg)
-			if inputCmd != nil {
-				cmds = append(cmds, inputCmd)
-			}
-			m.RecordReviewReviewerInput, inputCmd = m.RecordReviewReviewerInput.Update(msg)
-			if inputCmd != nil {
-				cmds = append(cmds, inputCmd)
-			}
-			if len(cmds) > 0 {
-				return m, tea.Batch(cmds...)
+			_, cmd := m.RecordReviewModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}

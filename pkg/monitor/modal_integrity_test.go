@@ -5,12 +5,47 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/atotto/clipboard"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
 )
+
+func pasteClipboardWithCtrlV(t *testing.T, m Model, text string) Model {
+	t.Helper()
+	original, err := clipboard.ReadAll()
+	if err != nil {
+		t.Skipf("system clipboard unavailable: %v", err)
+	}
+	if err := clipboard.WriteAll(text); err != nil {
+		t.Skipf("system clipboard unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = clipboard.WriteAll(original) })
+
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("Ctrl+V did not return a clipboard command")
+	}
+
+	feed := func(msg tea.Msg) {
+		updated, _ = m.Update(msg)
+		m = updated.(Model)
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, batchCmd := range batch {
+			if batchCmd != nil {
+				feed(batchCmd())
+			}
+		}
+	} else {
+		feed(msg)
+	}
+	return m
+}
 
 func TestCloseConfirmKeyPathPersistsTypedReason(t *testing.T) {
 	baseDir := t.TempDir()
@@ -110,7 +145,7 @@ func TestRecordReviewKeyPathPersistsTypedSummary(t *testing.T) {
 	}
 }
 
-func TestCloseConfirmPastePersistsReason(t *testing.T) {
+func TestCloseConfirmCtrlVPastePersistsReason(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
 	if err != nil {
@@ -126,9 +161,11 @@ func TestCloseConfirmPastePersistsReason(t *testing.T) {
 	m = m.openCloseConfirmModal(issue.ID, issue.Title)
 	_ = m.CloseConfirmModal.Render(m.Width, m.Height, m.CloseConfirmMouseHandler)
 
-	updated, _ := m.Update(tea.PasteMsg{Content: "pasted close reason"})
-	m = updated.(Model)
-	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = pasteClipboardWithCtrlV(t, m, "pasted close reason")
+	if got := m.CloseConfirmModal.InputValue("reason"); got != "pasted close reason" {
+		t.Fatalf("modal reason = %q, want pasted close reason", got)
+	}
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 
 	logs, err := database.GetLogs(issue.ID, 0)
@@ -143,7 +180,7 @@ func TestCloseConfirmPastePersistsReason(t *testing.T) {
 	t.Fatalf("pasted close reason not persisted: %+v", logs)
 }
 
-func TestRecordReviewPastePersistsSummary(t *testing.T) {
+func TestRecordReviewCtrlVPastePersistsSummary(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
 	if err != nil {
@@ -159,9 +196,11 @@ func TestRecordReviewPastePersistsSummary(t *testing.T) {
 	m = m.openRecordReviewModal(issue.ID, issue.Title)
 	_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
 
-	updated, _ := m.Update(tea.PasteMsg{Content: "acceptable pasted review"})
-	m = updated.(Model)
-	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = pasteClipboardWithCtrlV(t, m, "acceptable pasted review")
+	if got := m.RecordReviewModal.InputValue("reason"); got != "acceptable pasted review" {
+		t.Fatalf("modal summary = %q, want acceptable pasted review", got)
+	}
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 
 	active, err := database.GetActiveApprovalReview(issue.ID)
@@ -173,7 +212,7 @@ func TestRecordReviewPastePersistsSummary(t *testing.T) {
 	}
 }
 
-func TestSelfReviewPastePersistsReason(t *testing.T) {
+func TestSelfReviewCtrlVPastePersistsReason(t *testing.T) {
 	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "trusted")
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
@@ -214,8 +253,10 @@ func TestSelfReviewPastePersistsReason(t *testing.T) {
 	m = updated.(Model)
 	_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
 
-	updated, _ = m.Update(tea.PasteMsg{Content: "pasted self-review reason"})
-	m = updated.(Model)
+	m = pasteClipboardWithCtrlV(t, m, "pasted self-review reason")
+	if got := m.SelfReviewConfirmModal.InputValue("reason"); got != "pasted self-review reason" {
+		t.Fatalf("modal self-review reason = %q, want pasted self-review reason", got)
+	}
 	updated, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updated.(Model)
 
