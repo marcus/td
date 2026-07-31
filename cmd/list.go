@@ -86,7 +86,10 @@ var listCmd = &cobra.Command{
 				for _, issue := range results {
 					logs, _ := database.GetLogs(issue.ID, 5)
 					handoff, _ := database.GetLatestHandoff(issue.ID)
-					fmt.Print(output.FormatIssueLong(&issue, logs, handoff))
+					// Same pre-render sanitization as `td show`: this renders the
+					// identical block from the identical function, so it carries
+					// the identical forgery vectors.
+					fmt.Print(output.FormatIssueLong(output.SanitizedForDisplay(&issue), logs, handoff))
 					fmt.Println("---")
 				}
 				return nil
@@ -290,7 +293,7 @@ var listCmd = &cobra.Command{
 			for _, issue := range issues {
 				logs, _ := database.GetLogs(issue.ID, 5)
 				handoff, _ := database.GetLatestHandoff(issue.ID)
-				fmt.Print(output.FormatIssueLong(&issue, logs, handoff))
+				fmt.Print(output.FormatIssueLong(output.SanitizedForDisplay(&issue), logs, handoff))
 				fmt.Println("---")
 			}
 			return nil

@@ -272,6 +272,14 @@ Examples:
 		}
 
 		renderMarkdown, _ := cmd.Flags().GetBool("render-markdown")
+
+		// Sanitize stored terminal-facing text BEFORE any rendering step. Title,
+		// description, and acceptance can all carry cursor controls; title is
+		// also collapsed to one line so it cannot forge a section below the
+		// header. Doing this after glamour would instead shred glamour's own
+		// styling.
+		issue = output.SanitizedForDisplay(issue)
+
 		issueForOutput := issue
 		if renderMarkdown {
 			width := output.TerminalWidth(80)
@@ -326,7 +334,11 @@ Examples:
 				if r.SupersededAt != nil {
 					marker += " [superseded]"
 				}
-				summary := r.Summary
+				// The review summary is free text that lands in the audit
+				// section. Left raw, a crafted --reason renders a correctly
+				// formatted, backdated line here — forging the very
+				// attestation this section exists to display.
+				summary := output.IndentContinuation(r.Summary)
 				if summary == "" {
 					summary = "(no summary)"
 				}
@@ -514,6 +526,9 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 			output.Warning("issue not found: %s", id)
 			continue
 		}
+
+		// Same pre-render sanitization as the single-issue path above.
+		issue = output.SanitizedForDisplay(issue)
 
 		if short {
 			fmt.Println(output.FormatIssueShort(issue))
