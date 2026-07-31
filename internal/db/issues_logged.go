@@ -49,27 +49,34 @@ func reviewInvalidatingDiff(prev, next *models.Issue, cascadedReparent bool) rev
 // Dependencies / linked_files / work_session_tags changes arrive through
 // separate side-table mutation paths; those call supersedeApprovalIfLinked
 // directly (see relations_logged.go and work_sessions.go).
-func (db *DB) supersedeIfReviewInvalidating(prev, next *models.Issue, sessionID string) {
+func (db *DB) supersedeIfReviewInvalidating(prev, next *models.Issue, sessionID string) error {
 	if prev == nil || next == nil {
-		return
+		return nil
 	}
 	m := reviewInvalidatingDiff(prev, next, false)
 	if !reviewpolicy.IsReviewInvalidatingMutation(m) {
-		return
+		return nil
 	}
-	// Best-effort supersede and clear reviewer/reviewed_at fields. This
-	// helper runs INSIDE withWriteLock from the caller (updateIssueAndLog*),
-	// so we must use the lock-free variants to avoid deadlocking on the
-	// reentrant flock.
+	// This helper runs INSIDE withWriteLock from the caller
+	// (updateIssueAndLog*), so use lock-free variants to avoid deadlocking on
+	// the reentrant flock. Logged review mutations still use their own SQL
+	// transaction so a failed event insert rolls back the review change.
 	if sessionID == "" {
-		_ = db.supersedeActiveReviewsLocked(next.ID)
+		if err := db.supersedeActiveReviewsLocked(next.ID); err != nil {
+			return err
+		}
 	} else {
-		_ = db.supersedeActiveReviewsLoggedLocked(next.ID, sessionID)
+		if err := db.supersedeActiveReviewsLoggedLocked(next.ID, sessionID); err != nil {
+			return err
+		}
 	}
-	_, _ = db.conn.Exec(
+	if _, err := db.conn.Exec(
 		`UPDATE issues SET reviewer_session = '', reviewed_at = NULL WHERE id = ?`,
 		next.ID,
-	)
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
 // StaleIssueStatusError indicates the issue status changed after the caller
@@ -241,6 +248,13 @@ func (db *DB) updateIssueAndLog(issue *models.Issue, sessionID string, actionTyp
 }
 
 func (db *DB) updateIssueAndLogFromPrevious(issue, prev *models.Issue, sessionID string, actionType models.ActionType) error {
+	// Review invalidation must succeed before the issue mutation. The review
+	// helper commits its row update and sync event atomically; on an injected
+	// action_log failure this returns without changing the issue.
+	if err := db.supersedeIfReviewInvalidating(prev, issue, sessionID); err != nil {
+		return fmt.Errorf("supersede invalidated review: %w", err)
+	}
+
 	previousData := marshalIssue(prev)
 
 	// Apply update
@@ -290,12 +304,6 @@ func (db *DB) updateIssueAndLogFromPrevious(issue, prev *models.Issue, sessionID
 	if err != nil {
 		return fmt.Errorf("log action: %w", err)
 	}
-
-	// Supersede any active approval review if the change is review-
-	// invalidating. Approve/close paths are NOT invalidating (status went
-	// in_review -> closed), so this no-ops for the normal reviewer-close
-	// flow.
-	db.supersedeIfReviewInvalidating(prev, issue, sessionID)
 
 	return nil
 }
@@ -366,6 +374,19 @@ func (db *DB) updateIssueAndLogFromPreviousWithReviewMeta(
 	issue, prev *models.Issue, sessionID string, actionType models.ActionType,
 	createdReviewID, priorActiveReviewID string,
 ) error {
+	// Approve / close-after-review are NOT review-invalidating: status goes
+	// in_review -> closed, and the approve path intentionally creates the
+	// review row it wants to keep active. All other invalidating mutations
+	// must emit their review update before the issue itself changes.
+	if actionType != models.ActionApprove &&
+		actionType != models.ActionReviewApprove &&
+		actionType != models.ActionReviewChangesRequested &&
+		actionType != models.ActionCloseAfterReview {
+		if err := db.supersedeIfReviewInvalidating(prev, issue, sessionID); err != nil {
+			return fmt.Errorf("supersede invalidated review: %w", err)
+		}
+	}
+
 	previousData := marshalIssue(prev)
 
 	issue.UpdatedAt = time.Now()
@@ -423,18 +444,6 @@ func (db *DB) updateIssueAndLogFromPreviousWithReviewMeta(
 		actionID, sessionID, string(actionType), "issue", issue.ID, previousData, string(newData), actionTS)
 	if err != nil {
 		return fmt.Errorf("log action: %w", err)
-	}
-
-	// Approve / close-after-review are NOT review-invalidating: status goes
-	// in_review -> closed, and the approve path intentionally creates the
-	// review row it wants to keep active. Skip supersedeIfReviewInvalidating
-	// for these actions so we don't immediately supersede our own just-created
-	// approval row.
-	if actionType != models.ActionApprove &&
-		actionType != models.ActionReviewApprove &&
-		actionType != models.ActionReviewChangesRequested &&
-		actionType != models.ActionCloseAfterReview {
-		db.supersedeIfReviewInvalidating(prev, issue, sessionID)
 	}
 
 	return nil

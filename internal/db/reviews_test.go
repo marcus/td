@@ -20,6 +20,184 @@ func seedIssueForReviewTests(t *testing.T, database *DB, id string) {
 	}
 }
 
+func installFailReviewActionTrigger(t *testing.T, database *DB) {
+	t.Helper()
+	if _, err := database.conn.Exec(`
+		CREATE TRIGGER fail_issue_review_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue_reviews'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install action_log failure trigger: %v", err)
+	}
+}
+
+func dropFailReviewActionTrigger(t *testing.T, database *DB) {
+	t.Helper()
+	if _, err := database.conn.Exec(`DROP TRIGGER IF EXISTS fail_issue_review_action`); err != nil {
+		t.Fatalf("drop action_log failure trigger: %v", err)
+	}
+}
+
+func TestIssueReviewLoggedMutations_RollBackWhenEventInsertFails(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		dir := t.TempDir()
+		database, err := Initialize(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		seedIssueForReviewTests(t, database, "td-rvatomic-create")
+		installFailReviewActionTrigger(t, database)
+
+		if _, err := database.CreateIssueReview(NewReview{
+			IssueID:         "td-rvatomic-create",
+			ReviewerSession: "ses-reviewer",
+			Decision:        "approved",
+		}); err == nil {
+			t.Fatal("CreateIssueReview succeeded despite injected event failure")
+		}
+		reviews, err := database.ListIssueReviews("td-rvatomic-create")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(reviews) != 0 {
+			t.Fatalf("review row committed without event: %+v", reviews)
+		}
+	})
+
+	t.Run("supersede", func(t *testing.T) {
+		dir := t.TempDir()
+		database, err := Initialize(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		seedIssueForReviewTests(t, database, "td-rvatomic-supersede")
+		reviewID, err := database.CreateIssueReview(NewReview{
+			IssueID:         "td-rvatomic-supersede",
+			ReviewerSession: "ses-reviewer",
+			Decision:        "approved",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		installFailReviewActionTrigger(t, database)
+
+		if err := database.SupersedeActiveReviewsLogged("td-rvatomic-supersede", "ses-rejector"); err == nil {
+			t.Fatal("SupersedeActiveReviewsLogged succeeded despite injected event failure")
+		}
+		active, err := database.GetActiveApprovalReview("td-rvatomic-supersede")
+		if err != nil || active == nil || active.ID != reviewID {
+			t.Fatalf("active review changed after rollback: active=%+v err=%v", active, err)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		dir := t.TempDir()
+		database, err := Initialize(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		seedIssueForReviewTests(t, database, "td-rvatomic-delete")
+		reviewID, err := database.CreateIssueReview(NewReview{
+			IssueID:         "td-rvatomic-delete",
+			ReviewerSession: "ses-reviewer",
+			Decision:        "approved",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		installFailReviewActionTrigger(t, database)
+
+		if err := database.DeleteIssueReviewLogged(reviewID, "ses-undo"); err == nil {
+			t.Fatal("DeleteIssueReviewLogged succeeded despite injected event failure")
+		}
+		active, err := database.GetActiveApprovalReview("td-rvatomic-delete")
+		if err != nil || active == nil || active.ID != reviewID {
+			t.Fatalf("deleted review was not rolled back: active=%+v err=%v", active, err)
+		}
+	})
+
+	t.Run("reactivate", func(t *testing.T) {
+		dir := t.TempDir()
+		database, err := Initialize(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		seedIssueForReviewTests(t, database, "td-rvatomic-reactivate")
+		reviewID, err := database.CreateIssueReview(NewReview{
+			IssueID:         "td-rvatomic-reactivate",
+			ReviewerSession: "ses-reviewer",
+			Decision:        "approved",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := database.SupersedeActiveReviews("td-rvatomic-reactivate"); err != nil {
+			t.Fatal(err)
+		}
+		installFailReviewActionTrigger(t, database)
+
+		if err := database.ClearReviewSupersededAtLogged(reviewID, "ses-undo"); err == nil {
+			t.Fatal("ClearReviewSupersededAtLogged succeeded despite injected event failure")
+		}
+		active, err := database.GetActiveApprovalReview("td-rvatomic-reactivate")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if active != nil {
+			t.Fatalf("review reactivation committed without event: %+v", active)
+		}
+	})
+}
+
+func TestUpdateIssueLogged_ReviewEventFailureLeavesIssueAndReviewUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	seedIssueForReviewTests(t, database, "td-rvatomic-transition")
+	reviewID, err := database.CreateIssueReview(NewReview{
+		IssueID:         "td-rvatomic-transition",
+		ReviewerSession: "ses-reviewer",
+		Decision:        "approved",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	installFailReviewActionTrigger(t, database)
+
+	issue, err := database.GetIssue("td-rvatomic-transition")
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue.Status = models.StatusOpen
+	issue.ReviewerSession = ""
+	issue.ReviewedAt = nil
+	if err := database.UpdateIssueLogged(issue, "ses-rejector", models.ActionReject); err == nil {
+		t.Fatal("UpdateIssueLogged succeeded despite injected review event failure")
+	}
+
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil || active.ID != reviewID {
+		t.Fatalf("active review changed: active=%+v err=%v", active, err)
+	}
+}
+
 func TestCreateIssueReview_ReturnsIDAndPersists(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)

@@ -545,18 +545,12 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 	issue.ClosedBySession = m.SessionID
 	issue.ReviewedAt = &now
 	issue.ClosedAt = &now
-	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionApprove); err != nil {
-		return m, nil
-	}
-
-	// Record session action for bypass prevention
-	_ = m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
 
 	// Also record an issue_reviews row so audit output distinguishes direct
-	// reviewer-close from cascaded close. Best-effort: a missing review
-	// write does not block the approve. selfReview stamps the audit bit
-	// identically to the CLI.
-	_, _ = m.DB.CreateIssueReview(db.NewReview{
+	// reviewer-close from cascaded close. It must succeed before the issue
+	// closes so an action_log failure cannot produce a closed-but-unsynced
+	// approval.
+	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
 		IssueID:            issue.ID,
 		ReviewerSession:    m.SessionID,
 		Decision:           reviewpolicy.DecisionApproved,
@@ -565,6 +559,27 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 		SelfReview:         selfReview,
 		ReviewedBy:         attributedTo,
 	})
+	if err != nil {
+		m.StatusMessage = "failed to record review: " + err.Error()
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+	if err := m.DB.UpdateIssueLoggedWithReviewMeta(
+		issue,
+		models.StatusInReview,
+		m.SessionID,
+		models.ActionApprove,
+		reviewID,
+		"",
+	); err != nil {
+		_ = m.DB.DeleteIssueReviewLogged(reviewID, m.SessionID)
+		m.StatusMessage = "failed to approve issue: " + err.Error()
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+
+	// Record session action for bypass prevention
+	_ = m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
 	m.logReviewSecurityEvent(issue.ID, selfReview, attributedTo, reason, false)
 
 	// Cascade DOWN to descendants if this is a parent issue (epic).
@@ -578,6 +593,7 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 		})
 		if err == nil && len(descendants) > 0 {
 			for _, child := range descendants {
+				previousStatus := child.Status
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				child.ReviewerSession = m.SessionID
@@ -586,23 +602,32 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionApprove)
-				_ = m.DB.AddLog(&models.Log{
-					IssueID:   child.ID,
-					SessionID: m.SessionID,
-					Message:   "Cascaded approval from " + issue.ID,
-					Type:      models.LogTypeProgress,
-				})
-				// Tag cascaded descendants with the named exemption so audit
-				// output can distinguish them from individually-reviewed
-				// closes. This is the "Cascade exemption" contract in the
-				// plan's close-path-hardening section.
-				_, _ = m.DB.CreateIssueReview(db.NewReview{
+				childReviewID, err := m.DB.CreateIssueReview(db.NewReview{
 					IssueID:            child.ID,
 					ReviewerSession:    m.SessionID,
 					Decision:           reviewpolicy.DecisionApprovedByParentCascade,
 					Summary:            "Cascaded approval from " + issue.ID,
 					RequestedBySession: child.ReviewRequestedBySession,
+				})
+				if err != nil {
+					continue
+				}
+				if err := m.DB.UpdateIssueLoggedWithReviewMeta(
+					child,
+					previousStatus,
+					m.SessionID,
+					models.ActionApprove,
+					childReviewID,
+					"",
+				); err != nil {
+					_ = m.DB.DeleteIssueReviewLogged(childReviewID, m.SessionID)
+					continue
+				}
+				_ = m.DB.AddLog(&models.Log{
+					IssueID:   child.ID,
+					SessionID: m.SessionID,
+					Message:   "Cascaded approval from " + issue.ID,
+					Type:      models.LogTypeProgress,
 				})
 				m.DB.CascadeUnblockDependents(child.ID, m.SessionID)
 			}
@@ -982,7 +1007,11 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 	if pa, _ := m.DB.GetActiveApprovalReview(issueID); pa != nil {
 		priorActive = pa.ID
 	}
-	_ = m.DB.SupersedeActiveReviewsLogged(issueID, m.SessionID)
+	if err := m.DB.SupersedeActiveReviewsLogged(issueID, m.SessionID); err != nil {
+		m.StatusMessage = "failed to supersede prior review: " + err.Error()
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
 
 	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
 		IssueID:            issueID,
@@ -994,8 +1023,9 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		ReviewedBy:         eligibility.AttributedTo,
 	})
 	if err != nil {
-		m.closeRecordReviewModal()
-		return m, nil
+		m.StatusMessage = "failed to record review: " + err.Error()
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 	}
 
 	actionType := models.ActionReviewApprove

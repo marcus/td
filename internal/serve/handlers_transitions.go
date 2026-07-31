@@ -380,6 +380,9 @@ type transitionSpec struct {
 	// aborts the transition. Used to wire reviewpolicy's eligibility decisions
 	// into approve/close so the serve path matches the CLI path.
 	policyCheck func(ctx HandlerContext, issue *models.Issue) (httpCode int, rejection string)
+	// beforeCommit performs transition-specific persistence that must succeed
+	// before the issue itself changes. Returning an error aborts the request.
+	beforeCommit func(ctx HandlerContext, issue *models.Issue) error
 	// postCommit runs after UpdateIssueLogged succeeds but before cascades.
 	// Used to write issue_reviews rows for approve so audit output records
 	// the reviewer independently of the closer.
@@ -447,6 +450,14 @@ func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 			if jsonErr := json.Unmarshal(bodyBytes, &body); jsonErr == nil {
 				reason = body.Reason
 			}
+		}
+	}
+
+	if spec.beforeCommit != nil {
+		if err := spec.beforeCommit(ctx, issue); err != nil {
+			slog.Error("prepare issue transition", "err", err, "id", issueID, "to", spec.toStatus)
+			WriteError(w, ErrInternal, "failed to prepare issue transition", http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -672,8 +683,8 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// decisionSelfReview captures whether the policy decision classified this
-	// approval as an audited self-review, so postCommit can stamp the
-	// issue_reviews row accordingly.
+	// approval as an audited self-review, so the pre-commit review row and
+	// post-commit security audit carry the same decision.
 	var decisionSelfReview bool
 	// decisionAttributedTo captures the attribution the policy accepted, so the
 	// row is stamped from the decision rather than the raw request body.
@@ -718,12 +729,8 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			issue.ReviewedAt = &now
 			issue.ClosedAt = &now
 		},
-		postCommit: func(c HandlerContext, issue *models.Issue) {
-			// Record the approval in the append-only review history. Best-
-			// effort: a write error must not roll back the transition. The
-			// self_review flag is stamped from the policy decision so a
-			// trusted-mode self-review is auditable.
-			_, _ = c.DB.CreateIssueReview(db.NewReview{
+		beforeCommit: func(c HandlerContext, issue *models.Issue) error {
+			_, err := c.DB.CreateIssueReview(db.NewReview{
 				IssueID:            issue.ID,
 				ReviewerSession:    c.SessionID,
 				Decision:           reviewpolicy.DecisionApproved,
@@ -732,7 +739,9 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 				SelfReview:         decisionSelfReview,
 				ReviewedBy:         decisionAttributedTo,
 			})
-
+			return err
+		},
+		postCommit: func(c HandlerContext, issue *models.Issue) {
 			// Audit parity with the CLI. An approval recorded by an
 			// implementation-involved session goes to the out-of-band audit
 			// file whichever acknowledgement was used — that is the fact worth
@@ -916,13 +925,6 @@ func HandleReject(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			issue.ReviewerSession = ""
 			issue.ReviewedAt = nil
 			issue.ClosedAt = nil
-		},
-		postCommit: func(c HandlerContext, issue *models.Issue) {
-			// Supersede any active approval review — rejecting returns the
-			// issue to open, so previous approvals must not outlive the
-			// round-trip. Best-effort: do not roll back the state transition
-			// on supersede error.
-			_ = c.DB.SupersedeActiveReviewsLogged(issue.ID, c.SessionID)
 		},
 		defaultLogMsg: "Rejected",
 	})

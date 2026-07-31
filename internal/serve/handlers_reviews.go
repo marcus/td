@@ -218,7 +218,11 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	if pa, _ := ctx.DB.GetActiveApprovalReview(issue.ID); pa != nil {
 		priorActive = pa.ID
 	}
-	_ = ctx.DB.SupersedeActiveReviewsLogged(issue.ID, ctx.SessionID)
+	if err := ctx.DB.SupersedeActiveReviewsLogged(issue.ID, ctx.SessionID); err != nil {
+		slog.Error("supersede prior issue review", "err", err, "id", issue.ID)
+		WriteError(w, ErrInternal, "failed to supersede prior review", http.StatusInternalServerError)
+		return
+	}
 
 	reviewID, err := ctx.DB.CreateIssueReview(db.NewReview{
 		IssueID:            issue.ID,

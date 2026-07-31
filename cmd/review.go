@@ -978,7 +978,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 					priorActive = pa.ID
 				}
 				if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-					output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
+					output.Error("failed to supersede prior reviews for %s: %v", issueID, err)
+					return err
 				}
 
 				reviewID, err := database.CreateIssueReview(db.NewReview{
@@ -992,8 +993,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				})
 				if err != nil {
 					output.Error("failed to record review: %v", err)
-					skipped++
-					continue
+					return err
 				}
 
 				// For approved decisions, stamp reviewer_session/reviewed_at
@@ -1303,7 +1303,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 				priorActive = pa.ID
 			}
 			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-				output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
+				output.Error("failed to supersede prior reviews for %s: %v", issueID, err)
+				return err
 			}
 
 			// Create the approval row first so we can record its id in
@@ -1318,7 +1319,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 				ReviewedBy:         eligibility.AttributedTo,
 			})
 			if err != nil {
-				output.Warning("failed to record issue review: %v", err)
+				output.Error("failed to record issue review: %v", err)
+				return err
 			}
 
 			if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, models.ActionApprove, reviewID, priorActive); err != nil {
@@ -1590,7 +1592,8 @@ Supports bulk operations:
 			issue.ReviewRequestedBySession = ""
 
 			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-				output.Warning("failed to supersede active reviews for %s: %v", issueID, err)
+				output.Error("failed to supersede active reviews for %s: %v", issueID, err)
+				return err
 			}
 
 			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionReject); err != nil {

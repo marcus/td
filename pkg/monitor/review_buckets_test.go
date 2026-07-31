@@ -266,6 +266,112 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	}
 }
 
+func TestRecordReviewEventFailureLeavesMonitorStateUnchanged(t *testing.T) {
+	baseDir := t.TempDir()
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Atomic record review", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	reviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: "ses-first-reviewer",
+		Decision:        reviewpolicy.DecisionApproved,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_review_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue_reviews'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	m := Model{
+		DB:                   database,
+		SessionID:            "ses-second-reviewer",
+		BaseDir:              baseDir,
+		RecordReviewOpen:     true,
+		RecordReviewIssueID:  issue.ID,
+		RecordReviewTitle:    issue.Title,
+		RecordReviewDecision: reviewpolicy.DecisionChangesRequested,
+	}
+	m.RecordReviewInput.SetValue("needs another pass")
+	updated, _ := m.executeRecordReview()
+	gotModel := updated.(Model)
+	if !gotModel.StatusIsError {
+		t.Fatal("monitor did not surface review sync failure")
+	}
+
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil || active.ID != reviewID {
+		t.Fatalf("active review changed: active=%+v err=%v", active, err)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("reviews changed: count=%d err=%v", len(reviews), err)
+	}
+}
+
+func TestApproveCloseEventFailureDoesNotCloseIssue(t *testing.T) {
+	baseDir := t.TempDir()
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Atomic approve", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_review_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue_reviews'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	m := newSelfReviewTestModel(database, baseDir, "ses-reviewer", issue.ID)
+	updated, _ := m.executeApproveClose(issue, false)
+	gotModel := updated.(Model)
+	if !gotModel.StatusIsError {
+		t.Fatal("monitor did not surface review sync failure")
+	}
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review row committed without event: count=%d err=%v", len(reviews), err)
+	}
+}
+
 // TestApproveIssueParentCascadeStampsClosedBy is the Step-3 regression guard
 // reviewers flagged: approving an epic must stamp closed_by_session on each
 // descendant AND write an issue_reviews row tagged approved_by_parent_cascade.
