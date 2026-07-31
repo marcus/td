@@ -944,8 +944,23 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		m.closeRecordReviewModal()
 		return m, nil
 	}
+	if issue.Status != models.StatusInReview {
+		m.StatusMessage = "cannot record review: " + issueID + " is not in review"
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
 
 	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
+	if inputs.Mode != reviewpolicy.ModeDelegated && inputs.Mode != reviewpolicy.ModeTrusted {
+		m.StatusMessage = "record-review requires review_policy_mode=delegated or trusted"
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+	if inputs.HasActiveApproval {
+		m.StatusMessage = "review already recorded; press 'a' to close"
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
 	if attributedTo != "" {
 		inputs.AttributedTo = attributedTo
 	} else if inputs.Mode == reviewpolicy.ModeTrusted {

@@ -584,22 +584,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// modal's "c: toggle changes_requested" hint is dead — the decision stays
 	// stuck on "approved".
 	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
-		// Intercept 'c' before the modal so it doesn't flow into the textinput.
-		// Only toggle when the focused section isn't the text input (i.e. no
-		// runes should reach the input field); using msg.String() == "c" keeps
-		// this strict. When the user is typing in the input field (focused via
-		// tab), the declarative modal's text section consumes runes — we
-		// short-circuit here so 'c' is always a toggle, not a literal.
-		if msg.String() == "c" {
+		// Toggle only when focus is outside both text inputs. A literal c typed
+		// into a summary or reviewer name belongs to the input.
+		focusedID := m.RecordReviewModal.FocusedID()
+		if msg.String() == "c" && focusedID != "reason" && focusedID != "reviewed_by" {
+			// Modal inputs point into a by-value Model copy. Snapshot through
+			// the modal before rebuilding so the decision display refresh
+			// cannot discard text already entered.
+			reason := m.RecordReviewModal.InputValue("reason")
+			reviewedBy := m.RecordReviewModal.InputValue("reviewed_by")
 			if m.RecordReviewDecision == reviewpolicy.DecisionChangesRequested {
 				m.RecordReviewDecision = reviewpolicy.DecisionApproved
 			} else {
 				m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
 			}
+			m.RecordReviewInput.SetValue(reason)
+			m.RecordReviewReviewerInput.SetValue(reviewedBy)
 			// Rebuild modal so the rendered "Decision: ..." line reflects the
 			// new state.
 			m.RecordReviewModal = m.createRecordReviewModal()
 			m.RecordReviewModal.Reset()
+			_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+			m.RecordReviewModal.SetFocus(focusedID)
 			return m, nil
 		}
 

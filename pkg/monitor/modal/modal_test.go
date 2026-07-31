@@ -444,6 +444,17 @@ func TestModalFirstRenderFocusesInputBeforeFirstKey(t *testing.T) {
 	}
 }
 
+func TestModalRoutesPasteToFocusedInput(t *testing.T) {
+	ti := textinput.New()
+	m := New("Input").AddSection(Input("name", &ti))
+	m.Render(80, 24, mouse.NewHandler())
+
+	_, _ = m.HandleMsg(tea.PasteMsg{Content: "pasted value"})
+	if got := ti.Value(); got != "pasted value" {
+		t.Fatalf("pasted input = %q, want pasted value", got)
+	}
+}
+
 func TestListSection(t *testing.T) {
 	selectedIdx := 0
 	items := []ListItem{

@@ -518,6 +518,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFormUpdate(msg)
 	}
 
+	// Bubble Tea v2 delivers bracketed paste as a non-key PasteMsg. Route it
+	// through the declarative modal so it updates the input pointer owned by
+	// that modal, not the aliased textinput field on this returned Model copy.
+	if _, isPaste := msg.(tea.PasteMsg); isPaste {
+		switch {
+		case m.CloseConfirmOpen && m.CloseConfirmModal != nil:
+			_, cmd := m.CloseConfirmModal.HandleMsg(msg)
+			return m, cmd
+		case m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil:
+			_, cmd := m.SelfReviewConfirmModal.HandleMsg(msg)
+			return m, cmd
+		case m.RecordReviewOpen && m.RecordReviewModal != nil:
+			_, cmd := m.RecordReviewModal.HandleMsg(msg)
+			return m, cmd
+		}
+	}
+
 	// Board editor mode: forward non-key messages to inputs (cursor blink, etc.)
 	if m.BoardEditorOpen && m.BoardEditorMode != "info" {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
