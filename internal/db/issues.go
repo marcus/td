@@ -493,11 +493,15 @@ func reviewableByFilterDelegated(sessionID string) (string, []interface{}) {
 
 // reviewableByFilterTrusted returns the reviewable-by SQL fragment for trusted
 // mode. Unlike delegated, trusted mode does NOT exclude self-implemented
-// in_review issues: every in_review issue is reviewable by the session. The
-// implementer-independence requirement is enforced at action time via the
-// --self-review flag (audited), not at query time. So the trusted filter drops
+// in_review issues: every in_review issue is actionable by the session. The
+// implementer-independence requirement is enforced at action time by requiring
+// an attestation — either --reviewed-by naming who actually reviewed the work,
+// or an audited --self-review — not at query time. So the trusted filter drops
 // the `implementer_session != ?` and NOT EXISTS(started/unstarted) exclusions
 // that delegated applies, keeping only the shared base predicates.
+//
+// pkg/monitor's categorizeInReviewIssue must agree with this; see
+// TestReviewableFilterAgreesWithMonitorCategories in pkg/monitor.
 func reviewableByFilterTrusted(sessionID string) (string, []interface{}) {
 	sql := ` AND status = ? AND implementer_session != ''`
 	return sql, []interface{}{models.StatusInReview}

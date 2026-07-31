@@ -88,7 +88,14 @@ func TestComputeBoardIssueCategories(t *testing.T) {
 		{"explicit blocked is blocked", explicitBlocked.ID, CategoryBlocked},
 		{"in progress is in_progress", inProgress.ID, CategoryInProgress},
 		{"review by other is reviewable", reviewByOther.ID, CategoryReviewable},
-		{"review by self is pending_review", reviewBySelf.ID, CategoryPendingReview},
+		// In the default trusted mode an issue you implemented IS actionable by
+		// you — approving it opens the attribution prompt, where naming the
+		// reviewer or acknowledging a self-review completes the approval. It is
+		// also what db.reviewableByFilterTrusted returns, so labelling it
+		// "pending review" would both mislead the operator and put the TUI at
+		// odds with `td reviewable`. Delegated and strict keep pending_review,
+		// where the rejection really is final.
+		{"review by self is reviewable in trusted", reviewBySelf.ID, CategoryReviewable},
 	}
 
 	// Build lookup map
@@ -160,7 +167,7 @@ func TestGetSortFuncWithPosition(t *testing.T) {
 			name:     "mixed - positioned come before unpositioned",
 			sortMode: SortByPriority,
 			issues: []models.BoardIssueView{
-				{Issue: models.Issue{ID: "unpos-p0", Priority: models.PriorityP0, UpdatedAt: now}}, // high priority but unpositioned
+				{Issue: models.Issue{ID: "unpos-p0", Priority: models.PriorityP0, UpdatedAt: now}},               // high priority but unpositioned
 				{Issue: models.Issue{ID: "pos-p3", Priority: models.PriorityP3}, Position: 1, HasPosition: true}, // low priority but positioned
 				{Issue: models.Issue{ID: "unpos-p1", Priority: models.PriorityP1, UpdatedAt: now}},
 			},

@@ -68,10 +68,12 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 			want: CategoryReviewable,
 		},
 		{
-			name:      "trusted: implementer, no approval → pending_review",
+			// Actionable, not pending: the approve action prompts for an
+			// attestation and completes. Matches db.reviewableByFilterTrusted.
+			name:      "trusted: implementer, no approval → reviewable",
 			sessionID: "ses-impl", mode: reviewpolicy.ModeTrusted,
 			hasImplHistory: true, wasAnyInvolved: true,
-			want: CategoryPendingReview,
+			want: CategoryReviewable,
 		},
 		{
 			name:      "trusted: implementer + active approval → ready to close",
@@ -86,12 +88,12 @@ func TestCategorizeInReviewIssue_DelegatedBuckets(t *testing.T) {
 			want:              CategoryReadyToClose,
 		},
 		{
-			// Implementation history without being the implementer-of-record
-			// still can't review under trusted without --self-review.
-			name:      "trusted: impl history, not implementer-of-record → pending_review",
+			// Same for implementation history without being the
+			// implementer-of-record: an attestation unlocks it.
+			name:      "trusted: impl history, not implementer-of-record → reviewable",
 			sessionID: "ses-helper", mode: reviewpolicy.ModeTrusted,
 			hasImplHistory: true, wasAnyInvolved: true,
-			want: CategoryPendingReview,
+			want: CategoryReviewable,
 		},
 		{
 			// Minor bypasses review in every mode, so even the implementer is
@@ -408,5 +410,75 @@ func TestMonitorApproveDecision_Attribution(t *testing.T) {
 	})
 	if got.Allowed {
 		t.Error("delegated mode must not let attribution grant the implementer an approval")
+	}
+}
+
+// TestReviewableFilterAgreesWithMonitorCategories pins the two implementations
+// of "can this session review this issue" against each other: the SQL filter
+// behind `td reviewable` (internal/db) and the monitor's categorization.
+//
+// They drifted once already — the SQL listed the session's own in_review work
+// while the monitor called it pending_review, so `td reviewable` advertised
+// issues the TUI said you could not act on. Two implementations of one question
+// need a test that runs both, or they diverge again the next time either side
+// is touched.
+func TestReviewableFilterAgreesWithMonitorCategories(t *testing.T) {
+	for _, mode := range []reviewpolicy.Mode{reviewpolicy.ModeTrusted, reviewpolicy.ModeDelegated} {
+		t.Run(string(mode), func(t *testing.T) {
+			baseDir := t.TempDir()
+			t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", string(mode))
+			database, err := db.Initialize(baseDir)
+			if err != nil {
+				t.Fatalf("db init: %v", err)
+			}
+			defer database.Close()
+
+			const me = "ses-me"
+
+			// One issue I implemented, one someone else implemented.
+			mine := &models.Issue{Title: "mine", Type: models.TypeTask, Status: models.StatusInReview}
+			if err := database.CreateIssue(mine); err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			mine.ImplementerSession = me
+			_ = database.UpdateIssue(mine)
+			_ = database.RecordSessionAction(mine.ID, me, models.ActionSessionStarted)
+
+			theirs := &models.Issue{Title: "theirs", Type: models.TypeTask, Status: models.StatusInReview}
+			if err := database.CreateIssue(theirs); err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			theirs.ImplementerSession = "ses-other"
+			_ = database.UpdateIssue(theirs)
+			_ = database.RecordSessionAction(theirs.ID, "ses-other", models.ActionSessionStarted)
+
+			listed, err := database.ListIssues(db.ListIssuesOptions{
+				ReviewableBy:     me,
+				ReviewPolicyMode: string(mode),
+			})
+			if err != nil {
+				t.Fatalf("ListIssues: %v", err)
+			}
+			inSQL := map[string]bool{}
+			for _, iss := range listed {
+				inSQL[iss.ID] = true
+			}
+
+			for _, iss := range []*models.Issue{mine, theirs} {
+				fresh, err := database.GetIssue(iss.ID)
+				if err != nil {
+					t.Fatalf("GetIssue: %v", err)
+				}
+				hasImpl, _ := database.WasSessionImplementationInvolved(fresh.ID, me)
+				wasAny, _ := database.WasSessionInvolved(fresh.ID, me)
+				category := categorizeInReviewIssue(fresh, me, mode, hasImpl, wasAny, false)
+
+				monitorSaysReviewable := category == CategoryReviewable
+				if inSQL[fresh.ID] != monitorSaysReviewable {
+					t.Errorf("%s (%s): `td reviewable` lists=%v but monitor category=%q — the two must agree",
+						fresh.Title, mode, inSQL[fresh.ID], category)
+				}
+			}
+		})
 	}
 }

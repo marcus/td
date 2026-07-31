@@ -102,6 +102,21 @@ func categorizeInReviewIssue(
 			return CategoryReviewable
 		}
 		if isImpl || hasImplHistory {
+			// Trusted mode: the session implemented this, so the reviewer
+			// predicate rejects it WITHOUT an attestation — but the session can
+			// still act, by naming who reviewed it (--reviewed-by) or
+			// acknowledging a self-review, and the monitor's approve action
+			// prompts for exactly that. Calling it "pending review" would tell
+			// the operator to wait for someone else while the UI is one
+			// keypress from letting them proceed, and it disagreed with
+			// db.reviewableByFilterTrusted, which lists these issues.
+			// TestReviewableFilterAgreesWithMonitorCategories pins the two.
+			//
+			// Delegated has no such escape hatch, so there the rejection is
+			// final and pending_review is the honest label.
+			if mode == reviewpolicy.ModeTrusted {
+				return CategoryReviewable
+			}
 			return CategoryPendingReview
 		}
 		return CategoryPendingOther

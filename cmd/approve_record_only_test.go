@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -1191,6 +1192,67 @@ func TestApproveAllExitsZeroWhenNothingReady(t *testing.T) {
 		t.Errorf("--all must not fail when nothing is ready, got: %v", runErr)
 	}
 	if got, _ := database.GetIssue(issue.ID); got.Status != models.StatusInReview {
+		t.Errorf("status = %s, want in_review", got.Status)
+	}
+}
+
+// TestApproveRejectionOutputIsQuietAndParseable guards the two regressions the
+// first attempt at the exit-code fix shipped, both of which made things worse
+// for the tool's primary consumer than the bug being fixed.
+//
+// Without errSilentExit, root.go re-reported the returned error: a second JSON
+// envelope (making --json output unparseable) and, without SilenceUsage on the
+// command, cobra's full usage dump — 22 stderr lines that buried the
+// teaching message the rejection had just printed.
+func TestApproveRejectionOutputIsQuietAndParseable(t *testing.T) {
+	// The sentinel must remain wired to the silent-exit path, or root.go starts
+	// re-reporting it.
+	if !errors.Is(errApproveAllSkipped, errSilentExit) {
+		t.Error("errApproveAllSkipped must wrap errSilentExit so Execute prints nothing further")
+	}
+	// Cobra checks the child command's SilenceUsage before the root's, so this
+	// must be set on approveCmd itself.
+	if !approveCmd.SilenceUsage {
+		t.Error("approveCmd.SilenceUsage must be true, or a rejection dumps flag help over the teaching message")
+	}
+}
+
+// TestApproveMixedBatchWithClosedAndRejectedFails pins the case the discarded
+// `noop == 0` term got wrong. A lone already-closed issue is an idempotent
+// no-op and exits 0; a batch that closes nothing and rejects something must
+// still fail, even when one of the inputs was the harmless closed one.
+func TestApproveMixedBatchWithClosedAndRejectedFails(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	alreadyClosed := newInReviewIssueWithImpl(t, database, implID)
+	rejected := newInReviewIssueWithImpl(t, database, implID)
+
+	// Close the first via an independent session.
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	if _, err := runApproveCmd(t, []string{alreadyClosed.ID}, map[string]string{"reason": "ok"}); err != nil {
+		t.Fatalf("seed close: %v", err)
+	}
+
+	// Back as the implementer: one no-op, one rejection, nothing approved.
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	_, runErr := runApproveCmd(t, []string{alreadyClosed.ID, rejected.ID}, nil)
+	if runErr == nil {
+		t.Fatal("a batch that approved nothing and rejected something must exit non-zero")
+	}
+	if got, _ := database.GetIssue(rejected.ID); got.Status != models.StatusInReview {
 		t.Errorf("status = %s, want in_review", got.Status)
 	}
 }
