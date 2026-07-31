@@ -559,7 +559,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Self-review confirmation modal (trusted mode): route keys through the
-	// declarative modal (tab/shift+tab/enter/esc). No text input.
+	// declarative modal (tab/shift+tab/enter/esc and its text inputs).
 	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil && m.SelfReviewConfirmMouseHandler != nil {
 		action, cmd := m.SelfReviewConfirmModal.HandleKey(msg)
 		if action != "" {
@@ -569,8 +569,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		switch key {
-		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end":
+		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end", "backspace", "delete":
 			return m, nil // Key was handled by modal
+		}
+		if msg.Key().Text != "" {
+			return m, nil
 		}
 		// Fall through to keymap only for unhandled keys (like esc)
 	}

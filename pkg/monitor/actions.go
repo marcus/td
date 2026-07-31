@@ -341,7 +341,10 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	}
 
 	issueID := m.CloseConfirmIssueID
-	reason := m.CloseConfirmInput.Value()
+	reason := ""
+	if m.CloseConfirmModal != nil {
+		reason = strings.TrimSpace(m.CloseConfirmModal.InputValue("reason"))
+	}
 
 	// Get the issue
 	issue, err := m.DB.GetIssue(issueID)
@@ -528,13 +531,13 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 // self-review audit bit on the issue_reviews row, identical to the CLI's
 // `td approve --self-review` path.
 func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Model, tea.Cmd) {
-	return m.executeApproveCloseAttributed(issue, selfReview, "")
+	return m.executeApproveCloseAttributed(issue, selfReview, "", "")
 }
 
 // executeApproveCloseAttributed is executeApproveClose plus the --reviewed-by
 // attestation. Split so the many existing callers that never attribute keep
 // their signature.
-func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview bool, attributedTo string) (tea.Model, tea.Cmd) {
+func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview bool, attributedTo, reason string) (tea.Model, tea.Cmd) {
 	// Direct reviewer-close (Mode A)
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -557,10 +560,12 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 		IssueID:            issue.ID,
 		ReviewerSession:    m.SessionID,
 		Decision:           reviewpolicy.DecisionApproved,
+		Summary:            reason,
 		RequestedBySession: issue.ReviewRequestedBySession,
 		SelfReview:         selfReview,
 		ReviewedBy:         attributedTo,
 	})
+	m.logReviewSecurityEvent(issue.ID, selfReview, attributedTo, reason, false)
 
 	// Cascade DOWN to descendants if this is a parent issue (epic).
 	// Reuse the `now` captured above so the whole cascade shares one
@@ -618,6 +623,28 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 		return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
 	}
 	return m, m.fetchData()
+}
+
+// logReviewSecurityEvent mirrors the CLI/API audit-file contract. SelfReview
+// means the recording session was implementation-involved, including an
+// attributed review performed by someone else. Independent sessions are
+// deliberately omitted so routine approvals do not dilute the audit signal.
+func (m Model) logReviewSecurityEvent(issueID string, selfReview bool, attributedTo, reason string, recordOnly bool) {
+	if !selfReview || m.BaseDir == "" {
+		return
+	}
+	auditReason := "self_review: " + reason
+	if attributedTo != "" {
+		auditReason = "attributed_review by " + attributedTo + ": " + reason
+	}
+	if recordOnly {
+		auditReason = "record_only " + auditReason
+	}
+	_ = db.LogSecurityEvent(m.BaseDir, db.SecurityEvent{
+		IssueID:   issueID,
+		SessionID: m.SessionID,
+		Reason:    auditReason,
+	})
 }
 
 // reopenIssue reopens a closed issue
@@ -857,13 +884,28 @@ func (m Model) recordReviewAction() (tea.Model, tea.Cmd) {
 	}
 	decision := monitorApproveDecision(inputs)
 	if !decision.Allowed {
-		if decision.RejectionMessage != "" {
-			m.StatusMessage = decision.RejectionMessage
-		} else {
-			m.StatusMessage = "you are not eligible to review this issue"
+		// Let an involved recorder reach the prompt when either a named
+		// attribution or trusted self-review acknowledgement would make the
+		// policy decision valid. The executor evaluates the real values before
+		// writing anything.
+		attributedInputs := inputs
+		attributedInputs.AttributedTo = "reviewer"
+		attributedDecision := monitorApproveDecision(attributedInputs)
+		selfReviewDecision := reviewpolicy.ReviewerEligibility{}
+		if inputs.Mode == reviewpolicy.ModeTrusted {
+			selfReviewInputs := inputs
+			selfReviewInputs.SelfReviewAcknowledged = true
+			selfReviewDecision = monitorApproveDecision(selfReviewInputs)
 		}
-		m.StatusIsError = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+		if !attributedDecision.Allowed && !selfReviewDecision.Allowed {
+			if decision.RejectionMessage != "" {
+				m.StatusMessage = decision.RejectionMessage
+			} else {
+				m.StatusMessage = "you are not eligible to review this issue"
+			}
+			m.StatusIsError = true
+			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+		}
 	}
 
 	m = m.openRecordReviewModal(issue.ID, issue.Title)
@@ -880,7 +922,12 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	issueID := m.RecordReviewIssueID
-	reason := m.RecordReviewInput.Value()
+	reason := ""
+	attributedTo := ""
+	if m.RecordReviewModal != nil {
+		reason = strings.TrimSpace(m.RecordReviewModal.InputValue("reason"))
+		attributedTo = strings.TrimSpace(m.RecordReviewModal.InputValue("reviewed_by"))
+	}
 	decision := m.RecordReviewDecision
 	if decision == "" {
 		decision = reviewpolicy.DecisionApproved
@@ -898,6 +945,23 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
+	if attributedTo != "" {
+		inputs.AttributedTo = attributedTo
+	} else if inputs.Mode == reviewpolicy.ModeTrusted {
+		inputs.SelfReviewAcknowledged = true
+	}
+	eligibility := monitorApproveDecision(inputs)
+	if !eligibility.Allowed {
+		if eligibility.RejectionMessage != "" {
+			m.StatusMessage = eligibility.RejectionMessage
+		} else {
+			m.StatusMessage = "you are not eligible to review this issue"
+		}
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+	}
+
 	// Supersede any stale rows + snapshot prior-active id for undo.
 	priorActive := ""
 	if pa, _ := m.DB.GetActiveApprovalReview(issueID); pa != nil {
@@ -911,6 +975,8 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		Decision:           decision,
 		Summary:            reason,
 		RequestedBySession: issue.ReviewRequestedBySession,
+		SelfReview:         eligibility.SelfReview,
+		ReviewedBy:         eligibility.AttributedTo,
 	})
 	if err != nil {
 		m.closeRecordReviewModal()
@@ -943,6 +1009,9 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		Message:   "Review recorded (" + decision + "): " + reason,
 		Type:      models.LogTypeProgress,
 	})
+	if decision == reviewpolicy.DecisionApproved {
+		m.logReviewSecurityEvent(issueID, eligibility.SelfReview, eligibility.AttributedTo, reason, true)
+	}
 
 	m.closeRecordReviewModal()
 	if decision == reviewpolicy.DecisionChangesRequested {
@@ -962,11 +1031,10 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// executeSelfReviewApprove is the confirm handler for the trusted-mode
-// self-review modal. The operator has acknowledged that they implemented the
-// issue and chose to approve it as a self-review; this re-runs the eligibility
-// decision with SelfReviewAcknowledged=true and, when the decision is the
-// expected audited self-review allow, closes the issue with self_review=true.
+// executeSelfReviewApprove is the confirm handler for the trusted-mode review
+// attribution modal. It re-runs eligibility with either a named reviewer or an
+// explicit, reason-bearing self-review acknowledgement, then closes using the
+// policy decision's audit fields.
 func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
 	issueID := m.SelfReviewConfirmIssueID
 	// Read through the modal, not m.SelfReviewConfirmInput — see
@@ -975,8 +1043,15 @@ func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
 	// recorded a self-review instead, which is precisely the false record this
 	// feature exists to prevent.
 	attributedTo := ""
+	reason := ""
 	if m.SelfReviewConfirmModal != nil {
 		attributedTo = strings.TrimSpace(m.SelfReviewConfirmModal.InputValue("reviewed_by"))
+		reason = strings.TrimSpace(m.SelfReviewConfirmModal.InputValue("reason"))
+	}
+	if attributedTo == "" && reason == "" {
+		m.StatusMessage = "self-review requires a reason"
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 	}
 	m.closeSelfReviewConfirmModal()
 	if issueID == "" {
@@ -1010,7 +1085,7 @@ func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
 	if !decision.Allowed {
 		return m, nil
 	}
-	return m.executeApproveCloseAttributed(issue, decision.SelfReview, decision.AttributedTo)
+	return m.executeApproveCloseAttributed(issue, decision.SelfReview, decision.AttributedTo, reason)
 }
 
 // filterActiveBlockers returns only non-closed issues from a list of blockers

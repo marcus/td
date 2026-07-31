@@ -426,6 +426,24 @@ func TestInputSection(t *testing.T) {
 	}
 }
 
+func TestModalFirstRenderFocusesInputBeforeFirstKey(t *testing.T) {
+	ti := textinput.New()
+	m := New("Input").AddSection(Input("name", &ti))
+	handler := mouse.NewHandler()
+
+	// One render is the runtime boundary between opening a modal and receiving
+	// its first key. It must both discover and focus the input.
+	m.Render(80, 24, handler)
+	if m.FocusedID() != "name" {
+		t.Fatalf("focused ID = %q, want name", m.FocusedID())
+	}
+
+	_, _ = m.HandleKey(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	if got := ti.Value(); got != "b" {
+		t.Fatalf("first key was discarded: input = %q, want b", got)
+	}
+}
+
 func TestListSection(t *testing.T) {
 	selectedIdx := 0
 	items := []ListItem{

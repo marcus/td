@@ -96,25 +96,27 @@ type Model struct {
 	CloseConfirmMouseHandler *mouse.Handler // Mouse handler for close confirmation modal
 
 	// Self-review confirmation dialog (trusted mode). Shown when the current
-	// session implemented the in_review issue being approved; confirming
-	// records the approval with self_review=true. No text input — just a
-	// Confirm / Cancel button pair following the close-confirm modal pattern.
+	// session implemented the in_review issue being approved. The operator may
+	// attribute the review to someone else, or leave attribution blank and
+	// provide the required self-review reason.
 	SelfReviewConfirmOpen         bool
 	SelfReviewConfirmIssueID      string
 	SelfReviewConfirmTitle        string
 	SelfReviewConfirmInput        textinput.Model
+	SelfReviewReasonInput         textinput.Model
 	SelfReviewConfirmModal        *modal.Modal
 	SelfReviewConfirmMouseHandler *mouse.Handler
 
 	// Record-review (delegated-mode) reason prompt. Reused pattern from
 	// CloseConfirm — a single-line text input with confirm/cancel buttons.
-	RecordReviewOpen         bool
-	RecordReviewIssueID      string
-	RecordReviewTitle        string
-	RecordReviewInput        textinput.Model
-	RecordReviewDecision     string // "approved" | "changes_requested"
-	RecordReviewModal        *modal.Modal
-	RecordReviewMouseHandler *mouse.Handler
+	RecordReviewOpen          bool
+	RecordReviewIssueID       string
+	RecordReviewTitle         string
+	RecordReviewInput         textinput.Model
+	RecordReviewReviewerInput textinput.Model
+	RecordReviewDecision      string // "approved" | "changes_requested"
+	RecordReviewModal         *modal.Modal
+	RecordReviewMouseHandler  *mouse.Handler
 
 	// Stats modal state
 	StatsOpen         bool
@@ -556,10 +558,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Key messages are handled in handleKey() via the declarative modal.
 	if m.SelfReviewConfirmOpen {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var cmds []tea.Cmd
 			var inputCmd tea.Cmd
 			m.SelfReviewConfirmInput, inputCmd = m.SelfReviewConfirmInput.Update(msg)
 			if inputCmd != nil {
-				return m, inputCmd
+				cmds = append(cmds, inputCmd)
+			}
+			m.SelfReviewReasonInput, inputCmd = m.SelfReviewReasonInput.Update(msg)
+			if inputCmd != nil {
+				cmds = append(cmds, inputCmd)
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
 			}
 		}
 	}
@@ -568,10 +578,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Key messages are handled in handleKey() via the declarative modal.
 	if m.RecordReviewOpen {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var cmds []tea.Cmd
 			var inputCmd tea.Cmd
 			m.RecordReviewInput, inputCmd = m.RecordReviewInput.Update(msg)
 			if inputCmd != nil {
-				return m, inputCmd
+				cmds = append(cmds, inputCmd)
+			}
+			m.RecordReviewReviewerInput, inputCmd = m.RecordReviewReviewerInput.Update(msg)
+			if inputCmd != nil {
+				cmds = append(cmds, inputCmd)
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
 			}
 		}
 	}

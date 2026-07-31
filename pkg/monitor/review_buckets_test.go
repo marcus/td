@@ -3,6 +3,7 @@ package monitor
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
@@ -218,18 +219,13 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	_ = database.UpdateIssue(issue)
 	_ = database.RecordSessionAction(issue.ID, "ses-impl", models.ActionSessionStarted)
 
-	m := Model{
-		DB:                  database,
-		SessionID:           "ses-reviewer",
-		BaseDir:             baseDir,
-		RecordReviewOpen:    true,
-		RecordReviewIssueID: issue.ID,
-		RecordReviewTitle:   issue.Title,
-		// Default opens at "approved"; flipping to changes_requested is what
-		// the 'c' handler does while the modal is open.
-		RecordReviewDecision: reviewpolicy.DecisionChangesRequested,
+	m := Model{DB: database, SessionID: "ses-reviewer", BaseDir: baseDir, Width: 100, Height: 40}
+	m = m.openRecordReviewModal(issue.ID, issue.Title)
+	m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
+	_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+	for _, r := range "please tighten the error message" {
+		_, _ = m.RecordReviewModal.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	m.RecordReviewInput.SetValue("please tighten the error message")
 
 	_, _ = m.executeRecordReview()
 

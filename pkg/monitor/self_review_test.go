@@ -75,7 +75,13 @@ func TestTrustedSelfReviewApproveOpensConfirmModal(t *testing.T) {
 		t.Fatalf("issue closed before confirm; status = %v", got.Status)
 	}
 
-	// Confirm the self-review.
+	// Confirm the self-review with the reason required by CLI/API parity.
+	_ = m2.SelfReviewConfirmModal.Render(100, 40, m2.SelfReviewConfirmMouseHandler)
+	_, _ = m2.SelfReviewConfirmModal.HandleKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	_ = m2.SelfReviewConfirmModal.Render(100, 40, m2.SelfReviewConfirmMouseHandler)
+	for _, r := range "reviewed the implementation" {
+		_, _ = m2.SelfReviewConfirmModal.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
 	confirmed, _ := m2.executeSelfReviewApprove()
 	m3 := confirmed.(Model)
 	if m3.SelfReviewConfirmOpen {
@@ -207,9 +213,9 @@ func TestSelfReviewModal_TypedAttributionReachesTheReview(t *testing.T) {
 		t.Fatal("expected the attribution prompt to open for own implementation")
 	}
 
-	// No priming render here on purpose: openSelfReviewConfirmModal must leave
-	// the prompt ready to accept the very first keystroke. Rendering between
-	// keys mirrors the runtime, where View() runs after every Update.
+	// The runtime renders once after opening and before accepting input. That
+	// first render must discover and focus the input in the same pass.
+	_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
 	for _, r := range "bob" {
 		next, _ := m.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 		m = next.(Model)
@@ -238,10 +244,10 @@ func TestSelfReviewModal_TypedAttributionReachesTheReview(t *testing.T) {
 	}
 }
 
-// TestSelfReviewModal_EmptySubmitRecordsSelfReview is the other half: leaving
-// the prompt blank means "I reviewed it myself", and must NOT invent an
-// attribution.
-func TestSelfReviewModal_EmptySubmitRecordsSelfReview(t *testing.T) {
+// TestSelfReviewModal_SelfReviewRequiresAndPersistsReason is the other half:
+// leaving attribution blank means "I reviewed it myself", which requires a
+// substantive reason just like the CLI and API.
+func TestSelfReviewModal_SelfReviewRequiresAndPersistsReason(t *testing.T) {
 	baseDir := t.TempDir()
 	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "trusted")
 	database, err := db.Initialize(baseDir)
@@ -277,7 +283,26 @@ func TestSelfReviewModal_EmptySubmitRecordsSelfReview(t *testing.T) {
 	if !m.SelfReviewConfirmOpen {
 		t.Fatal("expected the attribution prompt to open")
 	}
+
+	_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
 	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+	if !m.SelfReviewConfirmOpen {
+		t.Fatal("blank self-review must keep the modal open")
+	}
+	if active, err := database.GetActiveApprovalReview(issue.ID); err != nil || active != nil {
+		t.Fatalf("blank self-review wrote a row: active=%v err=%v", active, err)
+	}
+
+	next, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = next.(Model)
+	_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
+	for _, r := range "reviewed my diff" {
+		next, _ = m.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = next.(Model)
+		_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
+	}
+	next, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 
 	active, err := database.GetActiveApprovalReview(issue.ID)
@@ -289,5 +314,8 @@ func TestSelfReviewModal_EmptySubmitRecordsSelfReview(t *testing.T) {
 	}
 	if !active.SelfReview {
 		t.Error("expected self_review to be stamped")
+	}
+	if active.Summary != "reviewed my diff" {
+		t.Errorf("Summary = %q, want reviewed my diff", active.Summary)
 	}
 }

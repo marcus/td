@@ -863,8 +863,8 @@ func (m Model) handleCloseConfirmAction(action string) (tea.Model, tea.Cmd) {
 }
 
 // openSelfReviewConfirmModal opens the trusted-mode self-review confirmation
-// prompt. Mirrors the close-confirm modal but without a text input — a simple
-// Confirm / Cancel pair gated to the trusted self-review case.
+// prompt. It captures an optional reviewer attribution and the reason required
+// when the operator is acknowledging a genuine self-review.
 func (m Model) openSelfReviewConfirmModal(issueID, issueTitle string) Model {
 	m.SelfReviewConfirmOpen = true
 	m.SelfReviewConfirmIssueID = issueID
@@ -876,27 +876,13 @@ func (m Model) openSelfReviewConfirmModal(issueID, issueTitle string) Model {
 	m.SelfReviewConfirmInput.SetWidth(46)
 	m.SelfReviewConfirmInput.Focus()
 
+	m.SelfReviewReasonInput = textinput.New()
+	m.SelfReviewReasonInput.Placeholder = "required when you reviewed your own work"
+	m.SelfReviewReasonInput.SetWidth(46)
+
 	m.SelfReviewConfirmModal = m.createSelfReviewConfirmModal()
 	m.SelfReviewConfirmModal.Reset()
 	m.SelfReviewConfirmMouseHandler = mouse.NewHandler()
-
-	// Prime the focus list so the prompt accepts the very first keystroke.
-	//
-	// Modal.Render collects focusable IDs as a side effect, but reads the
-	// current focus BEFORE rebuilding that list. On a freshly built modal the
-	// list is empty, so pass one discovers the focusables while still deciding
-	// "nothing is focused" and blurs the input — and a blurred textinput drops
-	// keystrokes. Pass two sees the populated list and focuses it. Without both,
-	// the operator's first character is silently swallowed and "bob" becomes
-	// "ob" on an attribution prompt.
-	//
-	// Two renders is a workaround, not the fix: the ordering inside Render is
-	// the real defect and it affects every modal built this way (see
-	// td-5d602a). Fixing it there is a shared-behavior change, deliberately not
-	// made on release day.
-	for i := 0; i < 2; i++ {
-		_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
-	}
 
 	return m
 }
@@ -909,10 +895,6 @@ func (m *Model) closeSelfReviewConfirmModal() {
 	m.SelfReviewConfirmTitle = ""
 	m.SelfReviewConfirmModal = nil
 	m.SelfReviewConfirmMouseHandler = nil
-	// Deliberately no SetValue("") here: it would clear the LIVE model's field,
-	// which is not the one keystrokes reach (see modal.Modal.InputValue), so it
-	// implies a stale-value guarantee it does not provide. The real guarantee
-	// is that openSelfReviewConfirmModal rebuilds the input from scratch.
 }
 
 // createSelfReviewConfirmModal builds the declarative modal for the trusted
@@ -947,7 +929,12 @@ func (m *Model) createSelfReviewConfirmModal() *modal.Modal {
 		modal.WithSubmitAction("confirm"),
 	))
 	md.AddSection(modal.Spacer())
-	md.AddSection(modal.Text("Name a reviewer, or leave blank to record a self-review."))
+	md.AddSection(modal.InputWithLabel("reason", "Reason:", &m.SelfReviewReasonInput,
+		modal.WithSubmitOnEnter(true),
+		modal.WithSubmitAction("confirm"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Name a reviewer, or leave blank and give a reason to record a self-review."))
 	md.AddSection(modal.Spacer())
 	md.AddSection(modal.Buttons(
 		modal.Btn(" Confirm ", "confirm"),
@@ -986,6 +973,11 @@ func (m Model) openRecordReviewModal(issueID, issueTitle string) Model {
 	m.RecordReviewInput.SetWidth(50)
 	m.RecordReviewInput.Focus()
 
+	m.RecordReviewReviewerInput = textinput.New()
+	m.RecordReviewReviewerInput.Placeholder = "optional; blank means you reviewed it"
+	m.RecordReviewReviewerInput.CharLimit = reviewpolicy.MaxReviewedByLen
+	m.RecordReviewReviewerInput.SetWidth(50)
+
 	m.RecordReviewModal = m.createRecordReviewModal()
 	m.RecordReviewModal.Reset()
 	m.RecordReviewMouseHandler = mouse.NewHandler()
@@ -1020,6 +1012,11 @@ func (m *Model) createRecordReviewModal() *modal.Modal {
 	md.AddSection(modal.Text("Decision: " + m.RecordReviewDecision + "   (c: toggle changes_requested)"))
 	md.AddSection(modal.Spacer())
 	md.AddSection(modal.InputWithLabel("reason", "Summary (required):", &m.RecordReviewInput,
+		modal.WithSubmitOnEnter(true),
+		modal.WithSubmitAction("confirm"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.InputWithLabel("reviewed_by", "Reviewed by (optional):", &m.RecordReviewReviewerInput,
 		modal.WithSubmitOnEnter(true),
 		modal.WithSubmitAction("confirm"),
 	))

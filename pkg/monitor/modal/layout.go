@@ -32,11 +32,25 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 		contentWidth = 1
 	}
 
-	// 1. Render sections individually, measure heights, collect focusables
-	focusID := m.currentFocusID()
-	rendered := make([]renderedSection, 0, len(m.sections))
-	m.focusIDs = m.focusIDs[:0] // Reset focusable IDs
+	// 1. Discover focusables before choosing the focused element. A new modal
+	// starts with an empty focusIDs slice; choosing focus first would therefore
+	// render every input blurred. The first key arriving before another render
+	// would then be silently discarded by bubbles/textinput.
+	m.focusIDs = m.focusIDs[:0]
+	for _, s := range m.sections {
+		res := s.Render(contentWidth, "", m.hoverID)
+		for _, f := range res.Focusables {
+			m.focusIDs = append(m.focusIDs, f.ID)
+		}
+	}
 
+	// Ensure focusIdx is valid before rendering the visible, focused layout.
+	if len(m.focusIDs) > 0 && m.focusIdx >= len(m.focusIDs) {
+		m.focusIdx = 0
+	}
+	focusID := m.currentFocusID()
+
+	rendered := make([]renderedSection, 0, len(m.sections))
 	for _, s := range m.sections {
 		res := s.Render(contentWidth, focusID, m.hoverID)
 		height := measureHeight(res.Content)
@@ -47,15 +61,6 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 			focusables: res.Focusables,
 		})
 
-		// Collect focusable IDs in order
-		for _, f := range res.Focusables {
-			m.focusIDs = append(m.focusIDs, f.ID)
-		}
-	}
-
-	// Ensure focusIdx is valid
-	if len(m.focusIDs) > 0 && m.focusIdx >= len(m.focusIDs) {
-		m.focusIdx = 0
 	}
 
 	// Filter out zero-height sections (e.g., inactive When)
