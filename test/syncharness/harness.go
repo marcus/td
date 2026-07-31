@@ -97,6 +97,23 @@ CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_ty
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
 
+-- issue_reviews (migrations v33/v35/v37)
+CREATE TABLE IF NOT EXISTS issue_reviews (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    reviewer_session TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    requested_by_session TEXT DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    superseded_at DATETIME,
+    self_review INTEGER NOT NULL DEFAULT 0,
+    reviewed_by TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+);
+CREATE INDEX IF NOT EXISTS idx_issue_reviews_issue_id ON issue_reviews(issue_id);
+CREATE INDEX IF NOT EXISTS idx_issue_reviews_active ON issue_reviews(issue_id) WHERE superseded_at IS NULL;
+
 -- notes table
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
@@ -120,7 +137,7 @@ var migrationColumns = []string{
 }
 
 // entityTables lists the tables that hold user data (not action_log or sync_state).
-var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files", "work_session_issues", "notes"}
+var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files", "work_session_issues", "issue_reviews", "notes"}
 
 // validEntities is the set of entity types accepted by the validator.
 var validEntities = map[string]bool{
@@ -134,6 +151,7 @@ var validEntities = map[string]bool{
 	"issue_dependencies":    true,
 	"issue_files":           true,
 	"work_session_issues":   true,
+	"issue_reviews":         true,
 	"notes":                 true,
 }
 
@@ -590,10 +608,11 @@ var softDeleteTables = map[string]bool{
 // that mapActionType() converts to hard "delete" (not "soft_delete").
 // Without this, "delete" action on these tables would become "soft_delete" and fail.
 var hardDeleteActionTypes = map[string]string{
-	"issue_dependencies":    "remove_dependency",
-	"issue_files":           "unlink_file",
-	"work_session_issues":   "work_session_untag",
-	"boards":                "board_delete",
+	"issue_dependencies":  "remove_dependency",
+	"issue_files":         "unlink_file",
+	"work_session_issues": "work_session_untag",
+	"issue_reviews":       "review_delete",
+	"boards":              "board_delete",
 }
 
 // dumpTable returns a deterministic string representation of all rows in a table.

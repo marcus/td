@@ -176,6 +176,210 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 }
 
+func TestUndoIssueApproval_EmitsReviewDeleteForSync(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	const sessionID = "ses-reviewer"
+	issue := &models.Issue{
+		Title:  "Approved issue",
+		Status: models.StatusClosed,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	reviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: sessionID,
+		Decision:        "approved",
+		Summary:         "looks good",
+	})
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	previous := *issue
+	previous.Status = models.StatusInReview
+	previousData, _ := json.Marshal(&previous)
+	newData, _ := json.Marshal(models.ReviewUndoPayload{
+		Issue:           issue,
+		CreatedReviewID: reviewID,
+	})
+	action := &models.ActionLog{
+		ID:           "act-undo-review-delete-sync",
+		SessionID:    sessionID,
+		ActionType:   models.ActionApprove,
+		EntityType:   "issue",
+		EntityID:     issue.ID,
+		PreviousData: string(previousData),
+		NewData:      string(newData),
+	}
+	if _, err := database.Conn().Exec(`
+		INSERT INTO action_log
+			(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID,
+		action.PreviousData, action.NewData, time.Now()); err != nil {
+		t.Fatalf("insert original action: %v", err)
+	}
+
+	if err := undoIssueAction(database, action, sessionID); err != nil {
+		t.Fatalf("undo approval: %v", err)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil {
+		t.Fatalf("list reviews: %v", err)
+	}
+	if len(reviews) != 0 {
+		t.Fatalf("reviews after undo = %d, want 0", len(reviews))
+	}
+
+	var deleteEvents int
+	if err := database.Conn().QueryRow(`
+		SELECT COUNT(*) FROM action_log
+		WHERE entity_type = 'issue_reviews'
+		  AND entity_id = ?
+		  AND action_type = 'review_delete'
+	`, reviewID).Scan(&deleteEvents); err != nil {
+		t.Fatalf("count review delete events: %v", err)
+	}
+	if deleteEvents != 1 {
+		t.Fatalf("review delete events = %d, want 1", deleteEvents)
+	}
+}
+
+func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	const sessionID = "ses-reviewer"
+	issue := &models.Issue{Title: "Approved issue", Status: models.StatusClosed}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	priorReviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: "ses-prior-reviewer",
+		Decision:        "approved",
+	})
+	if err != nil {
+		t.Fatalf("create prior review: %v", err)
+	}
+	if err := database.SupersedeActiveReviews(issue.ID); err != nil {
+		t.Fatalf("supersede prior review: %v", err)
+	}
+	reviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: sessionID,
+		Decision:        "approved",
+	})
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	previous := *issue
+	previous.Status = models.StatusInReview
+	previousData, _ := json.Marshal(&previous)
+	newData, _ := json.Marshal(models.ReviewUndoPayload{
+		Issue:               issue,
+		CreatedReviewID:     reviewID,
+		PriorActiveReviewID: priorReviewID,
+	})
+	action := &models.ActionLog{
+		ID:           "act-undo-review-atomicity",
+		SessionID:    sessionID,
+		ActionType:   models.ActionApprove,
+		EntityType:   "issue",
+		EntityID:     issue.ID,
+		PreviousData: string(previousData),
+		NewData:      string(newData),
+	}
+	if _, err := database.Conn().Exec(`
+		INSERT INTO action_log
+			(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID,
+		action.PreviousData, action.NewData, time.Now()); err != nil {
+		t.Fatalf("insert original action: %v", err)
+	}
+
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'update'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected later issue action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+	if err := undoIssueAction(database, action, sessionID); err == nil {
+		t.Fatal("undo succeeded despite injected review event failure")
+	}
+
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusClosed {
+		t.Fatalf("issue status after failed undo = %s, want closed", unchanged.Status)
+	}
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil || active.ID != reviewID {
+		t.Fatalf("review changed after failed undo: active=%+v err=%v", active, err)
+	}
+	failedReviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(failedReviews) != 2 || failedReviews[0].ID != priorReviewID || failedReviews[0].SupersededAt == nil {
+		t.Fatalf("multi-review undo partially committed: %+v", failedReviews)
+	}
+
+	var undone bool
+	if err := database.Conn().QueryRow(`SELECT undone FROM action_log WHERE id = ?`, action.ID).Scan(&undone); err != nil {
+		t.Fatal(err)
+	}
+	if undone {
+		t.Fatal("original action marked undone after rolled-back lifecycle")
+	}
+
+	if _, err := database.Conn().Exec(`DROP TRIGGER fail_issue_action`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	if err := undoIssueAction(database, action, sessionID); err != nil {
+		t.Fatalf("retry undo: %v", err)
+	}
+	restored, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != models.StatusInReview {
+		t.Fatalf("issue status after retry = %s, want in_review", restored.Status)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews) != 1 || reviews[0].ID != priorReviewID || reviews[0].SupersededAt != nil {
+		t.Fatalf("prior review was not restored after successful retry: %+v", reviews)
+	}
+	if err := database.Conn().QueryRow(`SELECT undone FROM action_log WHERE id = ?`, action.ID).Scan(&undone); err != nil {
+		t.Fatal(err)
+	}
+	if !undone {
+		t.Fatal("original action was not marked undone with successful lifecycle")
+	}
+}
+
 // TestUndoIssueDeleteCreatesActionLog verifies that undoing a delete creates
 // an action_log entry (required for sync to propagate the restore).
 // Note: this test verifies correctness but cannot verify atomicity — the old

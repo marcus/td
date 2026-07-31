@@ -213,28 +213,6 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Supersede stale rows + snapshot prior-active id for undo parity with CLI.
-	priorActive := ""
-	if pa, _ := ctx.DB.GetActiveApprovalReview(issue.ID); pa != nil {
-		priorActive = pa.ID
-	}
-	_ = ctx.DB.SupersedeActiveReviews(issue.ID)
-
-	reviewID, err := ctx.DB.CreateIssueReview(db.NewReview{
-		IssueID:            issue.ID,
-		ReviewerSession:    ctx.SessionID,
-		Decision:           body.Decision,
-		Summary:            body.Summary,
-		RequestedBySession: issue.ReviewRequestedBySession,
-		SelfReview:         decision.SelfReview,
-		ReviewedBy:         decision.AttributedTo,
-	})
-	if err != nil {
-		slog.Error("create issue review", "err", err, "id", issue.ID)
-		WriteError(w, ErrInternal, "failed to record review", http.StatusInternalServerError)
-		return
-	}
-
 	// Audit parity with the CLI record-only path: an approval recorded by an
 	// implementation-involved session goes to the out-of-band audit file, or an
 	// involved session could record-only and then close via Mode C leaving no
@@ -260,9 +238,14 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		issue.ReviewedAt = &now
 	}
 
-	if err := ctx.DB.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, ctx.SessionID, actionType, reviewID, priorActive); err != nil {
+	reviewID, err := ctx.DB.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
+		IssueID: issue.ID, ReviewerSession: ctx.SessionID, Decision: body.Decision,
+		Summary: body.Summary, RequestedBySession: issue.ReviewRequestedBySession,
+		SelfReview: decision.SelfReview, ReviewedBy: decision.AttributedTo,
+	}, issue, models.StatusInReview, ctx.SessionID, actionType)
+	if err != nil {
 		slog.Error("update issue for review", "err", err, "id", issue.ID)
-		WriteError(w, ErrInternal, "failed to stamp reviewer metadata", http.StatusInternalServerError)
+		WriteError(w, ErrInternal, "failed to record review", http.StatusInternalServerError)
 		return
 	}
 

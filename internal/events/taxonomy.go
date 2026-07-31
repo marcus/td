@@ -157,7 +157,7 @@ func NormalizeActionType(tdAction string) ActionType {
 	case "create", "handoff", "add_dependency", "link_file", "board_create",
 		"board_update", "board_add_issue", "board_set_position", "work_session_tag":
 		return ActionCreate
-	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
+	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag", "review_delete":
 		return ActionDelete
 	case "delete", "board_unposition", "board_remove_issue", "soft_delete":
 		return ActionSoftDelete
@@ -235,7 +235,8 @@ func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 			ActionCreate: true,
 		},
 		EntityIssueReviews: {
-			// create = new review row; update = supersede_at stamp.
+			// create = new review row; update = superseded_at stamp;
+			// delete = undo a locally-created review row.
 			// Supersede is sent as an UPDATE so peers see superseded_at
 			// propagate via the existing partial-update sync path.
 			//
@@ -247,6 +248,7 @@ func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 			// superseded_at updates.
 			ActionCreate: true,
 			ActionUpdate: true,
+			ActionDelete: true,
 		},
 		EntityNotes: {
 			ActionCreate:     true,

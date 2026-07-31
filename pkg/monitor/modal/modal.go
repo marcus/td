@@ -92,6 +92,16 @@ func (m *Modal) HandleKey(msg tea.KeyMsg) (action string, cmd tea.Cmd) {
 	}
 }
 
+// HandleMsg routes a non-key message, such as Bubble Tea v2's PasteMsg, to
+// the focused section. Key messages retain the modal's normal shortcut and
+// submit handling through HandleKey.
+func (m *Modal) HandleMsg(msg tea.Msg) (action string, cmd tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		return m.HandleKey(keyMsg)
+	}
+	return m.routeToFocusedSection(msg)
+}
+
 // HandleMouse processes mouse input.
 // Returns the action ID if a clickable element was clicked, empty string otherwise.
 func (m *Modal) HandleMouse(msg tea.MouseMsg, handler *mouse.Handler) string {
@@ -222,8 +232,8 @@ func (m *Modal) cycleFocus(delta int) {
 	m.focusIdx = (m.focusIdx + delta + len(m.focusIDs)) % len(m.focusIDs)
 }
 
-// routeToFocusedSection routes a key message to the focused section.
-func (m *Modal) routeToFocusedSection(msg tea.KeyMsg) (string, tea.Cmd) {
+// routeToFocusedSection routes a message to the focused section.
+func (m *Modal) routeToFocusedSection(msg tea.Msg) (string, tea.Cmd) {
 	focusID := m.currentFocusID()
 	if focusID == "" {
 		return "", nil

@@ -142,7 +142,7 @@ func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
 	})
 	if err == nil {
 		// WorkSessionTagsChanged invalidation. Best-effort.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }
@@ -178,7 +178,7 @@ func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
 		// WorkSessionTagsChanged invalidation. Best-effort. The DELETE
 		// is a no-op when the row doesn't exist, but supersede is also
 		// a no-op when there's no active approval, so this is safe.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }

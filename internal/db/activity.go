@@ -584,7 +584,8 @@ func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
 	err := db.conn.QueryRow(`
 		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
-		WHERE session_id = ? AND undone = 0 AND entity_type NOT IN ('logs', 'comments', 'work_sessions')
+		WHERE session_id = ? AND undone = 0
+		  AND entity_type NOT IN ('logs', 'comments', 'work_sessions', 'issue_review', 'issue_reviews')
 		ORDER BY timestamp DESC LIMIT 1
 	`, sessionID).Scan(
 		&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
@@ -615,7 +616,8 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 	query := `
 		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
-		WHERE session_id = ? AND entity_type NOT IN ('logs', 'comments', 'work_sessions')
+		WHERE session_id = ?
+		  AND entity_type NOT IN ('logs', 'comments', 'work_sessions', 'issue_review', 'issue_reviews')
 		ORDER BY timestamp DESC`
 	args := []interface{}{sessionID}
 

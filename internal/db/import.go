@@ -90,7 +90,9 @@ func (db *DB) UpsertIssueRaw(issue *models.Issue) error {
 			return err
 		}
 		if prev != nil {
-			db.supersedeIfReviewInvalidating(prev, issue)
+			if err := db.supersedeIfReviewInvalidating(db.conn, prev, issue, ""); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -210,12 +212,14 @@ func (db *DB) ImportItemRaw(issue *models.Issue, logs []models.Log, handoffs []m
 	// Post-commit review invalidation. Only runs when the import actually
 	// touched an already-existing issue (prev != nil).
 	if prevBeforeImport != nil {
-		db.supersedeIfReviewInvalidating(prevBeforeImport, issue)
+		if err := db.supersedeIfReviewInvalidating(db.conn, prevBeforeImport, issue, ""); err != nil {
+			return err
+		}
 		// Side-table mutations: any new dep/file push onto an existing
 		// issue, or a replace that wiped them, counts as
 		// DependenciesChanged/LinkedFilesChanged for invalidation.
 		if replace || len(deps) > 0 || len(files) > 0 {
-			db.supersedeApprovalIfLinked(issue.ID)
+			db.supersedeApprovalIfLinked(issue.ID, "")
 		}
 	}
 	return nil

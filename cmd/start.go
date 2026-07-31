@@ -12,6 +12,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errStartAllFailed signals that every non-idempotent named start failed. Each
+// failure is emitted in the per-issue path; the sentinel only sets the process
+// exit status without adding Cobra usage or a second JSON envelope.
+var errStartAllFailed = fmt.Errorf("no issues started: %w", errSilentExit)
+
 var startCmd = &cobra.Command{
 	Use:     "start [issue-id...]",
 	Aliases: []string{"begin"},
@@ -77,13 +82,52 @@ Examples:
 		gitState, gitErr := git.GetState()
 
 		started := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				emitWarn("issue not found: %s", issueID)
-				skipped++
+				if isJSON {
+					output.JSONError(output.ErrCodeNotFound, err.Error())
+				} else {
+					emitWarn("issue not found: %s", issueID)
+				}
+				failed++
+				continue
+			}
+
+			if issue.Status == models.StatusInProgress {
+				if issue.ImplementerSession == sess.ID {
+					message := fmt.Sprintf("already started %s", issueID)
+					if isJSON {
+						if err := output.JSON(map[string]interface{}{
+							"id":      issueID,
+							"status":  string(issue.Status),
+							"action":  "already started",
+							"message": message,
+						}); err != nil {
+							output.JSONError(output.ErrCodeDatabaseError, err.Error())
+						}
+					} else {
+						emitWarn("%s", message)
+					}
+					noop++
+					continue
+				}
+
+				message := fmt.Sprintf("cannot start %s: already in_progress", issueID)
+				if issue.ImplementerSession == "" {
+					message += " with no recorded implementer"
+				} else {
+					message += fmt.Sprintf(" under session %s", issue.ImplementerSession)
+				}
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, message)
+				} else {
+					emitWarn("%s", message)
+				}
+				failed++
 				continue
 			}
 
@@ -99,15 +143,23 @@ Examples:
 			}
 
 			if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
-				emitWarn("cannot start %s: invalid transition from %s", issueID, issue.Status)
-				skipped++
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, fmt.Sprintf("cannot start %s: invalid transition from %s", issueID, issue.Status))
+				} else {
+					emitWarn("cannot start %s: invalid transition from %s", issueID, issue.Status)
+				}
+				failed++
 				continue
 			}
 
 			// Check if blocked without force (preserving existing behavior)
 			if issue.Status == models.StatusBlocked && !force {
-				emitWarn("cannot start blocked issue: %s (use --force to override)", issueID)
-				skipped++
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, fmt.Sprintf("cannot start blocked issue: %s (use --force to override)", issueID))
+				} else {
+					emitWarn("cannot start blocked issue: %s (use --force to override)", issueID)
+				}
+				failed++
 				continue
 			}
 
@@ -125,8 +177,12 @@ Examples:
 			issue.ImplementerSession = sess.ID
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
-				emitWarn("failed to update %s: %v", issueID, err)
-				skipped++
+				if isJSON {
+					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to update %s: %v", issueID, err))
+				} else {
+					emitWarn("failed to update %s: %v", issueID, err)
+				}
+				failed++
 				continue
 			}
 
@@ -204,7 +260,15 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nStarted %d, skipped %d\n", started, skipped)
+			fmt.Printf("\nStarted %d, skipped %d\n", started, failed+noop)
+		}
+
+		// A named batch succeeds when at least one issue started, and an
+		// already-in-progress retry succeeds as an idempotent no-op. If no
+		// issue started and any true failure occurred, report failure even
+		// when the same batch also contained no-ops.
+		if started == 0 && failed > 0 {
+			return errStartAllFailed
 		}
 
 		return nil
@@ -216,4 +280,5 @@ func init() {
 
 	startCmd.Flags().String("reason", "", "Reason for starting work")
 	startCmd.Flags().Bool("force", false, "Force start even if blocked")
+	startCmd.SilenceUsage = true
 }

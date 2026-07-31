@@ -448,6 +448,60 @@ func TestBackfillOrphanEntities_FullRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBackfillOrphanEntities_IssueReviews(t *testing.T) {
+	db := setupBackfillDB(t)
+	if _, err := db.Exec(`
+		CREATE TABLE issue_reviews (
+			id TEXT PRIMARY KEY,
+			issue_id TEXT NOT NULL,
+			reviewer_session TEXT NOT NULL,
+			decision TEXT NOT NULL,
+			summary TEXT NOT NULL DEFAULT '',
+			requested_by_session TEXT DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			superseded_at DATETIME,
+			self_review INTEGER NOT NULL DEFAULT 0,
+			reviewed_by TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO issue_reviews
+			(id, issue_id, reviewer_session, decision, summary)
+		VALUES ('rv-legacy', 'td-legacy', 'ses-reviewer', 'approved', 'pre-sync review');
+	`); err != nil {
+		t.Fatalf("seed legacy review: %v", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	n, err := BackfillOrphanEntities(tx, "ses-backfill")
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("backfilled rows = %d, want 1", n)
+	}
+
+	var entityType, actionType, newData string
+	if err := tx.QueryRow(`
+		SELECT entity_type, action_type, new_data
+		FROM action_log WHERE entity_id = 'rv-legacy'
+	`).Scan(&entityType, &actionType, &newData); err != nil {
+		t.Fatalf("read backfill event: %v", err)
+	}
+	if entityType != "issue_reviews" || actionType != "create" {
+		t.Fatalf("backfill event = %s/%s, want issue_reviews/create", entityType, actionType)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(newData), &fields); err != nil {
+		t.Fatalf("unmarshal review payload: %v", err)
+	}
+	if fields["decision"] != "approved" {
+		t.Fatalf("decision = %v, want approved", fields["decision"])
+	}
+}
+
 func TestBackfillOrphanEntities_IncludesSoftDeleted(t *testing.T) {
 	db := setupBackfillDB(t)
 

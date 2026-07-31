@@ -315,6 +315,56 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	}
 }
 
+func TestIntegration_Reject_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setDelegatedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+	reviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issueID,
+		ReviewerSession: "ses-reviewer",
+		Decision:        reviewpolicy.DecisionApproved,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'reject'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reject", nil)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("reject status=%d, want 500", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	unchanged, err := database.GetIssue(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	active, err := database.GetActiveApprovalReview(issueID)
+	if err != nil || active == nil || active.ID != reviewID {
+		t.Fatalf("active review changed: active=%+v err=%v", active, err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reject", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry reject status=%d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 // TestIntegration_Reviews_UndoPayload verifies the action_log row written for
 // a record-review carries the new ReviewUndoPayload shape so `td undo` can
 // remove the inserted review row and clear active approval state. This is
@@ -374,6 +424,65 @@ func TestIntegration_Reviews_UndoPayload(t *testing.T) {
 	}
 }
 
+func TestIntegration_RecordReview_LaterIssueEventFailureLeavesHistoryRetryable(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setDelegatedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+	firstID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issueID,
+		ReviewerSession: "ses-first-reviewer",
+		Decision:        reviewpolicy.DecisionChangesRequested,
+		Summary:         "first pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'review_changes_requested'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision": reviewpolicy.DecisionChangesRequested,
+		"summary":  "second pass",
+	})
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("record review status=%d, want 500", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	reviews, err := database.ListIssueReviews(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews) != 1 || reviews[0].ID != firstID || reviews[0].SupersededAt != nil {
+		t.Fatalf("review history changed after failed supersede: %+v", reviews)
+	}
+	unchanged, err := database.GetIssue(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision": reviewpolicy.DecisionChangesRequested, "summary": "second pass",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("retry record review status=%d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
 	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
@@ -396,6 +505,48 @@ func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
 	if final.ClosedBySession == "" || final.ReviewerSession == "" {
 		t.Fatalf("expected reviewer+closed-by stamped: %+v", final)
 	}
+}
+
+func TestIntegration_Approve_LaterIssueEventFailureDoesNotCloseAndCanRetry(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setDelegatedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'approve'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", nil)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("approve status=%d, want 500", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	unchanged, err := database.GetIssue(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issueID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review row committed without event: count=%d err=%v", len(reviews), err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry approve status=%d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 // setTrustedMode flips review_policy_mode=trusted in the project config.

@@ -96,25 +96,27 @@ type Model struct {
 	CloseConfirmMouseHandler *mouse.Handler // Mouse handler for close confirmation modal
 
 	// Self-review confirmation dialog (trusted mode). Shown when the current
-	// session implemented the in_review issue being approved; confirming
-	// records the approval with self_review=true. No text input — just a
-	// Confirm / Cancel button pair following the close-confirm modal pattern.
+	// session implemented the in_review issue being approved. The operator may
+	// attribute the review to someone else, or leave attribution blank and
+	// provide the required self-review reason.
 	SelfReviewConfirmOpen         bool
 	SelfReviewConfirmIssueID      string
 	SelfReviewConfirmTitle        string
 	SelfReviewConfirmInput        textinput.Model
+	SelfReviewReasonInput         textinput.Model
 	SelfReviewConfirmModal        *modal.Modal
 	SelfReviewConfirmMouseHandler *mouse.Handler
 
 	// Record-review (delegated-mode) reason prompt. Reused pattern from
 	// CloseConfirm — a single-line text input with confirm/cancel buttons.
-	RecordReviewOpen         bool
-	RecordReviewIssueID      string
-	RecordReviewTitle        string
-	RecordReviewInput        textinput.Model
-	RecordReviewDecision     string // "approved" | "changes_requested"
-	RecordReviewModal        *modal.Modal
-	RecordReviewMouseHandler *mouse.Handler
+	RecordReviewOpen          bool
+	RecordReviewIssueID       string
+	RecordReviewTitle         string
+	RecordReviewInput         textinput.Model
+	RecordReviewReviewerInput textinput.Model
+	RecordReviewDecision      string // "approved" | "changes_requested"
+	RecordReviewModal         *modal.Modal
+	RecordReviewMouseHandler  *mouse.Handler
 
 	// Stats modal state
 	StatsOpen         bool
@@ -540,38 +542,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Close confirmation mode: forward non-key messages to textinput (cursor blink, etc.)
-	// Key messages are handled in handleKey() via the declarative modal
-	if m.CloseConfirmOpen {
+	// Route non-key messages through declarative modals, which own the input
+	// pointers that rendering and executors read. This intentionally does not
+	// inspect the concrete message type: bubbles/textinput uses private
+	// messages for Ctrl+V clipboard results in addition to tea.PasteMsg.
+	if m.CloseConfirmOpen && m.CloseConfirmModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var inputCmd tea.Cmd
-			m.CloseConfirmInput, inputCmd = m.CloseConfirmInput.Update(msg)
-			if inputCmd != nil {
-				return m, inputCmd
+			_, cmd := m.CloseConfirmModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}
 
 	// Attribution prompt: forward non-key messages to textinput (cursor blink).
 	// Key messages are handled in handleKey() via the declarative modal.
-	if m.SelfReviewConfirmOpen {
+	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var inputCmd tea.Cmd
-			m.SelfReviewConfirmInput, inputCmd = m.SelfReviewConfirmInput.Update(msg)
-			if inputCmd != nil {
-				return m, inputCmd
+			_, cmd := m.SelfReviewConfirmModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}
 
 	// Record-review mode: forward non-key messages to textinput (cursor blink).
 	// Key messages are handled in handleKey() via the declarative modal.
-	if m.RecordReviewOpen {
+	if m.RecordReviewOpen && m.RecordReviewModal != nil {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
-			var inputCmd tea.Cmd
-			m.RecordReviewInput, inputCmd = m.RecordReviewInput.Update(msg)
-			if inputCmd != nil {
-				return m, inputCmd
+			_, cmd := m.RecordReviewModal.HandleMsg(msg)
+			if cmd != nil {
+				return m, cmd
 			}
 		}
 	}

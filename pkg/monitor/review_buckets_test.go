@@ -3,6 +3,7 @@ package monitor
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
@@ -220,18 +221,13 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	_ = database.UpdateIssue(issue)
 	_ = database.RecordSessionAction(issue.ID, "ses-impl", models.ActionSessionStarted)
 
-	m := Model{
-		DB:                  database,
-		SessionID:           "ses-reviewer",
-		BaseDir:             baseDir,
-		RecordReviewOpen:    true,
-		RecordReviewIssueID: issue.ID,
-		RecordReviewTitle:   issue.Title,
-		// Default opens at "approved"; flipping to changes_requested is what
-		// the 'c' handler does while the modal is open.
-		RecordReviewDecision: reviewpolicy.DecisionChangesRequested,
+	m := Model{DB: database, SessionID: "ses-reviewer", BaseDir: baseDir, Width: 100, Height: 40}
+	m = m.openRecordReviewModal(issue.ID, issue.Title)
+	m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
+	_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+	for _, r := range "please tighten the error message" {
+		_, _ = m.RecordReviewModal.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	m.RecordReviewInput.SetValue("please tighten the error message")
 
 	_, _ = m.executeRecordReview()
 
@@ -269,6 +265,115 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	}
 	if !foundChangesRequested {
 		t.Errorf("expected ActionReviewChangesRequested in action_log for %s", issue.ID)
+	}
+}
+
+func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testing.T) {
+	baseDir := t.TempDir()
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Atomic record review", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'review_changes_requested'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	m := Model{
+		Keymap:    newTestKeymap(),
+		DB:        database,
+		SessionID: "ses-second-reviewer",
+		BaseDir:   baseDir,
+		Width:     100,
+		Height:    40,
+	}
+	m = m.openRecordReviewModal(issue.ID, issue.Title)
+	m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
+	_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+	updatedModel, _ := m.Update(tea.PasteMsg{Content: "needs another pass"})
+	m = updatedModel.(Model)
+	updated, _ := m.executeRecordReview()
+	gotModel := updated.(Model)
+	if !gotModel.StatusIsError {
+		t.Fatal("monitor did not surface review sync failure")
+	}
+
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("reviews changed: count=%d err=%v", len(reviews), err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	_, _ = gotModel.executeRecordReview()
+	reviews, err = database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("retry record review did not persist: count=%d err=%v", len(reviews), err)
+	}
+}
+
+func TestApproveCloseLaterIssueEventFailureDoesNotCloseAndCanRetry(t *testing.T) {
+	baseDir := t.TempDir()
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Atomic approve", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'approve'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+		END;
+	`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+
+	m := newSelfReviewTestModel(database, baseDir, "ses-reviewer", issue.ID)
+	updated, _ := m.executeApproveClose(issue, false)
+	gotModel := updated.(Model)
+	if !gotModel.StatusIsError {
+		t.Fatal("monitor did not surface review sync failure")
+	}
+	unchanged, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review row committed without event: count=%d err=%v", len(reviews), err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	_, _ = gotModel.executeApproveClose(issue, false)
+	closed, _ := database.GetIssue(issue.ID)
+	if closed.Status != models.StatusClosed {
+		t.Fatalf("retry status = %s, want closed", closed.Status)
 	}
 }
 
