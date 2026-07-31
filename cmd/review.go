@@ -573,6 +573,14 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 // the actionable message was already written by the per-issue path.
 var errApproveAllSkipped = fmt.Errorf("no issues approved: %w", errSilentExit)
 
+// These workflow commands emit actionable per-issue failures themselves. The
+// wrapped sentinel makes an all-failed named batch exit non-zero without
+// printing the failure again (or adding a second JSON envelope).
+var (
+	errRejectAllFailed = fmt.Errorf("no issues rejected: %w", errSilentExit)
+	errCloseAllFailed  = fmt.Errorf("no issues closed: %w", errSilentExit)
+)
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues, or record a review",
@@ -1529,7 +1537,8 @@ Supports bulk operations:
 		}
 
 		rejected := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
@@ -1538,7 +1547,7 @@ Supports bulk operations:
 				} else {
 					output.Warning("issue not found: %s", issueID)
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1557,7 +1566,7 @@ Supports bulk operations:
 				} else {
 					output.Warning("%s", message)
 				}
-				skipped++
+				noop++
 				continue
 			}
 			if issue.Status != models.StatusInReview {
@@ -1566,7 +1575,7 @@ Supports bulk operations:
 				} else {
 					output.Warning("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status)
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1590,7 +1599,7 @@ Supports bulk operations:
 				} else {
 					output.Warning("%s", describeStaleTransitionUpdate(database, "reject", issueID, err, rejectFollowupGuidance))
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1628,7 +1637,12 @@ Supports bulk operations:
 		}
 
 		if len(args) > 1 && !jsonOutput {
-			fmt.Printf("\nRejected %d, skipped %d\n", rejected, skipped)
+			fmt.Printf("\nRejected %d, skipped %d\n", rejected, failed+noop)
+		}
+		// Preserve partial success and the already-open idempotent no-op. A
+		// no-op does not hide another named issue's failure.
+		if rejected == 0 && failed > 0 {
+			return errRejectAllFailed
 		}
 		return nil
 	},
@@ -1722,7 +1736,8 @@ Examples:
 		mode, _ := resolveReviewPolicyMode(baseDir)
 
 		closed := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
@@ -1731,7 +1746,25 @@ Examples:
 				} else {
 					output.Warning("issue not found: %s", issueID)
 				}
-				skipped++
+				failed++
+				continue
+			}
+
+			if issue.Status == models.StatusClosed {
+				message := fmt.Sprintf("already closed %s", issueID)
+				if isJSON {
+					if err := output.JSON(map[string]interface{}{
+						"id":      issueID,
+						"status":  string(issue.Status),
+						"action":  "already closed",
+						"message": message,
+					}); err != nil {
+						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+					}
+				} else {
+					output.Warning("%s", message)
+				}
+				noop++
 				continue
 			}
 
@@ -1743,7 +1776,7 @@ Examples:
 				} else {
 					output.Warning("cannot close %s: invalid transition from %s", issueID, issue.Status)
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1758,7 +1791,7 @@ Examples:
 					output.Error("cannot close %s: issue is in review; use 'td approve %s' to close reviewed work", issueID, issueID)
 					output.Error("  'td close' is the admin path for duplicates/won't-fix/cleanup; it cannot bypass review.")
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1776,7 +1809,7 @@ Examples:
 						output.Error("cannot close %s: delegated mode requires --admin or --self-close-exception for issues with implementation history", issueID)
 						output.Error("  Use 'td review' -> 'td approve' for completed work, or pass --admin \"duplicate|won't-fix|...\"")
 					}
-					skipped++
+					failed++
 					continue
 				}
 			}
@@ -1815,7 +1848,7 @@ Examples:
 						output.Error("%s", eligibility.RejectionMessage)
 						output.Error("%s", closeFollowupGuidance(issue))
 					}
-					skipped++
+					failed++
 					continue
 				}
 				if !isJSON {
@@ -1837,7 +1870,7 @@ Examples:
 				} else {
 					output.Warning("%s", describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
 				}
-				skipped++
+				failed++
 				continue
 			}
 
@@ -1940,7 +1973,12 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nClosed %d, skipped %d\n", closed, skipped)
+			fmt.Printf("\nClosed %d, skipped %d\n", closed, failed+noop)
+		}
+		// Preserve partial success and the already-closed idempotent no-op. A
+		// no-op does not hide another named issue's failure.
+		if closed == 0 && failed > 0 {
+			return errCloseAllFailed
 		}
 		return nil
 	},
@@ -1974,6 +2012,7 @@ func init() {
 	rejectCmd.Flags().String("message", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("note", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("notes", "", "Reason for rejection (alias for --reason)")
+	rejectCmd.SilenceUsage = true
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
@@ -1981,4 +2020,5 @@ func init() {
 	closeCmd.Flags().String("notes", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("self-close-exception", "", "Override review requirement when closing own work (requires reason)")
 	closeCmd.Flags().String("admin", "", "Admin close: override delegated-mode impl-history gate for duplicates/won't-fix/cleanup (requires reason)")
+	closeCmd.SilenceUsage = true
 }

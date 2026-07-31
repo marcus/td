@@ -166,11 +166,11 @@ func TestCloseJSONErrorOnNotFound(t *testing.T) {
 
 	setJSONFlag(t, true)
 
+	var runErr error
 	out := captureStdout(t, func() {
-		// A missing id is a per-issue skip, so RunE returns nil but emits a
-		// JSON error line for the id.
-		_ = closeCmd.RunE(closeCmd, []string{"td-doesnotexist"})
+		runErr = closeCmd.RunE(closeCmd, []string{"td-doesnotexist"})
 	})
+	requireSilentFailure(t, runErr)
 
 	// Output must be a single JSON error envelope, not the human
 	// "WARNING: issue not found" line.

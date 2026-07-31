@@ -292,9 +292,9 @@ func TestJSONContractErrorEnvelopeShape(t *testing.T) {
 	setJSONFlag(t, true)
 
 	out := captureStdout(t, func() {
-		// A missing id is a per-issue skip for close, so RunE returns nil but
-		// emits a JSON error line for the id (no os.Exit involved).
-		_ = closeCmd.RunE(closeCmd, []string{"td-doesnotexist"})
+		// A missing id emits its per-issue JSON error before RunE returns the
+		// silent-exit sentinel (no os.Exit involved).
+		requireSilentFailure(t, closeCmd.RunE(closeCmd, []string{"td-doesnotexist"}))
 	})
 
 	var env struct {
