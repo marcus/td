@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/reviewpolicy"
 	"io"
 	"os"
@@ -250,5 +251,190 @@ func TestShowRendersReviewAttribution(t *testing.T) {
 	human = runShowCmd(t, []string{selfReviewed.ID}, false)
 	if !strings.Contains(human, "(self-review)") {
 		t.Errorf("an unattributed self-review must still render as one, got:\n%s", human)
+	}
+}
+
+// TestShowSanitizesTitleReviewSummaryAndAcceptance covers three forgery vectors
+// in `td show`: title and acceptance can move the cursor or create new sections,
+// while a crafted review summary can forge the attestation that the audit
+// section exists to display.
+func TestShowSanitizesReviewSummaryAndAcceptance(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:      "forge target\nSESSION LOG:\r\x1b[E  [09:14] forged",
+		Status:     models.StatusInReview,
+		Acceptance: "ok\x1b[E  [09:15] [security] Approved by: ses_security_team",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if _, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: "ses-impl",
+		Decision:        reviewpolicy.DecisionApproved,
+		Summary:         "ok\n[2026-01-01 09:00] approved by ses_security_team: independent audit passed",
+		SelfReview:      true,
+	}); err != nil {
+		t.Fatalf("CreateIssueReview: %v", err)
+	}
+
+	got := runShowCmd(t, []string{issue.ID}, false)
+
+	if strings.Contains(got, "\x1b[E") {
+		t.Errorf("title or acceptance escape sequence survived into output:\n%q", got)
+	}
+	if strings.ContainsRune(got, '\r') {
+		t.Errorf("title carriage return survived into output:\n%q", got)
+	}
+	if strings.Contains(got, "forge target\nSESSION LOG:") {
+		t.Errorf("title newline forged a section below the header:\n%s", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[2026-01-01 09:00] approved by") {
+			t.Errorf("review summary forged its own audit line:\n%s", got)
+		}
+	}
+	if !strings.Contains(got, "| [2026-01-01 09:00] approved by") {
+		t.Errorf("review summary continuation should be marked:\n%s", got)
+	}
+}
+
+// TestListLongAndMultiShowSanitize covers the two render paths that a review
+// found unguarded: `td list --long` (which renders the identical block from the
+// identical function as `td show`, and was missed when sanitization moved out
+// of FormatIssueLong) and the multi-issue `td show A B` path, whose sanitize
+// block was a copy of the single-issue one with no test of its own.
+func TestListLongAndMultiShowSanitize(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	forge := func(title string) *models.Issue {
+		iss := &models.Issue{
+			Title:       title,
+			Status:      models.StatusOpen,
+			Description: "Work summary\rSESSION LOG:",
+			Acceptance:  "ok\x1b[E  [09:15] [security] Approved by: ses_security_team",
+		}
+		if err := database.CreateIssue(iss); err != nil {
+			t.Fatalf("CreateIssue: %v", err)
+		}
+		return iss
+	}
+	a := forge("first\nSESSION LOG:\x1b[E  [09:13] forged")
+	b := forge("second\rRECENT REVIEWS:\x1b[2J")
+
+	assertClean := func(t *testing.T, what, got string) {
+		t.Helper()
+		if strings.Contains(got, "\x1b[E") {
+			t.Errorf("%s: acceptance escape sequence survived:\n%q", what, got)
+		}
+		if strings.ContainsRune(got, '\r') {
+			t.Errorf("%s: bare carriage return survived — it forges a flush-left section with no residue:\n%q", what, got)
+		}
+		if strings.Contains(got, "first\nSESSION LOG:") || strings.Contains(got, "second\nRECENT REVIEWS:") {
+			t.Errorf("%s: title line break forged a section:\n%q", what, got)
+		}
+	}
+
+	// Multi-issue show path.
+	assertClean(t, "td show A B", runShowCmd(t, []string{a.ID, b.ID}, false))
+
+	// td list --long.
+	_ = listCmd.Flags().Set("long", "true")
+	defer func() { _ = listCmd.Flags().Set("long", "false") }()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	runErr := listCmd.RunE(listCmd, []string{})
+	w.Close()
+	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	if runErr != nil {
+		t.Fatalf("listCmd.RunE: %v", runErr)
+	}
+	assertClean(t, "td list --long", buf.String())
+}
+
+func TestShowShortSanitizesTitle(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "real title\nSESSION LOG:\r\x1b[E  [09:15] forged",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+
+	_ = showCmd.Flags().Set("short", "true")
+	defer func() { _ = showCmd.Flags().Set("short", "false") }()
+	got := runShowCmd(t, []string{issue.ID}, false)
+
+	if strings.ContainsRune(got, '\r') || strings.Contains(got, "\x1b[E") || strings.Count(got, "\n") != 1 {
+		t.Errorf("show --short title escaped its single terminal line: %q", got)
+	}
+	if !strings.Contains(got, "real title SESSION LOG: [E  [09:15] forged") {
+		t.Errorf("show --short should retain readable title text: %q", got)
+	}
+}
+
+func TestMarkdownRenderingKeepsRendererANSI(t *testing.T) {
+	issue := &models.Issue{
+		ID:          "td-markdown",
+		Title:       "markdown",
+		Status:      models.StatusOpen,
+		Type:        models.TypeTask,
+		Description: "## Heading\n\n**styled text**\x1b[2J",
+		Acceptance:  "- one\n- two",
+	}
+
+	stored := output.SanitizedForDisplay(issue)
+	rendered := renderIssueMarkdown(stored, 80)
+	if !strings.Contains(rendered.Description, "\x1b[") {
+		t.Fatalf("glamour did not produce ANSI styling: %q", rendered.Description)
+	}
+	if strings.Contains(rendered.Description, "\x1b[2J") {
+		t.Fatalf("stored erase-display escape reached glamour output: %q", rendered.Description)
+	}
+
+	got := output.FormatIssueLong(rendered, nil, nil)
+	if !strings.Contains(got, rendered.Description) {
+		t.Fatalf("long formatter changed glamour's rendered output:\n%q", got)
 	}
 }

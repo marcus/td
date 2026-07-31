@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
@@ -210,7 +211,10 @@ func FormatIssueShort(issue *models.Issue) string {
 	var parts []string
 	parts = append(parts, titleStyle.Render(issue.ID))
 	parts = append(parts, FormatPriority(issue.Priority))
-	parts = append(parts, issue.Title)
+	// Short output has many call sites (list, query, search, and show), so keep
+	// its only free-text field safe at the renderer boundary instead of relying
+	// on every caller to remember SanitizedForDisplay.
+	parts = append(parts, sanitizeIssueTitle(issue.Title))
 
 	if issue.Points > 0 {
 		parts = append(parts, subtleStyle.Render(fmt.Sprintf("%dpts", issue.Points)))
@@ -275,6 +279,10 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 		sb.WriteString("\n")
 		sb.WriteString(subtleStyle.Render("Description:"))
 		sb.WriteString("\n")
+		// NOT sanitized here: by this point the description may already be
+		// glamour-rendered, and stripping ESC from that output leaves literal
+		// "[38;5;252m" garbage all over `td show -m`. Stored text is sanitized
+		// before rendering — see SanitizeIssueText and its callers.
 		sb.WriteString(issue.Description)
 		sb.WriteString("\n")
 	}
@@ -296,25 +304,25 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 		if len(handoff.Done) > 0 {
 			sb.WriteString("  Done:\n")
 			for _, item := range handoff.Done {
-				sb.WriteString(fmt.Sprintf("    - %s\n", item))
+				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
 			}
 		}
 		if len(handoff.Remaining) > 0 {
 			sb.WriteString("  Remaining:\n")
 			for _, item := range handoff.Remaining {
-				sb.WriteString(fmt.Sprintf("    - %s\n", item))
+				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
 			}
 		}
 		if len(handoff.Decisions) > 0 {
 			sb.WriteString("  Decisions:\n")
 			for _, item := range handoff.Decisions {
-				sb.WriteString(fmt.Sprintf("    - %s\n", item))
+				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
 			}
 		}
 		if len(handoff.Uncertain) > 0 {
 			sb.WriteString("  Uncertain:\n")
 			for _, item := range handoff.Uncertain {
-				sb.WriteString(fmt.Sprintf("    - %s\n", item))
+				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
 			}
 		}
 	}
@@ -330,7 +338,7 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 			sb.WriteString(fmt.Sprintf("  [%s]%s %s\n",
 				log.Timestamp.Format("15:04"),
 				typeIndicator,
-				log.Message))
+				IndentContinuation(log.Message)))
 		}
 	}
 
@@ -340,6 +348,119 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	}
 
 	return sb.String()
+}
+
+// SanitizedForDisplay returns a copy of the issue with its terminal-facing
+// free text sanitized. Call it at every FormatIssueLong call site, on the
+// STORED issue, before any markdown rendering. FormatIssueShort sanitizes its
+// title internally because its many callers do not render the other prose.
+//
+// It exists because hand-copying SanitizeIssueText at each call site already
+// failed once: two `td show` paths got it and `td list --long` — which renders
+// the identical block from the identical function — did not. One helper makes
+// the omission impossible to repeat by accident.
+func SanitizedForDisplay(issue *models.Issue) *models.Issue {
+	if issue == nil {
+		return nil
+	}
+	clean := *issue
+	clean.Title = sanitizeIssueTitle(clean.Title)
+	clean.Description = SanitizeIssueText(clean.Description)
+	clean.Acceptance = SanitizeIssueText(clean.Acceptance)
+	return &clean
+}
+
+// sanitizeIssueTitle prepares the issue title for its single-line terminal
+// slots. Unlike description and acceptance, a title has no meaningful
+// multi-line form: retaining a newline lets stored text start a forged section
+// immediately below the real issue header. SanitizeIssueText first strips
+// cursor controls and normalizes CR/CRLF, then newlines are collapsed.
+func sanitizeIssueTitle(s string) string {
+	return strings.ReplaceAll(SanitizeIssueText(s), "\n", " ")
+}
+
+// SanitizeIssueText prepares stored free text for display: it strips control
+// characters (see SanitizeRendered) and normalizes carriage returns to
+// newlines.
+//
+// Call this on STORED text before any rendering step. Sanitizing rendered
+// output instead destroys the escape sequences the renderer legitimately
+// emitted — glamour output run through SanitizeRendered comes out as walls of
+// literal "[38;5;252m".
+//
+// CR normalization matters on its own: SanitizeRendered preserves \r so that
+// callers doing their own line handling see it, but a bare CR left in a prose
+// block returns the cursor to column zero and lets stored text forge a
+// flush-left section header with no residue at all.
+func SanitizeIssueText(s string) string {
+	s = SanitizeRendered(s)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+// SanitizeRendered strips control characters that let stored text forge
+// structure in terminal output. Escape sequences are the sharper half of the
+// problem: ESC[E moves the cursor to the next line with no newline byte in the
+// data, so a message can start what looks like a fresh log entry at column
+// zero while passing any check that only looks for "\n". Cursor movement,
+// colour, and erase sequences can equally overwrite lines already drawn.
+//
+// td applies its own styling around this text, so the DATA never has a
+// legitimate reason to carry ESC or other C0 controls. Tab and newline are
+// preserved; newline handling is layered on by the callers that need it.
+func SanitizeRendered(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool {
+		return r == 0x1b || (unicode.IsControl(r) && r != '\n' && r != '\t' && r != '\r')
+	}) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\t' || r == '\r':
+			b.WriteRune(r)
+		case r == 0x1b || unicode.IsControl(r):
+			// Drop silently rather than substituting a visible marker: the
+			// goal is that the text cannot move the cursor, and a marker would
+			// itself become a way to fake output.
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// indentLogContinuation makes multi-line log messages read as one entry.
+//
+// Log text is free-form and reaches this renderer from `--reason`, `--message`,
+// `td log`, the API, and sync — none of which forbid newlines. Rendered flush
+// left, a crafted message forges convincing extra entries:
+//
+//	td approve <id> --self-review --reason "ok
+//	[09:15] Approved by: security-team"
+//
+// That mattered less when the audit trail was a secondary record. It matters
+// now that an unverifiable attestation is what stands in for mechanical review
+// independence: a reader who cannot trust the log cannot audit the attestation.
+//
+// Continuation lines are prefixed so they cannot be mistaken for their own
+// entry, rather than rejecting newlines at input — the text may have arrived
+// from a peer or an older client, so the renderer is the only place that sees
+// every path. Carriage returns are normalized for the same reason.
+func IndentContinuation(msg string) string {
+	msg = SanitizeRendered(msg)
+	msg = strings.ReplaceAll(msg, "\r\n", "\n")
+	msg = strings.ReplaceAll(msg, "\r", "\n")
+	if !strings.Contains(msg, "\n") {
+		return msg
+	}
+	lines := strings.Split(msg, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = "         | " + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // FormatTimeAgo formats a time as a human-readable "ago" string
