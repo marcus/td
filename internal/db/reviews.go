@@ -55,47 +55,88 @@ func (db *DB) withReviewSyncTxLocked(fn func(*sql.Tx) error) error {
 func (db *DB) CreateIssueReview(rv NewReview) (string, error) {
 	var id string
 	err := db.withWriteLock(func() error {
-		var createdID string
 		err := db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
-			newID, err := generateTextID(reviewIDPrefix)
+			createdID, err := db.createIssueReview(tx, rv)
 			if err != nil {
-				return fmt.Errorf("generate review id: %w", err)
-			}
-			createdAt := time.Now()
-			_, err = tx.Exec(`
-				INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review, reviewed_by)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, newID, NormalizeIssueID(rv.IssueID), rv.ReviewerSession, rv.Decision, rv.Summary,
-				rv.RequestedBySession, createdAt, rv.SelfReview, rv.ReviewedBy)
-			if err != nil {
-				return fmt.Errorf("insert issue_reviews: %w", err)
-			}
-			created := &models.IssueReview{
-				ID:                 newID,
-				IssueID:            NormalizeIssueID(rv.IssueID),
-				ReviewerSession:    rv.ReviewerSession,
-				Decision:           rv.Decision,
-				Summary:            rv.Summary,
-				RequestedBySession: rv.RequestedBySession,
-				CreatedAt:          createdAt,
-				SelfReview:         rv.SelfReview,
-				ReviewedBy:         rv.ReviewedBy,
-			}
-			if err := db.logIssueReviewAction(tx, rv.ReviewerSession, models.ActionCreate, nil, created); err != nil {
 				return err
 			}
-			createdID = newID
+			id = createdID
 			return nil
 		})
-		if err == nil {
-			id = createdID
-		}
 		return err
 	})
 	if err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+func (db *DB) createIssueReview(store reviewSyncStore, rv NewReview) (string, error) {
+	newID, err := generateTextID(reviewIDPrefix)
+	if err != nil {
+		return "", fmt.Errorf("generate review id: %w", err)
+	}
+	createdAt := time.Now()
+	_, err = store.Exec(`
+		INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review, reviewed_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, newID, NormalizeIssueID(rv.IssueID), rv.ReviewerSession, rv.Decision, rv.Summary,
+		rv.RequestedBySession, createdAt, rv.SelfReview, rv.ReviewedBy)
+	if err != nil {
+		return "", fmt.Errorf("insert issue_reviews: %w", err)
+	}
+	created := &models.IssueReview{
+		ID: newID, IssueID: NormalizeIssueID(rv.IssueID), ReviewerSession: rv.ReviewerSession,
+		Decision: rv.Decision, Summary: rv.Summary, RequestedBySession: rv.RequestedBySession,
+		CreatedAt: createdAt, SelfReview: rv.SelfReview, ReviewedBy: rv.ReviewedBy,
+	}
+	if err := db.logIssueReviewAction(store, rv.ReviewerSession, models.ActionCreate, nil, created); err != nil {
+		return "", err
+	}
+	return newID, nil
+}
+
+// CreateIssueReviewAndUpdateIssueLogged persists an entire review lifecycle
+// transition in one transaction: prior-review supersession, the new review and
+// its sync event, the issue mutation, and the enclosing issue action event.
+func (db *DB) CreateIssueReviewAndUpdateIssueLogged(
+	rv NewReview, issue *models.Issue, expectedStatus models.Status,
+	sessionID string, actionType models.ActionType,
+) (string, error) {
+	var reviewID string
+	err := db.withWriteLock(func() error {
+		return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
+			prev, err := db.scanIssueRowFrom(tx, issue.ID)
+			if err != nil {
+				return err
+			}
+			if prev.Status != expectedStatus {
+				return &StaleIssueStatusError{IssueID: issue.ID, Expected: expectedStatus, Actual: prev.Status}
+			}
+			prior, err := db.getActiveApprovalReview(tx, issue.ID)
+			if err != nil {
+				return err
+			}
+			priorID := ""
+			if prior != nil {
+				priorID = prior.ID
+			}
+			if err := db.supersedeActiveReviewsLogged(tx, issue.ID, sessionID); err != nil {
+				return err
+			}
+			reviewID, err = db.createIssueReview(tx, rv)
+			if err != nil {
+				return err
+			}
+			return db.updateIssueAndLogFromPreviousWithReviewMetaStore(
+				tx, issue, prev, sessionID, actionType, reviewID, priorID,
+			)
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	return reviewID, nil
 }
 
 // logIssueReviewAction writes the sync event for a review mutation using the
@@ -138,7 +179,11 @@ func (db *DB) logIssueReviewAction(store reviewSyncStore, sessionID string, acti
 // a non-superseded changes_requested row does not mean the issue has an
 // active approval and is therefore skipped.
 func (db *DB) GetActiveApprovalReview(issueID string) (*models.IssueReview, error) {
-	row := db.conn.QueryRow(`
+	return db.getActiveApprovalReview(db.conn, issueID)
+}
+
+func (db *DB) getActiveApprovalReview(store reviewSyncStore, issueID string) (*models.IssueReview, error) {
+	row := store.QueryRow(`
 		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, superseded_at, self_review, reviewed_by
 		FROM issue_reviews
 		WHERE issue_id = ?
@@ -359,6 +404,50 @@ func (db *DB) UndoIssueReviewEffectsLogged(createdReviewID, priorActiveReviewID,
 				if err := db.clearReviewSupersededAtLogged(tx, priorActiveReviewID, sessionID); err != nil {
 					return err
 				}
+			}
+			return nil
+		})
+	})
+}
+
+// UndoReviewAwareIssueActionLogged rolls back the review effects, restores the
+// issue, emits the restoration event, and marks the original action undone in
+// one transaction. A failure at any event boundary leaves the action retryable.
+func (db *DB) UndoReviewAwareIssueActionLogged(
+	originalActionID string, restoredIssue *models.Issue,
+	createdReviewID, priorActiveReviewID, sessionID string,
+) error {
+	return db.withWriteLock(func() error {
+		return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
+			if createdReviewID != "" {
+				if err := db.deleteIssueReviewLogged(tx, createdReviewID, sessionID); err != nil {
+					return err
+				}
+			}
+			if priorActiveReviewID != "" {
+				if err := db.clearReviewSupersededAtLogged(tx, priorActiveReviewID, sessionID); err != nil {
+					return err
+				}
+			}
+			current, err := db.scanIssueRowFrom(tx, restoredIssue.ID)
+			if err != nil {
+				return err
+			}
+			if err := db.updateIssueAndLogFromPreviousStore(
+				tx, restoredIssue, current, sessionID, models.ActionUpdate,
+			); err != nil {
+				return err
+			}
+			result, err := tx.Exec(`UPDATE action_log SET undone = 1 WHERE id = ? AND undone = 0`, originalActionID)
+			if err != nil {
+				return err
+			}
+			n, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if n != 1 {
+				return fmt.Errorf("action %s is missing or already undone", originalActionID)
 			}
 			return nil
 		})

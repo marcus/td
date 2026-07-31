@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,64 @@ func dropFailReviewActionTrigger(t *testing.T, database *DB) {
 	t.Helper()
 	if _, err := database.conn.Exec(`DROP TRIGGER IF EXISTS fail_issue_review_action`); err != nil {
 		t.Fatalf("drop action_log failure trigger: %v", err)
+	}
+}
+
+func installFailIssueActionTrigger(t *testing.T, database *DB, action models.ActionType) {
+	t.Helper()
+	if _, err := database.conn.Exec(fmt.Sprintf(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = '%s'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected issue action failure');
+		END;
+	`, action)); err != nil {
+		t.Fatalf("install issue action failure trigger: %v", err)
+	}
+}
+
+func TestCreateIssueReviewAndUpdateIssueLogged_LaterIssueEventFailureRollsBackLifecycle(t *testing.T) {
+	database, err := Initialize(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	const issueID = "td-rvatomic-lifecycle"
+	seedIssueForReviewTests(t, database, issueID)
+	issue, err := database.GetIssue(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue.Status = models.StatusClosed
+	installFailIssueActionTrigger(t, database, models.ActionApprove)
+
+	rv := NewReview{IssueID: issueID, ReviewerSession: "ses-reviewer", Decision: "approved"}
+	if _, err := database.CreateIssueReviewAndUpdateIssueLogged(
+		rv, issue, models.StatusInReview, "ses-reviewer", models.ActionApprove,
+	); err == nil {
+		t.Fatal("lifecycle succeeded despite later issue event failure")
+	}
+	unchanged, _ := database.GetIssue(issueID)
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issueID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review lifecycle partially committed: reviews=%+v err=%v", reviews, err)
+	}
+
+	if _, err := database.conn.Exec(`DROP TRIGGER fail_issue_action`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.CreateIssueReviewAndUpdateIssueLogged(
+		rv, issue, models.StatusInReview, "ses-reviewer", models.ActionApprove,
+	); err != nil {
+		t.Fatalf("retry lifecycle: %v", err)
+	}
+	closed, _ := database.GetIssue(issueID)
+	if closed.Status != models.StatusClosed {
+		t.Fatalf("retry status = %s, want closed", closed.Status)
 	}
 }
 

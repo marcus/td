@@ -315,7 +315,7 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	}
 }
 
-func TestIntegration_Reject_ReviewEventFailureLeavesIssueUnchanged(t *testing.T) {
+func TestIntegration_Reject_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T) {
 	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 	setDelegatedMode(t, database.BaseDir())
@@ -330,9 +330,9 @@ func TestIntegration_Reject_ReviewEventFailureLeavesIssueUnchanged(t *testing.T)
 		t.Fatal(err)
 	}
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'reject'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -357,6 +357,12 @@ func TestIntegration_Reject_ReviewEventFailureLeavesIssueUnchanged(t *testing.T)
 	if err != nil || active == nil || active.ID != reviewID {
 		t.Fatalf("active review changed: active=%+v err=%v", active, err)
 	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reject", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry reject status=%d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 // TestIntegration_Reviews_UndoPayload verifies the action_log row written for
@@ -418,7 +424,7 @@ func TestIntegration_Reviews_UndoPayload(t *testing.T) {
 	}
 }
 
-func TestIntegration_RecordReview_SupersedeEventFailureLeavesHistoryUnchanged(t *testing.T) {
+func TestIntegration_RecordReview_LaterIssueEventFailureLeavesHistoryRetryable(t *testing.T) {
 	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 	setDelegatedMode(t, database.BaseDir())
@@ -434,9 +440,9 @@ func TestIntegration_RecordReview_SupersedeEventFailureLeavesHistoryUnchanged(t 
 		t.Fatal(err)
 	}
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'review_changes_requested'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -467,6 +473,14 @@ func TestIntegration_RecordReview_SupersedeEventFailureLeavesHistoryUnchanged(t 
 	if unchanged.Status != models.StatusInReview {
 		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
 	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision": reviewpolicy.DecisionChangesRequested, "summary": "second pass",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("retry record review status=%d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
@@ -493,16 +507,16 @@ func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
 	}
 }
 
-func TestIntegration_Approve_ReviewEventFailureDoesNotCloseIssue(t *testing.T) {
+func TestIntegration_Approve_LaterIssueEventFailureDoesNotCloseAndCanRetry(t *testing.T) {
 	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()
 	setDelegatedMode(t, database.BaseDir())
 
 	issueID := seedInReviewIssue(t, database, "ses-other-impl")
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'approve'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -527,6 +541,12 @@ func TestIntegration_Approve_ReviewEventFailureDoesNotCloseIssue(t *testing.T) {
 	if err != nil || len(reviews) != 0 {
 		t.Fatalf("review row committed without event: count=%d err=%v", len(reviews), err)
 	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry approve status=%d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 // setTrustedMode flips review_policy_mode=trusted in the project config.

@@ -210,12 +210,21 @@ func TestUndoIssueApproval_EmitsReviewDeleteForSync(t *testing.T) {
 		CreatedReviewID: reviewID,
 	})
 	action := &models.ActionLog{
+		ID:           "act-undo-review-delete-sync",
 		SessionID:    sessionID,
 		ActionType:   models.ActionApprove,
 		EntityType:   "issue",
 		EntityID:     issue.ID,
 		PreviousData: string(previousData),
 		NewData:      string(newData),
+	}
+	if _, err := database.Conn().Exec(`
+		INSERT INTO action_log
+			(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID,
+		action.PreviousData, action.NewData, time.Now()); err != nil {
+		t.Fatalf("insert original action: %v", err)
 	}
 
 	if err := undoIssueAction(database, action, sessionID); err != nil {
@@ -285,6 +294,7 @@ func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
 		PriorActiveReviewID: priorReviewID,
 	})
 	action := &models.ActionLog{
+		ID:           "act-undo-review-atomicity",
 		SessionID:    sessionID,
 		ActionType:   models.ActionApprove,
 		EntityType:   "issue",
@@ -292,13 +302,21 @@ func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
 		PreviousData: string(previousData),
 		NewData:      string(newData),
 	}
+	if _, err := database.Conn().Exec(`
+		INSERT INTO action_log
+			(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID,
+		action.PreviousData, action.NewData, time.Now()); err != nil {
+		t.Fatalf("insert original action: %v", err)
+	}
 
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews' AND NEW.action_type = 'update'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'update'
 		BEGIN
-			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
+			SELECT RAISE(ABORT, 'injected later issue action failure');
 		END;
 	`); err != nil {
 		t.Fatalf("install trigger: %v", err)
@@ -326,7 +344,15 @@ func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
 		t.Fatalf("multi-review undo partially committed: %+v", failedReviews)
 	}
 
-	if _, err := database.Conn().Exec(`DROP TRIGGER fail_issue_review_action`); err != nil {
+	var undone bool
+	if err := database.Conn().QueryRow(`SELECT undone FROM action_log WHERE id = ?`, action.ID).Scan(&undone); err != nil {
+		t.Fatal(err)
+	}
+	if undone {
+		t.Fatal("original action marked undone after rolled-back lifecycle")
+	}
+
+	if _, err := database.Conn().Exec(`DROP TRIGGER fail_issue_action`); err != nil {
 		t.Fatalf("drop trigger: %v", err)
 	}
 	if err := undoIssueAction(database, action, sessionID); err != nil {
@@ -345,6 +371,12 @@ func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
 	}
 	if len(reviews) != 1 || reviews[0].ID != priorReviewID || reviews[0].SupersededAt != nil {
 		t.Fatalf("prior review was not restored after successful retry: %+v", reviews)
+	}
+	if err := database.Conn().QueryRow(`SELECT undone FROM action_log WHERE id = ?`, action.ID).Scan(&undone); err != nil {
+		t.Fatal(err)
+	}
+	if !undone {
+		t.Fatal("original action was not marked undone with successful lifecycle")
 	}
 }
 

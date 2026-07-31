@@ -550,7 +550,7 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 	// reviewer-close from cascaded close. It must succeed before the issue
 	// closes so an action_log failure cannot produce a closed-but-unsynced
 	// approval.
-	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
+	_, err := m.DB.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
 		IssueID:            issue.ID,
 		ReviewerSession:    m.SessionID,
 		Decision:           reviewpolicy.DecisionApproved,
@@ -558,21 +558,8 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 		RequestedBySession: issue.ReviewRequestedBySession,
 		SelfReview:         selfReview,
 		ReviewedBy:         attributedTo,
-	})
+	}, issue, models.StatusInReview, m.SessionID, models.ActionApprove)
 	if err != nil {
-		m.StatusMessage = "failed to record review: " + err.Error()
-		m.StatusIsError = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
-	}
-	if err := m.DB.UpdateIssueLoggedWithReviewMeta(
-		issue,
-		models.StatusInReview,
-		m.SessionID,
-		models.ActionApprove,
-		reviewID,
-		"",
-	); err != nil {
-		_ = m.DB.DeleteIssueReviewLogged(reviewID, m.SessionID)
 		m.StatusMessage = "failed to approve issue: " + err.Error()
 		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
@@ -602,25 +589,14 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				childReviewID, err := m.DB.CreateIssueReview(db.NewReview{
+				_, err := m.DB.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
 					IssueID:            child.ID,
 					ReviewerSession:    m.SessionID,
 					Decision:           reviewpolicy.DecisionApprovedByParentCascade,
 					Summary:            "Cascaded approval from " + issue.ID,
 					RequestedBySession: child.ReviewRequestedBySession,
-				})
+				}, child, previousStatus, m.SessionID, models.ActionApprove)
 				if err != nil {
-					continue
-				}
-				if err := m.DB.UpdateIssueLoggedWithReviewMeta(
-					child,
-					previousStatus,
-					m.SessionID,
-					models.ActionApprove,
-					childReviewID,
-					"",
-				); err != nil {
-					_ = m.DB.DeleteIssueReviewLogged(childReviewID, m.SessionID)
 					continue
 				}
 				_ = m.DB.AddLog(&models.Log{
@@ -1002,32 +978,6 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 	}
 
-	// Supersede any stale rows + snapshot prior-active id for undo.
-	priorActive := ""
-	if pa, _ := m.DB.GetActiveApprovalReview(issueID); pa != nil {
-		priorActive = pa.ID
-	}
-	if err := m.DB.SupersedeActiveReviewsLogged(issueID, m.SessionID); err != nil {
-		m.StatusMessage = "failed to supersede prior review: " + err.Error()
-		m.StatusIsError = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
-	}
-
-	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
-		IssueID:            issueID,
-		ReviewerSession:    m.SessionID,
-		Decision:           decision,
-		Summary:            reason,
-		RequestedBySession: issue.ReviewRequestedBySession,
-		SelfReview:         eligibility.SelfReview,
-		ReviewedBy:         eligibility.AttributedTo,
-	})
-	if err != nil {
-		m.StatusMessage = "failed to record review: " + err.Error()
-		m.StatusIsError = true
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
-	}
-
 	actionType := models.ActionReviewApprove
 	if decision == reviewpolicy.DecisionChangesRequested {
 		actionType = models.ActionReviewChangesRequested
@@ -1037,9 +987,18 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 		issue.ReviewedAt = &now
 	}
 
-	if err := m.DB.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, m.SessionID, actionType, reviewID, priorActive); err != nil {
-		m.closeRecordReviewModal()
-		return m, nil
+	if _, err := m.DB.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
+		IssueID:            issueID,
+		ReviewerSession:    m.SessionID,
+		Decision:           decision,
+		Summary:            reason,
+		RequestedBySession: issue.ReviewRequestedBySession,
+		SelfReview:         eligibility.SelfReview,
+		ReviewedBy:         eligibility.AttributedTo,
+	}, issue, models.StatusInReview, m.SessionID, actionType); err != nil {
+		m.StatusMessage = "failed to record review: " + err.Error()
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 	}
 
 	sessionAction := models.ActionSessionReviewApproved

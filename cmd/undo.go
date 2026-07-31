@@ -95,10 +95,13 @@ Use 'td undo --list' to see recent undoable actions.`,
 			return err
 		}
 
-		// Mark action as undone
-		if err := database.MarkActionUndone(action.ID); err != nil {
-			output.Error("failed to mark action undone: %v", err)
-			return err
+		// Review-aware issue undo marks the action inside the same transaction
+		// as its review and issue restoration.
+		if !action.Undone {
+			if err := database.MarkActionUndone(action.ID); err != nil {
+				output.Error("failed to mark action undone: %v", err)
+				return err
+			}
 		}
 
 		fmt.Printf("UNDONE: %s %s %s\n", action.ActionType, action.EntityType, action.EntityID)
@@ -155,12 +158,18 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 		if action.NewData != "" {
 			var payload models.ReviewUndoPayload
 			if err := json.Unmarshal([]byte(action.NewData), &payload); err == nil {
-				if err := database.UndoIssueReviewEffectsLogged(
-					payload.CreatedReviewID,
-					payload.PriorActiveReviewID,
-					sessionID,
-				); err != nil {
-					return fmt.Errorf("undo review effects: %w", err)
+				if payload.CreatedReviewID != "" || payload.PriorActiveReviewID != "" {
+					if err := database.UndoReviewAwareIssueActionLogged(
+						action.ID,
+						&issue,
+						payload.CreatedReviewID,
+						payload.PriorActiveReviewID,
+						sessionID,
+					); err != nil {
+						return fmt.Errorf("undo review-aware issue action: %w", err)
+					}
+					action.Undone = true
+					return nil
 				}
 			}
 		}

@@ -7,7 +7,7 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-func TestReject_ReviewEventFailureDoesNotRejectIssue(t *testing.T) {
+func TestReject_LaterIssueEventFailureDoesNotRejectIssueAndCanRetry(t *testing.T) {
 	saveAndRestoreGlobals(t)
 	t.Setenv("TD_SESSION_ID", "ses_reject_atomicity_test")
 
@@ -36,9 +36,9 @@ func TestReject_ReviewEventFailureDoesNotRejectIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'reject'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -59,5 +59,15 @@ func TestReject_ReviewEventFailureDoesNotRejectIssue(t *testing.T) {
 	active, err := database.GetActiveApprovalReview(issue.ID)
 	if err != nil || active == nil || active.ID != reviewID {
 		t.Fatalf("active review changed: active=%+v err=%v", active, err)
+	}
+	if _, err := database.Conn().Exec(`DROP TRIGGER fail_issue_action`); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectCmd.RunE(rejectCmd, []string{issue.ID}); err != nil {
+		t.Fatalf("retry reject: %v", err)
+	}
+	rejected, _ := database.GetIssue(issue.ID)
+	if rejected.Status != models.StatusOpen {
+		t.Fatalf("retry status = %s, want open", rejected.Status)
 	}
 }

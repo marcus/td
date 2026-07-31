@@ -383,6 +383,9 @@ type transitionSpec struct {
 	// beforeCommit performs transition-specific persistence that must succeed
 	// before the issue itself changes. Returning an error aborts the request.
 	beforeCommit func(ctx HandlerContext, issue *models.Issue) error
+	// persist overrides the default issue writer for lifecycle operations that
+	// must include related rows and events in the same database transaction.
+	persist func(ctx HandlerContext, issue *models.Issue) error
 	// postCommit runs after UpdateIssueLogged succeeds but before cascades.
 	// Used to write issue_reviews rows for approve so audit output records
 	// the reviewer independently of the closer.
@@ -468,8 +471,14 @@ func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 	}
 
 	// Persist
-	if err := ctx.DB.UpdateIssueLogged(issue, ctx.SessionID, spec.actionType); err != nil {
-		slog.Error("transition issue", "err", err, "id", issueID, "to", spec.toStatus)
+	var persistErr error
+	if spec.persist != nil {
+		persistErr = spec.persist(ctx, issue)
+	} else {
+		persistErr = ctx.DB.UpdateIssueLogged(issue, ctx.SessionID, spec.actionType)
+	}
+	if persistErr != nil {
+		slog.Error("transition issue", "err", persistErr, "id", issueID, "to", spec.toStatus)
 		WriteError(w, ErrInternal, "failed to update issue", http.StatusInternalServerError)
 		return
 	}
@@ -729,8 +738,8 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			issue.ReviewedAt = &now
 			issue.ClosedAt = &now
 		},
-		beforeCommit: func(c HandlerContext, issue *models.Issue) error {
-			_, err := c.DB.CreateIssueReview(db.NewReview{
+		persist: func(c HandlerContext, issue *models.Issue) error {
+			_, err := c.DB.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
 				IssueID:            issue.ID,
 				ReviewerSession:    c.SessionID,
 				Decision:           reviewpolicy.DecisionApproved,
@@ -738,7 +747,7 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 				RequestedBySession: issue.ReviewRequestedBySession,
 				SelfReview:         decisionSelfReview,
 				ReviewedBy:         decisionAttributedTo,
-			})
+			}, issue, models.StatusInReview, c.SessionID, models.ActionApprove)
 			return err
 		},
 		postCommit: func(c HandlerContext, issue *models.Issue) {

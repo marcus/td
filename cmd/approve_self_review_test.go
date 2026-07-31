@@ -182,6 +182,96 @@ func TestSelfReviewImplementerApprovesAndCloses(t *testing.T) {
 	}
 }
 
+func TestSelfReviewApprove_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+	dir := t.TempDir()
+	baseDirOverride = &dir
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	t.Setenv("TD_SESSION_ID", "impl-atomic-reviewer")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'approve'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected later issue action failure');
+		END;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	flags := map[string]string{"self-review": "true", "reason": "verified the diff"}
+	if _, err := runApproveCmd(t, []string{issue.ID}, flags); err == nil {
+		t.Fatal("approve succeeded despite injected later issue event failure")
+	}
+	unchanged, _ := database.GetIssue(issue.ID)
+	if unchanged.Status != models.StatusInReview {
+		t.Fatalf("status = %s, want in_review", unchanged.Status)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review lifecycle partially committed: reviews=%+v err=%v", reviews, err)
+	}
+
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	if out, err := runApproveCmd(t, []string{issue.ID}, flags); err != nil {
+		t.Fatalf("retry approve: %v\n%s", err, out)
+	}
+	closed, _ := database.GetIssue(issue.ID)
+	if closed.Status != models.StatusClosed {
+		t.Fatalf("retry status = %s, want closed", closed.Status)
+	}
+}
+
+func TestRecordOnly_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+	dir := t.TempDir()
+	baseDirOverride = &dir
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	t.Setenv("TD_SESSION_ID", "impl-atomic-recorder")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+	if _, err := database.Conn().Exec(`
+		CREATE TRIGGER fail_issue_action
+		BEFORE INSERT ON action_log
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'review_approve'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected later issue action failure');
+		END;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	flags := map[string]string{
+		"record-only": "true", "self-review": "true", "reason": "verified the diff",
+	}
+	if _, err := runApproveCmd(t, []string{issue.ID}, flags); err == nil {
+		t.Fatal("record-only succeeded despite injected later issue event failure")
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 0 {
+		t.Fatalf("review lifecycle partially committed: reviews=%+v err=%v", reviews, err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	if out, err := runApproveCmd(t, []string{issue.ID}, flags); err != nil {
+		t.Fatalf("retry record-only: %v\n%s", err, out)
+	}
+	reviews, err = database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 1 {
+		t.Fatalf("retry review history: reviews=%+v err=%v", reviews, err)
+	}
+}
+
 // TestSelfReviewRejectedWithoutFlagInTrustedMode verifies that in trusted mode
 // the implementer is still blocked from approving their own work WITHOUT the
 // flag, with the teaching message.

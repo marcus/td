@@ -266,7 +266,7 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	}
 }
 
-func TestRecordReviewEventFailureLeavesMonitorStateUnchanged(t *testing.T) {
+func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
 	if err != nil {
@@ -287,9 +287,9 @@ func TestRecordReviewEventFailureLeavesMonitorStateUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'review_changes_requested'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -328,9 +328,15 @@ func TestRecordReviewEventFailureLeavesMonitorStateUnchanged(t *testing.T) {
 	if err != nil || len(reviews) != 1 {
 		t.Fatalf("reviews changed: count=%d err=%v", len(reviews), err)
 	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	_, _ = gotModel.executeRecordReview()
+	reviews, err = database.ListIssueReviews(issue.ID)
+	if err != nil || len(reviews) != 2 {
+		t.Fatalf("retry record review did not persist: count=%d err=%v", len(reviews), err)
+	}
 }
 
-func TestApproveCloseEventFailureDoesNotCloseIssue(t *testing.T) {
+func TestApproveCloseLaterIssueEventFailureDoesNotCloseAndCanRetry(t *testing.T) {
 	baseDir := t.TempDir()
 	database, err := db.Initialize(baseDir)
 	if err != nil {
@@ -343,9 +349,9 @@ func TestApproveCloseEventFailureDoesNotCloseIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := database.Conn().Exec(`
-		CREATE TRIGGER fail_issue_review_action
+		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
-		WHEN NEW.entity_type = 'issue_reviews'
+		WHEN NEW.entity_type = 'issue' AND NEW.action_type = 'approve'
 		BEGIN
 			SELECT RAISE(ABORT, 'injected issue_reviews action failure');
 		END;
@@ -369,6 +375,12 @@ func TestApproveCloseEventFailureDoesNotCloseIssue(t *testing.T) {
 	reviews, err := database.ListIssueReviews(issue.ID)
 	if err != nil || len(reviews) != 0 {
 		t.Fatalf("review row committed without event: count=%d err=%v", len(reviews), err)
+	}
+	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
+	_, _ = gotModel.executeApproveClose(issue, false)
+	closed, _ := database.GetIssue(issue.ID)
+	if closed.Status != models.StatusClosed {
+		t.Fatalf("retry status = %s, want closed", closed.Status)
 	}
 }
 

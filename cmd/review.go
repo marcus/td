@@ -970,32 +970,6 @@ To surface issues reviewed by a sub-agent that you can close, use
 					continue
 				}
 
-				// Supersede any existing non-superseded review rows before
-				// we insert a new row so audit history always has at most
-				// one active row per issue.
-				priorActive := ""
-				if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
-					priorActive = pa.ID
-				}
-				if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-					output.Error("failed to supersede prior reviews for %s: %v", issueID, err)
-					return err
-				}
-
-				reviewID, err := database.CreateIssueReview(db.NewReview{
-					IssueID:            issueID,
-					ReviewerSession:    sess.ID,
-					Decision:           decision,
-					Summary:            reason,
-					RequestedBySession: issue.ReviewRequestedBySession,
-					SelfReview:         eligibility.SelfReview,
-					ReviewedBy:         eligibility.AttributedTo,
-				})
-				if err != nil {
-					output.Error("failed to record review: %v", err)
-					return err
-				}
-
 				// For approved decisions, stamp reviewer_session/reviewed_at
 				// on the issue so status/reviewable surfaces pick it up.
 				// For changes_requested, do NOT stamp — that would masquerade
@@ -1009,10 +983,13 @@ To surface issues reviewed by a sub-agent that you can close, use
 					issue.ReviewedAt = &now
 				}
 
-				if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, actionType, reviewID, priorActive); err != nil {
+				if _, err := database.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
+					IssueID: issueID, ReviewerSession: sess.ID, Decision: decision, Summary: reason,
+					RequestedBySession: issue.ReviewRequestedBySession,
+					SelfReview:         eligibility.SelfReview, ReviewedBy: eligibility.AttributedTo,
+				}, issue, models.StatusInReview, sess.ID, actionType); err != nil {
 					output.Warning("%s", describeStaleTransitionUpdate(database, "record review", issueID, err, approveFollowupGuidance))
-					skipped++
-					continue
+					return err
 				}
 
 				sessionAction := models.ActionSessionReviewApproved
@@ -1296,20 +1273,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			issue.ReviewedAt = &now
 			issue.ClosedAt = &now
 
-			// Supersede any stale (changes_requested) rows and snapshot the
-			// prior-active review id for undo.
-			priorActive := ""
-			if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
-				priorActive = pa.ID
-			}
-			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-				output.Error("failed to supersede prior reviews for %s: %v", issueID, err)
-				return err
-			}
-
-			// Create the approval row first so we can record its id in
-			// the action_log payload via UpdateIssueLoggedWithReviewMeta.
-			reviewID, err := database.CreateIssueReview(db.NewReview{
+			if _, err := database.CreateIssueReviewAndUpdateIssueLogged(db.NewReview{
 				IssueID:            issueID,
 				ReviewerSession:    sess.ID,
 				Decision:           reviewpolicy.DecisionApproved,
@@ -1317,16 +1281,9 @@ To surface issues reviewed by a sub-agent that you can close, use
 				RequestedBySession: issue.ReviewRequestedBySession,
 				SelfReview:         eligibility.SelfReview,
 				ReviewedBy:         eligibility.AttributedTo,
-			})
-			if err != nil {
-				output.Error("failed to record issue review: %v", err)
-				return err
-			}
-
-			if err := database.UpdateIssueLoggedWithReviewMeta(issue, models.StatusInReview, sess.ID, models.ActionApprove, reviewID, priorActive); err != nil {
+			}, issue, models.StatusInReview, sess.ID, models.ActionApprove); err != nil {
 				output.Warning("%s", describeStaleTransitionUpdate(database, "approve", issueID, err, approveFollowupGuidance))
-				skipped++
-				continue
+				return err
 			}
 
 			// Record session action for bypass prevention
@@ -1590,11 +1547,6 @@ Supports bulk operations:
 			issue.ReviewerSession = ""
 			issue.ReviewedAt = nil
 			issue.ReviewRequestedBySession = ""
-
-			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
-				output.Error("failed to supersede active reviews for %s: %v", issueID, err)
-				return err
-			}
 
 			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
