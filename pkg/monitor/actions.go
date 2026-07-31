@@ -982,7 +982,7 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 	if pa, _ := m.DB.GetActiveApprovalReview(issueID); pa != nil {
 		priorActive = pa.ID
 	}
-	_ = m.DB.SupersedeActiveReviews(issueID)
+	_ = m.DB.SupersedeActiveReviewsLogged(issueID, m.SessionID)
 
 	reviewID, err := m.DB.CreateIssueReview(db.NewReview{
 		IssueID:            issueID,

@@ -49,7 +49,7 @@ func reviewInvalidatingDiff(prev, next *models.Issue, cascadedReparent bool) rev
 // Dependencies / linked_files / work_session_tags changes arrive through
 // separate side-table mutation paths; those call supersedeApprovalIfLinked
 // directly (see relations_logged.go and work_sessions.go).
-func (db *DB) supersedeIfReviewInvalidating(prev, next *models.Issue) {
+func (db *DB) supersedeIfReviewInvalidating(prev, next *models.Issue, sessionID string) {
 	if prev == nil || next == nil {
 		return
 	}
@@ -61,7 +61,11 @@ func (db *DB) supersedeIfReviewInvalidating(prev, next *models.Issue) {
 	// helper runs INSIDE withWriteLock from the caller (updateIssueAndLog*),
 	// so we must use the lock-free variants to avoid deadlocking on the
 	// reentrant flock.
-	_ = db.supersedeActiveReviewsLocked(next.ID)
+	if sessionID == "" {
+		_ = db.supersedeActiveReviewsLocked(next.ID)
+	} else {
+		_ = db.supersedeActiveReviewsLoggedLocked(next.ID, sessionID)
+	}
 	_, _ = db.conn.Exec(
 		`UPDATE issues SET reviewer_session = '', reviewed_at = NULL WHERE id = ?`,
 		next.ID,
@@ -291,7 +295,7 @@ func (db *DB) updateIssueAndLogFromPrevious(issue, prev *models.Issue, sessionID
 	// invalidating. Approve/close paths are NOT invalidating (status went
 	// in_review -> closed), so this no-ops for the normal reviewer-close
 	// flow.
-	db.supersedeIfReviewInvalidating(prev, issue)
+	db.supersedeIfReviewInvalidating(prev, issue, sessionID)
 
 	return nil
 }
@@ -430,7 +434,7 @@ func (db *DB) updateIssueAndLogFromPreviousWithReviewMeta(
 		actionType != models.ActionReviewApprove &&
 		actionType != models.ActionReviewChangesRequested &&
 		actionType != models.ActionCloseAfterReview {
-		db.supersedeIfReviewInvalidating(prev, issue)
+		db.supersedeIfReviewInvalidating(prev, issue, sessionID)
 	}
 
 	return nil

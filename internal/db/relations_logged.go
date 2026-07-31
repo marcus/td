@@ -47,7 +47,7 @@ func (db *DB) AddDependencyLogged(issueID, dependsOnID, relationType, sessionID 
 	if err == nil {
 		// reviewpolicy.IssueMutation.DependenciesChanged: post-mutation
 		// invalidation of any active approval on this issue. Best-effort.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }
@@ -89,7 +89,7 @@ func (db *DB) LinkFileLogged(issueID, filePath string, role models.FileRole, sha
 	if err == nil {
 		// reviewpolicy.IssueMutation.LinkedFilesChanged: supersede any
 		// active approval on the issue. Best-effort.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }
@@ -132,7 +132,7 @@ func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
 	if err == nil && didDelete {
 		// LinkedFilesChanged invalidation. Skipped on the no-op path
 		// (row didn't exist) so missing-link calls don't reset reviews.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }
@@ -176,7 +176,7 @@ func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) err
 	})
 	if err == nil && didDelete {
 		// DependenciesChanged invalidation. Best-effort.
-		db.supersedeApprovalIfLinked(issueID)
+		db.supersedeApprovalIfLinked(issueID, sessionID)
 	}
 	return err
 }

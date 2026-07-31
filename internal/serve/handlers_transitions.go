@@ -922,7 +922,7 @@ func HandleReject(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			// issue to open, so previous approvals must not outlive the
 			// round-trip. Best-effort: do not roll back the state transition
 			// on supersede error.
-			_ = c.DB.SupersedeActiveReviews(issue.ID)
+			_ = c.DB.SupersedeActiveReviewsLogged(issue.ID, c.SessionID)
 		},
 		defaultLogMsg: "Rejected",
 	})

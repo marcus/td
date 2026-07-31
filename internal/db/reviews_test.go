@@ -395,7 +395,7 @@ func TestSupersedeApprovalIfLinked_NoOpWhenNoActiveApproval(t *testing.T) {
 		t.Fatalf("seed issue: %v", err)
 	}
 
-	database.supersedeApprovalIfLinked("td-noop1")
+	database.supersedeApprovalIfLinked("td-noop1", "")
 
 	// The reviewer_session/reviewed_at should NOT have been nulled out
 	// because there was no approval to supersede.

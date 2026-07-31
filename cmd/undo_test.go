@@ -176,6 +176,73 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 }
 
+func TestUndoIssueApproval_EmitsReviewDeleteForSync(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	const sessionID = "ses-reviewer"
+	issue := &models.Issue{
+		Title:  "Approved issue",
+		Status: models.StatusClosed,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	reviewID, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: sessionID,
+		Decision:        "approved",
+		Summary:         "looks good",
+	})
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	previous := *issue
+	previous.Status = models.StatusInReview
+	previousData, _ := json.Marshal(&previous)
+	newData, _ := json.Marshal(models.ReviewUndoPayload{
+		Issue:           issue,
+		CreatedReviewID: reviewID,
+	})
+	action := &models.ActionLog{
+		SessionID:    sessionID,
+		ActionType:   models.ActionApprove,
+		EntityType:   "issue",
+		EntityID:     issue.ID,
+		PreviousData: string(previousData),
+		NewData:      string(newData),
+	}
+
+	if err := undoIssueAction(database, action, sessionID); err != nil {
+		t.Fatalf("undo approval: %v", err)
+	}
+	reviews, err := database.ListIssueReviews(issue.ID)
+	if err != nil {
+		t.Fatalf("list reviews: %v", err)
+	}
+	if len(reviews) != 0 {
+		t.Fatalf("reviews after undo = %d, want 0", len(reviews))
+	}
+
+	var deleteEvents int
+	if err := database.Conn().QueryRow(`
+		SELECT COUNT(*) FROM action_log
+		WHERE entity_type = 'issue_reviews'
+		  AND entity_id = ?
+		  AND action_type = 'review_delete'
+	`, reviewID).Scan(&deleteEvents); err != nil {
+		t.Fatalf("count review delete events: %v", err)
+	}
+	if deleteEvents != 1 {
+		t.Fatalf("review delete events = %d, want 1", deleteEvents)
+	}
+}
+
 // TestUndoIssueDeleteCreatesActionLog verifies that undoing a delete creates
 // an action_log entry (required for sync to propagate the restore).
 // Note: this test verifies correctness but cannot verify atomicity — the old

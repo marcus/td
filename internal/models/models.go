@@ -311,6 +311,7 @@ const (
 	ActionReview                 ActionType = "review"
 	ActionReviewApprove          ActionType = "review_approve"
 	ActionReviewChangesRequested ActionType = "review_changes_requested"
+	ActionReviewDelete           ActionType = "review_delete"
 	ActionCloseAfterReview       ActionType = "close_after_review"
 	ActionApprove                ActionType = "approve"
 	ActionReject                 ActionType = "reject"

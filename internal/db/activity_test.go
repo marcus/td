@@ -818,9 +818,9 @@ func TestAddHandoff_EmptyArrays(t *testing.T) {
 		IssueID:   issue.ID,
 		SessionID: "ses_test",
 		Done:      []string{"Task 1"},
-		Remaining: []string{},  // Empty
-		Decisions: nil,         // Nil
-		Uncertain: []string{},  // Empty
+		Remaining: []string{}, // Empty
+		Decisions: nil,        // Nil
+		Uncertain: []string{}, // Empty
 	}
 
 	err = db.AddHandoff(handoff)
@@ -1409,6 +1409,42 @@ func TestGetLastAction_ExcludesUndone(t *testing.T) {
 	}
 	if last.EntityID != "td-first" {
 		t.Errorf("Expected first action, got %s", last.EntityID)
+	}
+}
+
+func TestGetLastAction_ExcludesIssueReviewSyncEvents(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	const sessionID = "ses-reviewer"
+	issueAction := &models.ActionLog{
+		SessionID:  sessionID,
+		ActionType: models.ActionApprove,
+		EntityType: "issue",
+		EntityID:   "td-review-undo",
+	}
+	if err := database.LogAction(issueAction); err != nil {
+		t.Fatalf("log issue action: %v", err)
+	}
+	if err := database.LogAction(&models.ActionLog{
+		SessionID:  sessionID,
+		ActionType: models.ActionUpdate,
+		EntityType: "issue_reviews",
+		EntityID:   "rv-sync-only",
+	}); err != nil {
+		t.Fatalf("log review sync event: %v", err)
+	}
+
+	last, err := database.GetLastAction(sessionID)
+	if err != nil {
+		t.Fatalf("GetLastAction: %v", err)
+	}
+	if last == nil || last.ID != issueAction.ID {
+		t.Fatalf("last undoable action = %+v, want issue action %s", last, issueAction.ID)
 	}
 }
 

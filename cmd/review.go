@@ -977,7 +977,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
 					priorActive = pa.ID
 				}
-				if err := database.SupersedeActiveReviews(issueID); err != nil {
+				if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
 					output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
 				}
 
@@ -1302,7 +1302,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			if pa, _ := database.GetActiveApprovalReview(issueID); pa != nil {
 				priorActive = pa.ID
 			}
-			if err := database.SupersedeActiveReviews(issueID); err != nil {
+			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
 				output.Warning("failed to supersede prior reviews for %s: %v", issueID, err)
 			}
 
@@ -1589,7 +1589,7 @@ Supports bulk operations:
 			issue.ReviewedAt = nil
 			issue.ReviewRequestedBySession = ""
 
-			if err := database.SupersedeActiveReviews(issueID); err != nil {
+			if err := database.SupersedeActiveReviewsLogged(issueID, sess.ID); err != nil {
 				output.Warning("failed to supersede active reviews for %s: %v", issueID, err)
 			}
 

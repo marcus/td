@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -40,18 +41,67 @@ func (db *DB) CreateIssueReview(rv NewReview) (string, error) {
 		if err != nil {
 			return fmt.Errorf("generate review id: %w", err)
 		}
+		createdAt := time.Now()
 		_, err = db.conn.Exec(`
 			INSERT INTO issue_reviews (id, issue_id, reviewer_session, decision, summary, requested_by_session, created_at, self_review, reviewed_by)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, newID, NormalizeIssueID(rv.IssueID), rv.ReviewerSession, rv.Decision, rv.Summary,
-			rv.RequestedBySession, time.Now(), rv.SelfReview, rv.ReviewedBy)
+			rv.RequestedBySession, createdAt, rv.SelfReview, rv.ReviewedBy)
 		if err != nil {
 			return fmt.Errorf("insert issue_reviews: %w", err)
+		}
+		created := &models.IssueReview{
+			ID:                 newID,
+			IssueID:            NormalizeIssueID(rv.IssueID),
+			ReviewerSession:    rv.ReviewerSession,
+			Decision:           rv.Decision,
+			Summary:            rv.Summary,
+			RequestedBySession: rv.RequestedBySession,
+			CreatedAt:          createdAt,
+			SelfReview:         rv.SelfReview,
+			ReviewedBy:         rv.ReviewedBy,
+		}
+		if err := db.logIssueReviewActionLocked(rv.ReviewerSession, models.ActionCreate, nil, created); err != nil {
+			_, _ = db.conn.Exec(`DELETE FROM issue_reviews WHERE id = ?`, newID)
+			return err
 		}
 		id = newID
 		return nil
 	})
 	return id, err
+}
+
+// logIssueReviewActionLocked writes the sync event for a review mutation.
+// Review events are sync-only action_log rows; the user-facing undo operation
+// remains the enclosing issue transition carrying ReviewUndoPayload.
+func (db *DB) logIssueReviewActionLocked(sessionID string, actionType models.ActionType, previous, next *models.IssueReview) error {
+	entityID := ""
+	if next != nil {
+		entityID = next.ID
+	} else if previous != nil {
+		entityID = previous.ID
+	}
+	previousData, _ := json.Marshal(previous)
+	newData, _ := json.Marshal(next)
+	if previous == nil {
+		previousData = nil
+	}
+	if next == nil {
+		newData = nil
+	}
+	actionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate review action ID: %w", err)
+	}
+	_, err = db.conn.Exec(`
+		INSERT INTO action_log
+			(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, 'issue_reviews', ?, ?, ?, ?, 0)
+	`, actionID, sessionID, string(actionType), entityID, string(previousData), string(newData), actionLogTimestampNow())
+	if err != nil {
+		return fmt.Errorf("log issue review action: %w", err)
+	}
+	return nil
 }
 
 // GetActiveApprovalReview returns the current non-superseded approval review
@@ -134,6 +184,14 @@ func (db *DB) SupersedeActiveReviews(issueID string) error {
 	})
 }
 
+// SupersedeActiveReviewsLogged supersedes active rows and emits one update
+// event per row so superseded_at converges across peers.
+func (db *DB) SupersedeActiveReviewsLogged(issueID, sessionID string) error {
+	return db.withWriteLock(func() error {
+		return db.supersedeActiveReviewsLoggedLocked(issueID, sessionID)
+	})
+}
+
 // supersedeActiveReviewsLocked is the lock-free variant called by helpers
 // that already hold withWriteLock (e.g. supersedeIfReviewInvalidating running
 // inside updateIssueAndLogFromPrevious).
@@ -147,6 +205,28 @@ func (db *DB) supersedeActiveReviewsLocked(issueID string) error {
 	return err
 }
 
+func (db *DB) supersedeActiveReviewsLoggedLocked(issueID, sessionID string) error {
+	rows, err := db.ListIssueReviews(NormalizeIssueID(issueID))
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, previous := range rows {
+		if previous.SupersededAt != nil {
+			continue
+		}
+		if _, err := db.conn.Exec(`UPDATE issue_reviews SET superseded_at = ? WHERE id = ? AND superseded_at IS NULL`, now, previous.ID); err != nil {
+			return err
+		}
+		next := *previous
+		next.SupersededAt = &now
+		if err := db.logIssueReviewActionLocked(sessionID, models.ActionUpdate, previous, &next); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DeleteIssueReview removes a review row by id. Used by the undo path to
 // roll back reviews that an action inserted; callers pass the
 // CreatedReviewID recorded in the action's ReviewUndoPayload.
@@ -157,6 +237,24 @@ func (db *DB) DeleteIssueReview(reviewID string) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`DELETE FROM issue_reviews WHERE id = ?`, reviewID)
 		return err
+	})
+}
+
+// DeleteIssueReviewLogged removes a review as part of undo and emits a hard
+// delete event so peers roll back the created approval too.
+func (db *DB) DeleteIssueReviewLogged(reviewID, sessionID string) error {
+	if reviewID == "" {
+		return nil
+	}
+	return db.withWriteLock(func() error {
+		previous, err := db.getIssueReviewByID(reviewID)
+		if err != nil || previous == nil {
+			return err
+		}
+		if _, err := db.conn.Exec(`DELETE FROM issue_reviews WHERE id = ?`, reviewID); err != nil {
+			return err
+		}
+		return db.logIssueReviewActionLocked(sessionID, models.ActionReviewDelete, previous, nil)
 	})
 }
 
@@ -176,6 +274,51 @@ func (db *DB) ClearReviewSupersededAt(reviewID string) error {
 	})
 }
 
+// ClearReviewSupersededAtLogged reactivates a prior review during undo and
+// emits the corresponding update event.
+func (db *DB) ClearReviewSupersededAtLogged(reviewID, sessionID string) error {
+	if reviewID == "" {
+		return nil
+	}
+	return db.withWriteLock(func() error {
+		previous, err := db.getIssueReviewByID(reviewID)
+		if err != nil || previous == nil {
+			return err
+		}
+		if _, err := db.conn.Exec(`UPDATE issue_reviews SET superseded_at = NULL WHERE id = ?`, reviewID); err != nil {
+			return err
+		}
+		next := *previous
+		next.SupersededAt = nil
+		return db.logIssueReviewActionLocked(sessionID, models.ActionUpdate, previous, &next)
+	})
+}
+
+func (db *DB) getIssueReviewByID(reviewID string) (*models.IssueReview, error) {
+	row := db.conn.QueryRow(`
+		SELECT id, issue_id, reviewer_session, decision, summary, requested_by_session,
+		       created_at, superseded_at, self_review, reviewed_by
+		FROM issue_reviews WHERE id = ?
+	`, reviewID)
+	var r models.IssueReview
+	var summary, requestedBy, reviewedBy sql.NullString
+	var supersededAt sql.NullTime
+	if err := row.Scan(&r.ID, &r.IssueID, &r.ReviewerSession, &r.Decision, &summary,
+		&requestedBy, &r.CreatedAt, &supersededAt, &r.SelfReview, &reviewedBy); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	r.Summary = summary.String
+	r.RequestedBySession = requestedBy.String
+	r.ReviewedBy = reviewedBy.String
+	if supersededAt.Valid {
+		r.SupersededAt = &supersededAt.Time
+	}
+	return &r, nil
+}
+
 // supersedeApprovalIfLinked is the side-table counterpart to
 // supersedeIfReviewInvalidating. It runs after a linked_files /
 // issue_dependencies / work_session_issues mutation on an issue that the
@@ -193,7 +336,7 @@ func (db *DB) ClearReviewSupersededAt(reviewID string) error {
 //
 // No-ops for issues whose status isn't in_review (or is already closed) —
 // there's no live approval window to invalidate.
-func (db *DB) supersedeApprovalIfLinked(issueID string) {
+func (db *DB) supersedeApprovalIfLinked(issueID, sessionID string) {
 	issueID = NormalizeIssueID(issueID)
 
 	// Cheap pre-check: skip the write when there is no active approval.
@@ -204,8 +347,14 @@ func (db *DB) supersedeApprovalIfLinked(issueID string) {
 		return
 	}
 
-	if err := db.SupersedeActiveReviews(issueID); err != nil {
-		return
+	if sessionID == "" {
+		if err := db.SupersedeActiveReviews(issueID); err != nil {
+			return
+		}
+	} else {
+		if err := db.SupersedeActiveReviewsLogged(issueID, sessionID); err != nil {
+			return
+		}
 	}
 	_, _ = db.conn.Exec(
 		`UPDATE issues SET reviewer_session = '', reviewed_at = NULL WHERE id = ?`,

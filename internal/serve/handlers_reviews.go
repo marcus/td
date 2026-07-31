@@ -218,7 +218,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	if pa, _ := ctx.DB.GetActiveApprovalReview(issue.ID); pa != nil {
 		priorActive = pa.ID
 	}
-	_ = ctx.DB.SupersedeActiveReviews(issue.ID)
+	_ = ctx.DB.SupersedeActiveReviewsLogged(issue.ID, ctx.SessionID)
 
 	reviewID, err := ctx.DB.CreateIssueReview(db.NewReview{
 		IssueID:            issue.ID,

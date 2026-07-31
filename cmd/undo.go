@@ -156,10 +156,10 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 			var payload models.ReviewUndoPayload
 			if err := json.Unmarshal([]byte(action.NewData), &payload); err == nil {
 				if payload.CreatedReviewID != "" {
-					_ = database.DeleteIssueReview(payload.CreatedReviewID)
+					_ = database.DeleteIssueReviewLogged(payload.CreatedReviewID, sessionID)
 				}
 				if payload.PriorActiveReviewID != "" {
-					_ = database.ClearReviewSupersededAt(payload.PriorActiveReviewID)
+					_ = database.ClearReviewSupersededAtLogged(payload.PriorActiveReviewID, sessionID)
 				}
 			}
 		}
