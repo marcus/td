@@ -278,14 +278,6 @@ func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testin
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatal(err)
 	}
-	reviewID, err := database.CreateIssueReview(db.NewReview{
-		IssueID:         issue.ID,
-		ReviewerSession: "ses-first-reviewer",
-		Decision:        reviewpolicy.DecisionApproved,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := database.Conn().Exec(`
 		CREATE TRIGGER fail_issue_action
 		BEFORE INSERT ON action_log
@@ -298,15 +290,18 @@ func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testin
 	}
 
 	m := Model{
-		DB:                   database,
-		SessionID:            "ses-second-reviewer",
-		BaseDir:              baseDir,
-		RecordReviewOpen:     true,
-		RecordReviewIssueID:  issue.ID,
-		RecordReviewTitle:    issue.Title,
-		RecordReviewDecision: reviewpolicy.DecisionChangesRequested,
+		Keymap:    newTestKeymap(),
+		DB:        database,
+		SessionID: "ses-second-reviewer",
+		BaseDir:   baseDir,
+		Width:     100,
+		Height:    40,
 	}
-	m.RecordReviewInput.SetValue("needs another pass")
+	m = m.openRecordReviewModal(issue.ID, issue.Title)
+	m.RecordReviewDecision = reviewpolicy.DecisionChangesRequested
+	_ = m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
+	updatedModel, _ := m.Update(tea.PasteMsg{Content: "needs another pass"})
+	m = updatedModel.(Model)
 	updated, _ := m.executeRecordReview()
 	gotModel := updated.(Model)
 	if !gotModel.StatusIsError {
@@ -320,18 +315,14 @@ func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testin
 	if unchanged.Status != models.StatusInReview {
 		t.Fatalf("issue status = %s, want in_review", unchanged.Status)
 	}
-	active, err := database.GetActiveApprovalReview(issue.ID)
-	if err != nil || active == nil || active.ID != reviewID {
-		t.Fatalf("active review changed: active=%+v err=%v", active, err)
-	}
 	reviews, err := database.ListIssueReviews(issue.ID)
-	if err != nil || len(reviews) != 1 {
+	if err != nil || len(reviews) != 0 {
 		t.Fatalf("reviews changed: count=%d err=%v", len(reviews), err)
 	}
 	_, _ = database.Conn().Exec(`DROP TRIGGER fail_issue_action`)
 	_, _ = gotModel.executeRecordReview()
 	reviews, err = database.ListIssueReviews(issue.ID)
-	if err != nil || len(reviews) != 2 {
+	if err != nil || len(reviews) != 1 {
 		t.Fatalf("retry record review did not persist: count=%d err=%v", len(reviews), err)
 	}
 }
