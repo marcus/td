@@ -566,12 +566,6 @@ func rejectFollowupGuidance(issue *models.Issue) string {
 	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
 }
 
-// maxReviewedByLen caps the --reviewed-by attribution. It is a label for a
-// human or an agent to read in review history, not a place to put the review
-// itself — that belongs in --reason. The cap keeps `td show` output and the
-// monitor's review rows readable.
-const maxReviewedByLen = 120
-
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues, or record a review",
@@ -728,8 +722,8 @@ To surface issues reviewed by a sub-agent that you can close, use
 		// Count runes, not bytes: a cap reported in "characters" must mean
 		// characters, or a name in any non-Latin script is rejected early with
 		// a number the caller cannot reconcile.
-		if utf8.RuneCountInString(reviewedBy) > maxReviewedByLen {
-			msg := fmt.Sprintf("--reviewed-by is limited to %d characters (got %d)", maxReviewedByLen, utf8.RuneCountInString(reviewedBy))
+		if utf8.RuneCountInString(reviewedBy) > reviewpolicy.MaxReviewedByLen {
+			msg := fmt.Sprintf("--reviewed-by is limited to %d characters (got %d)", reviewpolicy.MaxReviewedByLen, utf8.RuneCountInString(reviewedBy))
 			if jsonOutput {
 				output.JSONError(output.ErrCodeInvalidInput, msg)
 			} else {
@@ -1095,6 +1089,11 @@ To surface issues reviewed by a sub-agent that you can close, use
 					} else if !all {
 						output.Error("%s", msg)
 						output.Error("  Drop --reviewed-by to close on the existing approval, or use --record-only to record a new one.")
+					} else {
+						// Under --all this would otherwise vanish into the
+						// skipped count with no explanation, and `--all
+						// --reviewed-by` is a flow the help text recommends.
+						output.Warning("skipping %s: %s", issueID, msg)
 					}
 					skipped++
 					continue

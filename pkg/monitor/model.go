@@ -102,6 +102,7 @@ type Model struct {
 	SelfReviewConfirmOpen         bool
 	SelfReviewConfirmIssueID      string
 	SelfReviewConfirmTitle        string
+	SelfReviewConfirmInput        textinput.Model
 	SelfReviewConfirmModal        *modal.Modal
 	SelfReviewConfirmMouseHandler *mouse.Handler
 
@@ -545,6 +546,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, isKey := msg.(tea.KeyMsg); !isKey {
 			var inputCmd tea.Cmd
 			m.CloseConfirmInput, inputCmd = m.CloseConfirmInput.Update(msg)
+			if inputCmd != nil {
+				return m, inputCmd
+			}
+		}
+	}
+
+	// Attribution prompt: forward non-key messages to textinput (cursor blink).
+	// Key messages are handled in handleKey() via the declarative modal.
+	if m.SelfReviewConfirmOpen {
+		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var inputCmd tea.Cmd
+			m.SelfReviewConfirmInput, inputCmd = m.SelfReviewConfirmInput.Update(msg)
 			if inputCmd != nil {
 				return m, inputCmd
 			}

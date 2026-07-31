@@ -342,3 +342,71 @@ func TestApproveIssueParentCascadeStampsClosedBy(t *testing.T) {
 		}
 	}
 }
+
+// TestMonitorApproveDecision_Attribution covers the monitor's attribution
+// prompt at the decision layer: a typed name lets an implementer approve, an
+// empty submit falls through to the self-review acknowledgement, and neither
+// path grants anything in a mode that exists to enforce independence.
+func TestMonitorApproveDecision_Attribution(t *testing.T) {
+	issue := &models.Issue{
+		ID:                 "td-mon1",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses-impl",
+		CreatorSession:     "ses-creator",
+	}
+
+	// Typed name -> allowed, stamped as an involved recorder with attribution.
+	got := monitorApproveDecision(monitorApproveInputs{
+		Mode:                     reviewpolicy.ModeTrusted,
+		Issue:                    issue,
+		SessionID:                "ses-impl",
+		HasImplementationHistory: true,
+		WasAnyInvolved:           true,
+		AttributedTo:             "code-reviewer sub-agent",
+	})
+	if !got.Allowed {
+		t.Fatalf("attributed approve should be allowed: %s", got.RejectionMessage)
+	}
+	if !got.SelfReview || got.AttributedTo != "code-reviewer sub-agent" {
+		t.Errorf("decision = %+v, want SelfReview with the attribution echoed", got)
+	}
+
+	// Empty submit -> the self-review acknowledgement path, which the modal
+	// sets instead of AttributedTo.
+	got = monitorApproveDecision(monitorApproveInputs{
+		Mode:                     reviewpolicy.ModeTrusted,
+		Issue:                    issue,
+		SessionID:                "ses-impl",
+		HasImplementationHistory: true,
+		WasAnyInvolved:           true,
+		SelfReviewAcknowledged:   true,
+	})
+	if !got.Allowed || got.AttributedTo != "" {
+		t.Errorf("empty submit should be a plain self-review: %+v", got)
+	}
+
+	// Neither acknowledgement -> rejected, with the teaching message.
+	got = monitorApproveDecision(monitorApproveInputs{
+		Mode:                     reviewpolicy.ModeTrusted,
+		Issue:                    issue,
+		SessionID:                "ses-impl",
+		HasImplementationHistory: true,
+		WasAnyInvolved:           true,
+	})
+	if got.Allowed {
+		t.Error("implementer with no attestation must not approve from the monitor")
+	}
+
+	// Delegated ignores the attribution entirely.
+	got = monitorApproveDecision(monitorApproveInputs{
+		Mode:                     reviewpolicy.ModeDelegated,
+		Issue:                    issue,
+		SessionID:                "ses-impl",
+		HasImplementationHistory: true,
+		WasAnyInvolved:           true,
+		AttributedTo:             "code-reviewer sub-agent",
+	})
+	if got.Allowed {
+		t.Error("delegated mode must not let attribution grant the implementer an approval")
+	}
+}

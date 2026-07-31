@@ -3,6 +3,8 @@ package monitor
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
@@ -149,5 +151,143 @@ func TestTrustedNonImplementerApproveSkipsSelfReviewPrompt(t *testing.T) {
 	}
 	if active.SelfReview {
 		t.Fatalf("non-implementer approval must record self_review=false")
+	}
+}
+
+// TestSelfReviewModal_TypedAttributionReachesTheReview drives the real key
+// path — open the prompt, type a name, press Enter — and asserts the typed
+// attribution lands on the recorded review row.
+//
+// This is a regression test for a silent-data-loss bug found in review.
+// openSelfReviewConfirmModal takes its receiver BY VALUE, and the modal builder
+// captures &m.SelfReviewConfirmInput on that local copy. Keystrokes reached the
+// captured pointer (so the modal rendered the typed text correctly), while
+// executeSelfReviewApprove read the live model's field, which was always empty.
+// The operator saw the name they typed and got an unattributed self-review —
+// exactly the false record this feature exists to prevent.
+//
+// Asserting on the stored row rather than on any model field is deliberate:
+// the bug was that two views of "the input" disagreed, so only the persisted
+// outcome is trustworthy evidence.
+func TestSelfReviewModal_TypedAttributionReachesTheReview(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "trusted")
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatalf("db init: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Attribution target", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	issue.ImplementerSession = "ses-impl"
+	_ = database.UpdateIssue(issue)
+	_ = database.RecordSessionAction(issue.ID, "ses-impl", models.ActionSessionStarted)
+
+	m := Model{
+		Keymap:       newTestKeymap(),
+		DB:           database,
+		SessionID:    "ses-impl",
+		BaseDir:      baseDir,
+		Width:        100,
+		Height:       40,
+		ActivePanel:  PanelTaskList,
+		SelectedID:   map[Panel]string{PanelTaskList: issue.ID},
+		Cursor:       map[Panel]int{PanelTaskList: 0},
+		ScrollOffset: map[Panel]int{},
+		TaskListRows: []TaskListRow{{Issue: *issue, Category: CategoryPendingReview}},
+	}
+
+	// Approving own work in trusted mode opens the attribution prompt.
+	updated, _ := m.approveIssue()
+	m = updated.(Model)
+	if !m.SelfReviewConfirmOpen {
+		t.Fatal("expected the attribution prompt to open for own implementation")
+	}
+
+	// No priming render here on purpose: openSelfReviewConfirmModal must leave
+	// the prompt ready to accept the very first keystroke. Rendering between
+	// keys mirrors the runtime, where View() runs after every Update.
+	for _, r := range "bob" {
+		next, _ := m.handleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = next.(Model)
+		_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
+	}
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+
+	final, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%v want closed", final.Status)
+	}
+
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil {
+		t.Fatalf("expected an approval review row, got %v (err=%v)", active, err)
+	}
+	if active.ReviewedBy != "bob" {
+		t.Errorf("ReviewedBy = %q, want %q — the typed attribution was dropped", active.ReviewedBy, "bob")
+	}
+	if !active.SelfReview {
+		t.Error("row recorded by the implementer must still be stamped self_review")
+	}
+}
+
+// TestSelfReviewModal_EmptySubmitRecordsSelfReview is the other half: leaving
+// the prompt blank means "I reviewed it myself", and must NOT invent an
+// attribution.
+func TestSelfReviewModal_EmptySubmitRecordsSelfReview(t *testing.T) {
+	baseDir := t.TempDir()
+	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "trusted")
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatalf("db init: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Self-review target", Type: models.TypeTask, Status: models.StatusInReview}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	issue.ImplementerSession = "ses-impl"
+	_ = database.UpdateIssue(issue)
+	_ = database.RecordSessionAction(issue.ID, "ses-impl", models.ActionSessionStarted)
+
+	m := Model{
+		Keymap:       newTestKeymap(),
+		DB:           database,
+		SessionID:    "ses-impl",
+		BaseDir:      baseDir,
+		Width:        100,
+		Height:       40,
+		ActivePanel:  PanelTaskList,
+		SelectedID:   map[Panel]string{PanelTaskList: issue.ID},
+		Cursor:       map[Panel]int{PanelTaskList: 0},
+		ScrollOffset: map[Panel]int{},
+		TaskListRows: []TaskListRow{{Issue: *issue, Category: CategoryPendingReview}},
+	}
+
+	updated, _ := m.approveIssue()
+	m = updated.(Model)
+	if !m.SelfReviewConfirmOpen {
+		t.Fatal("expected the attribution prompt to open")
+	}
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(Model)
+
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil {
+		t.Fatalf("expected an approval review row, got %v (err=%v)", active, err)
+	}
+	if active.ReviewedBy != "" {
+		t.Errorf("ReviewedBy = %q, want empty for an unattributed self-review", active.ReviewedBy)
+	}
+	if !active.SelfReview {
+		t.Error("expected self_review to be stamped")
 	}
 }

@@ -841,3 +841,111 @@ func TestReviewPolicyParity_TrustedSelfReview(t *testing.T) {
 		t.Fatalf("reviewpolicy trusted self-review ground truth = %+v, want allowed+SelfReview", groundTruth)
 	}
 }
+
+// TestParity_TrustedAttribution pins that CLI, monitor, and serve return
+// IDENTICAL decisions for the --reviewed-by attestation. Attribution is the
+// default path for orchestrated work, and it is the one input that changes a
+// permission outcome without being verifiable — a surface that diverges here
+// either blocks a legitimate approval or grants one the others refuse.
+//
+// The invariant under test is stronger than "each surface behaves sensibly":
+// every assertion below compares all three against the same expectation, so a
+// surface that drifts fails even if its own behavior is defensible.
+func TestParity_TrustedAttribution(t *testing.T) {
+	issue := &models.Issue{
+		ID:                 "td-parity-attr",
+		Title:              "attribution parity",
+		Status:             models.StatusInReview,
+		Type:               models.TypeTask,
+		Priority:           models.PriorityP2,
+		ImplementerSession: "ses-self",
+	}
+
+	const attribution = "code-reviewer sub-agent"
+
+	type surfaceDecision struct {
+		name         string
+		allowed      bool
+		selfReview   bool
+		attributedTo string
+	}
+
+	// Case 1: trusted + implementer + attribution -> allowed everywhere, and
+	// every surface stamps the row the same way.
+	cliAttr := evaluateApproveEligibilityWithAttribution(
+		issue, "ses-self", true /*wasInvolved*/, true, /*wasImplementationInvolved*/
+		reviewpolicy.ModeTrusted, false /*selfReview*/, attribution,
+	)
+	monAttr := monitor.MonitorApproveDecisionAttributedForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self", true, true, false, false, attribution,
+	)
+	srvAttr := serve.ServeReviewerDecisionAttributedForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self", true, true, false, false, attribution,
+	)
+
+	surfaces := []surfaceDecision{
+		{"cli", cliAttr.Allowed, cliAttr.SelfReview, cliAttr.AttributedTo},
+		{"monitor", monAttr.Allowed, monAttr.SelfReview, monAttr.AttributedTo},
+		{"serve", srvAttr.Allowed, srvAttr.SelfReview, srvAttr.AttributedTo},
+	}
+	for _, s := range surfaces {
+		if !s.allowed {
+			t.Errorf("%s: trusted implementer WITH attribution should be allowed", s.name)
+		}
+		if !s.selfReview {
+			t.Errorf("%s: an involved recorder's row must be stamped SelfReview", s.name)
+		}
+		if s.attributedTo != attribution {
+			t.Errorf("%s: AttributedTo = %q, want %q", s.name, s.attributedTo, attribution)
+		}
+	}
+	// The reason requirement must also agree — it is what makes attribution
+	// low-friction relative to --self-review.
+	if cliAttr.RequiresReason || monAttr.RequiresReason || srvAttr.RequiresReason {
+		t.Errorf("attributed approval must not require a reason on any surface (cli=%v monitor=%v serve=%v)",
+			cliAttr.RequiresReason, monAttr.RequiresReason, srvAttr.RequiresReason)
+	}
+
+	// Case 2: the close decision must agree with the reviewer decision, or the
+	// approve path allows what the close path then refuses. This exact
+	// mismatch shipped on the API and 403'd a valid approval.
+	srvCloseAttr := serve.ServeCloseDecisionAttributedForTest(
+		reviewpolicy.ModeTrusted, issue, "ses-self", true, true, false, false, attribution,
+	)
+	if !srvCloseAttr.Allowed {
+		t.Errorf("serve close decision must allow what the reviewer decision allowed: %+v", srvCloseAttr)
+	}
+
+	// Case 3: attribution must NOT grant in the modes that exist to enforce a
+	// mechanical independence boundary — on any surface.
+	for _, mode := range []reviewpolicy.Mode{reviewpolicy.ModeStrict, reviewpolicy.ModeBalanced, reviewpolicy.ModeDelegated} {
+		cli := evaluateApproveEligibilityWithAttribution(issue, "ses-self", true, true, mode, false, attribution)
+		mon := monitor.MonitorApproveDecisionAttributedForTest(mode, issue, "ses-self", true, true, false, false, attribution)
+		srv := serve.ServeReviewerDecisionAttributedForTest(mode, issue, "ses-self", true, true, false, false, attribution)
+		if cli.Allowed || mon.Allowed || srv.Allowed {
+			t.Errorf("mode %s: attribution must not grant approval (cli=%v monitor=%v serve=%v)",
+				mode, cli.Allowed, mon.Allowed, srv.Allowed)
+		}
+	}
+
+	// Case 4: an independent session may credit someone else, and no surface
+	// mistakes that for a self-review.
+	indepCLI := evaluateApproveEligibilityWithAttribution(issue, "ses-other", false, false, reviewpolicy.ModeTrusted, false, attribution)
+	indepMon := monitor.MonitorApproveDecisionAttributedForTest(reviewpolicy.ModeTrusted, issue, "ses-other", false, false, false, false, attribution)
+	indepSrv := serve.ServeReviewerDecisionAttributedForTest(reviewpolicy.ModeTrusted, issue, "ses-other", false, false, false, false, attribution)
+	for _, s := range []surfaceDecision{
+		{"cli", indepCLI.Allowed, indepCLI.SelfReview, indepCLI.AttributedTo},
+		{"monitor", indepMon.Allowed, indepMon.SelfReview, indepMon.AttributedTo},
+		{"serve", indepSrv.Allowed, indepSrv.SelfReview, indepSrv.AttributedTo},
+	} {
+		if !s.allowed {
+			t.Errorf("%s: independent session should be allowed", s.name)
+		}
+		if s.selfReview {
+			t.Errorf("%s: independent session's row must not be stamped SelfReview", s.name)
+		}
+		if s.attributedTo != attribution {
+			t.Errorf("%s: AttributedTo = %q, want the credit echoed", s.name, s.attributedTo)
+		}
+	}
+}

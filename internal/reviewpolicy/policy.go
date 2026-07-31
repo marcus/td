@@ -82,6 +82,15 @@ func ParseMode(s string) (Mode, error) {
 	}
 }
 
+// MaxReviewedByLen caps the --reviewed-by / reviewed_by attribution. It is a
+// label for a human or an agent to read in review history, not a place to put
+// the review itself — that belongs in the reason/summary. The cap keeps
+// `td show` output and the monitor's review rows readable.
+//
+// It lives here rather than in a surface package so the CLI, the API, and the
+// TUI cannot drift on what they accept.
+const MaxReviewedByLen = 120
+
 // CascadeFromParentApproval is the named exemption used when an epic-approval
 // cascade closes descendants in bulk. See pkg/monitor/actions.go approval
 // cascade. The new model records it as an issue_reviews row with this

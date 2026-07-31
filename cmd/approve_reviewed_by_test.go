@@ -191,7 +191,7 @@ func TestApproveReviewedBy_RejectsBlankAndOverlong(t *testing.T) {
 	}{
 		{"empty", "", "requires a name"},
 		{"whitespace only", "   ", "requires a name"},
-		{"over the length cap", strings.Repeat("x", maxReviewedByLen+1), "limited to"},
+		{"over the length cap", strings.Repeat("x", reviewpolicy.MaxReviewedByLen+1), "limited to"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -214,7 +214,7 @@ func TestApproveReviewedBy_RejectsBlankAndOverlong(t *testing.T) {
 
 	// Exactly at the cap is accepted — the boundary belongs to the valid side.
 	issue := newInReviewIssueWithImpl(t, database, implID)
-	atCap := strings.Repeat("x", maxReviewedByLen)
+	atCap := strings.Repeat("x", reviewpolicy.MaxReviewedByLen)
 	if _, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": atCap,
 	}); err != nil {

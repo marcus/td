@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
@@ -18,6 +20,10 @@ import (
 type reviewRecordBody struct {
 	Decision string `json:"decision"`
 	Summary  string `json:"summary"`
+
+	// ReviewedBy names who performed the review when that is not the session
+	// recording it, mirroring the CLI's --reviewed-by on the record-only path.
+	ReviewedBy string `json:"reviewed_by"`
 
 	// SelfReview is the API equivalent of the CLI's --self-review on the
 	// record-only path. It only has an effect in trusted mode, where it lets
@@ -36,6 +42,8 @@ type IssueReviewSummary struct {
 	RequestedBySession string    `json:"requested_by_session,omitempty"`
 	Summary            string    `json:"summary,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
+	SelfReview         bool      `json:"self_review"`
+	ReviewedBy         string    `json:"reviewed_by,omitempty"`
 }
 
 // IssueReviewDTO is the full per-row representation returned when the caller
@@ -49,6 +57,13 @@ type IssueReviewDTO struct {
 	RequestedBySession string     `json:"requested_by_session,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
+
+	// SelfReview marks a row recorded by an implementation-involved session.
+	// ReviewedBy credits who actually performed the review; empty means the
+	// recording session did it. Read together they distinguish a genuine
+	// self-review from an attributed one — see models.IssueReview.
+	SelfReview bool   `json:"self_review"`
+	ReviewedBy string `json:"reviewed_by,omitempty"`
 }
 
 // IssueReviewToDTO converts a models.IssueReview to a DTO for API consumers.
@@ -62,6 +77,8 @@ func IssueReviewToDTO(r *models.IssueReview) IssueReviewDTO {
 		RequestedBySession: r.RequestedBySession,
 		CreatedAt:          r.CreatedAt,
 		SupersededAt:       r.SupersededAt,
+		SelfReview:         r.SelfReview,
+		ReviewedBy:         r.ReviewedBy,
 	}
 }
 
@@ -91,6 +108,29 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 
 	body.Decision = strings.TrimSpace(body.Decision)
 	body.Summary = strings.TrimSpace(body.Summary)
+	rawReviewedBy := body.ReviewedBy
+	body.ReviewedBy = strings.TrimSpace(body.ReviewedBy)
+
+	// Same edge validation as the CLI and the approve transition, so all three
+	// surfaces accept and reject identical input.
+	if body.ReviewedBy != "" && body.SelfReview {
+		WriteError(w, ErrValidation, "reviewed_by and self_review are mutually exclusive: use reviewed_by when someone else reviewed the work, self_review when you reviewed your own", http.StatusBadRequest)
+		return
+	}
+	if rawReviewedBy != "" && body.ReviewedBy == "" {
+		WriteError(w, ErrValidation, "reviewed_by requires a name (who performed the review?)", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsFunc(body.ReviewedBy, func(r rune) bool {
+		return r == '\n' || r == '\r' || (unicode.IsControl(r) && r != '\t')
+	}) {
+		WriteError(w, ErrValidation, "reviewed_by must not contain newlines or control characters", http.StatusBadRequest)
+		return
+	}
+	if utf8.RuneCountInString(body.ReviewedBy) > reviewpolicy.MaxReviewedByLen {
+		WriteError(w, ErrValidation, fmt.Sprintf("reviewed_by is limited to %d characters (got %d)", reviewpolicy.MaxReviewedByLen, utf8.RuneCountInString(body.ReviewedBy)), http.StatusBadRequest)
+		return
+	}
 	if body.Decision == "" {
 		body.Decision = reviewpolicy.DecisionApproved
 	}
@@ -144,7 +184,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	// Reviewer eligibility — share the same decision path as approve. The
 	// self_review acknowledgement is threaded through so the CLI's
 	// "--record-only --self-review" combination has an API equivalent.
-	decision := serveReviewerDecision(ctx, issue, body.SelfReview)
+	decision := serveReviewerDecisionAttributed(ctx, issue, body.SelfReview, body.ReviewedBy)
 	if !decision.Allowed {
 		WriteError(w, ErrForbidden, decision.RejectionMessage, http.StatusForbidden)
 		return
@@ -177,6 +217,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		Summary:            body.Summary,
 		RequestedBySession: issue.ReviewRequestedBySession,
 		SelfReview:         decision.SelfReview,
+		ReviewedBy:         decision.AttributedTo,
 	})
 	if err != nil {
 		slog.Error("create issue review", "err", err, "id", issue.ID)
@@ -261,5 +302,7 @@ func activeReviewSummary(ctx HandlerContext, issueID string) *IssueReviewSummary
 		RequestedBySession: rev.RequestedBySession,
 		Summary:            rev.Summary,
 		CreatedAt:          rev.CreatedAt,
+		SelfReview:         rev.SelfReview,
+		ReviewedBy:         rev.ReviewedBy,
 	}
 }

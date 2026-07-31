@@ -11,6 +11,7 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/pkg/monitor/modal"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -869,9 +870,33 @@ func (m Model) openSelfReviewConfirmModal(issueID, issueTitle string) Model {
 	m.SelfReviewConfirmIssueID = issueID
 	m.SelfReviewConfirmTitle = issueTitle
 
+	m.SelfReviewConfirmInput = textinput.New()
+	m.SelfReviewConfirmInput.Placeholder = "who reviewed this? (blank = you did)"
+	m.SelfReviewConfirmInput.CharLimit = reviewpolicy.MaxReviewedByLen
+	m.SelfReviewConfirmInput.SetWidth(46)
+	m.SelfReviewConfirmInput.Focus()
+
 	m.SelfReviewConfirmModal = m.createSelfReviewConfirmModal()
 	m.SelfReviewConfirmModal.Reset()
 	m.SelfReviewConfirmMouseHandler = mouse.NewHandler()
+
+	// Prime the focus list so the prompt accepts the very first keystroke.
+	//
+	// Modal.Render collects focusable IDs as a side effect, but reads the
+	// current focus BEFORE rebuilding that list. On a freshly built modal the
+	// list is empty, so pass one discovers the focusables while still deciding
+	// "nothing is focused" and blurs the input — and a blurred textinput drops
+	// keystrokes. Pass two sees the populated list and focuses it. Without both,
+	// the operator's first character is silently swallowed and "bob" becomes
+	// "ob" on an attribution prompt.
+	//
+	// Two renders is a workaround, not the fix: the ordering inside Render is
+	// the real defect and it affects every modal built this way (see
+	// td-5d602a). Fixing it there is a shared-behavior change, deliberately not
+	// made on release day.
+	for i := 0; i < 2; i++ {
+		_ = m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
+	}
 
 	return m
 }
@@ -884,6 +909,10 @@ func (m *Model) closeSelfReviewConfirmModal() {
 	m.SelfReviewConfirmTitle = ""
 	m.SelfReviewConfirmModal = nil
 	m.SelfReviewConfirmMouseHandler = nil
+	// Deliberately no SetValue("") here: it would clear the LIVE model's field,
+	// which is not the one keystrokes reach (see modal.Modal.InputValue), so it
+	// implies a stale-value guarantee it does not provide. The real guarantee
+	// is that openSelfReviewConfirmModal rebuilds the input from scratch.
 }
 
 // createSelfReviewConfirmModal builds the declarative modal for the trusted
@@ -891,7 +920,7 @@ func (m *Model) closeSelfReviewConfirmModal() {
 func (m *Model) createSelfReviewConfirmModal() *modal.Modal {
 	width := 56
 
-	title := fmt.Sprintf("Self-review %s?", m.SelfReviewConfirmIssueID)
+	title := fmt.Sprintf("Approve %s — who reviewed it?", m.SelfReviewConfirmIssueID)
 
 	md := modal.New(title,
 		modal.WithWidth(width),
@@ -911,7 +940,14 @@ func (m *Model) createSelfReviewConfirmModal() *modal.Modal {
 
 	md.AddSection(modal.Text("\"" + displayTitle + "\""))
 	md.AddSection(modal.Spacer())
-	md.AddSection(modal.Text("You implemented this. Approve as self-review?"))
+	md.AddSection(modal.Text("You implemented this issue."))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.InputWithLabel("reviewed_by", "Reviewed by:", &m.SelfReviewConfirmInput,
+		modal.WithSubmitOnEnter(true),
+		modal.WithSubmitAction("confirm"),
+	))
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Name a reviewer, or leave blank to record a self-review."))
 	md.AddSection(modal.Spacer())
 	md.AddSection(modal.Buttons(
 		modal.Btn(" Confirm ", "confirm"),

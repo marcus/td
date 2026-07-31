@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
@@ -34,6 +36,46 @@ func ServeReviewerDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, s
 		HasActiveApproval:        hasActiveApproval,
 		WasAnyInvolved:           wasAnyInvolved,
 		SelfReviewAcknowledged:   selfReviewAcknowledged,
+	})
+}
+
+// ServeReviewerDecisionAttributedForTest and ServeCloseDecisionAttributedForTest
+// are the attribution-carrying variants used by the cross-surface parity suite.
+func ServeReviewerDecisionAttributedForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.ReviewerEligibility {
+	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == sessionID
+	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
+	return reviewpolicy.EvaluateReviewerEligibility(reviewpolicy.ReviewerEligibilityInput{
+		Mode:                     mode,
+		Issue:                    issue,
+		SessionID:                sessionID,
+		SessionIsImplementer:     isImplementer,
+		SessionIsCreator:         isCreator,
+		HasImplementationHistory: hasImplementationHistory,
+		HasActiveApproval:        hasActiveApproval,
+		WasAnyInvolved:           wasAnyInvolved,
+		SelfReviewAcknowledged:   selfReviewAcknowledged,
+		AttributedTo:             attributedTo,
+	})
+}
+
+func ServeCloseDecisionAttributedForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.CloseEligibility {
+	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == sessionID
+	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == sessionID
+	isReviewerOfRecord := issue != nil && issue.ReviewerSession != "" && issue.ReviewerSession == sessionID
+	isReviewRequester := issue != nil && issue.ReviewRequestedBySession != "" && issue.ReviewRequestedBySession == sessionID
+	return reviewpolicy.EvaluateCloseEligibility(reviewpolicy.CloseEligibilityInput{
+		Mode:                      mode,
+		Issue:                     issue,
+		SessionID:                 sessionID,
+		SessionIsImplementer:      isImplementer,
+		SessionIsCreator:          isCreator,
+		SessionIsReviewerOfRecord: isReviewerOfRecord,
+		SessionIsReviewRequester:  isReviewRequester,
+		HasImplementationHistory:  hasImplementationHistory,
+		WasAnyInvolved:            wasAnyInvolved,
+		HasActiveApproval:         hasActiveApproval,
+		SelfReviewAcknowledged:    selfReviewAcknowledged,
+		AttributedTo:              attributedTo,
 	})
 }
 
@@ -66,6 +108,13 @@ func ServeCloseDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, sess
 // Exported as an unexported package helper so the parity suite can exercise
 // the exact decision the runtime uses.
 func serveReviewerDecision(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool) reviewpolicy.ReviewerEligibility {
+	return serveReviewerDecisionAttributed(ctx, issue, selfReviewAcknowledged, "")
+}
+
+// serveReviewerDecisionAttributed is serveReviewerDecision plus the
+// --reviewed-by attestation. Kept as a separate entry point so the many
+// existing callers that never attribute stay unchanged.
+func serveReviewerDecisionAttributed(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.ReviewerEligibility {
 	mode := reviewpolicy.ModeStrict
 	if ctx.BaseDir != "" {
 		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
@@ -104,12 +153,21 @@ func serveReviewerDecision(ctx HandlerContext, issue *models.Issue, selfReviewAc
 		HasActiveApproval:        hasActive,
 		WasAnyInvolved:           wasAny,
 		SelfReviewAcknowledged:   selfReviewAcknowledged,
+		AttributedTo:             attributedTo,
 	})
 }
 
 // serveCloseDecision runs reviewpolicy.EvaluateCloseEligibility for the given
 // issue/session pair. Serves the close endpoint harden check.
 func serveCloseDecision(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool) reviewpolicy.CloseEligibility {
+	return serveCloseDecisionAttributed(ctx, issue, selfReviewAcknowledged, "")
+}
+
+// serveCloseDecisionAttributed is serveCloseDecision plus the --reviewed-by
+// attestation. The approve path MUST use this: on the direct review+close fast
+// path, close eligibility re-runs the trusted reviewer predicate, so dropping
+// the attribution here rejects an approval the reviewer check just allowed.
+func serveCloseDecisionAttributed(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.CloseEligibility {
 	mode := reviewpolicy.ModeStrict
 	if ctx.BaseDir != "" {
 		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
@@ -168,6 +226,7 @@ func serveCloseDecision(ctx HandlerContext, issue *models.Issue, selfReviewAckno
 		WasAnyInvolved:            wasAny,
 		HasActiveApproval:         hasActive,
 		SelfReviewAcknowledged:    selfReviewAcknowledged,
+		AttributedTo:              attributedTo,
 	})
 }
 
@@ -200,8 +259,24 @@ func canApprove(ctx HandlerContext, issue *models.Issue) bool {
 
 	// Primary path: reviewer eligibility AND close eligibility, matching the
 	// approve handler's policyCheck.
-	return serveReviewerDecision(ctx, issue, false).Allowed &&
-		serveCloseDecision(ctx, issue, false).Allowed
+	if serveReviewerDecision(ctx, issue, false).Allowed &&
+		serveCloseDecision(ctx, issue, false).Allowed {
+		return true
+	}
+
+	// Trusted mode also permits an implementation-involved session to approve
+	// once it says who reviewed the work. Probe with a placeholder attribution:
+	// this reports "approve is reachable", not "approve needs no input", and a
+	// client that hides the button here would hide it for a call that succeeds.
+	// The placeholder is never persisted — it only exercises the predicate.
+	if mode == reviewpolicy.ModeTrusted {
+		const probe = "probe"
+		if serveReviewerDecisionAttributed(ctx, issue, false, probe).Allowed &&
+			serveCloseDecisionAttributed(ctx, issue, false, probe).Allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // availableTransitionsFor returns the transition action names the requesting
@@ -258,6 +333,13 @@ func availableTransitionsFor(ctx HandlerContext, issue *models.Issue) []string {
 // transitionReasonBody is the optional request body for transition endpoints.
 type transitionReasonBody struct {
 	Reason string `json:"reason"`
+	// ReviewedBy is the API equivalent of the CLI's --reviewed-by: who actually
+	// performed the review, when that is not the session recording it. In
+	// trusted mode it satisfies the involved-session acknowledgement without
+	// claiming the caller did the review; in every other mode it is recorded as
+	// metadata and grants nothing.
+	ReviewedBy string `json:"reviewed_by"`
+
 	// SelfReview is the API equivalent of the CLI's --self-review flag. It is
 	// only meaningful for the approve transition under trusted mode, where an
 	// implementer acknowledging the self-review converts the otherwise-blocked
@@ -543,6 +625,29 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	selfReviewAck := approveBody.SelfReview
+	reviewedBy := strings.TrimSpace(approveBody.ReviewedBy)
+
+	// Mirror the CLI's edge validation so the two surfaces reject the same
+	// inputs. Without this the API would accept combinations the CLI refuses,
+	// and the policy layer's evaluation order would silently favor attribution.
+	if reviewedBy != "" && selfReviewAck {
+		WriteError(w, ErrValidation, "reviewed_by and self_review are mutually exclusive: use reviewed_by when someone else reviewed the work, self_review when you reviewed your own", http.StatusBadRequest)
+		return
+	}
+	if approveBody.ReviewedBy != "" && reviewedBy == "" {
+		WriteError(w, ErrValidation, "reviewed_by requires a name (who performed the review?)", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsFunc(reviewedBy, func(r rune) bool {
+		return r == '\n' || r == '\r' || (unicode.IsControl(r) && r != '\t')
+	}) {
+		WriteError(w, ErrValidation, "reviewed_by must not contain newlines or control characters", http.StatusBadRequest)
+		return
+	}
+	if utf8.RuneCountInString(reviewedBy) > reviewpolicy.MaxReviewedByLen {
+		WriteError(w, ErrValidation, fmt.Sprintf("reviewed_by is limited to %d characters (got %d)", reviewpolicy.MaxReviewedByLen, utf8.RuneCountInString(reviewedBy)), http.StatusBadRequest)
+		return
+	}
 
 	// Pre-inspect the issue for the Mode-C branch decision. We still
 	// delegate most work to handleTransition for consistency with other
@@ -550,7 +655,7 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	issueID := r.PathValue("id")
 	if issueID != "" && ctx.DB != nil {
 		if issue, err := ctx.DB.GetIssue(issueID); err == nil && issue != nil {
-			if handledCloseAfterReview(ctx, w, r, issue) {
+			if handledCloseAfterReview(ctx, w, r, issue, reviewedBy) {
 				return
 			}
 		}
@@ -560,33 +665,40 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 	// approval as an audited self-review, so postCommit can stamp the
 	// issue_reviews row accordingly.
 	var decisionSelfReview bool
+	// decisionAttributedTo captures the attribution the policy accepted, so the
+	// row is stamped from the decision rather than the raw request body.
+	var decisionAttributedTo string
 
 	handleTransition(ctx, w, r, transitionSpec{
 		validFrom:  []models.Status{models.StatusInReview},
 		toStatus:   models.StatusClosed,
 		actionType: models.ActionApprove,
 		policyCheck: func(c HandlerContext, issue *models.Issue) (int, string) {
-			decision := serveReviewerDecision(c, issue, selfReviewAck)
+			decision := serveReviewerDecisionAttributed(c, issue, selfReviewAck, reviewedBy)
 			if !decision.Allowed {
 				return http.StatusForbidden, decision.RejectionMessage
 			}
 			// Also check close-eligibility in case delegated mode adds a
 			// further restriction (Step 2 flips close-after-review through
 			// this same path).
-			closeDecision := serveCloseDecision(c, issue, selfReviewAck)
+			closeDecision := serveCloseDecisionAttributed(c, issue, selfReviewAck, reviewedBy)
 			if !closeDecision.Allowed {
 				return http.StatusForbidden, closeDecision.RejectionMessage
 			}
 			// Mirror the CLI reason gate: a trusted-mode self-review approval
 			// requires a reason. Reject before mutating so API and CLI enforce
 			// the same rule.
+			// Note RequiresReason is false on the attributed path by design
+			// (the attribution is the substance), so this gate only bites for
+			// an unattributed self-review and the balanced creator exception.
 			if decision.RequiresReason && strings.TrimSpace(approveBody.Reason) == "" {
-				if decision.SelfReview {
+				if decision.SelfReview && decision.AttributedTo == "" {
 					return http.StatusBadRequest, fmt.Sprintf("self_review approval requires `reason` for %s", issue.ID)
 				}
 				return http.StatusBadRequest, fmt.Sprintf("approval requires `reason` for %s", issue.ID)
 			}
 			decisionSelfReview = decision.SelfReview
+			decisionAttributedTo = decision.AttributedTo
 			return 0, ""
 		},
 		applySideEffects: func(c HandlerContext, issue *models.Issue) {
@@ -608,6 +720,7 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 				Summary:            approveBody.Reason,
 				RequestedBySession: issue.ReviewRequestedBySession,
 				SelfReview:         decisionSelfReview,
+				ReviewedBy:         decisionAttributedTo,
 			})
 		},
 		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
@@ -630,7 +743,7 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 // issue carries an active approval and the caller is not the reviewer. Returns
 // true when the request was handled (response written) and the caller should
 // return. Returns false to let the standard HandleApprove path run.
-func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.Request, issue *models.Issue) bool {
+func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.Request, issue *models.Issue, reviewedBy string) bool {
 	if issue.Status != models.StatusInReview {
 		return false
 	}
@@ -650,6 +763,18 @@ func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.
 	active, err := ctx.DB.GetActiveApprovalReview(issue.ID)
 	if err != nil || active == nil {
 		return false
+	}
+
+	// Mode C closes on an approval that was already recorded, so there is no
+	// new review row to attribute. Accepting reviewed_by here would let a
+	// caller believe it credited a reviewer when nothing was written — the CLI
+	// rejects this for the same reason (cmd/review.go), and a surface that
+	// silently swallows what another rejects is a parity bug.
+	if reviewedBy != "" {
+		WriteError(w, ErrValidation, fmt.Sprintf(
+			"reviewed_by is ignored for %s: it already has a recorded approval by %s (review %s), and this close records no new review",
+			issue.ID, active.ReviewerSession, active.ID), http.StatusBadRequest)
+		return true
 	}
 
 	closeDec := serveCloseDecision(ctx, issue, false)

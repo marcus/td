@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,6 +29,11 @@ type monitorApproveInputs struct {
 	// into the reviewpolicy decision so trusted-mode self-review becomes an
 	// audited allow (SelfReview=true) instead of a reject.
 	SelfReviewAcknowledged bool
+
+	// AttributedTo mirrors the CLI's --reviewed-by. The monitor's prompt asks
+	// "who reviewed this?"; a typed name lands here, and an empty submit falls
+	// through to SelfReviewAcknowledged.
+	AttributedTo string
 }
 
 // MonitorApproveDecisionForTest is the exported thin wrapper that the
@@ -44,6 +50,22 @@ func MonitorApproveDecisionForTest(mode reviewpolicy.Mode, issue *models.Issue, 
 		WasAnyInvolved:           wasAnyInvolved,
 		HasActiveApproval:        hasActiveApproval,
 		SelfReviewAcknowledged:   selfReviewAcknowledged,
+	})
+}
+
+// MonitorApproveDecisionAttributedForTest is MonitorApproveDecisionForTest plus
+// the --reviewed-by attestation, so the cross-surface parity suite can pin that
+// the monitor treats attribution exactly as the CLI and API do.
+func MonitorApproveDecisionAttributedForTest(mode reviewpolicy.Mode, issue *models.Issue, sessionID string, hasImplementationHistory, wasAnyInvolved, hasActiveApproval, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.ReviewerEligibility {
+	return monitorApproveDecision(monitorApproveInputs{
+		Mode:                     mode,
+		Issue:                    issue,
+		SessionID:                sessionID,
+		HasImplementationHistory: hasImplementationHistory,
+		WasAnyInvolved:           wasAnyInvolved,
+		HasActiveApproval:        hasActiveApproval,
+		SelfReviewAcknowledged:   selfReviewAcknowledged,
+		AttributedTo:             attributedTo,
 	})
 }
 
@@ -67,6 +89,7 @@ func monitorApproveDecision(in monitorApproveInputs) reviewpolicy.ReviewerEligib
 		HasActiveApproval:        in.HasActiveApproval,
 		WasAnyInvolved:           in.WasAnyInvolved,
 		SelfReviewAcknowledged:   in.SelfReviewAcknowledged,
+		AttributedTo:             in.AttributedTo,
 	})
 }
 
@@ -505,6 +528,13 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 // self-review audit bit on the issue_reviews row, identical to the CLI's
 // `td approve --self-review` path.
 func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Model, tea.Cmd) {
+	return m.executeApproveCloseAttributed(issue, selfReview, "")
+}
+
+// executeApproveCloseAttributed is executeApproveClose plus the --reviewed-by
+// attestation. Split so the many existing callers that never attribute keep
+// their signature.
+func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview bool, attributedTo string) (tea.Model, tea.Cmd) {
 	// Direct reviewer-close (Mode A)
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -529,6 +559,7 @@ func (m Model) executeApproveClose(issue *models.Issue, selfReview bool) (tea.Mo
 		Decision:           reviewpolicy.DecisionApproved,
 		RequestedBySession: issue.ReviewRequestedBySession,
 		SelfReview:         selfReview,
+		ReviewedBy:         attributedTo,
 	})
 
 	// Cascade DOWN to descendants if this is a parent issue (epic).
@@ -938,6 +969,15 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 // expected audited self-review allow, closes the issue with self_review=true.
 func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
 	issueID := m.SelfReviewConfirmIssueID
+	// Read through the modal, not m.SelfReviewConfirmInput — see
+	// modal.Modal.InputValue for why the model's own field is always empty
+	// here. Reading the field silently discarded the operator's typed name and
+	// recorded a self-review instead, which is precisely the false record this
+	// feature exists to prevent.
+	attributedTo := ""
+	if m.SelfReviewConfirmModal != nil {
+		attributedTo = strings.TrimSpace(m.SelfReviewConfirmModal.InputValue("reviewed_by"))
+	}
 	m.closeSelfReviewConfirmModal()
 	if issueID == "" {
 		return m, nil
@@ -955,15 +995,22 @@ func (m Model) executeSelfReviewApprove() (tea.Model, tea.Cmd) {
 	}
 
 	inputs := loadMonitorApproveInputs(m.DB, m.BaseDir, m.SessionID, issue)
-	inputs.SelfReviewAcknowledged = true
+	// A typed name attributes the review; an empty submit is the operator
+	// saying they reviewed it themselves. Only one of the two is ever set, so
+	// the policy layer's ordering never has to arbitrate.
+	if attributedTo != "" {
+		inputs.AttributedTo = attributedTo
+	} else {
+		inputs.SelfReviewAcknowledged = true
+	}
 	decision := monitorApproveDecision(inputs)
-	// Only proceed on the audited self-review allow. If the decision is not a
-	// self-review (e.g. mode flipped, or the session is no longer the
-	// implementer) fall back to the normal allow check.
+	// Only proceed on the audited allow. If the decision is not one (e.g. mode
+	// flipped, or the session is no longer the implementer) fall back to the
+	// normal allow check.
 	if !decision.Allowed {
 		return m, nil
 	}
-	return m.executeApproveClose(issue, decision.SelfReview)
+	return m.executeApproveCloseAttributed(issue, decision.SelfReview, decision.AttributedTo)
 }
 
 // filterActiveBlockers returns only non-closed issues from a list of blockers

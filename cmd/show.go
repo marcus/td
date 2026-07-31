@@ -204,6 +204,7 @@ Examples:
 						"requested_by":     r.RequestedBySession,
 						"superseded":       r.SupersededAt != nil,
 						"self_review":      r.SelfReview,
+						"reviewed_by":      r.ReviewedBy,
 					}
 					if r.SupersededAt != nil {
 						e["superseded_at"] = r.SupersededAt
@@ -312,7 +313,14 @@ Examples:
 			}
 			for _, r := range reviews[start:] {
 				marker := ""
-				if r.SelfReview {
+				switch {
+				case r.ReviewedBy != "":
+					// An involved session recorded a review someone else
+					// performed. Naming the reviewer is the point — rendering
+					// this as "(self-review)" would misreport the record, and
+					// SelfReview is true here too.
+					marker += " (reviewed by " + r.ReviewedBy + ")"
+				case r.SelfReview:
 					marker += " (self-review)"
 				}
 				if r.SupersededAt != nil {

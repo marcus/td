@@ -242,6 +242,12 @@ func evaluateCloseEligibility(issue *models.Issue, sessionID string, wasInvolved
 // hasActiveApproval lets the caller signal that an active approval review
 // already exists on the issue — required for the delegated close-using-
 // recorded-approval path. Strict/balanced modes ignore it.
+//
+// attributedTo is defensive plumbing, not a live path today: the only caller
+// passes hasActiveApproval=true, so evaluateCloseTrusted Case 1 short-circuits
+// before reading it, and the CLI rejects --reviewed-by on that branch anyway.
+// It is threaded so a future caller reaching Case 2 (direct review+close with
+// no recorded approval) cannot silently lose the attestation.
 func evaluateCloseEligibilityForBaseDir(
 	baseDir string,
 	issue *models.Issue,

@@ -291,3 +291,26 @@ func (s *textareaSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) 
 	*s.model, cmd = s.model.Update(msg)
 	return "", cmd
 }
+
+// InputValue returns the current text of the input section with the given id,
+// or "" when no such section exists.
+//
+// Read the value through this rather than through the caller's own
+// textinput.Model field. Modals are built from a Bubble Tea model that is
+// passed and returned BY VALUE: a builder with a pointer receiver captures
+// `&m.SomeInput` on whichever copy was current at build time, and the copy the
+// framework goes on to use is a different struct. Keystrokes reach the modal
+// (and therefore the captured pointer), while the live model's field stays
+// empty — so reading the field silently yields "" no matter what the operator
+// typed, and the modal renders the text they typed the whole time.
+//
+// This accessor reads through the same pointer the keystrokes wrote to, which
+// is the one place the two views are guaranteed to agree.
+func (m *Modal) InputValue(id string) string {
+	for _, s := range m.sections {
+		if in, ok := s.(*inputSection); ok && in.id == id && in.model != nil {
+			return in.model.Value()
+		}
+	}
+	return ""
+}

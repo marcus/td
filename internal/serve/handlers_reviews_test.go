@@ -672,3 +672,224 @@ func asString(v interface{}) string {
 	s, _ := v.(string)
 	return s
 }
+
+// TestIntegration_Approve_ReviewedBy_ImplementerApproves is the API twin of the
+// CLI's headline case: an implementation-involved session approves by naming
+// who actually reviewed the work, and the row records both facts.
+func TestIntegration_Approve_ReviewedBy_ImplementerApproves(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reviewed_by": "code-reviewer sub-agent",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200 (attributed approve, no reason required)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	final, _ := database.GetIssue(issueID)
+	if final.Status != models.StatusClosed {
+		t.Fatalf("status=%v want closed", final.Status)
+	}
+	active, _ := database.GetActiveApprovalReview(issueID)
+	if active == nil {
+		t.Fatal("expected an approval review row")
+	}
+	if active.ReviewedBy != "code-reviewer sub-agent" {
+		t.Errorf("ReviewedBy = %q, want the attribution", active.ReviewedBy)
+	}
+	if !active.SelfReview {
+		t.Error("row written by an involved session must be stamped self_review")
+	}
+}
+
+// TestIntegration_Approve_ReviewedBy_Validation mirrors the CLI's edge checks.
+// A surface that accepts input the CLI rejects is a parity bug — an agent
+// switching between them would get different answers for the same request.
+func TestIntegration_Approve_ReviewedBy_Validation(t *testing.T) {
+	cases := []struct {
+		name string
+		body map[string]interface{}
+	}{
+		{"mutually exclusive with self_review", map[string]interface{}{"reviewed_by": "x", "self_review": true, "reason": "r"}},
+		{"blank attribution", map[string]interface{}{"reviewed_by": "   "}},
+		{"newline forgery", map[string]interface{}{"reviewed_by": "reviewer\nApproved by: someone-else"}},
+		{"over the rune cap", map[string]interface{}{"reviewed_by": strings.Repeat("x", reviewpolicy.MaxReviewedByLen+1)}},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			baseURL, database, cleanup := setupIntegrationServer(t)
+			defer cleanup()
+			setTrustedMode(t, database.BaseDir())
+
+			issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+			resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", tc.body)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status=%d want 400", resp.StatusCode)
+			}
+			resp.Body.Close()
+
+			if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
+				t.Errorf("status=%v want in_review (nothing should have happened)", final.Status)
+			}
+			if active, _ := database.GetActiveApprovalReview(issueID); active != nil {
+				t.Error("no review row should be written when validation rejects")
+			}
+		})
+	}
+}
+
+// TestIntegration_Approve_ReviewedBy_DoesNotGrantInDelegated is the security
+// property at the API boundary — the same one the CLI test pins. A free-text
+// field must not dissolve a mode chosen for a mechanical independence boundary.
+func TestIntegration_Approve_ReviewedBy_DoesNotGrantInDelegated(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setDelegatedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reviewed_by": "sub-agent that definitely reviewed it",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status=%d want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
+		t.Errorf("status=%v want in_review", final.Status)
+	}
+}
+
+// TestIntegration_Reviews_ReviewedBy covers the record-only endpoint and the
+// DTO: a UI client must be able to render who reviewed the work without a
+// second call.
+func TestIntegration_Reviews_ReviewedBy(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision":    reviewpolicy.DecisionApproved,
+		"summary":     "sub-agent reviewed the diff",
+		"reviewed_by": "code-reviewer sub-agent",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d want 201", resp.StatusCode)
+	}
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("expected a success envelope")
+	}
+	// The attribution must be visible on both the created row and the issue's
+	// active_review, so a UI can render "reviewed by X" without a second call.
+	review, _ := data["review"].(map[string]interface{})
+	if got := asString(review["reviewed_by"]); got != "code-reviewer sub-agent" {
+		t.Errorf("response review.reviewed_by = %q, want the attribution", got)
+	}
+	activeReview, _ := data["active_review"].(map[string]interface{})
+	if got := asString(activeReview["reviewed_by"]); got != "code-reviewer sub-agent" {
+		t.Errorf("response active_review.reviewed_by = %q, want the attribution", got)
+	}
+	if sr, _ := activeReview["self_review"].(bool); !sr {
+		t.Error("active_review.self_review should be true for an involved recorder")
+	}
+
+	active, _ := database.GetActiveApprovalReview(issueID)
+	if active == nil || active.ReviewedBy != "code-reviewer sub-agent" {
+		t.Fatalf("expected an attributed review row, got %+v", active)
+	}
+	if !active.SelfReview {
+		t.Error("row written by an involved session must be stamped self_review")
+	}
+}
+
+// TestIntegration_Approve_ReviewedBy_ModeCRejects is the API twin of the CLI's
+// Mode C rejection. The close-after-recorded-approval branch runs before the
+// reviewer decision, so it needs its own guard — without it the API returned
+// 200 and discarded the attribution while the CLI rejected the same request.
+func TestIntegration_Approve_ReviewedBy_ModeCRejects(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	implSession := webSessionID(t, database)
+	issueID := seedInReviewIssue(t, database, implSession)
+
+	// An independent session records the approval.
+	if _, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         issueID,
+		ReviewerSession: "ses-independent-reviewer",
+		Decision:        reviewpolicy.DecisionApproved,
+		Summary:         "reviewed the diff",
+	}); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reviewed_by": "a-DIFFERENT-reviewer-nobody-recorded",
+		"reason":      "landing it",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d want 400 (attribution is meaningless when closing on an existing approval)", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
+		t.Errorf("status=%v want in_review (the close should not have proceeded)", final.Status)
+	}
+	active, _ := database.GetActiveApprovalReview(issueID)
+	if active == nil || active.ReviewedBy != "" || active.ReviewerSession != "ses-independent-reviewer" {
+		t.Errorf("the recorded approval must be untouched: %+v", active)
+	}
+
+	// Without the flag the same close succeeds.
+	resp = iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reason": "landing it",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if final, _ := database.GetIssue(issueID); final.Status != models.StatusClosed {
+		t.Errorf("status=%v want closed", final.Status)
+	}
+}
+
+// TestIntegration_CanApprove_AttributionUnlocks covers the available-transitions
+// hint. A UI that hides the Approve button for a call that would succeed is the
+// same parity bug in reverse — the capability exists but is invisible.
+func TestIntegration_CanApprove_AttributionUnlocks(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/issues/"+issueID, nil)
+	ok, data, _ := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatal("expected a success envelope")
+	}
+	// available_transitions rides on the issue object, not the envelope root.
+	issueObj, _ := data["issue"].(map[string]interface{})
+	if issueObj == nil {
+		issueObj = data
+	}
+	raw, _ := issueObj["available_transitions"].([]interface{})
+	var found bool
+	for _, v := range raw {
+		if asString(v) == "approve" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("approve should be offered: the implementer can approve by naming a reviewer, and POST /approve with reviewed_by succeeds (transitions: %v)", raw)
+	}
+}

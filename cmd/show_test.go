@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"io"
 	"os"
 	"strings"
@@ -138,5 +140,115 @@ func TestShowNoArgsUsesSingleInReviewIssue(t *testing.T) {
 	}
 	if !strings.Contains(got, issue.Title) {
 		t.Fatalf("expected output to contain issue title %q, got %s", issue.Title, got)
+	}
+}
+
+// runShowCmd captures stdout for a `td show <id>` invocation.
+func runShowCmd(t *testing.T, args []string, jsonOut bool) string {
+	t.Helper()
+	_ = showCmd.Flags().Set("json", "false")
+	if jsonOut {
+		_ = showCmd.Flags().Set("json", "true")
+	}
+	defer func() { _ = showCmd.Flags().Set("json", "false") }()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+	runErr := showCmd.RunE(showCmd, args)
+	w.Close()
+	os.Stdout = oldStdout
+
+	var out bytes.Buffer
+	_, _ = io.Copy(&out, r)
+	if runErr != nil {
+		t.Fatalf("showCmd.RunE: %v (output %s)", runErr, out.String())
+	}
+	return out.String()
+}
+
+// TestShowRendersReviewAttribution covers the two display acceptance criteria
+// of the attribution work, which two review rounds found had no coverage:
+// an attributed review must render the reviewer's NAME, and the JSON must
+// carry reviewed_by.
+//
+// It matters that the attributed case does not render "(self-review)". Both
+// facts are true of the row — an involved session recorded it AND someone else
+// reviewed it — but showing only the first misreports the record in exactly
+// the direction this feature exists to correct.
+func TestShowRendersReviewAttribution(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	attributed := &models.Issue{Title: "Attributed", Status: models.StatusInReview}
+	if err := database.CreateIssue(attributed); err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if _, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         attributed.ID,
+		ReviewerSession: "ses-orchestrator",
+		Decision:        reviewpolicy.DecisionApproved,
+		Summary:         "sub-agent reviewed it",
+		SelfReview:      true,
+		ReviewedBy:      "code-reviewer sub-agent",
+	}); err != nil {
+		t.Fatalf("CreateIssueReview: %v", err)
+	}
+
+	human := runShowCmd(t, []string{attributed.ID}, false)
+	if !strings.Contains(human, "reviewed by code-reviewer sub-agent") {
+		t.Errorf("human output must name the reviewer, got:\n%s", human)
+	}
+	if strings.Contains(human, "(self-review)") {
+		t.Errorf("an attributed review must not render as a self-review, got:\n%s", human)
+	}
+
+	raw := runShowCmd(t, []string{attributed.ID}, true)
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("unmarshal show --json: %v (raw %s)", err, raw)
+	}
+	history, _ := payload["review_history"].([]any)
+	if len(history) != 1 {
+		t.Fatalf("expected one review_history entry, got %v", payload["review_history"])
+	}
+	entry, _ := history[0].(map[string]any)
+	if entry["reviewed_by"] != "code-reviewer sub-agent" {
+		t.Errorf("review_history.reviewed_by = %v, want the attribution", entry["reviewed_by"])
+	}
+	if entry["self_review"] != true {
+		t.Errorf("review_history.self_review = %v, want true", entry["self_review"])
+	}
+
+	// An unattributed self-review still renders as one — the two cases must
+	// stay distinguishable in the output, not just in the database.
+	selfReviewed := &models.Issue{Title: "Self-reviewed", Status: models.StatusInReview}
+	if err := database.CreateIssue(selfReviewed); err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if _, err := database.CreateIssueReview(db.NewReview{
+		IssueID:         selfReviewed.ID,
+		ReviewerSession: "ses-impl",
+		Decision:        reviewpolicy.DecisionApproved,
+		Summary:         "reviewed my own diff",
+		SelfReview:      true,
+	}); err != nil {
+		t.Fatalf("CreateIssueReview: %v", err)
+	}
+	human = runShowCmd(t, []string{selfReviewed.ID}, false)
+	if !strings.Contains(human, "(self-review)") {
+		t.Errorf("an unattributed self-review must still render as one, got:\n%s", human)
 	}
 }
