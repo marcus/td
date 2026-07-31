@@ -246,8 +246,10 @@ The submitting session is recorded as 'review_requested_by_session' on the
 issue. Under review_policy_mode=delegated and the default trusted mode, an
 active independent approval is the close gate: a reviewer records it with
 'td approve <id> --record-only --reason "..."' and any session may then close.
-Under trusted mode the implementer may instead approve+close their own work
-with 'td approve --self-review --reason "..."'.
+
+Under trusted mode the implementer may instead approve+close directly, by
+naming who reviewed the work ('td approve <id> --reviewed-by "<who>"') or by
+acknowledging a self-review ('td approve <id> --self-review --reason "..."').
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -1007,6 +1009,24 @@ To surface issues reviewed by a sub-agent that you can close, use
 				if eligibility.AttributedTo != "" {
 					logMsg = fmt.Sprintf("Review recorded (%s) by %s: %s", decision, eligibility.AttributedTo, reason)
 				}
+
+				// Audit the same fact the direct approve path audits: an
+				// approval recorded by an implementation-involved session.
+				// Opening --record-only to trusted made this reachable, and
+				// without it an involved session could record-only and then
+				// close via Mode C leaving no audit-file trace at all.
+				if eligibility.SelfReview && decision == reviewpolicy.DecisionApproved {
+					auditReason := "self_review: " + reason
+					if eligibility.AttributedTo != "" {
+						auditReason = "attributed_review by " + eligibility.AttributedTo + ": " + reason
+					}
+					db.LogSecurityEvent(baseDir, db.SecurityEvent{
+						IssueID:   issueID,
+						SessionID: sess.ID,
+						AgentType: sess.AgentType,
+						Reason:    "record_only " + auditReason,
+					})
+				}
 				if err := database.AddLog(&models.Log{
 					IssueID:   issueID,
 					SessionID: sess.ID,
@@ -1590,8 +1610,10 @@ var closeCmd = &cobra.Command{
 or cleanup of never-implemented issues.
 
 Use 'td review' -> 'td approve' to finish implemented work so its review path
-is recorded. Independent review is preferred; default trusted mode also allows
-an explicit, audited 'td approve --self-review --reason "..."'.
+is recorded. Independent review is preferred; default trusted mode also lets an
+involved session approve by saying who reviewed the work — either
+'td approve --reviewed-by "<who>"' or an audited
+'td approve --self-review --reason "..."'.
 
 Under review_policy_mode=delegated:
   - in_review issues cannot be closed via 'td close'; use 'td approve' instead.

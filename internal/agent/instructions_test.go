@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,13 @@ func TestInstructionTextContract(t *testing.T) {
 		"td usage --new-session -q",
 		"Use your judgment",
 		"td approve <id> --self-review --reason",
+		// v3 payload: the attribution path must be present, and must be named
+		// before self-review so an agent reading top-down reaches for the
+		// honest option first. A contract test that only pins the OLD guidance
+		// lets a rewrite silently drop the new.
+		"td approve <id> --reviewed-by",
+		"never name one who did not review",
+		"TD_CONTEXT_ID",
 		"td <command> --help",
 	} {
 		if !strings.Contains(InstructionText, want) {
@@ -28,8 +36,24 @@ func TestInstructionTextContract(t *testing.T) {
 		}
 	}
 
-	if words := len(strings.Fields(InstructionBody)); words > 110 {
-		t.Errorf("InstructionBody has %d words, want at most 110", words)
+	// The cap exists because this block enters an agent's context on every
+	// turn. It was raised from 110 to 120 once, deliberately: fitting the three
+	// review paths plus the mode qualifier had squeezed out the pointer to
+	// TD_CONTEXT_ID, and trading away the one line that names the verifiable
+	// path is the wrong economy in the text agents actually read. Raise it
+	// again only for something that changes what an agent DOES.
+	if words := len(strings.Fields(InstructionBody)); words > 120 {
+		t.Errorf("InstructionBody has %d words, want at most 120", words)
+	}
+
+	if strings.Index(InstructionText, "--reviewed-by") > strings.Index(InstructionText, "--self-review") {
+		t.Error("InstructionText must offer --reviewed-by before --self-review")
+	}
+
+	// The block ships into projects in every policy mode, so it must not
+	// present trusted-only commands as unconditional.
+	if !strings.Contains(InstructionText, "trusted") {
+		t.Error("InstructionText must say which mode the acknowledgement paths require")
 	}
 
 	if version, ok := markedInstructionsVersion(InstructionText); !ok || version != InstructionVersion {
@@ -95,8 +119,12 @@ func TestOutdatedMarkedInstructionsFile(t *testing.T) {
 		t.Fatalf("updated guidance still reported as outdated: %q", got)
 	}
 
+	// Derive the "newer" version from the current one rather than hardcoding
+	// it: a literal here silently stops testing anything the moment
+	// InstructionVersion catches up to it, which is exactly what happened at
+	// version 3.
 	future := InstructionStartMarker + "\n" +
-		"<!-- td-agent-instructions:version=3 -->\n" +
+		fmt.Sprintf("<!-- td-agent-instructions:version=%d -->\n", InstructionVersion+1) +
 		"Future guidance\n" +
 		InstructionEndMarker + "\n"
 	if err := os.WriteFile(path, []byte(future), 0644); err != nil {
@@ -337,4 +365,28 @@ func TestAnyFileHasTDInstructions(t *testing.T) {
 			t.Error("AnyFileHasTDInstructions = false, want true (found in GEMINI.local.md)")
 		}
 	})
+}
+
+// TestPublishedInstructionCopiesMatch pins the copies of the instruction block
+// that live outside instructions.go: this repo's own agent files and the
+// website page that presents it as "the block td installs".
+//
+// The website copy was a hand-transcribed v2 snapshot that silently became a
+// lie when the block moved to v3 — it documented commands the current release
+// does not lead with. A published copy of generated text needs a test or it
+// drifts at every version bump.
+func TestPublishedInstructionCopiesMatch(t *testing.T) {
+	for _, rel := range []string{
+		"../../CLAUDE.md",
+		"../../AGENTS.md",
+		"../../website/docs/ai-integration.md",
+	} {
+		data, err := os.ReadFile(rel)
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if !strings.Contains(string(data), InstructionBody) {
+			t.Errorf("%s does not contain the current InstructionBody verbatim; it has drifted from internal/agent/instructions.go", rel)
+		}
+	}
 }

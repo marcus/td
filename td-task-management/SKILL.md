@@ -100,15 +100,22 @@ td context <id>
 # 3. Approve or reject
 # Independent review:
 td approve <id> --reason "Reviewed diff, looks good"
-# Or, in trusted mode, an acknowledged self-review:
+# Or, in trusted mode, when you implemented it yourself:
+#   a sub-agent reviewed it — name them (no --reason needed):
+td approve <id> --reviewed-by "code-reviewer sub-agent"
+#   you reviewed it yourself — say so:
 td approve <id> --self-review --reason "Reviewed own diff, tests pass"
 # Or:
 td reject <id> --reason "Missing error handling"
 ```
 
-Independent review is preferred when practical. The default `trusted` mode
-also permits an implementer to self-review with `--self-review --reason`;
-the review is recorded as a self-review in the audit trail.
+Independent review is preferred when practical. The default `trusted` mode also
+lets an involved session approve by saying who reviewed the work: `--reviewed-by
+"<who>"` credits someone else, `--self-review --reason` owns it. Both are
+recorded and neither is verifiable by td, so never name a reviewer who did not
+review — that reads as independent in the audit trail, which is worse than an
+honest self-review. In `delegated` and `strict` an involved session cannot
+approve at all.
 
 ### Workflow 4: Handling Blockers
 
@@ -151,7 +158,9 @@ td context td-a1b2  # Refresh context when blocker resolves
 - `td review <id>` - Submit for review
 - `td reviewable` - Issues you can review
 - `td approve <id> --reason "..."` - Approve an independent review
+- `td approve <id> --reviewed-by "<who>"` - Record who reviewed it when that is not you (trusted mode)
 - `td approve <id> --self-review --reason "..."` - Acknowledge and record a trusted-mode self-review
+- `td approve <id> --record-only --reason "..."` - Attest without closing; any session closes after
 - `td reject <id> --reason "..."` - Reject
 
 ### Creating/Managing Issues
@@ -200,8 +209,8 @@ open → in_progress → in_review → closed
 ## Key Principles
 
 **Session Isolation:** Every terminal/context gets a session ID for continuity
-and audit. Independent review is preferred; trusted mode permits explicit,
-audited self-review when appropriate.
+and audit. Independent review is preferred; trusted mode also lets an involved
+session approve by recording who actually reviewed the work.
 
 **Structured Handoffs:** Record done/remaining/decisions/uncertain when another
 context will need to continue the work.

@@ -16,6 +16,7 @@
 - `td handoff <id> --done "..." --remaining "..."` - Capture state for another context
 - `td review <id>` - Submit for review
 - `td approve <id> --reason "..."` - Approve an independent review
+- `td approve <id> --reviewed-by "<who>"` - Credit whoever reviewed it (trusted mode)
 - `td approve <id> --self-review --reason "..."` - Record a trusted-mode self-review
 - `td reject <id> --reason "..."` - Reject back to author
 

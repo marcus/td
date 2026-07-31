@@ -368,6 +368,11 @@ type transitionSpec struct {
 	runCascades func(ctx HandlerContext, issue *models.Issue) transitionCascadeResult
 	// defaultLogMsg is the default progress log message when no reason is given.
 	defaultLogMsg string
+
+	// logMsgFn, when set, builds the log message from the reason and takes
+	// precedence over defaultLogMsg. Set by transitions whose log line depends
+	// on the policy decision rather than only on the request.
+	logMsgFn func(reason string) string
 	// logType overrides the log type (defaults to LogTypeProgress).
 	logType models.LogType
 	// policyCheck runs after state-machine validation but before any mutation.
@@ -462,10 +467,15 @@ func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 		spec.postCommit(ctx, issue)
 	}
 
-	// Log reason or default message
+	// Log reason or default message. logMsgFn, when set, owns the whole
+	// message — used by approve so an attributed approval names the reviewer
+	// in the issue log the way the CLI does, instead of logging a bare reason.
 	logMsg := spec.defaultLogMsg
 	if reason != "" {
 		logMsg = reason
+	}
+	if spec.logMsgFn != nil {
+		logMsg = spec.logMsgFn(reason)
 	}
 	logType := models.LogTypeProgress
 	if spec.logType != "" {
@@ -722,6 +732,25 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 				SelfReview:         decisionSelfReview,
 				ReviewedBy:         decisionAttributedTo,
 			})
+
+			// Audit parity with the CLI. An approval recorded by an
+			// implementation-involved session goes to the out-of-band audit
+			// file whichever acknowledgement was used — that is the fact worth
+			// being able to grep for. An independent session's approval is
+			// unremarkable and is deliberately absent, or the file fills with
+			// routine entries and stops surfacing the case it exists for.
+			if decisionSelfReview && c.BaseDir != "" {
+				reason := strings.TrimSpace(approveBody.Reason)
+				auditReason := "self_review: " + reason
+				if decisionAttributedTo != "" {
+					auditReason = "attributed_review by " + decisionAttributedTo + ": " + reason
+				}
+				_ = db.LogSecurityEvent(c.BaseDir, db.SecurityEvent{
+					IssueID:   issue.ID,
+					SessionID: c.SessionID,
+					Reason:    auditReason,
+				})
+			}
 		},
 		runCascades: func(c HandlerContext, issue *models.Issue) transitionCascadeResult {
 			var cr transitionCascadeResult
@@ -736,6 +765,22 @@ func HandleApprove(ctx HandlerContext, w http.ResponseWriter, r *http.Request) {
 			return cr
 		},
 		defaultLogMsg: "Approved",
+		logMsgFn: func(reason string) string {
+			// Mirror the CLI: an attributed approval names the reviewer, so
+			// someone reading `td show` sees who vouched for the work rather
+			// than a bare reason line.
+			if decisionAttributedTo == "" {
+				if reason != "" {
+					return reason
+				}
+				return "Approved"
+			}
+			msg := "Approved (reviewed by " + decisionAttributedTo + ")"
+			if reason != "" {
+				msg += ": " + reason
+			}
+			return msg
+		},
 	})
 }
 

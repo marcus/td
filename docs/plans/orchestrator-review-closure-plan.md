@@ -840,3 +840,32 @@ That change matches the way orchestrated agent workflows actually work now:
 - sub-agents can still provide real review separation
 - orchestrators do not need awkward session gymnastics to finish work
 - td keeps the protection that matters most: implementation cannot silently approve itself
+
+
+---
+
+## Follow-up: review attribution (2026-07-30, epic td-0bc752)
+
+This plan's model — "the review must be performed by an implementation-
+independent SESSION" — held up, but it assumed the reviewing agent and the
+recording session are the same thing. In the now-common orchestrator +
+sub-agent topology they are not: a sub-agent genuinely reviews the work while
+the orchestrator holds the session. The plan's own escape hatch
+(`--self-review`) then forces the orchestrator to write a record that is false,
+which good models refuse to do.
+
+The follow-up epic separates the two facts the model conflated:
+
+- `reviewer_session` — the session that recorded the row (machine-verified)
+- `reviewed_by` — who performed the review (asserted via `--reviewed-by`,
+  never verified)
+
+`self_review` keeps its original meaning, "recorded by an implementation-
+involved session", so nothing in this plan's audit story is reinterpreted.
+
+It also fixed a gap this plan left: `--record-only`, the mechanism that makes
+"reviewer attests, orchestrator closes" work, was gated to `delegated` only,
+while the close side already accepted `trusted`. The default mode could close on
+an attestation it was not allowed to create.
+
+See CHANGELOG for the shipped behavior.

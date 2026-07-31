@@ -87,18 +87,28 @@ td reject td-a1b2 --reason "Missing error handling"  # Back to open
 ```
 
 Independent review is preferred when practical. In the default `trusted` mode,
-an implementer may instead acknowledge and record a self-review:
+an implementer who cannot get one is asked to say who reviewed the work:
 
 ```bash
+# A sub-agent reviewed it — credit them (no reason required)
+td approve td-a1b2 --reviewed-by "code-reviewer sub-agent"
+
+# You reviewed your own work — say so
 td approve td-a1b2 --self-review --reason "Reviewed own diff; tests pass"
 ```
+
+Both are recorded on the review row, and neither is verifiable by td. Naming a
+reviewer who did not review is worse than an honest self-review, because it
+reads as independent in the audit trail.
 
 ### Review Policy Modes
 
 td exposes four policy modes via `review_policy_mode`:
 
-- `trusted` — **default for new installs.** Prefers independent review and
-  permits explicit, audited self-review with `--self-review --reason`.
+- `trusted` — **default for new installs.** Prefers independent review; an
+  involved session may approve by naming who reviewed the work
+  (`--reviewed-by "<who>"`) or acknowledging a self-review
+  (`--self-review --reason`). Both are audited. Supports `--record-only`.
 - `delegated` — review attestations with delegated close. Reviewer independence is enforced; any session may perform the final close once an independent approval review has been recorded.
 - `strict` — no prior involvement allowed on the reviewer at all. Preserved for orchestrators that want the legacy close-time session lock.
 - `balanced` — strict, plus a creator-approval exception (see below). Retained for projects that explicitly opt in.

@@ -4,6 +4,24 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Review attribution
+
+- **`td approve --reviewed-by "<who>"` records who actually performed a review** (td-0bc752). `issue_reviews.reviewer_session` conflated two different facts — who reviewed the work, and which session wrote the row down. Those were the same thing when one session meant one agent; they diverge as soon as an orchestrator records a review its sub-agent performed, and `--self-review` then forces that orchestrator to write a record that is false. Good models balk at that, correctly, and the work stalls. Attribution is stored in a new `issue_reviews.reviewed_by` column and requires no `--reason`; the attribution is the substance. Available on the CLI, the API (`reviewed_by` on `/approve` and `/reviews`), and the monitor.
+- **It never grants permission by itself.** Only the default `trusted` mode treats attribution as an acknowledgement. `delegated` and `strict` record it and still refuse an involved session's approval, so a project that pinned a mode for a mechanical independence boundary keeps it. td cannot verify the name — this is deliberately an honesty guardrail, and naming a reviewer who did not review is worse than an honest `--self-review` because it reads as independent in the audit trail.
+- **`self_review` keeps its meaning**: "recorded by an implementation-involved session". It is set for both acknowledgement paths, and `reviewed_by` is what distinguishes them. Every historical row was already written that way, so no backfill and no reinterpretation of existing audit data.
+- Attributed approvals get a plain progress log naming the reviewer rather than a `SECURITY`-tagged one — this is now the normal orchestrated path. The `.todos/security_events.jsonl` entry remains, and is written whenever the recording session was implementation-involved, on the direct approve path and the `--record-only` path alike, on both CLI and API. An independent session's approval is not audited: that file exists to surface approvals that lack mechanical independence, and filling it with routine ones makes it useless for the case it is for.
+
+### Fixed
+
+- **`--record-only` now works in the default `trusted` mode** (td-1748a6). It was rejected outside `delegated`, while the close-after-recorded-approval path already accepted `trusted` — so the default mode could close on an attestation it was not allowed to create. The API's close-after-recorded-approval path was delegated-only in the same way, leaving a recorded approval unusable through `/approve`.
+- The monitor's ready-to-close bucket, its record-review action, and `td reviewable`'s SQL now agree with the policy layer under `trusted` instead of silently diverging from it.
+
+### Known limitations
+
+- **Review rows do not sync between machines** (td-02ae9f). The apply path exists and is tested, but nothing emits the events, so `issue_reviews` never leaves the machine that created it. Close-after-recorded-approval therefore works within a machine and not across two. Single-host workflows are unaffected. Pre-existing, not introduced here.
+- **Monitor text inputs silently drop characters** (td-5d602a). A modal's input is captured on a by-value receiver's copy, so typed text reaches the modal but not the code that reads it, and the first characters are swallowed before the input takes focus. The approve-attribution prompt is fixed; the monitor's close-confirm and record-review modals are not — a close reason typed into the monitor is currently discarded, and record-review from the monitor does not work at all.
+- **The monitor writes no `security_events.jsonl` entry** for an involved-session approval (td-b718ba). It is the one surface without audit-file coverage; the CLI and API both write it.
+
 ## [v0.53.0] - 2026-07-25
 
 ### Query

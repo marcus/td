@@ -13,10 +13,10 @@ const (
 	// Versioned markers let future td releases update their own guidance without
 	// disturbing the rest of a project's agent file.
 	InstructionStartMarker   = "<!-- td-agent-instructions:start -->"
-	InstructionVersion       = 2
+	InstructionVersion       = 3
 	instructionVersionPrefix = "<!-- td-agent-instructions:version="
 	instructionVersionSuffix = " -->"
-	InstructionVersionMarker = instructionVersionPrefix + "2" + instructionVersionSuffix
+	InstructionVersionMarker = instructionVersionPrefix + "3" + instructionVersionSuffix
 	InstructionEndMarker     = "<!-- td-agent-instructions:end -->"
 
 	// InstructionBody is intentionally compact because agent files consume
@@ -24,15 +24,19 @@ const (
 	// `td usage` and command-specific help.
 	InstructionBody = `## Working with td
 
-td keeps task context durable across agent sessions. At the start of a new context, run ` + "`td usage --new-session -q`" + ` to see the current work.
+td keeps task context durable across sessions. In a new context, run ` + "`td usage --new-session -q`" + ` to see current work.
 
-Use your judgment about how much tracking the task needs. For substantive work, use ` + "`td start <id>`" + `, record useful progress or decisions with ` + "`td log`" + `, hand off unfinished work with ` + "`td handoff <id>`" + `, and submit completed work with ` + "`td review <id>`" + `.
+Use your judgment about how much tracking a task needs. For substantive work: ` + "`td start <id>`" + `, record progress with ` + "`td log`" + `, hand off with ` + "`td handoff <id>`" + `, then ` + "`td review <id>`" + `.
 
-Prefer an independent review when practical. In the default trusted mode, self-review is allowed and audited:
+Closing needs a review. Say who did it (default trusted mode; delegated/strict allow only the first):
 
-` + "`td approve <id> --self-review --reason \"...\"`" + `
+- independent session: ` + "`td approve <id> --reason \"...\"`" + `
+- a sub-agent: ` + "`td approve <id> --reviewed-by \"<who>\"`" + `
+- you: ` + "`td approve <id> --self-review --reason \"...\"`" + `
 
-Run ` + "`td usage`" + ` for workflow guidance or ` + "`td <command> --help`" + ` for details.`
+Prefer a reviewer with its own ` + "`TD_CONTEXT_ID`" + `; never name one who did not review.
+
+Run ` + "`td usage`" + ` or ` + "`td <command> --help`" + `.`
 
 	// InstructionText is the complete versioned block installed in agent files.
 	InstructionText = InstructionStartMarker + "\n" + InstructionVersionMarker + "\n\n" + InstructionBody + "\n\n" + InstructionEndMarker + "\n"

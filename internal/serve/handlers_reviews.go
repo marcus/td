@@ -82,6 +82,16 @@ func IssueReviewToDTO(r *models.IssueReview) IssueReviewDTO {
 	}
 }
 
+// recordReviewLogMessage builds the record-only log line, naming the credited
+// reviewer when there is one. Mirrors the CLI so `td show` reads the same
+// whichever surface recorded the review.
+func recordReviewLogMessage(decision, attributedTo, summary string) string {
+	if attributedTo == "" {
+		return "Review recorded (" + decision + "): " + summary
+	}
+	return "Review recorded (" + decision + ") by " + attributedTo + ": " + summary
+}
+
 // HandleRecordReview implements POST /v1/issues/{id}/reviews. Under the
 // delegated and trusted policy modes, it records an approval (or
 // changes_requested) review without closing the issue. Rejects with 409 under
@@ -225,6 +235,22 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Audit parity with the CLI record-only path: an approval recorded by an
+	// implementation-involved session goes to the out-of-band audit file, or an
+	// involved session could record-only and then close via Mode C leaving no
+	// trace in the file that exists to surface exactly that.
+	if decision.SelfReview && body.Decision == reviewpolicy.DecisionApproved && ctx.BaseDir != "" {
+		auditReason := "self_review: " + body.Summary
+		if decision.AttributedTo != "" {
+			auditReason = "attributed_review by " + decision.AttributedTo + ": " + body.Summary
+		}
+		_ = db.LogSecurityEvent(ctx.BaseDir, db.SecurityEvent{
+			IssueID:   issue.ID,
+			SessionID: ctx.SessionID,
+			Reason:    "record_only " + auditReason,
+		})
+	}
+
 	actionType := models.ActionReviewApprove
 	if body.Decision == reviewpolicy.DecisionChangesRequested {
 		actionType = models.ActionReviewChangesRequested
@@ -249,7 +275,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 	_ = ctx.DB.AddLog(&models.Log{
 		IssueID:   issue.ID,
 		SessionID: ctx.SessionID,
-		Message:   "Review recorded (" + body.Decision + "): " + body.Summary,
+		Message:   recordReviewLogMessage(body.Decision, decision.AttributedTo, body.Summary),
 		Type:      models.LogTypeProgress,
 	})
 

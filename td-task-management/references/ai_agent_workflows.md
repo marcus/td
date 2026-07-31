@@ -27,7 +27,8 @@ td handoff td-a1b2 \
 td review td-a1b2
 
 # 6. Prefer independent review when practical
-# (Or acknowledge trusted-mode self-review with --self-review --reason)
+# (Or, in trusted mode: --reviewed-by "<who>" to credit the reviewer,
+#  or --self-review --reason to acknowledge reviewing your own work)
 ```
 
 ## Multi-Issue Workflow
@@ -114,4 +115,4 @@ td reject td-a1b2 --reason "Missing error handling for expired tokens"
 4. **Use work sessions for related issues** - Groups handoffs and makes tracking easier
 5. **Track files with `td link`** - Helps future sessions know what changed
 6. **Check blockers vs openwork** - If blocked, don't waste tokens retrying - work on something else
-7. **Prefer independent review when practical** - In trusted mode, acknowledge self-review with `td approve <id> --self-review --reason "..."`
+7. **Prefer independent review when practical** - Give a reviewing sub-agent its own `TD_CONTEXT_ID` so its independence is verifiable. In trusted mode, an involved session can instead record who reviewed the work with `td approve <id> --reviewed-by "<who>"`, or acknowledge a genuine self-review with `td approve <id> --self-review --reason "..."`. Never name a reviewer who did not review.

@@ -374,6 +374,36 @@ Optional request body:
 
 Append `reason` as a progress log entry when provided.
 
+### Review attribution on `approve`
+
+`POST /v1/issues/{id}/approve` additionally accepts:
+
+```json
+{ "reviewed_by": "code-reviewer sub-agent", "self_review": true, "reason": "..." }
+```
+
+- `reviewed_by` names who actually performed the review when that is not the
+  session recording it. Under `review_policy_mode=trusted` (the default) it lets
+  an implementation-involved session approve without claiming a self-review it
+  did not perform. It requires no `reason`.
+- `self_review` acknowledges reviewing your own work. It requires a `reason`.
+- The two are mutually exclusive (400). `reviewed_by` is rejected when blank,
+  over 120 runes, or containing newlines/control characters, and is rejected
+  entirely on the close-after-recorded-approval path, where no new review row is
+  written.
+- Neither field grants anything outside trusted mode. In `delegated` and
+  `strict`, `reviewed_by` is recorded as metadata and an involved session is
+  still refused.
+- Both are stamped on the `issue_reviews` row from the POLICY DECISION, never
+  from the request body, so a request cannot forge either field.
+
+`POST /v1/issues/{id}/reviews` (record-only) accepts the same two fields.
+
+Review rows expose `self_review` and `reviewed_by` on both `active_review` and
+`GET /v1/issues/{id}?with=reviews`. Read them together: `self_review` means the
+row was recorded by an implementation-involved session, which is a literal
+self-review only when `reviewed_by` is empty.
+
 Return transition response with cascade details:
 
 ```json

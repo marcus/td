@@ -18,8 +18,9 @@ Three mechanisms eliminate context loss:
 
 - **Structured handoffs** -- Each session records what's done, what remains, decisions made, and uncertainties. The next session reads this instead of guessing.
 - **Audited review** -- Independent review is preferred. In the default trusted
-  mode, an implementer may instead acknowledge a self-review with
-  `--self-review --reason`; either path remains visible in the review history.
+  mode, an involved session may instead record who actually reviewed the work
+  (`--reviewed-by "<who>"`) or acknowledge a self-review (`--self-review
+  --reason`); every path stays visible in the review history.
 - **Single-command context** -- `td usage` gives the incoming session everything it needs: current issues, recent logs, pending handoffs, and what to work on next.
 
 ## Installation

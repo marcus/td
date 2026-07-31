@@ -3,6 +3,8 @@ package serve
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -891,5 +893,166 @@ func TestIntegration_CanApprove_AttributionUnlocks(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("approve should be offered: the implementer can approve by naming a reviewer, and POST /approve with reviewed_by succeeds (transitions: %v)", raw)
+	}
+}
+
+// TestIntegration_Approve_AuditParityWithCLI pins the audit behavior decided
+// for this epic, on the API side. The rule is about WHO RECORDED the row, not
+// which flag was used: an approval written by an implementation-involved
+// session goes to the out-of-band audit file either way, and an independent
+// session's approval must not, or the file fills with routine entries and stops
+// surfacing the case it exists for.
+func TestIntegration_Approve_AuditParityWithCLI(t *testing.T) {
+	readAudit := func(t *testing.T, baseDir string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(baseDir, ".todos", "security_events.jsonl"))
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ""
+			}
+			t.Fatalf("read security_events.jsonl: %v", err)
+		}
+		return string(b)
+	}
+
+	t.Run("involved recorder with attribution is audited", func(t *testing.T) {
+		baseURL, database, cleanup := setupIntegrationServer(t)
+		defer cleanup()
+		setTrustedMode(t, database.BaseDir())
+
+		issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+		resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+			"reviewed_by": "code-reviewer sub-agent",
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d want 200", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		audit := readAudit(t, database.BaseDir())
+		if !strings.Contains(audit, "attributed_review") || !strings.Contains(audit, "code-reviewer sub-agent") {
+			t.Errorf("expected an attributed_review audit entry naming the reviewer, got: %s", audit)
+		}
+	})
+
+	t.Run("independent recorder is not audited", func(t *testing.T) {
+		baseURL, database, cleanup := setupIntegrationServer(t)
+		defer cleanup()
+		setTrustedMode(t, database.BaseDir())
+
+		// Implemented by a different session, so the web session is independent.
+		issueID := seedInReviewIssue(t, database, "ses-other-impl")
+		resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+			"reviewed_by": "a human on the team",
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d want 200", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		if audit := readAudit(t, database.BaseDir()); audit != "" {
+			t.Errorf("an independent session's approval must not be audited: %s", audit)
+		}
+	})
+
+	t.Run("self review is audited", func(t *testing.T) {
+		baseURL, database, cleanup := setupIntegrationServer(t)
+		defer cleanup()
+		setTrustedMode(t, database.BaseDir())
+
+		issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+		resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+			"self_review": true,
+			"reason":      "reviewed my own diff",
+		})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d want 200", resp.StatusCode)
+		}
+		resp.Body.Close()
+
+		if audit := readAudit(t, database.BaseDir()); !strings.Contains(audit, "self_review") {
+			t.Errorf("expected a self_review audit entry, got: %s", audit)
+		}
+	})
+}
+
+// TestIntegration_Reviews_RecordOnlyAuditAndLog covers the two API behaviors
+// added late in td-ec8445 that shipped without tests the first time — an audit
+// control with no test is how the record-only hole got missed in the first
+// place.
+func TestIntegration_Reviews_RecordOnlyAuditAndLog(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	implSession := webSessionID(t, database)
+	issueID := seedInReviewIssue(t, database, implSession)
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reviews", map[string]interface{}{
+		"decision":    reviewpolicy.DecisionApproved,
+		"summary":     "reviewed the diff",
+		"reviewed_by": "code-reviewer sub-agent",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// The audit file must record that an involved session wrote the row —
+	// otherwise record-only followed by a Mode C close leaves no trace.
+	audit, err := os.ReadFile(filepath.Join(database.BaseDir(), ".todos", "security_events.jsonl"))
+	if err != nil {
+		t.Fatalf("expected a security_events entry for an involved recorder: %v", err)
+	}
+	if !strings.Contains(string(audit), "record_only") || !strings.Contains(string(audit), "code-reviewer sub-agent") {
+		t.Errorf("audit entry should mark record_only and name the reviewer, got: %s", audit)
+	}
+
+	// The issue log must name the credited reviewer, matching the CLI.
+	logs, err := database.GetLogs(issueID, 0)
+	if err != nil {
+		t.Fatalf("GetLogs: %v", err)
+	}
+	var named bool
+	for _, l := range logs {
+		if strings.Contains(l.Message, "by code-reviewer sub-agent") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("record-only log should name the credited reviewer, got %+v", logs)
+	}
+}
+
+// TestIntegration_Approve_LogNamesReviewer pins the approve transition's log
+// line. The API logged a bare reason where the CLI named the reviewer, which
+// made a published CHANGELOG claim false.
+func TestIntegration_Approve_LogNamesReviewer(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setTrustedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, webSessionID(t, database))
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/approve", map[string]interface{}{
+		"reviewed_by": "code-reviewer sub-agent",
+		"reason":      "diff plus tests",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	logs, _ := database.GetLogs(issueID, 0)
+	var named bool
+	for _, l := range logs {
+		if strings.Contains(l.Message, "Approved (reviewed by code-reviewer sub-agent)") {
+			named = true
+		}
+		if l.Type == models.LogTypeSecurity {
+			t.Errorf("attributed approval must not write a security-typed log: %q", l.Message)
+		}
+	}
+	if !named {
+		t.Errorf("approve log should name the credited reviewer, got %+v", logs)
 	}
 }

@@ -108,6 +108,20 @@ route 1 or 2.
 | Older td build, or zero schema assumptions | Unique `TD_SESSION_ID` (route 2) |
 | Each sub-agent in its own worktree | Worktree keying (route 3) — *not yet available* |
 
+## Which review path to use
+
+| Reviewing sub-agent has... | Use | Independence is |
+|---|---|---|
+| its own `TD_CONTEXT_ID` | the sub-agent runs `td approve` or `td approve --record-only` | mechanically verified |
+| the orchestrator's session | `td approve --reviewed-by "<name>"` | asserted, not verified |
+
+Prefer the first. Giving each sub-agent context its own `TD_CONTEXT_ID` costs one
+environment variable and makes the guarantee real rather than social.
+
+`--reviewed-by` is for the case where that is genuinely not available — a
+sub-agent that shares the orchestrator's session still did the review, and
+recording that is more honest than `--self-review`. td does not verify the name.
+
 ## Orchestrator checklist
 
 1. For each spawned sub-agent context, export a distinct `TD_CONTEXT_ID`

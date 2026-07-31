@@ -57,8 +57,10 @@ td handoff td-a1b2 \
 ```
 
 **Audited reviews** — Every terminal/context window gets an ID automatically.
-Independent review is preferred, while default trusted mode also permits an
-explicit, recorded self-review when that is the appropriate tradeoff.
+Independent review is preferred; the default trusted mode also lets you record
+who actually reviewed the work when that is not the session doing the recording
+— so an orchestrator can credit its reviewing sub-agent instead of claiming a
+self-review it did not perform.
 
 **Query-based boards** — Organize work with boards that filter issues using TDQ queries. View as swimlanes in the monitor for visual status tracking.
 
@@ -252,7 +254,10 @@ td reviewable        # What can I review?
 td approve td-a1b2   # Ship it
 td reject td-a1b2 --reason "Missing error handling"  # Back to work
 
-# Trusted-mode self-review
+# A sub-agent reviewed it; record who
+td approve td-a1b2 --reviewed-by "code-reviewer sub-agent"
+
+# You reviewed your own work
 td approve td-a1b2 --self-review --reason "Reviewed own diff; tests pass"
 ```
 
@@ -398,10 +403,12 @@ td add "Update comment" --minor
 
 Minor tasks bypass session-based review—you can approve your own work. Use sparingly for documentation fixes, typos, and other low-risk changes.
 
-For non-minor tasks, the default `trusted` policy prefers independent review
-and permits explicit, audited self-review with `--self-review --reason`.
-Projects that require a hard independence boundary can select `delegated` or
-`strict`.
+For non-minor tasks, the default `trusted` policy prefers independent review. An
+involved session may still approve by saying who reviewed the work — either
+`--reviewed-by "<who>"` to credit someone else, or `--self-review --reason` to
+own it. Both are recorded; neither is verifiable by td, so this is an honesty
+guardrail. Projects that require a mechanical independence boundary can select
+`delegated` or `strict`, where an involved session cannot approve at all.
 
 ## Analytics & Stats
 

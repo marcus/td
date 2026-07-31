@@ -820,3 +820,88 @@ func TestApproveReviewedBy_LengthCapCountsRunes(t *testing.T) {
 		t.Errorf("multi-byte attribution not persisted: %+v", active)
 	}
 }
+
+// TestApproveReviewedBy_RecordOnlyIsAudited closes an audit hole that opening
+// --record-only to trusted made reachable: an implementation-involved session
+// could record an approval and then close it via Mode C, producing no
+// security_events.jsonl entry at all — `td security` would report no exceptions
+// for a review nobody independent ever performed.
+//
+// The rule under test is about WHO RECORDED the row, not which flag was used.
+func TestApproveReviewedBy_RecordOnlyIsAudited(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+
+	// Involved recorder, attributed: audited.
+	attributed := newInReviewIssueWithImpl(t, database, implID)
+	if _, err, _ := approveWithAttribution(t, database, attributed.ID, map[string]string{
+		"record-only": "true",
+		"reviewed-by": "code-reviewer sub-agent",
+		"reason":      "reviewed the diff",
+	}); err != nil {
+		t.Fatalf("record-only attributed: %v", err)
+	}
+	events := readSecurityEvents(t, dir)
+	if !strings.Contains(events, "record_only") || !strings.Contains(events, "code-reviewer sub-agent") {
+		t.Errorf("record-only by an involved session must be audited, got: %s", events)
+	}
+
+	// Involved recorder, self-review: also audited.
+	selfReviewed := newInReviewIssueWithImpl(t, database, implID)
+	if _, err, _ := approveWithAttribution(t, database, selfReviewed.ID, map[string]string{
+		"record-only": "true",
+		"self-review": "true",
+		"reason":      "reviewed my own diff",
+	}); err != nil {
+		t.Fatalf("record-only self-review: %v", err)
+	}
+	if events := readSecurityEvents(t, dir); !strings.Contains(events, "self_review") {
+		t.Errorf("record-only self-review must be audited, got: %s", events)
+	}
+}
+
+// TestApproveReviewedBy_IndependentRecordOnlyNotAudited is the counterpart —
+// without it the assertion above would pass just as well if td audited every
+// recorded review, which would make the file useless for its purpose.
+func TestApproveReviewedBy_IndependentRecordOnlyNotAudited(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	setTrustedMode(t)
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	defer database.Close()
+
+	t.Setenv("TD_SESSION_ID", "impl-agent")
+	implID := currentSessionID(t, database)
+	issue := newInReviewIssueWithImpl(t, database, implID)
+
+	t.Setenv("TD_SESSION_ID", "reviewer-agent")
+	if _, err := runApproveCmd(t, []string{issue.ID}, map[string]string{
+		"record-only": "true",
+		"reason":      "reviewed the diff",
+	}); err != nil {
+		t.Fatalf("independent record-only: %v", err)
+	}
+	if events := readSecurityEvents(t, dir); events != "" {
+		t.Errorf("an independent session's recorded review must not be audited: %s", events)
+	}
+}

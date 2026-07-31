@@ -1,30 +1,40 @@
 # AGENTS.md
 
 <!-- td-agent-instructions:start -->
-<!-- td-agent-instructions:version=2 -->
+<!-- td-agent-instructions:version=3 -->
 
 ## Working with td
 
-td keeps task context durable across agent sessions. At the start of a new context, run `td usage --new-session -q` to see the current work.
+td keeps task context durable across sessions. In a new context, run `td usage --new-session -q` to see current work.
 
-Use your judgment about how much tracking the task needs. For substantive work, use `td start <id>`, record useful progress or decisions with `td log`, hand off unfinished work with `td handoff <id>`, and submit completed work with `td review <id>`.
+Use your judgment about how much tracking a task needs. For substantive work: `td start <id>`, record progress with `td log`, hand off with `td handoff <id>`, then `td review <id>`.
 
-Prefer an independent review when practical. In the default trusted mode, self-review is allowed and audited:
+Closing needs a review. Say who did it (default trusted mode; delegated/strict allow only the first):
 
-`td approve <id> --self-review --reason "..."`
+- independent session: `td approve <id> --reason "..."`
+- a sub-agent: `td approve <id> --reviewed-by "<who>"`
+- you: `td approve <id> --self-review --reason "..."`
 
-Run `td usage` for workflow guidance or `td <command> --help` for details.
+Prefer a reviewer with its own `TD_CONTEXT_ID`; never name one who did not review.
+
+Run `td usage` or `td <command> --help`.
 
 <!-- td-agent-instructions:end -->
 
 ## Review Model (Trusted Review)
 
-In trusted mode, an independent reviewer approves and closes with `td approve
-<id> --reason "..."`; self-review requires `--self-review --reason "..."`.
-Delegated mode supports `--record-only` review followed by closure from another
-session. Pin `review_policy_mode=delegated|strict` when a project needs a hard
-independence boundary. Do not create a throwaway session to make a review appear
-independent.
+Work needs a review before it closes, and td asks who performed it. In the
+default trusted mode an independent session approves with `td approve <id>
+--reason "..."`; a reviewer can instead attest without closing via
+`--record-only` and any session closes after. When you implemented the work
+yourself, name the reviewer with `--reviewed-by "<who>"`, or acknowledge a
+genuine self-review with `--self-review --reason "..."`.
+
+`--reviewed-by` is an attestation td cannot verify. Naming a reviewer who did
+not review is worse than an honest self-review, because it reads as independent
+in the audit trail. Do not create a throwaway session to make a review appear
+independent either. Pin `review_policy_mode=delegated|strict` when a project
+needs a mechanical independence boundary rather than an honesty-based one.
 
 ## Development Approach
 

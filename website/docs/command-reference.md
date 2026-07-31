@@ -27,7 +27,7 @@ Complete reference for all `td` commands.
 | `td handoff <id> [flags]` | Capture state. Flags: `--done`, `--remaining`, `--decision`, `--uncertain` |
 | `td review <id>` | Submit for review. Submitting session is recorded as `review_requested_by_session` |
 | `td reviewable [--include-approved]` | Show issues you can review; with `--include-approved`, also show reviewed issues you can close |
-| `td approve <id> [flags]` | Approve and close, record-only review, or close using a recorded approval. Flags: `--reason`, `--record-only`, `--decision approved\|changes_requested`, `--all` |
+| `td approve <id> [flags]` | Approve and close, record-only review, or close using a recorded approval. Flags: `--reason`, `--reviewed-by "<who>"`, `--self-review`, `--record-only`, `--decision approved\|changes_requested`, `--all` |
 | `td reject <id> --reason "..."` | Reject back to open. Supersedes any active approval review |
 | `td block <id>` | Mark as blocked |
 | `td unblock <id>` | Unblock to open |
@@ -52,14 +52,17 @@ The `--defer` and `--due` flags are also available on `td create` and `td update
 
 ## Review Flag Details
 
-`td approve` operates in three modes under `review_policy_mode=delegated`:
+`td approve` operates in three modes under the default `trusted` mode and under
+`delegated`:
 
 | Invocation | Effect |
 |------------|--------|
 | `td approve <id>` | Direct reviewer-close: caller must be an eligible reviewer with no active approval recorded |
 | `td approve <id> --record-only --reason "..."` | Record an approval review without closing. Caller must be an eligible reviewer |
 | `td approve <id> --record-only --decision changes_requested --reason "..."` | Record a non-approving review |
-| `td approve <id> --reason "..."` (with existing approval) | Close using a recorded approval. Any session may close; non-reviewer closes require `--reason` |
+| `td approve <id> --reason "..."` (with existing approval) | Close using a recorded approval. Any session may close; non-reviewer closes require `--reason`. `--reviewed-by` is rejected here — no new review row is written |
+| `td approve <id> --reviewed-by "<who>"` | Trusted mode: an involved session approves by naming who reviewed the work. No `--reason` required |
+| `td approve <id> --self-review --reason "..."` | Trusted mode: acknowledge reviewing your own work |
 
 `td reviewable --include-approved` surfaces reviewed issues the current session can close — useful for orchestrators that delegated review to a sub-agent.
 
