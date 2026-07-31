@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/db"
@@ -79,12 +80,43 @@ func requireSilentFailure(t *testing.T, err error) {
 }
 
 func TestStartExitSemantics(t *testing.T) {
-	_, database, _ := setupWorkflowExitTest(t)
+	_, database, sessionID := setupWorkflowExitTest(t)
 
 	alreadyStarted := newWorkflowExitIssue(t, database, models.StatusInProgress, false)
+	alreadyStarted.ImplementerSession = sessionID
+	if err := database.UpdateIssue(alreadyStarted); err != nil {
+		t.Fatalf("UpdateIssue same-owner start: %v", err)
+	}
 	if err := startCmd.RunE(startCmd, []string{alreadyStarted.ID}); err != nil {
 		t.Fatalf("already-started retry must be an idempotent success: %v", err)
 	}
+
+	otherOwner := newWorkflowExitIssue(t, database, models.StatusInProgress, false)
+	otherOwner.ImplementerSession = "ses_other_implementer"
+	if err := database.UpdateIssue(otherOwner); err != nil {
+		t.Fatalf("UpdateIssue different-owner start: %v", err)
+	}
+	var otherOwnerErr error
+	otherOwnerOut := captureStdout(t, func() {
+		otherOwnerErr = startCmd.RunE(startCmd, []string{otherOwner.ID})
+	})
+	requireSilentFailure(t, otherOwnerErr)
+	if strings.Count(otherOwnerOut, "cannot start "+otherOwner.ID) != 1 {
+		t.Fatalf("different-owner failure must be emitted once, got %q", otherOwnerOut)
+	}
+	if strings.Contains(otherOwnerOut, "Usage:") {
+		t.Fatalf("different-owner failure must not include Cobra usage, got %q", otherOwnerOut)
+	}
+	gotOtherOwner, err := database.GetIssue(otherOwner.ID)
+	if err != nil {
+		t.Fatalf("GetIssue different-owner start: %v", err)
+	}
+	if gotOtherOwner.ImplementerSession != "ses_other_implementer" {
+		t.Fatalf("implementer = %q, want unchanged owner", gotOtherOwner.ImplementerSession)
+	}
+
+	emptyOwner := newWorkflowExitIssue(t, database, models.StatusInProgress, false)
+	requireSilentFailure(t, startCmd.RunE(startCmd, []string{emptyOwner.ID}))
 
 	requireSilentFailure(t, startCmd.RunE(startCmd, []string{"td-missing-start"}))
 	requireSilentFailure(t, startCmd.RunE(startCmd, []string{alreadyStarted.ID, "td-missing-start"}))
@@ -172,10 +204,14 @@ func TestCloseExitSemantics(t *testing.T) {
 }
 
 func TestWorkflowCommandJSONIdempotentNoops(t *testing.T) {
-	_, database, _ := setupWorkflowExitTest(t)
+	_, database, sessionID := setupWorkflowExitTest(t)
 	setJSONFlag(t, true)
 
 	started := newWorkflowExitIssue(t, database, models.StatusInProgress, false)
+	started.ImplementerSession = sessionID
+	if err := database.UpdateIssue(started); err != nil {
+		t.Fatalf("UpdateIssue same-owner start: %v", err)
+	}
 	reopened := newWorkflowExitIssue(t, database, models.StatusOpen, false)
 	closed := newWorkflowExitIssue(t, database, models.StatusClosed, false)
 
@@ -229,6 +265,11 @@ func TestWorkflowCommandJSONFailuresEmitSingleEnvelope(t *testing.T) {
 	if err := database.RecordSessionAction(ownWork.ID, sessionID, models.ActionSessionStarted); err != nil {
 		t.Fatalf("RecordSessionAction: %v", err)
 	}
+	otherOwner := newWorkflowExitIssue(t, database, models.StatusInProgress, false)
+	otherOwner.ImplementerSession = "ses_other_implementer"
+	if err := database.UpdateIssue(otherOwner); err != nil {
+		t.Fatalf("UpdateIssue different-owner start: %v", err)
+	}
 
 	cases := []struct {
 		name     string
@@ -237,6 +278,9 @@ func TestWorkflowCommandJSONFailuresEmitSingleEnvelope(t *testing.T) {
 	}{
 		{name: "start missing", wantCode: "not_found", run: func() error {
 			return startCmd.RunE(startCmd, []string{"td-missing-start-json"})
+		}},
+		{name: "start different owner", wantCode: "invalid_input", run: func() error {
+			return startCmd.RunE(startCmd, []string{otherOwner.ID})
 		}},
 		{name: "reject missing", wantCode: "not_found", run: func() error {
 			return rejectCmd.RunE(rejectCmd, []string{"td-missing-reject-json"})

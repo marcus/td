@@ -98,20 +98,36 @@ Examples:
 			}
 
 			if issue.Status == models.StatusInProgress {
-				message := fmt.Sprintf("already started %s", issueID)
-				if isJSON {
-					if err := output.JSON(map[string]interface{}{
-						"id":      issueID,
-						"status":  string(issue.Status),
-						"action":  "already started",
-						"message": message,
-					}); err != nil {
-						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+				if issue.ImplementerSession == sess.ID {
+					message := fmt.Sprintf("already started %s", issueID)
+					if isJSON {
+						if err := output.JSON(map[string]interface{}{
+							"id":      issueID,
+							"status":  string(issue.Status),
+							"action":  "already started",
+							"message": message,
+						}); err != nil {
+							output.JSONError(output.ErrCodeDatabaseError, err.Error())
+						}
+					} else {
+						emitWarn("%s", message)
 					}
+					noop++
+					continue
+				}
+
+				message := fmt.Sprintf("cannot start %s: already in_progress", issueID)
+				if issue.ImplementerSession == "" {
+					message += " with no recorded implementer"
+				} else {
+					message += fmt.Sprintf(" under session %s", issue.ImplementerSession)
+				}
+				if isJSON {
+					output.JSONError(output.ErrCodeInvalidInput, message)
 				} else {
 					emitWarn("%s", message)
 				}
-				noop++
+				failed++
 				continue
 			}
 
