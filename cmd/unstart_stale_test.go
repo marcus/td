@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,24 +13,59 @@ import (
 	"github.com/marcus/td/internal/session"
 )
 
-// staleEnvelope is the --json shape emitted by `td unstart --stale`.
+// staleEnvelope is the --json shape emitted by `td unstart --stale` and
+// `td unstart --session`.
 type staleEnvelope struct {
-	Action string `json:"action"`
-	Stale  string `json:"stale"`
-	Forced bool   `json:"forced"`
-	Count  int    `json:"count"`
-	Claims []struct {
+	Action  string `json:"action"`
+	Stale   string `json:"stale"`
+	Session string `json:"session"`
+	Forced  bool   `json:"forced"`
+	Count   int    `json:"count"`
+	Claims  []struct {
 		ID           string `json:"id"`
 		Session      string `json:"session"`
 		IdleSeconds  int64  `json:"idle_seconds"`
-		Idle         string `json:"idle"`
 		LastActivity string `json:"last_activity"`
+		Source       string `json:"last_activity_source"`
 	} `json:"claims"`
 	Unresolved []struct {
 		ID      string `json:"id"`
 		Session string `json:"session"`
 		Reason  string `json:"reason"`
 	} `json:"unresolved"`
+	UnresolvedCount int `json:"unresolved_count"`
+}
+
+// backdateIssue rewrites an issue's updated_at directly.
+//
+// Liveness is the most recent of the holder session's activity, the issue's
+// own updated_at, and the newest history entry on it — so a fixture that
+// backdates only the session row does not model a dead tick at all: the issue
+// it "abandoned" was touched seconds ago. Tests that want a stale claim must
+// age every signal, which is exactly what really happens when an agent dies.
+func backdateIssue(t *testing.T, baseDir, issueID string, age time.Duration) {
+	t.Helper()
+	execTestSQL(t, baseDir, `UPDATE issues SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-age).Format(db.CanonicalTimeLayout), issueID)
+	execTestSQL(t, baseDir, `UPDATE logs SET timestamp = ? WHERE issue_id = ?`,
+		time.Now().Add(-age).Format(db.CanonicalTimeLayout), issueID)
+	execTestSQL(t, baseDir, `UPDATE action_log SET timestamp = ? WHERE entity_id = ?`,
+		time.Now().Add(-age).UTC().Format(time.RFC3339Nano), issueID)
+}
+
+// execTestSQL runs a statement against the test database file directly. Some
+// fixtures need timestamps no public API will write (an unparseable value from
+// an older td build, or a backdated one).
+func execTestSQL(t *testing.T, baseDir, query string, args ...any) {
+	t.Helper()
+	conn, err := sql.Open("sqlite", filepath.Join(baseDir, ".todos", "issues.db"))
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	defer conn.Close()
+	if _, err := conn.Exec(query, args...); err != nil {
+		t.Fatalf("test sql %q: %v", query, err)
+	}
 }
 
 // setupStaleTest builds a db with one issue claimed by a long-idle session and
@@ -85,6 +122,10 @@ func setupStaleTest(t *testing.T) (*db.DB, *models.Issue, *models.Issue) {
 	dead := claim("Claimed by a killed tick", "ses_dead_tick")
 	live := claim("Claimed by a working tick", "ses_live_tick")
 
+	// A killed tick leaves its issue untouched from the moment it died.
+	backdateIssue(t, dir, dead.ID, 3*time.Hour)
+	backdateIssue(t, dir, live.ID, 5*time.Minute)
+
 	setStaleFlags(t, "", "false")
 	return database, dead, live
 }
@@ -93,6 +134,7 @@ func setStaleFlags(t *testing.T, stale, force string) {
 	t.Helper()
 	setWorkflowExitFlag(t, unstartCmd, "stale", stale)
 	setWorkflowExitFlag(t, unstartCmd, "force", force)
+	setWorkflowExitFlag(t, unstartCmd, "session", "")
 }
 
 func runStale(t *testing.T, wantErr bool) string {
@@ -119,7 +161,7 @@ func TestUnstartStalePreviewDoesNotRelease(t *testing.T) {
 
 	out := runStale(t, false)
 
-	if !strings.Contains(out, "Will release 1 stale claim") || !strings.Contains(out, dead.ID) {
+	if !strings.Contains(out, "Will release 1 claim(s)") || !strings.Contains(out, dead.ID) {
 		t.Fatalf("unexpected preview output: %q", out)
 	}
 	if strings.Contains(out, live.ID) {
@@ -146,7 +188,7 @@ func TestUnstartStaleForceReleasesOnlyTheDeadClaim(t *testing.T) {
 
 	out := runStale(t, false)
 
-	if !strings.Contains(out, "RELEASED "+dead.ID) || !strings.Contains(out, "Released 1 stale claim") {
+	if !strings.Contains(out, "RELEASED "+dead.ID) || !strings.Contains(out, "Released 1 claim(s)") {
 		t.Fatalf("unexpected force output: %q", out)
 	}
 
@@ -185,17 +227,16 @@ func TestUnstartStaleForceReleasesOnlyTheDeadClaim(t *testing.T) {
 func TestUnstartStaleJSONShape(t *testing.T) {
 	database, dead, _ := setupStaleTest(t)
 
-	// An in_progress issue whose holder no longer has a session row cannot be
-	// measured, so it must be reported rather than released.
+	// An in_progress issue with NO implementer recorded cannot be attributed
+	// to any holder, so it is reported rather than released. (A holder whose
+	// session row is gone is a different case: see
+	// TestUnstartStaleReclaimsAfterSessionCleanup.)
 	orphan := &models.Issue{Title: "Orphaned claim", Type: models.TypeTask, Status: models.StatusInProgress}
 	if err := database.CreateIssue(orphan); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	orphan.Status = models.StatusInProgress
-	orphan.ImplementerSession = "ses_vanished"
-	if err := database.UpdateIssue(orphan); err != nil {
-		t.Fatalf("UpdateIssue failed: %v", err)
-	}
+	execTestSQL(t, database.BaseDir(),
+		`UPDATE issues SET status = 'in_progress', implementer_session = '' WHERE id = ?`, orphan.ID)
 
 	setStaleFlags(t, "2h", "false")
 	setJSONFlag(t, true)
@@ -205,7 +246,7 @@ func TestUnstartStaleJSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(previewOut), &preview); err != nil {
 		t.Fatalf("preview output is not valid JSON: %v\noutput: %q", err, previewOut)
 	}
-	if preview.Action != "would_release_stale_claims" || preview.Forced || preview.Stale != "2h" {
+	if preview.Action != "would_release_stale_claims_with_unresolved" || preview.Forced || preview.Stale != "2h" {
 		t.Fatalf("unexpected preview envelope: %q", previewOut)
 	}
 	if preview.Count != 1 || len(preview.Claims) != 1 {
@@ -231,7 +272,7 @@ func TestUnstartStaleJSONShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(forceOut), &forced); err != nil {
 		t.Fatalf("force output is not valid JSON: %v\noutput: %q", err, forceOut)
 	}
-	if forced.Action != "released_stale_claims" || !forced.Forced || forced.Count != 1 {
+	if forced.Action != "released_stale_claims_with_unresolved" || !forced.Forced || forced.Count != 1 {
 		t.Fatalf("unexpected force envelope: %q", forceOut)
 	}
 	if forced.Claims[0].ID != dead.ID {

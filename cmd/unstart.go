@@ -24,58 +24,80 @@ var unstartCmd = &cobra.Command{
 	Long: `Reverts issue(s) back to open status. Clears implementer session.
 Useful for undoing accidental starts or when you need to release an issue.
 
---stale reclaims claims whose holder is gone: it releases every in_progress
-issue whose implementer session has been idle longer than the given duration.
-An agent killed mid-work — by a usage limit, a wall-clock timeout, a crash —
-never hands off, so its claim would otherwise leak and the work never returns
-to the ready queue.
+Two sweeps reclaim claims whose holder can no longer hand off:
 
-It previews by default and only acts with --force, and it has no default
-threshold on purpose. td's liveness signal is the implementer session's last
-activity, and a live agent can legitimately work for a long time without
-touching td, so the threshold is the caller's judgement: it must exceed the
-longest a healthy tick can run without a td command (i.e. your tick timeout).
-Too short a value releases live agents' claims and two agents then work the
-same issue. td never releases the calling session's own claim, and it never
-releases a claim whose holder it cannot measure (no implementer recorded, or
-the session row is absent — e.g. already removed by 'td session cleanup');
-those are reported so you can act on them explicitly.
+  --session <id>  releases every claim held by ONE named session. Exact, with
+                  no liveness guess. This is what a supervisor wants when it
+                  kills a tick: it knows which session died, and releasing
+                  only that session's claims cannot disturb the other slots.
+
+  --stale <dur>   releases claims whose holder has shown no activity for
+                  longer than <dur>. Use it as a backstop for holders nobody
+                  is tracking, not as the primary reaper of your own fleet.
+
+Both preview by default and act only with --force.
+
+--stale has no default threshold on purpose. Liveness is measured as the most
+recent of: the holder session's last activity, the issue's updated_at, and the
+newest history entry on the issue by any session — so an agent whose session
+rotated (a new branch or worktree mints a new session row) still reads as live
+while it works. It is still a heuristic: an agent can work for a long time
+without touching td at all, so the threshold must exceed the longest a healthy
+tick can run without a td command. Too short a value releases live agents'
+claims and two agents then work the same issue. td never releases a claim held
+by the calling session or by another session in its identity lineage, and it
+never releases a claim it cannot measure at all; those are reported under
+unresolved so you can act on them explicitly.
 
 Examples:
-  td unstart td-abc1                    # Unstart single issue
-  td unstart td-abc1 td-abc2 td-abc3    # Unstart multiple issues
-  td unstart --stale 2h                 # Preview claims idle longer than 2h
-  td unstart --stale 2h --force --json  # Release them, report what was released`,
+  td unstart td-abc1                     # Unstart single issue
+  td unstart td-abc1 td-abc2 td-abc3     # Unstart multiple issues
+  td unstart --session ses_abc123        # Preview one session's claims
+  td unstart --session ses_abc123 --force --json
+  td unstart --stale 2h                  # Preview claims idle longer than 2h
+  td unstart --stale 2h --force --json   # Release them, report what was released`,
 	GroupID: "workflow",
 	Args: func(cmd *cobra.Command, args []string) error {
-		// --stale selects its targets by idle time, so it takes no ids;
-		// otherwise unstart names them and needs at least one.
 		stale, _ := cmd.Flags().GetString("stale")
-		if stale != "" {
+		holder, _ := cmd.Flags().GetString("session")
+
+		// The two sweeps select their targets differently and combining them
+		// would make "which rule released this claim" unanswerable.
+		if stale != "" && holder != "" {
+			return fmt.Errorf("--session and --stale select claims by different rules; use one")
+		}
+		// Both sweeps choose their own targets, so neither takes ids.
+		if stale != "" || holder != "" {
 			if len(args) > 0 {
-				return fmt.Errorf("--stale selects issues by implementer idle time; do not also name issue ids")
+				which := "--stale"
+				if holder != "" {
+					which = "--session"
+				}
+				return fmt.Errorf("%s selects the issues to release; do not also name issue ids", which)
 			}
 			return nil
 		}
-		// --force only gates the stale sweep. Accepting it silently on the
-		// named path would advertise a safety flag that does nothing.
+		// --force only gates the sweeps. Accepting it silently on the named
+		// path would advertise a safety flag that does nothing.
 		if force, _ := cmd.Flags().GetBool("force"); force {
-			return fmt.Errorf("--force applies to --stale; naming issue ids already unstarts them")
+			return fmt.Errorf("--force applies to --session/--stale; naming issue ids already unstarts them")
 		}
 		return cobra.MinimumNArgs(1)(cmd, args)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Arguments and flags have parsed and validated by the time RunE
+		// runs, so every error from here on is an operational one whose
+		// message stands on its own. Usage output is still produced for the
+		// genuine usage errors (bad arg count, unknown flag) that Cobra
+		// reports before this point.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
 		emitErr := func(format string, args ...interface{}) {
 			if !isJSON {
 				output.Error(format, args...)
-			}
-		}
-		emitWarn := func(format string, args ...interface{}) {
-			if !isJSON {
-				output.Warning(format, args...)
 			}
 		}
 
@@ -94,9 +116,12 @@ Examples:
 		scope := currentStateScope(baseDir, sess)
 
 		reason, _ := cmd.Flags().GetString("reason")
+		force, _ := cmd.Flags().GetBool("force")
 
+		if holder, _ := cmd.Flags().GetString("session"); holder != "" {
+			return unstartBySession(database, sess, scope, holder, reason, force, isJSON)
+		}
 		if stale, _ := cmd.Flags().GetString("stale"); stale != "" {
-			force, _ := cmd.Flags().GetBool("force")
 			return unstartStale(database, sess, scope, stale, reason, force, isJSON)
 		}
 
@@ -112,28 +137,32 @@ Examples:
 				continue
 			}
 
-			// An already-open issue is the requested end state, so a repeated
-			// unstart is an idempotent success — checked before the transition
-			// validation, which has no open → open edge.
-			if issue.Status == models.StatusOpen {
+			// An open issue with no claim on it is the requested end state, so
+			// a repeated unstart is an idempotent success. An open issue that
+			// STILL names an implementer is not: `td reopen` used to leave that
+			// behind, and reporting "already unstarted" for a held claim is the
+			// exact false success this command exists to avoid.
+			if issue.Status == models.StatusOpen && issue.ImplementerSession == "" {
 				noopTransition(isJSON, issueID, issue.Status, "already unstarted")
 				noop++
 				continue
 			}
 
-			// Validate transition with state machine
-			sm := workflow.DefaultMachine()
-			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				failTransition(isJSON, output.ErrCodeInvalidInput, "cannot unstart %s: invalid transition from %s", issueID, issue.Status)
-				failed++
-				continue
-			}
+			if issue.Status != models.StatusOpen {
+				// Validate transition with state machine
+				sm := workflow.DefaultMachine()
+				if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+					failTransition(isJSON, output.ErrCodeInvalidInput, "cannot unstart %s: invalid transition from %s", issueID, issue.Status)
+					failed++
+					continue
+				}
 
-			// Only unstart in_progress issues (preserving existing behavior)
-			if issue.Status != models.StatusInProgress {
-				failTransition(isJSON, output.ErrCodeInvalidInput, "issue not in_progress: %s (status: %s)", issueID, issue.Status)
-				failed++
-				continue
+				// Only unstart in_progress issues (preserving existing behavior)
+				if issue.Status != models.StatusInProgress {
+					failTransition(isJSON, output.ErrCodeInvalidInput, "issue not in_progress: %s (status: %s)", issueID, issue.Status)
+					failed++
+					continue
+				}
 			}
 
 			logMsg := "Reverted to open"
@@ -141,9 +170,23 @@ Examples:
 				logMsg = reason
 			}
 
-			if err := releaseClaim(database, sess, scope, issue, logMsg, emitWarn); err != nil {
+			outcome, err := releaseClaims(database, sess, scope,
+				[]db.ClaimRelease{{IssueID: issue.ID, LogMessage: logMsg}})
+			if err != nil {
 				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to update %s: %v", issueID, err)
 				failed++
+				continue
+			}
+			switch {
+			case outcome[0].Err != nil:
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to update %s: %v", issueID, outcome[0].Err)
+				failed++
+				continue
+			case outcome[0].Skipped:
+				// Another writer got there first and the issue is already in
+				// the requested end state.
+				noopTransition(isJSON, issueID, models.StatusOpen, "already unstarted")
+				noop++
 				continue
 			}
 
@@ -152,7 +195,7 @@ Examples:
 				// (NDJSON in the bulk case).
 				unstarted2, ferr := database.GetIssue(issueID)
 				if ferr != nil {
-					unstarted2 = issue
+					unstarted2 = outcome[0].Issue
 				}
 				if err := output.EmitIssue("unstarted", unstarted2, nil); err != nil {
 					return err
@@ -164,7 +207,11 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nUnstarted %d, skipped %d\n", unstarted, failed+noop)
+			// unchanged and failed are different outcomes — one is an
+			// idempotent retry, the other is work that did not happen — and
+			// summing them into "skipped" throws away the distinction the
+			// loop above already computed.
+			fmt.Printf("\nUnstarted %d, unchanged %d, failed %d\n", unstarted, noop, failed)
 		}
 
 		// A named batch succeeds when at least one issue unstarted, and an
@@ -179,82 +226,209 @@ Examples:
 	},
 }
 
-// releaseClaim performs the unstart mutation for one issue: it drops the
-// implementer claim, moves the issue back to open, and records the reason in
-// the issue's history. Both the named path and the --stale path go through it
-// so a reclaimed claim is indistinguishable from a hand-released one except
-// for the recorded reason.
-func releaseClaim(database *db.DB, sess *session.Session, scope db.SessionStateScope, issue *models.Issue, logMsg string, warn func(string, ...interface{})) error {
-	// Record session action BEFORE clearing ImplementerSession (for bypass
-	// prevention). This tracks that this session touched the issue, even
-	// though it is being unstarted.
-	if err := database.RecordSessionAction(issue.ID, sess.ID, models.ActionSessionUnstarted); err != nil {
-		warn("failed to record session history: %v", err)
+// releaseClaims performs the guarded release for a batch of claims and clears
+// focus for any released issue that was focused. Both the named path and the
+// sweeps go through it, so a reclaimed claim is indistinguishable from a
+// hand-released one except for the recorded reason.
+func releaseClaims(database *db.DB, sess *session.Session, scope db.SessionStateScope, reqs []db.ClaimRelease) ([]db.ClaimReleaseOutcome, error) {
+	outcomes, err := database.ReleaseClaims(reqs, sess.ID)
+	if err != nil {
+		return outcomes, err
 	}
 
-	issue.Status = models.StatusOpen
-	issue.ImplementerSession = ""
-
-	// Update issue (atomic update + action log)
-	if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-		return err
-	}
-
-	_ = database.AddLog(&models.Log{
-		IssueID:   issue.ID,
-		SessionID: sess.ID,
-		Message:   logMsg,
-		Type:      models.LogTypeProgress,
-	})
-
-	// Clear focus if this was the focused issue
+	// Focus is per-scope state outside the issue row; clearing it needs its
+	// own write, so it happens once after the batch rather than per issue.
 	focusedID, _ := database.GetFocus(scope)
-	if focusedID == issue.ID {
-		_ = database.ClearFocus(scope)
+	if focusedID == "" {
+		return outcomes, nil
 	}
-	return nil
+	for _, out := range outcomes {
+		if out.Released && out.IssueID == focusedID {
+			_ = database.ClearFocus(scope)
+			break
+		}
+	}
+	return outcomes, nil
 }
 
-// staleClaim is one in_progress issue whose implementer session has been idle
-// past the threshold.
+// staleClaim is one claim selected for release, with the evidence that
+// selected it.
 type staleClaim struct {
 	issue        *models.Issue
 	holder       string
 	idle         time.Duration
 	lastActivity time.Time
+	// source names which signal produced lastActivity, so an operator can see
+	// whether td measured the session or the work on the issue.
+	source string
 }
 
 // unresolvedClaim is an in_progress issue whose holder's liveness cannot be
-// measured, so --stale deliberately leaves it alone.
+// measured at all, so the sweep deliberately leaves it alone.
 type unresolvedClaim struct {
 	id     string
 	holder string
 	reason string
 }
 
-// unstartStale releases claims whose implementer session has been idle longer
-// than maxIdle. It previews by default and mutates only under force, matching
+// sweepReport is the shared result shape of both sweeps.
+type sweepReport struct {
+	selectorKey   string // "stale" or "session"
+	selectorValue string
+	claims        []staleClaim
+	unresolved    []unresolvedClaim
+}
+
+// sessionKin returns the set of session ids that are, for claim purposes, the
+// caller itself.
+//
+// A session row is not a stable identity for a running agent. The identity key
+// is branch + agent fingerprint + match context + worktree, so `git checkout -b`
+// or moving to another worktree mints a NEW row and stops heartbeating the old
+// one — while the same agent process keeps working. Guarding only on
+// `holder == sess.ID` therefore lets a sweep release the caller's own claim,
+// which falsifies the guarantee the command advertises.
+//
+// Two relations define kinship:
+//
+//   - Lineage: previous_session_id, followed transitively in both directions.
+//     This is what `td session --new` records.
+//   - Fingerprint siblings: the same agent process (same agent_type — which
+//     embeds the pid — the same pid, and the same match context) on a
+//     different branch or worktree. A non-zero pid is required so legacy rows
+//     with no pid cannot collapse into each other.
+func sessionKin(sessions []session.Session, self *session.Session) map[string]bool {
+	kin := map[string]bool{self.ID: true}
+	byID := make(map[string]session.Session, len(sessions))
+	for _, s := range sessions {
+		byID[s.ID] = s
+	}
+
+	sibling := func(s session.Session) bool {
+		return self.AgentPID != 0 && s.AgentPID == self.AgentPID &&
+			s.AgentType != "" && s.AgentType == self.AgentType &&
+			s.MatchContextID == self.MatchContextID
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for _, s := range sessions {
+			if kin[s.ID] {
+				// Ancestors of a kin session are kin.
+				if p := s.PreviousSessionID; p != "" && !kin[p] {
+					kin[p] = true
+					changed = true
+				}
+				continue
+			}
+			// Descendants of a kin session are kin, and so are fingerprint
+			// siblings of the caller.
+			if (s.PreviousSessionID != "" && kin[s.PreviousSessionID]) || sibling(s) {
+				kin[s.ID] = true
+				changed = true
+			}
+		}
+	}
+	return kin
+}
+
+// claimLiveness returns the most recent evidence that work is happening on an
+// issue, and names the signal it came from. ok is false when there is no
+// usable evidence at all — which must route the claim to unresolved rather
+// than to release: an unparseable timestamp reads as the zero time, whose idle
+// duration exceeds every threshold, and "we cannot measure this" must never
+// mean "release it".
+func claimLiveness(holder session.Session, holderKnown bool, issue *models.Issue, activity time.Time) (time.Time, string, bool) {
+	var best time.Time
+	var source string
+	consider := func(t time.Time, name string) {
+		if t.IsZero() {
+			return
+		}
+		if best.IsZero() || t.After(best) {
+			best = t
+			source = name
+		}
+	}
+	if holderKnown {
+		consider(holder.LastActive(), "session")
+	}
+	consider(issue.UpdatedAt, "issue")
+	consider(activity, "issue_activity")
+	return best, source, !best.IsZero()
+}
+
+// unstartBySession releases every claim held by one named session.
+//
+// This is the sweep a supervisor actually needs. When a tick is killed by a
+// usage limit or a wall-clock timeout, the supervisor knows exactly which
+// session died; releasing by idle time instead would sweep every other quiet
+// slot in the fleet, which is the two-agents-one-issue failure the whole
+// design exists to prevent. There is no liveness heuristic here at all.
+func unstartBySession(database *db.DB, sess *session.Session, scope db.SessionStateScope, holder, reason string, force, isJSON bool) error {
+	fail := sweepFailer(isJSON)
+
+	issues, err := database.ListIssues(db.ListIssuesOptions{
+		Status: []models.Status{models.StatusInProgress},
+	})
+	if err != nil {
+		return fail(fmt.Errorf("failed to list issues: %w", err))
+	}
+
+	now := time.Now()
+	row, err := database.GetSessionByID(holder)
+	if err != nil {
+		return fail(fmt.Errorf("failed to look up session %s: %w", holder, err))
+	}
+
+	report := sweepReport{selectorKey: "session", selectorValue: holder}
+	for i := range issues {
+		issue := &issues[i]
+		if issue.ImplementerSession != holder {
+			continue
+		}
+		last := issue.UpdatedAt
+		if row != nil && row.LastActivity.After(last) {
+			last = row.LastActivity
+		}
+		claim := staleClaim{issue: issue, holder: holder, lastActivity: last, source: "session"}
+		if !last.IsZero() {
+			claim.idle = now.Sub(last)
+		}
+		report.claims = append(report.claims, claim)
+	}
+
+	// A typo in a session id must not read as "that session held nothing".
+	// With no row and no claims there is nothing this command could have been
+	// asked to do, so it is an error rather than an empty success.
+	if row == nil && len(report.claims) == 0 {
+		if isJSON {
+			output.JSONError(output.ErrCodeNotFound,
+				fmt.Sprintf("no session %s in this database, and no in_progress claim names it", holder))
+			return fmt.Errorf("%w", errSilentExit)
+		}
+		return fail(fmt.Errorf("no session %s in this database, and no in_progress claim names it", holder))
+	}
+
+	return emitSweep(database, sess, scope, report, reason, force, isJSON,
+		func(claim staleClaim) string {
+			msg := fmt.Sprintf("claim released: session %s (released by %s)", claim.holder, sess.ID)
+			if reason != "" {
+				msg += "; " + reason
+			}
+			return msg
+		})
+}
+
+// unstartStale releases claims whose holder shows no recent activity. It
+// previews by default and mutates only under force, matching
 // `td session cleanup`.
 func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateScope, stale, reason string, force, isJSON bool) error {
-	emitWarn := func(format string, args ...interface{}) {
-		if !isJSON {
-			output.Warning(format, args...)
-		}
-	}
-	// fail reports a whole-command error exactly once: --json callers get the
-	// envelope Execute emits from the returned error, human callers get the
-	// message here and a sentinel that adds nothing further.
-	fail := func(err error) error {
-		if isJSON {
-			return err
-		}
-		output.Error("%v", err)
-		return fmt.Errorf("%w", errSilentExit)
-	}
+	fail := sweepFailer(isJSON)
 
 	maxIdle, err := session.ParseDuration(stale)
 	if err != nil {
-		return fail(fmt.Errorf("invalid duration: %s", stale))
+		return fail(fmt.Errorf("invalid duration: %s (%v)", stale, err))
 	}
 	if maxIdle <= 0 {
 		return fail(fmt.Errorf("--stale must be greater than zero, got %s", stale))
@@ -268,6 +442,7 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 	for _, s := range sessions {
 		byID[s.ID] = s
 	}
+	kin := sessionKin(sessions, sess)
 
 	issues, err := database.ListIssues(db.ListIssuesOptions{
 		Status: []models.Status{models.StatusInProgress},
@@ -275,10 +450,17 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 	if err != nil {
 		return fail(fmt.Errorf("failed to list issues: %w", err))
 	}
+	ids := make([]string, 0, len(issues))
+	for i := range issues {
+		ids = append(ids, issues[i].ID)
+	}
+	activity, err := database.LatestIssueActivity(ids)
+	if err != nil {
+		return fail(fmt.Errorf("failed to read issue activity: %w", err))
+	}
 
 	now := time.Now()
-	var claims []staleClaim
-	var unresolved []unresolvedClaim
+	report := sweepReport{selectorKey: "stale", selectorValue: stale}
 
 	for i := range issues {
 		issue := &issues[i]
@@ -286,101 +468,171 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 
 		switch {
 		case holder == "":
-			unresolved = append(unresolved, unresolvedClaim{
+			report.unresolved = append(report.unresolved, unresolvedClaim{
 				id:     issue.ID,
 				reason: "no implementer session recorded",
 			})
 			continue
-		case holder == sess.ID:
-			// The calling session is definitionally live.
+		case kin[holder]:
+			// The calling session, or another session row minted by the same
+			// agent, is definitionally live.
 			continue
 		}
 
-		holderSession, ok := byID[holder]
+		holderSession, known := byID[holder]
+		lastActive, source, ok := claimLiveness(holderSession, known, issue, activity[issue.ID])
 		if !ok {
-			unresolved = append(unresolved, unresolvedClaim{
-				id:     issue.ID,
-				holder: holder,
-				reason: fmt.Sprintf("implementer session %s is not in this database", holder),
+			why := fmt.Sprintf("implementer session %s is not in this database and the issue carries no usable timestamp", holder)
+			if known {
+				why = fmt.Sprintf("implementer session %s has no usable activity timestamp", holder)
+			}
+			report.unresolved = append(report.unresolved, unresolvedClaim{
+				id: issue.ID, holder: holder, reason: why,
 			})
 			continue
 		}
 
-		lastActive := holderSession.LastActive()
 		idle := now.Sub(lastActive)
 		if idle <= maxIdle {
 			continue
 		}
 
-		claims = append(claims, staleClaim{
+		report.claims = append(report.claims, staleClaim{
 			issue:        issue,
 			holder:       holder,
 			idle:         idle,
 			lastActivity: lastActive,
+			source:       source,
 		})
 	}
 
-	released := make([]staleClaim, 0, len(claims))
+	return emitSweep(database, sess, scope, report, reason, force, isJSON,
+		func(claim staleClaim) string {
+			msg := fmt.Sprintf("claim released: implementer session %s idle %s (threshold %s, measured from %s)",
+				claim.holder, formatIdle(claim.idle), stale, claim.source)
+			if reason != "" {
+				msg += "; " + reason
+			}
+			return msg
+		})
+}
+
+// sweepFailer reports a whole-command error exactly once: --json callers get
+// the envelope Execute emits from the returned error, human callers get the
+// message here and a sentinel that adds nothing further.
+func sweepFailer(isJSON bool) func(error) error {
+	return func(err error) error {
+		if isJSON {
+			return err
+		}
+		output.Error("%v", err)
+		return fmt.Errorf("%w", errSilentExit)
+	}
+}
+
+// emitSweep performs the release (under force) and renders the result. Both
+// sweeps share it so their --json envelopes have the same shape and their
+// human output the same vocabulary.
+func emitSweep(database *db.DB, sess *session.Session, scope db.SessionStateScope,
+	report sweepReport, reason string, force, isJSON bool, logMessage func(staleClaim) string) error {
+
+	released := make([]staleClaim, 0, len(report.claims))
+	skipped := 0
 	failed := 0
 
 	if force {
-		for _, claim := range claims {
-			logMsg := fmt.Sprintf("claim released: implementer session %s idle %s (threshold %s)",
-				claim.holder, formatIdle(claim.idle), stale)
-			if reason != "" {
-				logMsg += "; " + reason
-			}
-			if err := releaseClaim(database, sess, scope, claim.issue, logMsg, emitWarn); err != nil {
-				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to release %s: %v", claim.issue.ID, err)
+		reqs := make([]db.ClaimRelease, 0, len(report.claims))
+		for _, claim := range report.claims {
+			reqs = append(reqs, db.ClaimRelease{
+				IssueID:        claim.issue.ID,
+				ExpectedHolder: claim.holder,
+				LogMessage:     logMessage(claim),
+			})
+		}
+		outcomes, err := releaseClaims(database, sess, scope, reqs)
+		if err != nil {
+			return sweepFailer(isJSON)(fmt.Errorf("failed to release claims: %w", err))
+		}
+		for i, out := range outcomes {
+			switch {
+			case out.Err != nil:
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to release %s: %v", out.IssueID, out.Err)
 				failed++
-				continue
+			case out.Skipped:
+				// The claim moved between selection and the write. It is not
+				// ours to release and it is not a failure — but it must not be
+				// counted as released either.
+				skipped++
+				report.unresolved = append(report.unresolved, unresolvedClaim{
+					id:     out.IssueID,
+					holder: report.claims[i].holder,
+					reason: out.Reason,
+				})
+			default:
+				released = append(released, report.claims[i])
 			}
-			released = append(released, claim)
 		}
 	}
 
+	reported := report.claims
+	verb := "would_release"
+	if force {
+		reported = released
+		verb = "released"
+	}
+	action := fmt.Sprintf("%s_%s_claims", verb, sweepNoun(report.selectorKey))
+	// A non-empty unresolved list is part of the outcome, not a detail a
+	// caller has to remember to inspect: a supervisor that only reads
+	// `action` must still be able to see that something was left behind.
+	if len(report.unresolved) > 0 {
+		action += "_with_unresolved"
+	}
+
 	if isJSON {
-		reported := claims
-		action := "would_release_stale_claims"
-		if force {
-			reported = released
-			action = "released_stale_claims"
-		}
 		rows := make([]map[string]any, 0, len(reported))
 		for _, claim := range reported {
-			rows = append(rows, map[string]any{
+			row := map[string]any{
 				"id":            claim.issue.ID,
 				"title":         claim.issue.Title,
 				"session":       claim.holder,
 				"idle_seconds":  int64(claim.idle.Seconds()),
-				"idle":          formatIdle(claim.idle),
 				"last_activity": claim.lastActivity.UTC().Format(time.RFC3339),
-			})
+			}
+			if claim.source != "" {
+				row["last_activity_source"] = claim.source
+			}
+			rows = append(rows, row)
 		}
-		skipped := make([]map[string]any, 0, len(unresolved))
-		for _, u := range unresolved {
-			skipped = append(skipped, map[string]any{
+		unresolved := make([]map[string]any, 0, len(report.unresolved))
+		for _, u := range report.unresolved {
+			unresolved = append(unresolved, map[string]any{
 				"id":      u.id,
 				"session": u.holder,
 				"reason":  u.reason,
 			})
 		}
-		if err := output.EmitResult(action, map[string]any{
-			"stale":      stale,
-			"forced":     force,
-			"count":      len(reported),
-			"claims":     rows,
-			"unresolved": skipped,
-		}); err != nil {
+		payload := map[string]any{
+			report.selectorKey: report.selectorValue,
+			"forced":           force,
+			"count":            len(reported),
+			"claims":           rows,
+			"unresolved":       unresolved,
+			"unresolved_count": len(unresolved),
+		}
+		if err := output.EmitResult(action, payload); err != nil {
 			return err
 		}
 	} else {
+		selector := fmt.Sprintf("session %s", report.selectorValue)
+		if report.selectorKey == "stale" {
+			selector = fmt.Sprintf("a holder idle longer than %s", report.selectorValue)
+		}
 		switch {
-		case len(claims) == 0:
-			fmt.Printf("No claims held by a session idle longer than %s.\n", stale)
+		case len(report.claims) == 0:
+			fmt.Printf("No claims held by %s.\n", selector)
 		case !force:
-			fmt.Printf("Will release %d stale claim(s) idle longer than %s:\n", len(claims), stale)
-			for _, claim := range claims {
+			fmt.Printf("Will release %d claim(s) held by %s:\n", len(report.claims), selector)
+			for _, claim := range report.claims {
 				fmt.Printf("  - %s (session %s, idle %s)\n", claim.issue.ID, claim.holder, formatIdle(claim.idle))
 			}
 			fmt.Println("\nRun with --force to release.")
@@ -388,11 +640,17 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 			for _, claim := range released {
 				fmt.Printf("RELEASED %s → open (session %s, idle %s)\n", claim.issue.ID, claim.holder, formatIdle(claim.idle))
 			}
-			fmt.Printf("\nReleased %d stale claim(s).\n", len(released))
+			fmt.Printf("\nReleased %d claim(s).\n", len(released))
+			if skipped > 0 {
+				fmt.Printf("Skipped %d claim(s) that moved to another session mid-sweep.\n", skipped)
+			}
 		}
 
-		for _, u := range unresolved {
-			emitWarn("not evaluated: %s (%s)", u.id, u.reason)
+		for _, u := range report.unresolved {
+			output.Warning("not evaluated: %s (%s)", u.id, u.reason)
+		}
+		if len(report.unresolved) > 0 {
+			fmt.Printf("\n%d claim(s) left unresolved; release them explicitly with `td unstart <id>`.\n", len(report.unresolved))
 		}
 	}
 
@@ -404,8 +662,17 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 	return nil
 }
 
-// formatIdle renders an idle duration at minute resolution, so JSON and human
-// output agree and neither carries misleading sub-second precision.
+func sweepNoun(selectorKey string) string {
+	if selectorKey == "session" {
+		return "session"
+	}
+	return "stale"
+}
+
+// formatIdle renders an idle duration at minute resolution for human output.
+// JSON reports idle_seconds exactly and does not also carry this string: two
+// renderings of the same quantity that disagree in the same object make a
+// caller guess which one is authoritative.
 func formatIdle(d time.Duration) string {
 	return d.Truncate(time.Minute).String()
 }
@@ -414,7 +681,7 @@ func init() {
 	rootCmd.AddCommand(unstartCmd)
 
 	unstartCmd.Flags().String("reason", "", "Reason for unstarting")
-	unstartCmd.Flags().String("stale", "", "Release in_progress claims whose implementer session has been idle longer than this (e.g. 2h, 90m, 1d). No default: must exceed your longest healthy tick")
-	unstartCmd.Flags().Bool("force", false, "With --stale, actually release the claims (default previews)")
-	unstartCmd.SilenceUsage = true
+	unstartCmd.Flags().String("session", "", "Release every in_progress claim held by this session id (exact; no liveness guess)")
+	unstartCmd.Flags().String("stale", "", "Release in_progress claims whose holder has been inactive longer than this (e.g. 2h, 90m, 1d). No default: must exceed your longest healthy tick. Only mutations move the signal — see docs/multi-agent-sessions.md")
+	unstartCmd.Flags().Bool("force", false, "With --session/--stale, actually release the claims (default previews)")
 }

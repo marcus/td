@@ -26,6 +26,12 @@ var blockCmd = &cobra.Command{
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
@@ -138,6 +144,12 @@ Examples:
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
@@ -199,6 +211,13 @@ Examples:
 			issue.Status = models.StatusOpen
 			issue.ReviewerSession = ""
 			issue.ClosedAt = nil
+			// A reopened issue is unclaimed work. Leaving implementer_session
+			// set produced an issue that is open AND held: `td unstart` read
+			// the status alone and reported "already unstarted" while the
+			// claim was still there, and `td unstart --stale` could not see it
+			// because it lists in_progress only. The claim leaked with no
+			// surface that could report it.
+			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
 				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to reopen %s: %v", issueID, err)
@@ -234,7 +253,7 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nReopened %d, skipped %d\n", reopened, failed+noop)
+			fmt.Printf("\nReopened %d, unchanged %d, failed %d\n", reopened, noop, failed)
 		}
 
 		if reopened == 0 && failed > 0 {
@@ -255,6 +274,12 @@ Examples:
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
@@ -349,7 +374,7 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nUnblocked %d, skipped %d\n", unblocked, failed+noop)
+			fmt.Printf("\nUnblocked %d, unchanged %d, failed %d\n", unblocked, noop, failed)
 		}
 
 		if unblocked == 0 && failed > 0 {
@@ -368,9 +393,4 @@ func init() {
 	unblockCmd.Flags().String("reason", "", "Reason for unblocking")
 	reopenCmd.Flags().String("reason", "", "Reason for reopening")
 
-	// Per-issue failures are reported by the loop; the sentinel only sets the
-	// exit code, so Cobra must not append its usage block.
-	blockCmd.SilenceUsage = true
-	unblockCmd.SilenceUsage = true
-	reopenCmd.SilenceUsage = true
 }

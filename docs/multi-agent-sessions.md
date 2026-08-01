@@ -150,44 +150,122 @@ timeout, a crashed harness — never runs `td handoff` and never runs
 returns to the ready queue. A supervisor that watches "ready work" sees the
 fleet go quiet and reads it as idle rather than broken.
 
-`td unstart --stale <duration>` releases claims whose implementer session has
-been idle longer than `<duration>`:
+There are two commands, and the difference matters.
+
+### `td unstart --session <id>` — exact, and what a supervisor should use
+
+```bash
+td unstart --session ses_abc123                  # preview: what it holds
+td unstart --session ses_abc123 --force --json   # release exactly those claims
+```
+
+This releases every `in_progress` claim held by ONE named session. There is no
+liveness heuristic: the caller already knows which session died, because it is
+the one whose process it just killed. In a fleet of N parallel slots this is
+the only safe reaper — releasing by idle time instead would sweep every other
+slot that happens to be quiet, and two agents would then work the same issue.
+
+A supervisor that kills a tick should map that tick's context to its session
+(`TD_CONTEXT_ID=<ctx> td whoami --json`, field `session`) and release by id.
+A session id that names no session and holds no claim is an error, not an
+empty success, so a typo cannot pass silently.
+
+### `td unstart --stale <duration>` — the backstop
 
 ```bash
 td unstart --stale 2h                 # preview: what would be released
 td unstart --stale 2h --force --json  # release, and report what was released
 ```
 
-It previews by default and mutates only with `--force`, like
-`td session cleanup`. The `--json` envelope lists each claim with its issue id,
-the holding session, that session's idle time, and its last activity, so a
-supervisor can log exactly what it reclaimed. Released issues carry the reason
-in their history (`claim released: implementer session ses_x idle 3h0m0s
-(threshold 2h)`), so the cause is visible in `td show`.
+Use it for holders nobody is tracking — a crashed agent from another machine,
+a session id you no longer have. It previews by default and mutates only with
+`--force`, like `td session cleanup`. The `--json` envelope lists each claim
+with its issue id, the holding session, `idle_seconds`, its last activity, and
+which signal that activity came from, so a supervisor can log exactly what it
+reclaimed. Released issues carry the reason in their history, so the cause is
+visible in `td show`.
 
-### Choosing the threshold
+### How liveness is measured
+
+A claim's liveness is the **most recent** of three signals:
+
+1. the holder session's `last_activity`,
+2. the issue's own `updated_at`, and
+3. the newest history entry (log or action) on that issue, **by any session**.
+
+Signals 2 and 3 exist because a session row is not a stable identity for a
+running agent. Session identity is `branch + agent fingerprint + match context
++ worktree`, so an agent that runs `git checkout -b` — or moves to another
+worktree, which every slot of a worktree-per-slot fleet does — mints a **new**
+session row and stops heartbeating the one recorded in `implementer_session`.
+Measuring only that row would read a live, working agent as three hours dead.
+
+td also never releases a claim held by the calling session or by any session in
+its identity lineage: its `previous_session_id` chain, and any session row
+minted by the same agent process (same fingerprint and match context) on
+another branch or worktree.
+
+### Only mutations move the signal
+
+**Read-only td commands do not refresh a session's activity.** `td list`,
+`show`, `ready`, `next`, `search`, `stats`, `session list`, and `board list`
+all leave `last_activity` untouched; only commands that write do — `start`,
+`log`, `update`, `close`, `handoff`, `focus`, `whoami`, `td list <query>`, and
+the rest of the mutating family.
+
+This is deliberate: every td write takes a cross-process lock on the database,
+and turning every read into a writer would put a whole fleet's `td list` calls
+in contention with the `td start` that a tick depends on. The cost is that the
+threshold must be read precisely — it is the longest a healthy agent can go
+without **writing** to td, not without using it.
+
+Two practical consequences:
+
+- An agent that reads context and then works for two hours is invisible to
+  `--stale`. If your agents do that, have them run `td log` (or `td whoami`,
+  which is a cheap explicit heartbeat) periodically.
+- Do not pick a threshold from how often your agents *use* td. Pick it from
+  your tick timeout, and prefer `--session` when you know who died.
+
+### Choosing the `--stale` threshold
 
 **The threshold must exceed the longest a healthy agent can run without
-touching td** — in a supervisor loop, your tick timeout. There is deliberately
-no default: too short a value releases a live agent's claim, a second agent
-picks the issue up, and two agents work the same issue in parallel. That is a
-worse failure than the leak this fixes.
+writing to td** — in a supervisor loop, your tick timeout. There is
+deliberately no default: too short a value releases a live agent's claim, a
+second agent picks the issue up, and two agents work the same issue in
+parallel. That is a worse failure than the leak this fixes.
 
-td's liveness signal is the implementer session's **last activity**: the
-timestamp updated whenever that session runs a td command. It is the honest
-signal, and it has a real limitation — an agent legitimately working for an
-hour without running a td command looks exactly like an agent that died an hour
-ago. td does not use `sessions.agent_pid` to sharpen this, because sessions
-sync between machines and a pid from another host means nothing locally (worse,
-it can collide with an unrelated live process). If you want a tighter
-threshold, make your agents run `td log` periodically; that is what moves last
-activity.
+td does not use `sessions.agent_pid` to sharpen this, because sessions sync
+between machines and a pid from another host means nothing locally (worse, it
+can collide with an unrelated live process).
 
-Two claims are never touched:
+The `d` suffix (`--stale 30d`) is td's own extension and is range-checked: an
+out-of-range value is rejected rather than silently wrapping into a short one.
 
-- **The calling session's own claim.** It is definitionally live.
-- **Claims whose holder cannot be measured** — no implementer recorded, or the
-  session row is gone (e.g. already removed by `td session cleanup`). These are
-  reported under `unresolved` in the JSON output and as a warning in human
-  output. Release them explicitly with `td unstart <id>` once you have
-  established the holder really is gone.
+### What is never touched, and what is reported
+
+- **The calling session's claims**, and those of any session in its identity
+  lineage. Definitionally live.
+- **Claims td cannot measure at all** — no implementer recorded, or no usable
+  timestamp anywhere. These are reported under `unresolved` in JSON and as
+  warnings in human output, and the envelope's `action` gains a
+  `_with_unresolved` suffix so a caller that only reads `action` still sees
+  that something was left behind. Release them explicitly with
+  `td unstart <id>` once you have established the holder really is gone.
+
+Note the failure direction: an unmeasurable holder is **never** released. An
+unparseable timestamp used to read as the zero time, whose idle duration
+exceeds every threshold — so "we cannot measure this" meant "release it", the
+exact opposite of the intent.
+
+### `td session cleanup` and reclamation do not fight
+
+`td session cleanup --older-than <dur>` deletes idle session rows. Those rows
+are what makes a leaked claim reclaimable, so cleanup **skips any session that
+still holds an `in_progress` claim** and names it in its output (`held` in
+JSON, a warning otherwise) together with the command that clears it. Without
+that, a cron running both would delete the row first and strand the issue.
+
+Reclamation covers the other direction too: if a holder's session row is gone
+anyway, `--stale` falls back to the work recorded on the issue, so the claim
+stays reclaimable rather than leaking forever.
