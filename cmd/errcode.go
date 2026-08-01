@@ -51,6 +51,34 @@ func codedErrorf(code, format string, args ...interface{}) error {
 	return &codedError{code: code, err: fmt.Errorf(format, args...)}
 }
 
+// silentError marks an error whose message the command has already delivered
+// (a JSON envelope, a tailored human message) while keeping the error itself
+// intact. Execute recognises it through errSilentExit and prints nothing more,
+// so a command that reports its own failure cannot also have it reported a
+// second time — which for a --json caller meant two envelopes on stdout and no
+// parseable document at all.
+//
+// It reports both the wrapped error and errSilentExit through Unwrap, so
+// errors.Is/As still see the original error (and any code attached to it)
+// while errors.Is(err, errSilentExit) is true.
+type silentError struct{ err error }
+
+func (e *silentError) Error() string { return e.err.Error() }
+
+func (e *silentError) Unwrap() []error { return []error{e.err, errSilentExit} }
+
+// alreadyReported marks err as fully reported by the command that produced it.
+// It returns nil for a nil error and leaves an already-silent error alone.
+func alreadyReported(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errSilentExit) {
+		return err
+	}
+	return &silentError{err: err}
+}
+
 // errorCode reports the output error code attached to err, if any.
 func errorCode(err error) (string, bool) {
 	var coded *codedError

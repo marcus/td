@@ -21,6 +21,26 @@ func failTransition(isJSON bool, code, format string, args ...interface{}) {
 	output.Warning("%s", message)
 }
 
+// reportFailure reports a command-fatal failure exactly once — a JSON error
+// envelope for --json callers, the human ERROR line otherwise — and returns an
+// error the top level will not report again.
+//
+// The returned error keeps err's message, carries code so anything that does
+// inspect it classifies it correctly, and is marked already-reported so
+// Execute only sets the exit status. Returning the bare error instead is what
+// produced two JSON envelopes on stdout (and a duplicated human message).
+func reportFailure(isJSON bool, code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if isJSON {
+		output.JSONError(code, err.Error())
+	} else {
+		output.Error("%v", err)
+	}
+	return alreadyReported(withErrorCode(code, err))
+}
+
 // noopTransition reports an idempotent retry — the requested end state already
 // holds — exactly once. This is a success, not a failure: the batch keeps
 // exit 0. action reads as a phrase ("already blocked") to match the envelope

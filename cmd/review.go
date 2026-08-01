@@ -264,23 +264,13 @@ Supports bulk operations:
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeDatabaseError, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(jsonOutput, output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(jsonOutput, output.ErrCodeNoActiveSession, err)
 		}
 
 		reviewed := 0
@@ -692,12 +682,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 		// on an attestation it could not write.
 		if recordOnly && mode != reviewpolicy.ModeDelegated && mode != reviewpolicy.ModeTrusted {
 			msg := "--record-only requires review_policy_mode=delegated or trusted"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 
 		// --reviewed-by and --self-review are mutually exclusive: they are
@@ -707,24 +692,14 @@ To surface issues reviewed by a sub-agent that you can close, use
 		// is rejected at the edge rather than left to evaluation order.
 		if reviewedBy != "" && selfReview {
 			msg := "--reviewed-by and --self-review are mutually exclusive: use --reviewed-by when someone else reviewed the work, --self-review when you reviewed your own"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 
 		// A blank attribution is a silent lie: it records "someone reviewed
 		// this" while naming nobody. Reject rather than storing "".
 		if cmd.Flags().Changed("reviewed-by") && reviewedBy == "" {
 			msg := "--reviewed-by requires a name (who performed the review?)"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 		if strings.ContainsFunc(reviewedBy, func(r rune) bool {
 			return r == '\n' || r == '\r' || (unicode.IsControl(r) && r != '\t')
@@ -733,24 +708,14 @@ To surface issues reviewed by a sub-agent that you can close, use
 			// `td show`'s SESSION LOG. The name is a label, so there is no
 			// legitimate reason for it to contain control characters.
 			msg := "--reviewed-by must not contain newlines or control characters"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 		// Count runes, not bytes: a cap reported in "characters" must mean
 		// characters, or a name in any non-Latin script is rejected early with
 		// a number the caller cannot reconcile.
 		if utf8.RuneCountInString(reviewedBy) > reviewpolicy.MaxReviewedByLen {
 			msg := fmt.Sprintf("--reviewed-by is limited to %d characters (got %d)", reviewpolicy.MaxReviewedByLen, utf8.RuneCountInString(reviewedBy))
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 
 		// --self-review is only valid under trusted mode. In every other mode it
@@ -762,12 +727,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 		// decision ignores it and an ineligible session is still rejected.
 		if selfReview && mode != reviewpolicy.ModeTrusted {
 			msg := "--self-review requires review_policy_mode=trusted"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 
 		// Validate --decision value when set.
@@ -780,22 +740,12 @@ To surface issues reviewed by a sub-agent that you can close, use
 				decision = reviewpolicy.DecisionChangesRequested
 			default:
 				msg := fmt.Sprintf("invalid --decision %q (want approved|changes_requested)", decisionFlag)
-				if jsonOutput {
-					output.JSONError(output.ErrCodeInvalidInput, msg)
-				} else {
-					output.Error("%s", msg)
-				}
-				return fmt.Errorf("%s", msg)
+				return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 			}
 		}
 		if decision == reviewpolicy.DecisionChangesRequested && !recordOnly {
 			msg := "--decision changes_requested requires --record-only"
-			if jsonOutput {
-				output.JSONError(output.ErrCodeInvalidInput, msg)
-			} else {
-				output.Error("%s", msg)
-			}
-			return fmt.Errorf("%s", msg)
+			return reportFailure(jsonOutput, output.ErrCodeInvalidInput, errors.New(msg))
 		}
 
 		// Build list of issue IDs to approve
@@ -1488,23 +1438,13 @@ Supports bulk operations:
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeDatabaseError, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(jsonOutput, output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(jsonOutput, output.ErrCodeNoActiveSession, err)
 		}
 
 		rejected := 0
@@ -1656,12 +1596,7 @@ Examples:
 		if len(args) == 0 {
 			database, err := db.Open(baseDir)
 			if err != nil {
-				if isJSON {
-					output.JSONError(output.ErrCodeDatabaseError, err.Error())
-				} else {
-					output.Error("%v", err)
-				}
-				return err
+				return reportFailure(isJSON, output.ErrCodeDatabaseError, err)
 			}
 			focusedID := ""
 			_, scope, err := getCurrentStateSession(database, baseDir)
@@ -1677,30 +1612,20 @@ Examples:
 					fmt.Println("  Usage: td close <issue-id>")
 					fmt.Println("  Or set focus first: td focus <issue-id>")
 				}
-				return fmt.Errorf("no issue specified")
+				return alreadyReported(withErrorCode(output.ErrCodeInvalidInput, fmt.Errorf("no issue specified")))
 			}
 			args = []string{focusedID}
 		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			if isJSON {
-				output.JSONError(output.ErrCodeDatabaseError, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(isJSON, output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			if isJSON {
-				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return err
+			return reportFailure(isJSON, output.ErrCodeNoActiveSession, err)
 		}
 
 		// Get self-close-exception flag once

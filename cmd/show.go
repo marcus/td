@@ -23,12 +23,17 @@ Examples:
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args are already validated; from here every failure carries its own
+		// message, so cobra's usage block would be noise — and for a --json
+		// caller it is noise interleaved with the envelope.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
-			return withErrorCode(output.ErrCodeDatabaseError, err)
+			return reportFailure(isJSON, output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
@@ -36,8 +41,7 @@ Examples:
 		if len(args) == 0 {
 			_, scope, err := getCurrentStateSession(database, baseDir)
 			if err != nil {
-				output.Error("%v", err)
-				return err
+				return reportFailure(isJSON, output.ErrCodeNoActiveSession, err)
 			}
 
 			// Try focused issue first
@@ -53,12 +57,18 @@ Examples:
 				if len(inProgress) == 1 {
 					args = []string{inProgress[0].ID}
 				} else if len(inProgress) > 1 {
-					output.Error("no issue ID specified. Multiple issues in progress:")
-					for _, issue := range inProgress {
-						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					// The disambiguation listing is human guidance printed on
+					// stdout; emitting it for a --json caller would put
+					// non-JSON lines ahead of the envelope.
+					if !isJSON {
+						output.Error("no issue ID specified. Multiple issues in progress:")
+						for _, issue := range inProgress {
+							fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+						}
+						fmt.Printf("\nUsage: td show <issue-id>\n")
+						return alreadyReported(withErrorCode(output.ErrCodeInvalidInput, fmt.Errorf("issue ID required")))
 					}
-					fmt.Printf("\nUsage: td show <issue-id>\n")
-					return fmt.Errorf("issue ID required")
+					return reportFailure(isJSON, output.ErrCodeInvalidInput, fmt.Errorf("no issue ID specified: multiple issues in progress"))
 				} else {
 					inReview, _ := database.ListIssues(db.ListIssuesOptions{
 						Status: []models.Status{models.StatusInReview},
@@ -67,18 +77,24 @@ Examples:
 					if len(inReview) == 1 {
 						args = []string{inReview[0].ID}
 					} else if len(inReview) > 1 {
-						output.Error("no issue ID specified. Multiple issues in review:")
-						for _, issue := range inReview {
-							fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+						if !isJSON {
+							output.Error("no issue ID specified. Multiple issues in review:")
+							for _, issue := range inReview {
+								fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+							}
+							fmt.Printf("\nUsage: td show <issue-id>\n")
+							return alreadyReported(withErrorCode(output.ErrCodeInvalidInput, fmt.Errorf("issue ID required")))
 						}
-						fmt.Printf("\nUsage: td show <issue-id>\n")
-						return fmt.Errorf("issue ID required")
+						return reportFailure(isJSON, output.ErrCodeInvalidInput, fmt.Errorf("no issue ID specified: multiple issues in review"))
 					} else {
-						output.Error("no issue ID specified and no issues in progress")
-						fmt.Printf("\nUsage: td show <issue-id>\n")
-						fmt.Printf("Try: td list        # see all issues\n")
-						fmt.Printf("     td next        # see highest priority open issue\n")
-						return fmt.Errorf("issue ID required")
+						if !isJSON {
+							output.Error("no issue ID specified and no issues in progress")
+							fmt.Printf("\nUsage: td show <issue-id>\n")
+							fmt.Printf("Try: td list        # see all issues\n")
+							fmt.Printf("     td next        # see highest priority open issue\n")
+							return alreadyReported(withErrorCode(output.ErrCodeInvalidInput, fmt.Errorf("issue ID required")))
+						}
+						return reportFailure(isJSON, output.ErrCodeInvalidInput, fmt.Errorf("no issue ID specified and no issues in progress"))
 					}
 				}
 			}
@@ -86,8 +102,7 @@ Examples:
 
 		// Validate issue IDs (catch empty strings)
 		if err := ValidateIssueIDs(args, "show <issue-id>"); err != nil {
-			output.Error("%v", err)
-			return err
+			return reportFailure(isJSON, output.ErrCodeInvalidInput, err)
 		}
 
 		// Handle multiple issues
@@ -101,8 +116,7 @@ Examples:
 		if showTree, _ := cmd.Flags().GetBool("tree"); showTree {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Error("%v", err)
-				return err
+				return reportFailure(isJSON, output.ErrCodeNotFound, err)
 			}
 
 			// Print root
@@ -123,12 +137,7 @@ Examples:
 
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
-			if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-				output.JSONError(output.ErrCodeNotFound, err.Error())
-			} else {
-				output.Error("%v", err)
-			}
-			return withErrorCode(output.ErrCodeNotFound, err)
+			return reportFailure(jsonMode(cmd), output.ErrCodeNotFound, err)
 		}
 
 		// Get logs and handoff
