@@ -396,6 +396,10 @@ var lastCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(actions))
+		}
+
 		if len(actions) == 0 {
 			fmt.Printf("No actions in current session (%s)\n", sess.ID)
 			return nil

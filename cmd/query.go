@@ -195,9 +195,14 @@ BOARDS:
 
 		// Output
 		outputFormat, _ := cmd.Flags().GetString("output")
+		// The global --json flag is an alias for -o json rather than a second
+		// JSON shape: both emit the bare issue array `td list --json` emits.
+		if jsonMode(cmd) {
+			outputFormat = "json"
+		}
 		switch outputFormat {
 		case "json":
-			return output.JSON(results)
+			return output.JSON(jsonList(results))
 		case "ids":
 			for _, issue := range results {
 				fmt.Println(issue.ID)

@@ -131,28 +131,79 @@ var versionCmd = &cobra.Command{
 	Short:   "Show version and check for updates",
 	GroupID: "system",
 	Run: func(cmd *cobra.Command, args []string) {
+		isJSON := jsonMode(cmd)
 		short, _ := cmd.Flags().GetBool("short")
-		if short {
+
+		// --json always emits the full envelope: --short exists to make the
+		// human line greppable, and a caller that can parse JSON already has
+		// the version under a stable key.
+		if short && !isJSON {
 			fmt.Print(versionStr)
 			return
 		}
 
 		checkUpdates, _ := cmd.Flags().GetBool("check")
+		isDev := version.IsDevelopmentVersion(versionStr)
 
-		fmt.Printf("td version %s\n", versionStr)
+		// versionInfo is the --json envelope. update_available is always
+		// present so a caller never has to distinguish "no update" from "the
+		// key is missing"; latest_version and update_command stay empty when no
+		// check ran or the check failed, and checked reports which it was.
+		info := map[string]interface{}{
+			"version":          versionStr,
+			"development":      isDev,
+			"checked":          false,
+			"update_available": false,
+			"latest_version":   "",
+			"update_command":   "",
+		}
+
+		emit := func() {
+			if err := output.JSON(info); err != nil {
+				output.JSONError(output.ErrCodeDatabaseError, err.Error())
+			}
+		}
+
+		if !isJSON {
+			fmt.Printf("td version %s\n", versionStr)
+		}
 
 		// Skip check if dev version or --check=false
-		if !checkUpdates || version.IsDevelopmentVersion(versionStr) {
+		if !checkUpdates || isDev {
+			if isJSON {
+				emit()
+			}
 			return
+		}
+
+		announce := func(latest string) {
+			info["checked"] = true
+			info["update_available"] = latest != ""
+			if latest == "" {
+				if isJSON {
+					emit()
+				}
+				return
+			}
+			info["latest_version"] = latest
+			updateCmd := version.UpdateCommand(latest)
+			info["update_command"] = updateCmd
+			if isJSON {
+				emit()
+				return
+			}
+			fmt.Printf("\nUpdate available: %s → %s\n", versionStr, latest)
+			if updateCmd != "" {
+				fmt.Printf("Run: %s\n", updateCmd)
+			}
 		}
 
 		// Check cache first
 		if cached, err := version.LoadCache(); err == nil && version.IsCacheValid(cached, versionStr) {
 			if cached.HasUpdate {
-				fmt.Printf("\nUpdate available: %s → %s\n", versionStr, cached.LatestVersion)
-				if cmd := version.UpdateCommand(cached.LatestVersion); cmd != "" {
-					fmt.Printf("Run: %s\n", cmd)
-				}
+				announce(cached.LatestVersion)
+			} else {
+				announce("")
 			}
 			return
 		}
@@ -171,15 +222,18 @@ var versionCmd = &cobra.Command{
 		}
 
 		if result.Error != nil {
-			// Silently ignore network errors
+			// Network errors stay silent on the human path; --json still emits
+			// a parseable envelope with checked=false rather than nothing.
+			if isJSON {
+				emit()
+			}
 			return
 		}
 
 		if result.HasUpdate {
-			fmt.Printf("\nUpdate available: %s → %s\n", versionStr, result.LatestVersion)
-			if cmd := version.UpdateCommand(result.LatestVersion); cmd != "" {
-				fmt.Printf("Run: %s\n", cmd)
-			}
+			announce(result.LatestVersion)
+		} else {
+			announce("")
 		}
 	},
 }

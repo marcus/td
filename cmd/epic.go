@@ -81,6 +81,10 @@ var epicListCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(issues))
+		}
+
 		if len(issues) == 0 {
 			fmt.Println("No epics found")
 			return nil

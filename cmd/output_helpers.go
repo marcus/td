@@ -67,3 +67,16 @@ func jsonMode(cmd *cobra.Command) bool {
 	}
 	return v
 }
+
+// jsonList normalizes a possibly-nil slice for --json output.
+//
+// A nil slice marshals to `null`, which forces every agent caller to special
+// case "no results" before it can range over the answer. Every list-shaped
+// --json surface must emit `[]` instead, so read paths funnel their slice
+// through here on the way to output.JSON.
+func jsonList[T any](items []T) []T {
+	if items == nil {
+		return []T{}
+	}
+	return items
+}

@@ -471,6 +471,16 @@ Examples:
 			}
 		}
 
+		// Two buckets cannot be a bare array without losing which is which, so
+		// --json emits the same object shape `td status --json` already uses for
+		// its in_review section: named keys whose values are plain issue arrays.
+		if jsonMode(cmd) {
+			return output.JSON(map[string]interface{}{
+				"awaiting":       jsonList(awaiting),
+				"ready_to_close": jsonList(readyToClose),
+			})
+		}
+
 		if len(awaiting) > 0 {
 			fmt.Printf("AWAITING YOUR REVIEW (%d):\n", len(awaiting))
 			for _, issue := range awaiting {
@@ -520,6 +530,10 @@ var blockedListCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(result.issues))
+		}
+
 		for _, issue := range result.issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
@@ -558,6 +572,15 @@ var inReviewCmd = &cobra.Command{
 			return err
 		}
 
+		// Bare issue array, identical in shape to `td list --json`. The human
+		// "[reviewable]" marker is deliberately not folded in as a synthetic
+		// field: `td reviewable --json` is the machine-readable answer to that
+		// question, and inventing an issue field here would make an issue from
+		// this command differ from an issue from every other command.
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(result.issues))
+		}
+
 		reviewable, _ := database.ListIssues(reviewableByOptions(getBaseDir(), sess.ID))
 		reviewableIDs := make(map[string]bool, len(reviewable))
 		for _, r := range reviewable {
@@ -593,6 +616,10 @@ var readyCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(result.issues))
+		}
+
 		for _, issue := range result.issues {
 			fmt.Println(output.FormatIssueShort(&issue))
 		}
@@ -617,6 +644,18 @@ var nextCmd = &cobra.Command{
 		})
 		if err != nil {
 			return err
+		}
+
+		// `next` answers a singular question, so --json emits one issue object
+		// (same field names as `td list --json` / `td show --json`) rather than
+		// a one-element array. "no open issues" is null: unlike an empty list
+		// there is nothing to iterate, and null cannot be confused with a
+		// result.
+		if jsonMode(cmd) {
+			if len(result.issues) == 0 {
+				return output.JSON(nil)
+			}
+			return output.JSON(&result.issues[0])
 		}
 
 		if len(result.issues) == 0 {

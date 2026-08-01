@@ -34,7 +34,7 @@ var focusCmd = &cobra.Command{
 		issueID := args[0]
 
 		// Verify issue exists
-		_, err = database.GetIssue(issueID)
+		issue, err := database.GetIssue(issueID)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -43,6 +43,13 @@ var focusCmd = &cobra.Command{
 		if err := database.SetFocus(scope, issueID); err != nil {
 			output.Error("failed to set focus: %v", err)
 			return err
+		}
+
+		// focus mutates session state, so it uses the standard mutation
+		// envelope ({"id","status","action","issue"}) the start/block/close
+		// family already emits.
+		if jsonMode(cmd) {
+			return output.EmitIssue("focused", issue, nil)
 		}
 
 		fmt.Printf("FOCUSED %s\n", issueID)
@@ -70,9 +77,21 @@ var unfocusCmd = &cobra.Command{
 			return err
 		}
 
+		// Read the outgoing focus before clearing it so --json can report what
+		// was actually released; the human line says only "UNFOCUSED".
+		previousID, _ := database.GetFocus(scope)
+
 		if err := database.ClearFocus(scope); err != nil {
 			output.Error("failed to clear focus: %v", err)
 			return err
+		}
+
+		if jsonMode(cmd) {
+			// Not tied to an issue when nothing was focused, so this uses the
+			// issue-less mutation envelope ({"action", ...extra}).
+			return output.EmitResult("unfocused", map[string]any{
+				"previous_issue": previousID,
+			})
 		}
 
 		fmt.Println("UNFOCUSED")

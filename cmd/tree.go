@@ -195,6 +195,10 @@ var commentsCmd = &cobra.Command{
 			return err
 		}
 
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(comments))
+		}
+
 		for _, c := range comments {
 			fmt.Printf("[%s] (%s) %s\n", c.CreatedAt.Format("2006-01-02 15:04"), c.SessionID, c.Text)
 		}
