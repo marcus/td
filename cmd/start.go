@@ -29,6 +29,12 @@ Examples:
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
@@ -280,5 +286,4 @@ func init() {
 
 	startCmd.Flags().String("reason", "", "Reason for starting work")
 	startCmd.Flags().Bool("force", false, "Force start even if blocked")
-	startCmd.SilenceUsage = true
 }

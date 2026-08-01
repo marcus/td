@@ -646,6 +646,12 @@ To surface issues reviewed by a sub-agent that you can close, use
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		jsonOutput := jsonMode(cmd)
 
@@ -1471,6 +1477,12 @@ Supports bulk operations:
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		jsonOutput := jsonMode(cmd)
 
@@ -1631,6 +1643,12 @@ Examples:
   td done                                                # Close focused issue (if set)`,
 	GroupID: "workflow",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Args have already validated; from here every error is operational
+		// and carries its own message, so Cobra's usage block would be noise.
+		// Genuine usage errors (bad arg count, unknown flag) are reported
+		// before RunE runs and still print usage.
+		cmd.SilenceUsage = true
+
 		baseDir := getBaseDir()
 		isJSON := jsonMode(cmd)
 
@@ -1957,7 +1975,6 @@ func init() {
 	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
-	approveCmd.SilenceUsage = true
 	approveCmd.Flags().Bool("record-only", false, "Record an approval review without closing (delegated/trusted mode)")
 	approveCmd.Flags().Bool("self-review", false, "Acknowledge self-review of your own implementation (trusted mode only); implies --reason")
 	approveCmd.Flags().String("reviewed-by", "", "Name who performed the review (e.g. a sub-agent). Records the attribution; in trusted mode it also lets an involved session approve")
@@ -1967,7 +1984,6 @@ func init() {
 	rejectCmd.Flags().String("message", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("note", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().String("notes", "", "Reason for rejection (alias for --reason)")
-	rejectCmd.SilenceUsage = true
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
@@ -1975,5 +1991,4 @@ func init() {
 	closeCmd.Flags().String("notes", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("self-close-exception", "", "Override review requirement when closing own work (requires reason)")
 	closeCmd.Flags().String("admin", "", "Admin close: override delegated-mode impl-history gate for duplicates/won't-fix/cleanup (requires reason)")
-	closeCmd.SilenceUsage = true
 }
