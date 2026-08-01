@@ -94,6 +94,22 @@ func (e *StaleIssueStatusError) Error() string {
 	return fmt.Sprintf("issue %s status changed from %s to %s", e.IssueID, e.Expected, e.Actual)
 }
 
+// StaleIssueUpdateError indicates some other write persisted between the
+// caller loading the issue and this write applying. Rejecting the write
+// avoids silently reverting whatever the intervening write changed.
+type StaleIssueUpdateError struct {
+	IssueID string
+	Loaded  time.Time
+	Current time.Time
+}
+
+func (e *StaleIssueUpdateError) Error() string {
+	return fmt.Sprintf(
+		"issue %s was modified after it was loaded (loaded updated_at=%s, current updated_at=%s)",
+		e.IssueID, e.Loaded.Format(time.RFC3339Nano), e.Current.Format(time.RFC3339Nano),
+	)
+}
+
 // marshalIssue returns a JSON representation of an issue for action_log storage.
 func marshalIssue(issue *models.Issue) string {
 	data, _ := json.Marshal(issue)
@@ -336,7 +352,34 @@ func (db *DB) addLogEntry(issueID, sessionID, message string, logType models.Log
 
 // UpdateIssueLogged updates an issue and logs the action atomically within a single withWriteLock call.
 // It reads the current DB state for PreviousData before applying the update.
+//
+// Guards against the caller's issue snapshot going stale: if issue.UpdatedAt
+// (set when the caller loaded it, e.g. via GetIssue) no longer matches the
+// persisted updated_at, some other write landed in between and this write is
+// rejected rather than silently reverting it. Callers that intentionally
+// restore an old snapshot regardless of intervening writes (undo) must use
+// UpdateIssueLoggedUnconditional instead.
 func (db *DB) UpdateIssueLogged(issue *models.Issue, sessionID string, actionType models.ActionType) error {
+	return db.withWriteLock(func() error {
+		return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
+			prev, err := db.scanIssueRowFrom(tx, issue.ID)
+			if err != nil {
+				return err
+			}
+			if !issue.UpdatedAt.IsZero() && !issue.UpdatedAt.Equal(prev.UpdatedAt) {
+				return &StaleIssueUpdateError{IssueID: issue.ID, Loaded: issue.UpdatedAt, Current: prev.UpdatedAt}
+			}
+			return db.updateIssueAndLogFromPreviousStore(tx, issue, prev, sessionID, actionType)
+		})
+	})
+}
+
+// UpdateIssueLoggedUnconditional updates an issue and logs the action
+// atomically, without the staleness guard UpdateIssueLogged applies. It
+// exists for undo, which intentionally restores an older snapshot over
+// whatever is currently persisted; guarding that write against the very
+// change it means to revert would make undo unusable.
+func (db *DB) UpdateIssueLoggedUnconditional(issue *models.Issue, sessionID string, actionType models.ActionType) error {
 	return db.withWriteLock(func() error {
 		return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
 			prev, err := db.scanIssueRowFrom(tx, issue.ID)

@@ -173,8 +173,10 @@ func undoIssueAction(database *db.DB, action *models.ActionLog, sessionID string
 				}
 			}
 		}
-		// Use logged variant to generate sync event
-		return database.UpdateIssueLogged(&issue, sessionID, models.ActionUpdate)
+		// Use unconditional variant: undo intentionally restores an older
+		// snapshot regardless of what changed since, so it must not be
+		// rejected by the staleness guard UpdateIssueLogged applies.
+		return database.UpdateIssueLoggedUnconditional(&issue, sessionID, models.ActionUpdate)
 
 	default:
 		return fmt.Errorf("cannot undo action type: %s", action.ActionType)

@@ -220,6 +220,123 @@ func TestUpdateIssueLoggedIfStatusDetectsStaleTransition(t *testing.T) {
 	}
 }
 
+// TestUpdateIssueLoggedRejectsConcurrentWrite reproduces the scenario from
+// the td-e38551 report: two sessions load the same issue, one writes first,
+// and the second's stale full-row write must not silently revert it.
+func TestUpdateIssueLoggedRejectsConcurrentWrite(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:    "Original title",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	staleCopy, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue current failed: %v", err)
+	}
+	current.Title = "Updated by session A"
+	if err := database.UpdateIssueLogged(current, "sess-a", models.ActionUpdate); err != nil {
+		t.Fatalf("UpdateIssueLogged (session A) failed: %v", err)
+	}
+
+	// staleCopy still carries the pre-session-A UpdatedAt: this mirrors a
+	// sweep or background writer that loaded the issue before session A's
+	// write landed, then tries to write its own (unrelated) field change.
+	staleCopy.Labels = []string{"swept"}
+	err = database.UpdateIssueLogged(staleCopy, "sess-sweep", models.ActionUpdate)
+	if err == nil {
+		t.Fatal("expected stale update to be rejected")
+	}
+	var staleErr *StaleIssueUpdateError
+	if !errors.As(err, &staleErr) {
+		t.Fatalf("expected StaleIssueUpdateError, got %T: %v", err, err)
+	}
+
+	// Session A's write must survive: the rejected sweep must not have
+	// reverted the title.
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue after rejected update failed: %v", err)
+	}
+	if got.Title != "Updated by session A" {
+		t.Fatalf("title = %q, want %q (session A's write was reverted)", got.Title, "Updated by session A")
+	}
+
+	var actions int
+	if err := database.conn.QueryRow(`SELECT COUNT(*) FROM action_log WHERE entity_id = ?`, issue.ID).Scan(&actions); err != nil {
+		t.Fatalf("count action_log failed: %v", err)
+	}
+	if actions != 1 {
+		t.Fatalf("expected only session A's action logged, got %d", actions)
+	}
+}
+
+// TestUpdateIssueLoggedUnconditionalBypassesStaleGuard verifies undo's write
+// path is unaffected by the staleness guard: it must be able to restore an
+// older snapshot even though the persisted updated_at has since moved on.
+func TestUpdateIssueLoggedUnconditionalBypassesStaleGuard(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:    "Before update",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	preUpdate, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue current failed: %v", err)
+	}
+	current.Title = "After update"
+	if err := database.UpdateIssueLogged(current, "sess-a", models.ActionUpdate); err != nil {
+		t.Fatalf("UpdateIssueLogged failed: %v", err)
+	}
+
+	// preUpdate still carries the pre-write UpdatedAt, exactly as undo's
+	// PreviousData snapshot would.
+	if err := database.UpdateIssueLoggedUnconditional(preUpdate, "sess-undo", models.ActionUpdate); err != nil {
+		t.Fatalf("UpdateIssueLoggedUnconditional failed: %v", err)
+	}
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue after undo failed: %v", err)
+	}
+	if got.Title != "Before update" {
+		t.Fatalf("title = %q, want %q (undo did not apply)", got.Title, "Before update")
+	}
+}
+
 func TestDeleteIssueLogged(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)
