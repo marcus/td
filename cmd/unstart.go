@@ -11,6 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errUnstartAllFailed signals that every non-idempotent named unstart failed.
+// Each failure is emitted in the per-issue path; the sentinel only sets the
+// process exit status without adding Cobra usage or a second JSON envelope.
+var errUnstartAllFailed = fmt.Errorf("no issues unstarted: %w", errSilentExit)
+
 var unstartCmd = &cobra.Command{
 	Use:     "unstart [issue-id...]",
 	Aliases: []string{"stop"},
@@ -55,28 +60,38 @@ Examples:
 		reason, _ := cmd.Flags().GetString("reason")
 
 		unstarted := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				emitWarn("issue not found: %s", issueID)
-				skipped++
+				failTransition(isJSON, output.ErrCodeNotFound, "issue not found: %s", issueID)
+				failed++
+				continue
+			}
+
+			// An already-open issue is the requested end state, so a repeated
+			// unstart is an idempotent success — checked before the transition
+			// validation, which has no open → open edge.
+			if issue.Status == models.StatusOpen {
+				noopTransition(isJSON, issueID, issue.Status, "already unstarted")
+				noop++
 				continue
 			}
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				emitWarn("cannot unstart %s: invalid transition from %s", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "cannot unstart %s: invalid transition from %s", issueID, issue.Status)
+				failed++
 				continue
 			}
 
 			// Only unstart in_progress issues (preserving existing behavior)
 			if issue.Status != models.StatusInProgress {
-				emitWarn("issue not in_progress: %s (status: %s)", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "issue not in_progress: %s (status: %s)", issueID, issue.Status)
+				failed++
 				continue
 			}
 
@@ -91,8 +106,8 @@ Examples:
 			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-				emitWarn("failed to update %s: %v", issueID, err)
-				skipped++
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to update %s: %v", issueID, err)
+				failed++
 				continue
 			}
 
@@ -132,7 +147,15 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nUnstarted %d, skipped %d\n", unstarted, skipped)
+			fmt.Printf("\nUnstarted %d, skipped %d\n", unstarted, failed+noop)
+		}
+
+		// A named batch succeeds when at least one issue unstarted, and an
+		// already-open retry succeeds as an idempotent no-op. If nothing
+		// unstarted and any true failure occurred, report failure even when the
+		// same batch also contained no-ops.
+		if unstarted == 0 && failed > 0 {
+			return errUnstartAllFailed
 		}
 
 		return nil
@@ -143,4 +166,5 @@ func init() {
 	rootCmd.AddCommand(unstartCmd)
 
 	unstartCmd.Flags().String("reason", "", "Reason for unstarting")
+	unstartCmd.SilenceUsage = true
 }

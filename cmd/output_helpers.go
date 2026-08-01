@@ -1,6 +1,45 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/output"
+	"github.com/spf13/cobra"
+)
+
+// failTransition reports a single per-issue mutation failure exactly once: a
+// JSON error envelope for --json callers, a human warning otherwise. The
+// caller counts the failure and decides the batch's exit status; this only
+// emits.
+func failTransition(isJSON bool, code, format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	if isJSON {
+		output.JSONError(code, message)
+		return
+	}
+	output.Warning("%s", message)
+}
+
+// noopTransition reports an idempotent retry — the requested end state already
+// holds — exactly once. This is a success, not a failure: the batch keeps
+// exit 0. action reads as a phrase ("already blocked") to match the envelope
+// the start/reject/close family already emits.
+func noopTransition(isJSON bool, issueID string, status models.Status, action string) {
+	message := fmt.Sprintf("%s %s", action, issueID)
+	if !isJSON {
+		output.Warning("%s", message)
+		return
+	}
+	if err := output.JSON(map[string]interface{}{
+		"id":      issueID,
+		"status":  string(status),
+		"action":  action,
+		"message": message,
+	}); err != nil {
+		output.JSONError(output.ErrCodeDatabaseError, err.Error())
+	}
+}
 
 // jsonMode reports whether --json was requested, checking the command's own
 // flag first (for commands that still define a local --json) then the

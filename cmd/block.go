@@ -11,6 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Sentinels for the block-family batches: every non-idempotent named mutation
+// failed. Each failure is emitted in the per-issue path, so these only set the
+// process exit status without adding Cobra usage or a second JSON envelope.
+var (
+	errBlockAllFailed   = fmt.Errorf("no issues blocked: %w", errSilentExit)
+	errReopenAllFailed  = fmt.Errorf("no issues reopened: %w", errSilentExit)
+	errUnblockAllFailed = fmt.Errorf("no issues unblocked: %w", errSilentExit)
+)
+
 var blockCmd = &cobra.Command{
 	Use:     "block [issue-id...]",
 	Short:   "Mark issue(s) as blocked",
@@ -23,11 +32,6 @@ var blockCmd = &cobra.Command{
 		emitErr := func(format string, args ...interface{}) {
 			if !isJSON {
 				output.Error(format, args...)
-			}
-		}
-		emitWarn := func(format string, args ...interface{}) {
-			if !isJSON {
-				output.Warning(format, args...)
 			}
 		}
 
@@ -46,24 +50,38 @@ var blockCmd = &cobra.Command{
 
 		reason, _ := cmd.Flags().GetString("reason")
 
+		blocked := 0
+		failed := 0
+
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				emitErr("%v", err)
+				failTransition(isJSON, output.ErrCodeNotFound, "issue not found: %s", issueID)
+				failed++
+				continue
+			}
+
+			// An already-blocked issue is the requested end state, so a
+			// repeated block is an idempotent success — checked before the
+			// transition validation, which has no blocked → blocked edge.
+			if issue.Status == models.StatusBlocked {
+				noopTransition(isJSON, issueID, issue.Status, "already blocked")
 				continue
 			}
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusBlocked) {
-				emitWarn("cannot block %s: invalid transition from %s", issueID, issue.Status)
+				failTransition(isJSON, output.ErrCodeInvalidInput, "cannot block %s: invalid transition from %s", issueID, issue.Status)
+				failed++
 				continue
 			}
 
 			issue.Status = models.StatusBlocked
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionBlock); err != nil {
-				emitErr("failed to block %s: %v", issueID, err)
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to block %s: %v", issueID, err)
+				failed++
 				continue
 			}
 
@@ -81,20 +99,28 @@ var blockCmd = &cobra.Command{
 			})
 
 			if isJSON {
-				blocked, ferr := database.GetIssue(issueID)
+				blockedIssue, ferr := database.GetIssue(issueID)
 				if ferr != nil {
-					blocked = issue
+					blockedIssue = issue
 				}
 				var extra map[string]any
 				if reason != "" {
 					extra = map[string]any{"reason": reason}
 				}
-				if err := output.EmitIssue("blocked", blocked, extra); err != nil {
+				if err := output.EmitIssue("blocked", blockedIssue, extra); err != nil {
 					return err
 				}
 			} else {
 				fmt.Printf("BLOCKED %s\n", issueID)
 			}
+			blocked++
+		}
+
+		// A named batch succeeds when at least one issue blocked, and an
+		// already-blocked retry succeeds as an idempotent no-op. If nothing
+		// blocked and any true failure occurred, report failure.
+		if blocked == 0 && failed > 0 {
+			return errBlockAllFailed
 		}
 
 		return nil
@@ -120,11 +146,6 @@ Examples:
 				output.Error(format, args...)
 			}
 		}
-		emitWarn := func(format string, args ...interface{}) {
-			if !isJSON {
-				output.Warning(format, args...)
-			}
-		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
@@ -141,27 +162,37 @@ Examples:
 
 		reason, _ := cmd.Flags().GetString("reason")
 		reopened := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				emitWarn("issue not found: %s", issueID)
-				skipped++
+				failTransition(isJSON, output.ErrCodeNotFound, "issue not found: %s", issueID)
+				failed++
+				continue
+			}
+
+			// An already-open issue is the requested end state, so a repeated
+			// reopen is an idempotent success — checked before the transition
+			// validation, which has no open → open edge.
+			if issue.Status == models.StatusOpen {
+				noopTransition(isJSON, issueID, issue.Status, "already reopened")
+				noop++
 				continue
 			}
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				emitWarn("cannot reopen %s: invalid transition from %s", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "cannot reopen %s: invalid transition from %s", issueID, issue.Status)
+				failed++
 				continue
 			}
 
 			if issue.Status != models.StatusClosed {
-				emitWarn("%s is not closed (status: %s)", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "%s is not closed (status: %s)", issueID, issue.Status)
+				failed++
 				continue
 			}
 
@@ -170,8 +201,8 @@ Examples:
 			issue.ClosedAt = nil
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-				emitWarn("failed to reopen %s: %v", issueID, err)
-				skipped++
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to reopen %s: %v", issueID, err)
+				failed++
 				continue
 			}
 
@@ -203,7 +234,11 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nReopened %d, skipped %d\n", reopened, skipped)
+			fmt.Printf("\nReopened %d, skipped %d\n", reopened, failed+noop)
+		}
+
+		if reopened == 0 && failed > 0 {
+			return errReopenAllFailed
 		}
 		return nil
 	},
@@ -228,11 +263,6 @@ Examples:
 				output.Error(format, args...)
 			}
 		}
-		emitWarn := func(format string, args ...interface{}) {
-			if !isJSON {
-				output.Warning(format, args...)
-			}
-		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
@@ -249,35 +279,45 @@ Examples:
 
 		reason, _ := cmd.Flags().GetString("reason")
 		unblocked := 0
-		skipped := 0
+		failed := 0
+		noop := 0
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				emitWarn("issue not found: %s", issueID)
-				skipped++
+				failTransition(isJSON, output.ErrCodeNotFound, "issue not found: %s", issueID)
+				failed++
+				continue
+			}
+
+			// An already-open issue is the requested end state, so a repeated
+			// unblock is an idempotent success — checked before the transition
+			// validation, which has no open → open edge.
+			if issue.Status == models.StatusOpen {
+				noopTransition(isJSON, issueID, issue.Status, "already unblocked")
+				noop++
 				continue
 			}
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
 			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
-				emitWarn("cannot unblock %s: invalid transition from %s", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "cannot unblock %s: invalid transition from %s", issueID, issue.Status)
+				failed++
 				continue
 			}
 
 			if issue.Status != models.StatusBlocked {
-				emitWarn("%s is not blocked (status: %s)", issueID, issue.Status)
-				skipped++
+				failTransition(isJSON, output.ErrCodeInvalidInput, "%s is not blocked (status: %s)", issueID, issue.Status)
+				failed++
 				continue
 			}
 
 			issue.Status = models.StatusOpen
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUnblock); err != nil {
-				emitWarn("failed to unblock %s: %v", issueID, err)
-				skipped++
+				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to unblock %s: %v", issueID, err)
+				failed++
 				continue
 			}
 
@@ -309,7 +349,11 @@ Examples:
 		}
 
 		if len(args) > 1 && !isJSON {
-			fmt.Printf("\nUnblocked %d, skipped %d\n", unblocked, skipped)
+			fmt.Printf("\nUnblocked %d, skipped %d\n", unblocked, failed+noop)
+		}
+
+		if unblocked == 0 && failed > 0 {
+			return errUnblockAllFailed
 		}
 		return nil
 	},
@@ -323,4 +367,10 @@ func init() {
 	blockCmd.Flags().String("reason", "", "Reason for blocking")
 	unblockCmd.Flags().String("reason", "", "Reason for unblocking")
 	reopenCmd.Flags().String("reason", "", "Reason for reopening")
+
+	// Per-issue failures are reported by the loop; the sentinel only sets the
+	// exit code, so Cobra must not append its usage block.
+	blockCmd.SilenceUsage = true
+	unblockCmd.SilenceUsage = true
+	reopenCmd.SilenceUsage = true
 }
