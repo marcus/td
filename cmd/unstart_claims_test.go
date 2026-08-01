@@ -571,6 +571,98 @@ func TestReopenClearsTheImplementerClaim(t *testing.T) {
 	}
 }
 
+// TestUnblockClearsTheImplementerClaim: unblock returns an issue to open, and
+// an open issue is unclaimed work. `td block` keeps the implementer on purpose,
+// but blocked is reachable from open as well as in_progress, so the way back
+// releases rather than guessing at restoring in_progress.
+func TestUnblockClearsTheImplementerClaim(t *testing.T) {
+	f := setupClaimTest(t)
+	issue := f.claim(t, "started then blocked", "ses_old_impl", time.Minute)
+	execTestSQL(t, f.baseDir, `UPDATE issues SET status = 'blocked' WHERE id = ?`, issue.ID)
+
+	setJSONFlag(t, false)
+	setWorkflowExitFlag(t, unblockCmd, "reason", "")
+	out := captureStdout(t, func() {
+		if err := unblockCmd.RunE(unblockCmd, []string{issue.ID}); err != nil {
+			t.Fatalf("unblock failed: %v", err)
+		}
+	})
+	if !strings.Contains(out, "UNBLOCKED") {
+		t.Fatalf("unexpected unblock output: %q", out)
+	}
+	if st, holder := f.status(t, issue.ID); st != models.StatusOpen || holder != "" {
+		t.Fatalf("unblock left the claim in place: status=%s implementer=%q", st, holder)
+	}
+}
+
+// TestSweepsSeeALeakedClaimOnAnOpenIssue: rows leaked by older builds of
+// reopen/unblock are open AND held. Both sweeps used to select in_progress
+// only, so nothing listed them and only a by-name `td unstart <id>` could
+// clear them — which requires already knowing the id.
+func TestSweepsSeeALeakedClaimOnAnOpenIssue(t *testing.T) {
+	f := setupClaimTest(t)
+	f.holder(t, "ses_ghost_holder", 3*time.Hour)
+	issue := f.claim(t, "leaked by an older build", "ses_ghost_holder", 3*time.Hour)
+	execTestSQL(t, f.baseDir, `UPDATE issues SET status = 'open' WHERE id = ?`, issue.ID)
+	// An ordinary unclaimed open issue must not be swept along with it.
+	quiet := &models.Issue{Title: "plain backlog item", Type: models.TypeTask}
+	if err := f.database.CreateIssue(quiet); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	setJSONFlag(t, false)
+	setSessionFlag(t, "ses_ghost_holder", "false")
+	out := runUnstart(t, nil, false)
+	if !strings.Contains(out, issue.ID) {
+		t.Fatalf("--session did not list the leaked claim: %q", out)
+	}
+	if strings.Contains(out, quiet.ID) {
+		t.Fatalf("--session swept an unclaimed open issue: %q", out)
+	}
+
+	setSessionFlag(t, "", "false")
+	setStaleFlags(t, "1h", "true")
+	out = runUnstart(t, nil, false)
+	if !strings.Contains(out, issue.ID) {
+		t.Fatalf("--stale did not release the leaked claim: %q", out)
+	}
+	if strings.Contains(out, quiet.ID) {
+		t.Fatalf("--stale swept an unclaimed open issue: %q", out)
+	}
+	if st, holder := f.status(t, issue.ID); st != models.StatusOpen || holder != "" {
+		t.Fatalf("claim not released: status=%s implementer=%q", st, holder)
+	}
+}
+
+// TestSessionsHoldingClaimsSeesOpenHeldIssues: `td session cleanup` must not
+// delete the holder row of a leaked open+held claim — that row is what names
+// the claim in every report that could lead an operator to it.
+func TestSessionsHoldingClaimsSeesOpenHeldIssues(t *testing.T) {
+	f := setupClaimTest(t)
+	issue := f.claim(t, "open but still claimed", "ses_ghost_holder", time.Minute)
+	execTestSQL(t, f.baseDir, `UPDATE issues SET status = 'open' WHERE id = ?`, issue.ID)
+
+	held, err := f.database.SessionsHoldingClaims()
+	if err != nil {
+		t.Fatalf("SessionsHoldingClaims failed: %v", err)
+	}
+	if held["ses_ghost_holder"] != 1 {
+		t.Fatalf("open+held claim invisible to cleanup protection: %v", held)
+	}
+
+	// A closed issue keeps its implementer as the record of who did the work;
+	// protecting that holder forever would make cleanup a no-op for every
+	// session that ever finished anything.
+	execTestSQL(t, f.baseDir, `UPDATE issues SET status = 'closed' WHERE id = ?`, issue.ID)
+	held, err = f.database.SessionsHoldingClaims()
+	if err != nil {
+		t.Fatalf("SessionsHoldingClaims failed: %v", err)
+	}
+	if held["ses_ghost_holder"] != 0 {
+		t.Fatalf("a closed issue must not count as a held claim: %v", held)
+	}
+}
+
 // TestUnstartReleasesALeakedClaimOnAnOpenIssue: an open issue that still names
 // an implementer is NOT "already unstarted". Reporting success there is the
 // false success that got an earlier fix rejected on review — and --stale

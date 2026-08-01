@@ -263,7 +263,37 @@ type staleClaim struct {
 	source string
 }
 
-// unresolvedClaim is an in_progress issue whose holder's liveness cannot be
+// listClaimedIssues returns every issue the sweeps may act on: the in_progress
+// ones, plus open issues that still name an implementer.
+//
+// The second group exists because a claim can outlive in_progress. `td reopen`
+// and `td unblock` both used to land an issue on open without clearing the
+// implementer, and both sweeps selected in_progress only — so those claims were
+// held, releasable by db.ReleaseClaims, and yet listed by nothing. Selecting
+// them here is what makes rows leaked by older builds visible to
+// `td unstart --session` and `--stale`.
+//
+// Open issues with NO implementer are dropped rather than reported unresolved:
+// an unclaimed open issue is the normal resting state of most of the backlog
+// and is not a claim at all.
+func listClaimedIssues(database *db.DB) ([]models.Issue, error) {
+	issues, err := database.ListIssues(db.ListIssuesOptions{
+		Status: []models.Status{models.StatusInProgress, models.StatusOpen},
+	})
+	if err != nil {
+		return nil, err
+	}
+	claimed := issues[:0]
+	for _, issue := range issues {
+		if issue.Status == models.StatusOpen && issue.ImplementerSession == "" {
+			continue
+		}
+		claimed = append(claimed, issue)
+	}
+	return claimed, nil
+}
+
+// unresolvedClaim is a claimed issue whose holder's liveness cannot be
 // measured at all, so the sweep deliberately leaves it alone.
 type unresolvedClaim struct {
 	id     string
@@ -361,9 +391,7 @@ func claimLiveness(holder session.Session, holderKnown bool, issue *models.Issue
 func unstartBySession(database *db.DB, sess *session.Session, scope db.SessionStateScope, holder, reason string, force, isJSON bool) error {
 	fail := sweepFailer(isJSON)
 
-	issues, err := database.ListIssues(db.ListIssuesOptions{
-		Status: []models.Status{models.StatusInProgress},
-	})
+	issues, err := listClaimedIssues(database)
 	if err != nil {
 		return fail(fmt.Errorf("failed to list issues: %w", err))
 	}
@@ -397,10 +425,10 @@ func unstartBySession(database *db.DB, sess *session.Session, scope db.SessionSt
 	if row == nil && len(report.claims) == 0 {
 		if isJSON {
 			output.JSONError(output.ErrCodeNotFound,
-				fmt.Sprintf("no session %s in this database, and no in_progress claim names it", holder))
+				fmt.Sprintf("no session %s in this database, and no claim names it", holder))
 			return fmt.Errorf("%w", errSilentExit)
 		}
-		return fail(fmt.Errorf("no session %s in this database, and no in_progress claim names it", holder))
+		return fail(fmt.Errorf("no session %s in this database, and no claim names it", holder))
 	}
 
 	return emitSweep(database, sess, scope, report, reason, force, isJSON,
@@ -437,9 +465,7 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 	}
 	kin := sessionKin(sessions, sess)
 
-	issues, err := database.ListIssues(db.ListIssuesOptions{
-		Status: []models.Status{models.StatusInProgress},
-	})
+	issues, err := listClaimedIssues(database)
 	if err != nil {
 		return fail(fmt.Errorf("failed to list issues: %w", err))
 	}

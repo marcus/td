@@ -296,14 +296,28 @@ func (db *DB) DeleteSessionsByID(ids []string) (int64, error) {
 	return count, err
 }
 
-// SessionsHoldingClaims returns, per session id, how many in_progress issues
-// name that session as implementer. `td session cleanup` uses it to avoid
-// deleting the very rows that make a leaked claim reclaimable.
+// SessionsHoldingClaims returns, per session id, how many issues name that
+// session as implementer. `td session cleanup` uses it to avoid deleting the
+// very rows that make a leaked claim reclaimable.
+//
+// The selection is the same set ReleaseClaims calls releasable: in_progress,
+// plus open-while-still-naming-a-holder. That second case is the leak this
+// exists to protect — older builds of `td reopen` and `td unblock` left the
+// implementer set on an open issue, and counting only in_progress meant
+// cleanup deleted that holder's session row while the claim was still on the
+// issue, leaving nothing any surface could reclaim.
+//
+// Deliberately NOT widened past that. A closed issue keeps its implementer as
+// the record of who did the work, and protecting those holders forever would
+// mean cleanup could never delete a session that ever finished anything. A
+// blocked issue keeps its holder on purpose and is reachable through
+// `td list --status blocked`, so it is not invisible the way open+held is.
 func (db *DB) SessionsHoldingClaims() (map[string]int, error) {
 	rows, err := db.conn.Query(`
 		SELECT implementer_session, COUNT(*) FROM issues
-		WHERE status = ? AND implementer_session != '' AND deleted_at IS NULL
-		GROUP BY implementer_session`, string(models.StatusInProgress))
+		WHERE status IN (?, ?) AND implementer_session != '' AND deleted_at IS NULL
+		GROUP BY implementer_session`,
+		string(models.StatusInProgress), string(models.StatusOpen))
 	if err != nil {
 		return nil, err
 	}

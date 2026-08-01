@@ -339,6 +339,16 @@ Examples:
 			}
 
 			issue.Status = models.StatusOpen
+			// An unblocked issue is unclaimed work, exactly as a reopened one
+			// is. `td block` deliberately keeps the implementer — a blocked
+			// issue is still somebody's — but blocked is reachable from open,
+			// in_progress AND in_review, while unblock always lands on open.
+			// Restoring in_progress instead would invent a claim for an issue
+			// that was blocked straight from open, so the transition back to
+			// open releases. Leaving it set produced an issue that is open AND
+			// held, which no sweep lists (both select in_progress only), so the
+			// claim leaked with no surface that could report it.
+			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUnblock); err != nil {
 				failTransition(isJSON, output.ErrCodeDatabaseError, "%s", describeIssueWriteFailure(database, "unblock", issueID, err))
