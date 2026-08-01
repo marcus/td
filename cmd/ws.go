@@ -339,7 +339,7 @@ var wsCurrentCmd = &cobra.Command{
 		if jsonOutput {
 			result := map[string]interface{}{
 				"work_session": ws,
-				"issues":       issueIDs,
+				"issues":       jsonList(issueIDs),
 			}
 			return output.JSON(result)
 		}

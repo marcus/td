@@ -134,11 +134,11 @@ var usageCmd = &cobra.Command{
 				"session":        sess.ID,
 				"focused":        focusedIssue,
 				"work_session":   activeWS,
-				"ws_issues":      wsIssues,
-				"in_progress":    inProgress,
-				"reviewable":     reviewable,
-				"ready_to_close": readyToClose,
-				"ready":          ready,
+				"ws_issues":      jsonList(wsIssues),
+				"in_progress":    jsonList(inProgress),
+				"reviewable":     jsonList(reviewable),
+				"ready_to_close": jsonList(readyToClose),
+				"ready":          jsonList(ready),
 			}
 			return output.JSON(result)
 		}

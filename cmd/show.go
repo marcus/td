@@ -170,7 +170,7 @@ Examples:
 				"type":                        issue.Type,
 				"priority":                    issue.Priority,
 				"points":                      issue.Points,
-				"labels":                      issue.Labels,
+				"labels":                      jsonList(issue.Labels),
 				"parent_id":                   issue.ParentID,
 				"acceptance":                  issue.Acceptance,
 				"implementer_session":         issue.ImplementerSession,
@@ -226,10 +226,10 @@ Examples:
 				result["handoff"] = map[string]interface{}{
 					"timestamp": handoff.Timestamp,
 					"session":   handoff.SessionID,
-					"done":      handoff.Done,
-					"remaining": handoff.Remaining,
-					"decisions": handoff.Decisions,
-					"uncertain": handoff.Uncertain,
+					"done":      jsonList(handoff.Done),
+					"remaining": jsonList(handoff.Remaining),
+					"decisions": jsonList(handoff.Decisions),
+					"uncertain": jsonList(handoff.Uncertain),
 				}
 			}
 			if len(logs) > 0 {

@@ -237,7 +237,7 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string, scope db.Sessi
 		deps, _ := database.GetDependencies(issue.ID)
 		blockedWithDeps = append(blockedWithDeps, map[string]interface{}{
 			"issue":      issue,
-			"depends_on": deps,
+			"depends_on": jsonList(deps),
 		})
 	}
 	result["blocked"] = blockedWithDeps
@@ -248,7 +248,7 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string, scope db.Sessi
 		SortBy: "priority",
 		Limit:  10,
 	})
-	result["ready_to_start"] = ready
+	result["ready_to_start"] = jsonList(ready)
 
 	return output.JSON(result)
 }

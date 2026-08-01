@@ -42,7 +42,7 @@ var boardListCmd = &cobra.Command{
 
 		asJSON := jsonMode(cmd)
 		if asJSON {
-			data, _ := json.MarshalIndent(boards, "", "  ")
+			data, _ := json.MarshalIndent(jsonList(boards), "", "  ")
 			fmt.Println(string(data))
 			return nil
 		}
@@ -236,7 +236,7 @@ var boardShowCmd = &cobra.Command{
 
 		asJSON := jsonMode(cmd)
 		if asJSON {
-			data, _ := json.MarshalIndent(issues, "", "  ")
+			data, _ := json.MarshalIndent(jsonList(issues), "", "  ")
 			fmt.Println(string(data))
 			return nil
 		}

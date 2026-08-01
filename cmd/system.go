@@ -663,10 +663,10 @@ var exportCmd = &cobra.Command{
 
 				item := map[string]interface{}{
 					"issue":        issue,
-					"logs":         logs,
-					"handoffs":     handoffs,
-					"dependencies": deps,
-					"files":        files,
+					"logs":         jsonList(logs),
+					"handoffs":     jsonList(handoffs),
+					"dependencies": jsonList(deps),
+					"files":        jsonList(files),
 				}
 				exportData = append(exportData, item)
 			}

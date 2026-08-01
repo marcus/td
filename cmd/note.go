@@ -122,10 +122,10 @@ Examples:
 
 		// JSON output
 		if jsonMode(cmd) {
-			return output.JSON(notes)
+			return output.JSON(jsonList(notes))
 		}
 		if format, _ := cmd.Flags().GetString("output"); format == "json" {
-			return output.JSON(notes)
+			return output.JSON(jsonList(notes))
 		}
 
 		if len(notes) == 0 {

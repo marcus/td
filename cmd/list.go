@@ -78,7 +78,7 @@ var listCmd = &cobra.Command{
 			format, _ := cmd.Flags().GetString("format")
 			jsonOutput := jsonMode(cmd)
 			if format == "json" || jsonOutput {
-				return output.JSON(results)
+				return output.JSON(jsonList(results))
 			}
 
 			long, _ := cmd.Flags().GetBool("long")
@@ -285,7 +285,7 @@ var listCmd = &cobra.Command{
 		format, _ := cmd.Flags().GetString("format")
 		jsonOutput := jsonMode(cmd)
 		if format == "json" || jsonOutput {
-			return output.JSON(issues)
+			return output.JSON(jsonList(issues))
 		}
 
 		long, _ := cmd.Flags().GetBool("long")
@@ -684,7 +684,7 @@ var deletedCmd = &cobra.Command{
 		}
 
 		if jsonOutput := jsonMode(cmd); jsonOutput {
-			return output.JSON(result.issues)
+			return output.JSON(jsonList(result.issues))
 		}
 
 		for _, issue := range result.issues {

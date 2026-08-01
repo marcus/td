@@ -413,7 +413,7 @@ var filesCmd = &cobra.Command{
 		}
 
 		if jsonOutput := jsonMode(cmd); jsonOutput {
-			return output.JSON(files)
+			return output.JSON(jsonList(files))
 		}
 
 		fmt.Printf("%s: %s\n", issue.ID, issue.Title)

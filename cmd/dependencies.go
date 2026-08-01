@@ -47,7 +47,7 @@ var blockedByCmd = &cobra.Command{
 
 		result := map[string]interface{}{
 			"issue":        issue,
-			"direct":       blocked,
+			"direct":       jsonList(blocked),
 			"direct_count": len(blocked),
 		}
 
@@ -56,7 +56,7 @@ var blockedByCmd = &cobra.Command{
 			allBlocked := getTransitiveBlocked(database, issueID, make(map[string]bool))
 			transitiveCount := len(allBlocked) - len(blocked)
 			result["transitive_count"] = transitiveCount
-			result["all"] = allBlocked
+			result["all"] = jsonList(allBlocked)
 		}
 
 		if jsonOutput {
@@ -166,7 +166,7 @@ var dependsOnCmd = &cobra.Command{
 		if jsonOutput {
 			result := map[string]interface{}{
 				"issue":        issue,
-				"dependencies": deps,
+				"dependencies": jsonList(deps),
 			}
 			return output.JSON(result)
 		}
@@ -294,9 +294,9 @@ var criticalPathCmd = &cobra.Command{
 
 		if jsonOutput {
 			result := map[string]interface{}{
-				"critical_path":      criticalPath,
-				"ready_to_start":     readyIssues,
-				"bottleneck_ranking": scores,
+				"critical_path":      jsonList(criticalPath),
+				"ready_to_start":     jsonList(readyIssues),
+				"bottleneck_ranking": jsonList(scores),
 			}
 			return output.JSON(result)
 		}
@@ -639,7 +639,7 @@ func showDependencies(database *db.DB, issue *models.Issue, jsonOutput bool) err
 	if jsonOutput {
 		result := map[string]interface{}{
 			"issue":        issue,
-			"dependencies": deps,
+			"dependencies": jsonList(deps),
 		}
 		return output.JSON(result)
 	}
@@ -685,7 +685,7 @@ func showBlocking(database *db.DB, issue *models.Issue, jsonOutput bool) error {
 	if jsonOutput {
 		result := map[string]interface{}{
 			"issue":   issue,
-			"blocked": blocked,
+			"blocked": jsonList(blocked),
 		}
 		return output.JSON(result)
 	}
