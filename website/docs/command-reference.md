@@ -136,7 +136,9 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | `td status` | Dashboard view |
 | `td focus <id>` | Set focus |
 | `td unfocus` | Clear focus |
-| `td whoami` | Show session identity |
+| `td whoami` | Show session identity. `--json`: session id, started (ISO-8601), issues touched |
+| `td session list` | List sessions with last activity. `--json`: branch, agent, session, `last_activity` (ISO-8601), `age_seconds` |
+| `td session cleanup [--older-than 7d] [--force]` | Preview stale session removal; `--force` deletes. `--json`: what would be / was deleted |
 
 ## Work Sessions
 

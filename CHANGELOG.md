@@ -4,6 +4,10 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`td whoami`, `td session list`, and `td session cleanup` honor `--json`** (td-ca69a1). `--json` is a global persistent flag, so it was advertised on all three and ignored by all three: they printed human tables regardless. A flag that silently does nothing is worse than an absent one — an agent caller cannot tell "no JSON support" from "no results". `whoami` emits session id, ISO-8601 start time, and issues touched; `session list` emits a row per session with `last_activity` as ISO-8601 (not the human `17m0s`) and `age_seconds`; `session cleanup` emits what would be deleted in preview and what was deleted under `--force`. Empty results are `[]` / `count: 0`, never a human "none found" line. Human output is unchanged.
+
 ## [v0.54.0] - 2026-07-30
 
 ### Review attribution

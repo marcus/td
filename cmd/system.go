@@ -190,22 +190,51 @@ var whoamiCmd = &cobra.Command{
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		isJSON := jsonMode(cmd)
+
+		// In --json mode the top-level Execute path emits the JSON error
+		// envelope, so the human ERROR line must be suppressed here to keep
+		// stdout parseable.
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 
 		// Get issues touched by this session
 		touchedIssues, _ := database.GetIssueSessionLog(sess.ID)
+
+		if isJSON {
+			touched := touchedIssues
+			if touched == nil {
+				touched = []string{}
+			}
+			payload := map[string]any{
+				"session":        sess.ID,
+				"started":        sess.StartedAt.UTC().Format(time.RFC3339),
+				"issues_touched": touched,
+			}
+			if sess.Name != "" {
+				payload["name"] = sess.Name
+			}
+			if sess.PreviousSessionID != "" {
+				payload["previous_session"] = sess.PreviousSessionID
+			}
+			return output.EmitResult("whoami", payload)
+		}
 
 		fmt.Printf("SESSION: %s\n", sess.Display())
 		fmt.Printf("STARTED: %s\n", sess.StartedAt.Format("2006-01-02T15:04:05Z"))
@@ -293,26 +322,53 @@ var sessionListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all sessions (branch + agent scoped)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
 		database, err := db.Open(getBaseDir())
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
 
 		sessions, err := session.ListSessions(database)
 		if err != nil {
-			output.Error("failed to list sessions: %v", err)
+			emitErr("failed to list sessions: %v", err)
 			return err
+		}
+
+		currentBranch := session.GetCurrentBranch()
+		fp := session.GetAgentFingerprint()
+
+		if isJSON {
+			// A bare array (empty when there are no sessions), matching the
+			// list-family JSON contract: no results is [] , never silence.
+			now := time.Now()
+			rows := make([]map[string]any, 0, len(sessions))
+			for _, sess := range sessions {
+				lastActive := sess.LastActive()
+				rows = append(rows, map[string]any{
+					"branch":        sess.Branch,
+					"agent":         sess.AgentType,
+					"session":       sess.ID,
+					"name":          sess.Name,
+					"last_activity": lastActive.UTC().Format(time.RFC3339),
+					"age_seconds":   int64(now.Sub(lastActive).Seconds()),
+					"current":       sess.Branch == currentBranch && sess.AgentType == string(fp.Type) && sess.AgentPID == fp.PID,
+				})
+			}
+			return output.JSON(rows)
 		}
 
 		if len(sessions) == 0 {
 			fmt.Println("No sessions found.")
 			return nil
 		}
-
-		currentBranch := session.GetCurrentBranch()
-		fp := session.GetAgentFingerprint()
 
 		fmt.Printf("%-16s %-14s %-12s %-18s %s\n", "BRANCH", "AGENT", "SESSION", "LAST ACTIVITY", "AGE")
 		fmt.Println(strings.Repeat("-", 80))
@@ -323,10 +379,7 @@ var sessionListCmd = &cobra.Command{
 				marker = "*"
 			}
 
-			lastActive := sess.LastActivity
-			if lastActive.IsZero() {
-				lastActive = sess.StartedAt
-			}
+			lastActive := sess.LastActive()
 			age := time.Since(lastActive).Truncate(time.Minute)
 
 			agentInfo := sess.AgentType
@@ -351,9 +404,16 @@ var sessionCleanupCmd = &cobra.Command{
 	Use:   "cleanup",
 	Short: "Remove stale session files",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
 		database, err := db.Open(getBaseDir())
 		if err != nil {
-			output.Error("%v", err)
+			emitErr("%v", err)
 			return err
 		}
 		defer database.Close()
@@ -363,35 +423,60 @@ var sessionCleanupCmd = &cobra.Command{
 
 		maxAge, err := session.ParseDuration(olderThan)
 		if err != nil {
-			output.Error("invalid duration: %v", err)
+			emitErr("invalid duration: %v", err)
 			return err
 		}
 
 		// Preview what would be deleted
 		sessions, err := session.ListSessions(database)
 		if err != nil {
-			output.Error("failed to list sessions: %v", err)
+			emitErr("failed to list sessions: %v", err)
 			return err
 		}
 
 		now := time.Now()
 		var toDelete []session.Session
 		for _, sess := range sessions {
-			lastActive := sess.LastActivity
-			if lastActive.IsZero() {
-				lastActive = sess.StartedAt
-			}
-			if now.Sub(lastActive) > maxAge {
+			if now.Sub(sess.LastActive()) > maxAge {
 				toDelete = append(toDelete, sess)
 			}
 		}
 
+		emitJSON := func(deleted int) error {
+			rows := make([]map[string]any, 0, len(toDelete))
+			for _, sess := range toDelete {
+				rows = append(rows, map[string]any{
+					"session":       sess.ID,
+					"branch":        sess.Branch,
+					"agent":         sess.AgentType,
+					"last_activity": sess.LastActive().UTC().Format(time.RFC3339),
+					"age_seconds":   int64(now.Sub(sess.LastActive()).Seconds()),
+				})
+			}
+			action := "would_cleanup_sessions"
+			if force {
+				action = "cleaned_up_sessions"
+			}
+			return output.EmitResult(action, map[string]any{
+				"older_than": olderThan,
+				"forced":     force,
+				"count":      deleted,
+				"sessions":   rows,
+			})
+		}
+
 		if len(toDelete) == 0 {
+			if isJSON {
+				return emitJSON(0)
+			}
 			fmt.Printf("No sessions older than %s found.\n", olderThan)
 			return nil
 		}
 
 		if !force {
+			if isJSON {
+				return emitJSON(len(toDelete))
+			}
 			fmt.Printf("Will delete %d session(s) older than %s:\n", len(toDelete), olderThan)
 			for _, sess := range toDelete {
 				fmt.Printf("  - %s (branch: %s)\n", sess.ID, sess.Branch)
@@ -402,8 +487,12 @@ var sessionCleanupCmd = &cobra.Command{
 
 		deleted, err := session.CleanupStaleSessions(database, maxAge)
 		if err != nil {
-			output.Error("cleanup failed: %v", err)
+			emitErr("cleanup failed: %v", err)
 			return err
+		}
+
+		if isJSON {
+			return emitJSON(deleted)
 		}
 
 		fmt.Printf("Deleted %d stale session(s).\n", deleted)

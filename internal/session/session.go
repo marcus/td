@@ -50,6 +50,18 @@ func (s *Session) Display() string {
 	return s.ID
 }
 
+// LastActive returns the session's liveness timestamp: its last recorded
+// activity, falling back to its start time for sessions that predate activity
+// tracking (or were never touched again). This is the single definition of
+// "when was this session last seen" shared by `session list`, `session
+// cleanup`, and stale-claim reclamation.
+func (s *Session) LastActive() time.Time {
+	if s.LastActivity.IsZero() {
+		return s.StartedAt
+	}
+	return s.LastActivity
+}
+
 // DisplayWithAgent returns session info including agent: "ses_abc123 [claude-code]" or with name
 func (s *Session) DisplayWithAgent() string {
 	base := s.ID
