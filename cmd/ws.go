@@ -617,6 +617,16 @@ var wsEndCmd = &cobra.Command{
 	},
 }
 
+// wsListEntry is one row of `td ws list`. It embeds models.WorkSession so the
+// session's own fields are inlined unchanged — a session from `ws list --json`
+// is field-for-field the one `ws current --json` returns — and adds the two
+// derived facts the human line shows.
+type wsListEntry struct {
+	models.WorkSession
+	Issues []string `json:"issues"`
+	Status string   `json:"status"` // active | completed | abandoned
+}
+
 var wsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent work sessions",
@@ -644,24 +654,41 @@ var wsListCmd = &cobra.Command{
 			return err
 		}
 
+		var entries []wsListEntry
 		for _, ws := range sessions {
 			issues, _ := database.GetWorkSessionIssues(ws.ID)
-			issueStr := strings.Join(issues, ",")
 
-			status := "[completed]"
+			status := "completed"
 			if ws.EndedAt == nil {
 				if ws.ID == activeWS {
-					status = "[active]"
+					status = "active"
 				} else {
-					status = "[abandoned]"
+					status = "abandoned"
 				}
 			}
 
-			fmt.Printf("%s  \"%s\"  %s  %s  %s\n",
-				ws.ID, ws.Name, output.FormatTimeAgo(ws.StartedAt), issueStr, status)
+			entries = append(entries, wsListEntry{
+				WorkSession: ws,
+				Issues:      jsonList(issues),
+				Status:      status,
+			})
 		}
 
-		if len(sessions) == 0 {
+		// Bare array of work sessions, each carrying the two facts the human
+		// line derives but the model does not store: the tagged issue ids
+		// (named "issues" as in `td ws current --json`) and the resolved
+		// active/completed/abandoned status.
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(entries))
+		}
+
+		for _, entry := range entries {
+			fmt.Printf("%s  \"%s\"  %s  %s  [%s]\n",
+				entry.ID, entry.Name, output.FormatTimeAgo(entry.StartedAt),
+				strings.Join(entry.Issues, ","), entry.Status)
+		}
+
+		if len(entries) == 0 {
 			fmt.Println("No work sessions")
 		}
 

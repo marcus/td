@@ -25,34 +25,67 @@ var featureCmd = &cobra.Command{
 	GroupID: "system",
 }
 
+// featureListEntry is one row of `td feature list`, in the shape --json emits.
+// The columns of the human table are the fields: state is the resolved value
+// as a string ("on"/"off" for the boolean registry, the mode name for the
+// string-valued review_policy_mode) so both kinds of flag share one row shape.
+// enabled carries the boolean reading for the flags that have one, and is
+// omitted for the string-valued flag rather than reported as a misleading
+// false.
+type featureListEntry struct {
+	Name        string `json:"name"`
+	State       string `json:"state"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+	Source      string `json:"source"`
+	Description string `json:"description"`
+}
+
 var featureListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List known feature flags and their resolved state",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
-		fmt.Printf("%-22s  %-9s  %-7s  %s\n", "NAME", "STATE", "SOURCE", "DESCRIPTION")
+		var entries []featureListEntry
 		for _, feature := range features.ListAll() {
 			enabled, source := features.Resolve(baseDir, feature.Name)
 			state := "off"
 			if enabled {
 				state = "on"
 			}
-
-			fmt.Printf("%-22s  %-9s  %-7s  %s\n", feature.Name, state, source, feature.Description)
+			enabledVal := enabled
+			entries = append(entries, featureListEntry{
+				Name:        feature.Name,
+				State:       state,
+				Enabled:     &enabledVal,
+				Source:      source,
+				Description: feature.Description,
+			})
 		}
 
 		// review_policy_mode is string-valued and lives outside the boolean
 		// registry; surface it here so `td feature list` shows the resolved
 		// review policy alongside the boolean flags.
-		mode, err := features.ResolveReviewPolicyMode(baseDir)
-		if err == nil {
+		if mode, err := features.ResolveReviewPolicyMode(baseDir); err == nil {
 			source := "default"
 			if _, ok, _ := config.GetFeatureStringFlag(baseDir, features.ReviewPolicyMode); ok {
 				source = "config"
 			}
-			fmt.Printf("%-22s  %-9s  %-7s  %s\n", features.ReviewPolicyMode, string(mode), source,
-				"Review policy: strict|balanced|delegated|trusted (default: trusted)")
+			entries = append(entries, featureListEntry{
+				Name:        features.ReviewPolicyMode,
+				State:       string(mode),
+				Source:      source,
+				Description: "Review policy: strict|balanced|delegated|trusted (default: trusted)",
+			})
+		}
+
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(entries))
+		}
+
+		fmt.Printf("%-22s  %-9s  %-7s  %s\n", "NAME", "STATE", "SOURCE", "DESCRIPTION")
+		for _, entry := range entries {
+			fmt.Printf("%-22s  %-9s  %-7s  %s\n", entry.Name, entry.State, entry.Source, entry.Description)
 		}
 
 		return nil

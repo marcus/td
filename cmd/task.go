@@ -81,6 +81,13 @@ var taskListCmd = &cobra.Command{
 			return err
 		}
 
+		// Bare issue array, identical in shape to `td list --json` — this
+		// command is a shorthand for `td list --type task`, so its machine
+		// output must be interchangeable with that one's.
+		if jsonMode(cmd) {
+			return output.JSON(jsonList(issues))
+		}
+
 		if len(issues) == 0 {
 			fmt.Println("No tasks found")
 			return nil
