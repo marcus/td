@@ -88,14 +88,21 @@ func buildTree(database *db.DB, issueID string, depth int, maxDepth int) map[str
 		return nil
 	}
 
+	// children is always present, on every node: a leaf (and a node cut off by
+	// --depth) reports [] rather than dropping the key, so a caller can walk
+	// the tree without testing for its existence at each step.
 	node := map[string]interface{}{
 		"id":       issue.ID,
 		"title":    issue.Title,
 		"type":     issue.Type,
 		"status":   issue.Status,
 		"priority": issue.Priority,
+		"children": jsonList([]map[string]interface{}{}),
 	}
 
+	// A node at the --depth cut keeps the empty children it was seeded with:
+	// its subtree was not walked, and the caller that asked for a depth limit
+	// is the one that knows where the cut is.
 	if maxDepth > 0 && depth >= maxDepth {
 		return node
 	}
@@ -104,16 +111,14 @@ func buildTree(database *db.DB, issueID string, depth int, maxDepth int) map[str
 		ParentID: issueID,
 	})
 
-	if len(children) > 0 {
-		childNodes := make([]map[string]interface{}, 0)
-		for _, child := range children {
-			childNode := buildTree(database, child.ID, depth+1, maxDepth)
-			if childNode != nil {
-				childNodes = append(childNodes, childNode)
-			}
+	childNodes := make([]map[string]interface{}, 0, len(children))
+	for _, child := range children {
+		childNode := buildTree(database, child.ID, depth+1, maxDepth)
+		if childNode != nil {
+			childNodes = append(childNodes, childNode)
 		}
-		node["children"] = childNodes
 	}
+	node["children"] = jsonList(childNodes)
 
 	return node
 }

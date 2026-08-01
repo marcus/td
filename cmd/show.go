@@ -231,6 +231,12 @@ Examples:
 			if issue.DeferCount > 0 {
 				result["defer_count"] = issue.DeferCount
 			}
+			// handoff and logs are always present, even when empty: an
+			// absent key is a third rendering of "nothing" that a caller
+			// cannot field-access at all (KeyError in Python, undefined in
+			// JS). Lists render as [], singular objects as null — the same
+			// contract the rest of the --json family follows.
+			result["handoff"] = nil
 			if handoff != nil {
 				result["handoff"] = map[string]interface{}{
 					"timestamp": handoff.Timestamp,
@@ -241,18 +247,16 @@ Examples:
 					"uncertain": jsonList(handoff.Uncertain),
 				}
 			}
-			if len(logs) > 0 {
-				logEntries := make([]map[string]interface{}, len(logs))
-				for i, log := range logs {
-					logEntries[i] = map[string]interface{}{
-						"timestamp": log.Timestamp,
-						"message":   log.Message,
-						"type":      log.Type,
-						"session":   log.SessionID,
-					}
-				}
-				result["logs"] = logEntries
+			logEntries := make([]map[string]interface{}, 0, len(logs))
+			for _, log := range logs {
+				logEntries = append(logEntries, map[string]interface{}{
+					"timestamp": log.Timestamp,
+					"message":   log.Message,
+					"type":      log.Type,
+					"session":   log.SessionID,
+				})
 			}
+			result["logs"] = jsonList(logEntries)
 			if startSnapshot != nil {
 				gitInfo := map[string]interface{}{
 					"start_commit": startSnapshot.CommitSHA,
