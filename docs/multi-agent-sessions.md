@@ -201,9 +201,16 @@ session row and stops heartbeating the one recorded in `implementer_session`.
 Measuring only that row would read a live, working agent as three hours dead.
 
 td also never releases a claim held by the calling session or by any session in
-its identity lineage: its `previous_session_id` chain, and any session row
-minted by the same agent process (same fingerprint and match context) on
-another branch or worktree.
+its identity lineage — its `previous_session_id` chain, which is what
+`td session --new` records, followed in both directions. Lineage is the *only*
+kinship relation: a session row is not the caller merely because it carries the
+same `agent_pid` (see below), and the rotated-onto-a-new-branch case is covered
+by signals 2 and 3 rather than by kinship.
+
+A lineage-held claim that is past the threshold is still **reported** under
+`unresolved`, because a sweep that silently drops what it will not act on tells
+you "no claims idle longer than 2h" while three sit 72 hours dead. Release
+those explicitly with `td unstart --session <holder> --force`.
 
 ### Only mutations move the signal
 
@@ -245,7 +252,8 @@ out-of-range value is rejected rather than silently wrapping into a short one.
 ### What is never touched, and what is reported
 
 - **The calling session's claims**, and those of any session in its identity
-  lineage. Definitionally live.
+  lineage. Definitionally live — but an idle one is reported under
+  `unresolved` with the command that releases it, never dropped in silence.
 - **Claims td cannot measure at all** — no implementer recorded, or no usable
   timestamp anywhere. These are reported under `unresolved` in JSON and as
   warnings in human output, and the envelope's `action` gains a

@@ -159,16 +159,26 @@ func TestUnstartStaleKeepsClaimOfRotatedLiveSession(t *testing.T) {
 	}
 }
 
-// TestSessionKinCoversLineageAndFingerprintSiblings pins the self-claim
-// guarantee to identity rather than to one row id. Both relations must hold:
-// `td session --new` lineage, and the same agent process appearing on another
-// branch or worktree.
-func TestSessionKinCoversLineageAndFingerprintSiblings(t *testing.T) {
+// TestSessionKinIsLineageOnly pins the self-claim guarantee to recorded
+// lineage — `td session --new`, followed in both directions — and to nothing
+// else.
+//
+// In particular a session carrying the caller's agent_pid/agent_type on another
+// branch is NOT kin. td's stated policy (docs/multi-agent-sessions.md) is that
+// pids are not identity: sessions sync between machines, so a pid from another
+// host means nothing locally and can collide with an unrelated live process.
+// Matching on it made a ghost row wearing the sweeper's fingerprint
+// permanently unreclaimable at every threshold. Live rotated agents are
+// protected by liveness instead — see
+// TestUnstartStaleKeepsClaimOfRotatedLiveSession.
+func TestSessionKinIsLineageOnly(t *testing.T) {
 	self := &session.Session{ID: "ses_me", Branch: "main", AgentType: "claude-code_77", AgentPID: 77}
 	sessions := []session.Session{
 		*self,
 		{ID: "ses_prev", AgentType: "claude-code_77", AgentPID: 77},
+		{ID: "ses_prev_prev", PreviousSessionID: "", AgentType: "claude-code_77", AgentPID: 77},
 		{ID: "ses_next", PreviousSessionID: "ses_me", AgentType: "other_9", AgentPID: 9},
+		{ID: "ses_next_next", PreviousSessionID: "ses_next", AgentType: "other_9", AgentPID: 9},
 		{ID: "ses_branch", Branch: "feature/x", AgentType: "claude-code_77", AgentPID: 77},
 		{ID: "ses_other_ctx", Branch: "main", AgentType: "claude-code_77", AgentPID: 77, MatchContextID: "reviewer"},
 		{ID: "ses_stranger", Branch: "main", AgentType: "claude-code_88", AgentPID: 88},
@@ -176,40 +186,171 @@ func TestSessionKinCoversLineageAndFingerprintSiblings(t *testing.T) {
 	}
 	self.PreviousSessionID = "ses_prev"
 	sessions[0] = *self
+	sessions[1].PreviousSessionID = "ses_prev_prev"
 
 	kin := sessionKin(sessions, self)
-	for _, want := range []string{"ses_me", "ses_prev", "ses_next", "ses_branch"} {
+	for _, want := range []string{"ses_me", "ses_prev", "ses_prev_prev", "ses_next", "ses_next_next"} {
 		if !kin[want] {
 			t.Errorf("%s must count as the caller's own identity", want)
 		}
 	}
-	for _, notKin := range []string{"ses_other_ctx", "ses_stranger", "ses_legacy_a"} {
+	for _, notKin := range []string{"ses_branch", "ses_other_ctx", "ses_stranger", "ses_legacy_a"} {
 		if kin[notKin] {
-			t.Errorf("%s must NOT count as the caller's identity", notKin)
+			t.Errorf("%s must NOT count as the caller's identity (pid is not identity)", notKin)
 		}
+	}
+}
+
+// TestUnstartStaleReportsLineageHeldClaimsAsUnresolved is the other half of the
+// self-claim guarantee: never releasing a lineage-held claim must not mean
+// never mentioning it. `td session --new` is a routine move, so a supervisor
+// that rotated its identity and then swept would be told "no claims idle
+// longer than 2h" while its ancestor's claims sat 72 hours dead — a sweep that
+// silently drops what it will not act on is a sweep that lies.
+//
+// It also pins the guard to identity rather than to one row id: with
+// `holder == sess.ID` in place of the kin check these claims are released.
+func TestUnstartStaleReportsLineageHeldClaimsAsUnresolved(t *testing.T) {
+	f := setupClaimTest(t)
+
+	// `td session --new`: the caller is the new row, the claims still name its
+	// ancestor, and nothing has heartbeated that ancestor for three days.
+	f.holder(t, "ses_lineage_old", 72*time.Hour)
+	execTestSQL(t, f.baseDir,
+		`UPDATE sessions SET previous_session_id = 'ses_lineage_old' WHERE id = ?`, f.sess.ID)
+
+	ids := make(map[string]bool, 3)
+	for _, name := range []string{"a", "b", "c"} {
+		ids[f.claim(t, "lineage claim "+name, "ses_lineage_old", 72*time.Hour).ID] = true
+	}
+
+	setStaleFlags(t, "2h", "true")
+	setJSONFlag(t, true)
+	env := decodeEnvelope(t, runStale(t, false))
+
+	if env.Count != 0 || len(env.Claims) != 0 {
+		t.Fatalf("a claim held by the caller's own lineage must never be released: %+v", env)
+	}
+	if env.UnresolvedCount != len(ids) || len(env.Unresolved) != len(ids) {
+		t.Fatalf("every lineage-held stale claim must be reported: %+v", env)
+	}
+	if env.Action != "released_stale_claims_with_unresolved" {
+		t.Fatalf("action must surface what was left behind, got %q", env.Action)
+	}
+	for _, u := range env.Unresolved {
+		if !ids[u.ID] {
+			t.Fatalf("unexpected unresolved id %q", u.ID)
+		}
+		if u.Session != "ses_lineage_old" {
+			t.Fatalf("unresolved entry must name the holder, got %q", u.Session)
+		}
+		if !strings.Contains(u.Reason, "lineage") ||
+			!strings.Contains(u.Reason, "td unstart --session ses_lineage_old --force") {
+			t.Fatalf("unresolved reason must name the cause and the remedy: %q", u.Reason)
+		}
+		if st, holder := f.status(t, u.ID); st != models.StatusInProgress || holder != "ses_lineage_old" {
+			t.Fatalf("claim %s was disturbed: status=%s implementer=%q", u.ID, st, holder)
+		}
+	}
+
+	// The human path must warn rather than print a bare "no claims".
+	setJSONFlag(t, false)
+	out := runStale(t, false)
+	if !strings.Contains(out, "not evaluated:") ||
+		!strings.Contains(out, "3 claim(s) left unresolved") {
+		t.Fatalf("human output must not drop the lineage-held claims: %q", out)
+	}
+}
+
+// TestUnstartStaleReleasesAGhostWearingTheSweepersFingerprint: a session row
+// carrying the sweeping process's own pid and agent type, on another branch, is
+// NOT the caller. td's policy is that a pid is not an identity — sessions sync
+// between machines, so a pid from another host means nothing locally and can
+// collide with an unrelated live process. Treating it as kinship made this
+// ghost's claim unreclaimable at every threshold, up to ten days and beyond.
+func TestUnstartStaleReleasesAGhostWearingTheSweepersFingerprint(t *testing.T) {
+	f := setupClaimTest(t)
+
+	// The caller needs a real, non-zero pid fingerprint for this to be the
+	// case it names: with TD_SESSION_ID set the fingerprint pid is 0, which
+	// the removed clause excluded anyway. CURSOR_AGENT gives a deterministic
+	// non-zero one (os.Getppid).
+	t.Setenv("TD_SESSION_ID", "")
+	t.Setenv("CURSOR_AGENT", "1")
+	caller, err := session.GetOrCreate(f.database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+	if caller.AgentPID == 0 {
+		t.Fatalf("fixture needs a non-zero agent pid, got session %+v", caller)
+	}
+
+	f.holderWith(t, db.SessionRow{
+		ID: "ses_ghost_pid", Branch: "feature/ghost",
+		AgentType: caller.AgentType, AgentPID: caller.AgentPID,
+		MatchContextID: caller.MatchContextID,
+		StartedAt:      time.Now().Add(-30 * 24 * time.Hour),
+		LastActivity:   time.Now().Add(-10 * 24 * time.Hour),
+	})
+	issue := f.claim(t, "held by a ghost wearing the sweeper's pid", "ses_ghost_pid", 10*24*time.Hour)
+
+	setStaleFlags(t, "2h", "true")
+	setJSONFlag(t, true)
+	env := decodeEnvelope(t, runStale(t, false))
+
+	if env.Count != 1 || len(env.Claims) != 1 || env.Claims[0].ID != issue.ID {
+		t.Fatalf("a ghost session sharing the sweeper's pid must still be reclaimable: %+v", env)
+	}
+	if env.UnresolvedCount != 0 {
+		t.Fatalf("nothing should be left unresolved: %+v", env)
+	}
+	if st, holder := f.status(t, issue.ID); st != models.StatusOpen || holder != "" {
+		t.Fatalf("claim not released: status=%s implementer=%q", st, holder)
 	}
 }
 
 // --- finding 5: unmeasurable liveness must fail closed ----------------------
 
-// TestUnstartStaleUnparseableSessionTimestampDoesNotRelease covers the live
-// migration hazard: older td builds wrote timestamps this build cannot parse,
-// which read back as the zero time. A zero time makes idle ~2562047h, which
-// exceeds every threshold — so the claim was released under any --stale value.
-func TestUnstartStaleUnparseableSessionTimestampDoesNotRelease(t *testing.T) {
+// TestUnstartStaleUnmeasurableClaimIsNotInfinitelyIdle covers the live
+// migration hazard: timestamps this build cannot parse, or a zero time written
+// by a bad import, read back as the zero time. A zero time makes idle
+// ~2562047h, which exceeds every threshold — so the claim was released under
+// any --stale value.
+//
+// EVERY signal has to be unmeasurable for that to be what the sweep is
+// deciding on: liveness is the most recent of the holder session, the issue's
+// updated_at, and the issue's history, and any one of them being fresh
+// protects the claim by freshness instead — which would make this test pass
+// for the wrong reason. Note the issue's own timestamp has to be a *parseable*
+// zero rather than garbage: `issues.updated_at` is scanned into a time.Time,
+// so an unparseable value fails ListIssues before the sweep ever runs. That
+// parseable zero is what keeps this branch reachable, and it is why the guard
+// cannot be deleted as dead code.
+func TestUnstartStaleUnmeasurableClaimIsNotInfinitelyIdle(t *testing.T) {
 	f := setupClaimTest(t)
 	f.holder(t, "ses_legacy_build", time.Minute)
 	issue := f.claim(t, "Held by a legacy session row", "ses_legacy_build", time.Minute)
 	execTestSQL(t, f.baseDir,
 		`UPDATE sessions SET started_at = 'garbage', last_activity = 'garbage' WHERE id = 'ses_legacy_build'`)
+	execTestSQL(t, f.baseDir, `UPDATE issues SET updated_at = ? WHERE id = ?`,
+		db.FormatCanonicalTime(time.Time{}), issue.ID)
+	execTestSQL(t, f.baseDir, `DELETE FROM logs WHERE issue_id = ?`, issue.ID)
+	execTestSQL(t, f.baseDir, `DELETE FROM action_log WHERE entity_id = ?`, issue.ID)
 
-	// A ten-year threshold: nothing honest can exceed it.
-	setStaleFlags(t, "3650d", "true")
+	// A short threshold: nothing here is fresh, so only "we cannot measure
+	// this" can keep the claim.
+	setStaleFlags(t, "2h", "true")
 	setJSONFlag(t, true)
 	env := decodeEnvelope(t, runStale(t, false))
 
 	if env.Count != 0 {
-		t.Fatalf("unmeasurable holder released under a 10-year threshold: %+v", env)
+		t.Fatalf("unmeasurable holder released: %+v", env)
+	}
+	if env.UnresolvedCount != 1 || len(env.Unresolved) != 1 || env.Unresolved[0].ID != issue.ID {
+		t.Fatalf("an unmeasurable claim must be reported, not dropped: %+v", env)
+	}
+	if !strings.Contains(env.Action, "_with_unresolved") {
+		t.Fatalf("action must surface the unresolved claim, got %q", env.Action)
 	}
 	if st, _ := f.status(t, issue.ID); st != models.StatusInProgress {
 		t.Fatalf("claim released: %s", st)

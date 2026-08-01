@@ -289,26 +289,20 @@ type sweepReport struct {
 // `holder == sess.ID` therefore lets a sweep release the caller's own claim,
 // which falsifies the guarantee the command advertises.
 //
-// Two relations define kinship:
+// Kinship is exactly one relation: lineage. previous_session_id, followed
+// transitively in both directions — which is what `td session --new` records.
 //
-//   - Lineage: previous_session_id, followed transitively in both directions.
-//     This is what `td session --new` records.
-//   - Fingerprint siblings: the same agent process (same agent_type — which
-//     embeds the pid — the same pid, and the same match context) on a
-//     different branch or worktree. A non-zero pid is required so legacy rows
-//     with no pid cannot collapse into each other.
+// It deliberately does NOT include "fingerprint siblings" matched on agent_pid.
+// A pid is not an identity here: sessions sync between machines, so a pid from
+// another host means nothing locally and can collide with an unrelated live
+// process (docs/multi-agent-sessions.md). Matching on it made any session row
+// carrying the sweeper's pid — including a ghost left on another branch —
+// permanently unreclaimable at every threshold. The case that clause was
+// reaching for, an agent whose session rotated onto a new branch or worktree
+// while it kept working, is already covered by the liveness signals: the work
+// it does lands on the issue as history (`issue_activity`) or as updated_at.
 func sessionKin(sessions []session.Session, self *session.Session) map[string]bool {
 	kin := map[string]bool{self.ID: true}
-	byID := make(map[string]session.Session, len(sessions))
-	for _, s := range sessions {
-		byID[s.ID] = s
-	}
-
-	sibling := func(s session.Session) bool {
-		return self.AgentPID != 0 && s.AgentPID == self.AgentPID &&
-			s.AgentType != "" && s.AgentType == self.AgentType &&
-			s.MatchContextID == self.MatchContextID
-	}
 
 	for changed := true; changed; {
 		changed = false
@@ -321,9 +315,8 @@ func sessionKin(sessions []session.Session, self *session.Session) map[string]bo
 				}
 				continue
 			}
-			// Descendants of a kin session are kin, and so are fingerprint
-			// siblings of the caller.
-			if (s.PreviousSessionID != "" && kin[s.PreviousSessionID]) || sibling(s) {
+			// Descendants of a kin session are kin.
+			if s.PreviousSessionID != "" && kin[s.PreviousSessionID] {
 				kin[s.ID] = true
 				changed = true
 			}
@@ -466,16 +459,11 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 		issue := &issues[i]
 		holder := issue.ImplementerSession
 
-		switch {
-		case holder == "":
+		if holder == "" {
 			report.unresolved = append(report.unresolved, unresolvedClaim{
 				id:     issue.ID,
 				reason: "no implementer session recorded",
 			})
-			continue
-		case kin[holder]:
-			// The calling session, or another session row minted by the same
-			// agent, is definitionally live.
 			continue
 		}
 
@@ -494,6 +482,22 @@ func unstartStale(database *db.DB, sess *session.Session, scope db.SessionStateS
 
 		idle := now.Sub(lastActive)
 		if idle <= maxIdle {
+			continue
+		}
+
+		// The caller, or another session row in its own identity lineage, is
+		// never released by a sweep: `td session --new` is a routine move, and
+		// releasing what the caller is holding would be self-sabotage. But an
+		// idle lineage claim is not nothing, and dropping it here made the
+		// sweep lie — "no claims idle longer than 2h" while three were 72h
+		// dead. Report it so the operator can act on it explicitly.
+		if kin[holder] {
+			report.unresolved = append(report.unresolved, unresolvedClaim{
+				id:     issue.ID,
+				holder: holder,
+				reason: fmt.Sprintf("held by session %s in the caller's identity lineage, idle %s (threshold %s, measured from %s); never released by a sweep — release it explicitly with `td unstart --session %s --force`",
+					holder, formatIdle(idle), stale, source, holder),
+			})
 			continue
 		}
 
