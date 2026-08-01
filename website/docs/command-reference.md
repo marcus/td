@@ -23,7 +23,8 @@ Complete reference for all `td` commands.
 |---------|-------------|
 | `td start <id>` | Begin work (status -> in_progress) |
 | `td unstart <id>` | Revert to open |
-| `td unstart --stale <dur> [--force]` | Release `in_progress` claims whose implementer session has been idle longer than `<dur>` (e.g. `2h`, `1d`). Previews by default; `--force` releases. `--json` reports each claim with its holding session and idle time. No default threshold — it must exceed your longest healthy agent run |
+| `td unstart --session <id> [--force]` | Release every `in_progress` claim held by one named session. Exact — no liveness heuristic; the reaper a supervisor should use when it kills a tick. Previews by default; `--force` releases |
+| `td unstart --stale <dur> [--force]` | Backstop: release `in_progress` claims whose holder shows no activity for longer than `<dur>` (e.g. `2h`, `1d`). Liveness is the newest of the holder session's activity, the issue's `updated_at`, and the issue's newest history entry, so a rotated-but-live session is not swept. Previews by default; `--force` releases. No default threshold — it must exceed your longest healthy agent run |
 | `td log "message" [flags]` | Log progress. Flags: `--decision`, `--blocker`, `--hypothesis`, `--tried`, `--result` |
 | `td handoff <id> [flags]` | Capture state. Flags: `--done`, `--remaining`, `--decision`, `--uncertain` |
 | `td review <id>` | Submit for review. Submitting session is recorded as `review_requested_by_session` |
@@ -139,7 +140,7 @@ cat docs/acceptance.md | td update td-a1b2 --append --acceptance-file -
 | `td unfocus` | Clear focus |
 | `td whoami` | Show session identity. `--json`: session id, started (ISO-8601), issues touched |
 | `td session list` | List sessions with last activity. `--json`: branch, agent, session, `last_activity` (ISO-8601), `age_seconds` |
-| `td session cleanup [--older-than 7d] [--force]` | Preview stale session removal; `--force` deletes. `--json`: what would be / was deleted |
+| `td session cleanup [--older-than 7d] [--force]` | Preview stale session removal; `--force` deletes. Sessions still holding `in_progress` claims are kept and reported under `held` — release them first with `td unstart --session <id> --force`. `--json`: what would be / was deleted |
 
 ## Work Sessions
 
