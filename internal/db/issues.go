@@ -147,7 +147,7 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("issue not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrIssueNotFound, id)
 	}
 	if err != nil {
 		return nil, err

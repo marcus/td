@@ -51,7 +51,10 @@ Supports stdin input for multi-line messages or piped input:
 		database, err := db.Open(baseDir)
 		if err != nil {
 			emitErr("%v", err)
-			return withErrorCode(output.ErrCodeDatabaseError, err)
+			// Uncoded on purpose: db.Open's failures carry
+			// db.ErrDatabaseUnavailable, which topLevelErrorCode maps to
+			// database_error for every command at once.
+			return err
 		}
 		defer database.Close()
 
@@ -144,7 +147,9 @@ Supports stdin input for multi-line messages or piped input:
 		_, err = database.GetIssue(issueID)
 		if err != nil {
 			emitErr("%v", err)
-			return withErrorCode(output.ErrCodeNotFound, err)
+			// Uncoded on purpose: GetIssue's miss carries db.ErrIssueNotFound,
+			// which topLevelErrorCode maps to not_found.
+			return err
 		}
 
 		// Determine log type

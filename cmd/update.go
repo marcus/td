@@ -42,7 +42,10 @@ var updateCmd = &cobra.Command{
 		database, err := db.Open(baseDir)
 		if err != nil {
 			emitErr("%v", err)
-			return withErrorCode(output.ErrCodeDatabaseError, err)
+			// Uncoded on purpose: db.Open's failures carry
+			// db.ErrDatabaseUnavailable, which topLevelErrorCode maps to
+			// database_error for every command at once.
+			return err
 		}
 		defer database.Close()
 

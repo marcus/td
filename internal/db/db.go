@@ -4,6 +4,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,35 @@ import (
 	"github.com/marcus/td/internal/workdir"
 	_ "modernc.org/sqlite"
 )
+
+// ErrDatabaseUnavailable marks every failure to open the project database:
+// no database yet, an unusable file, a failed migration. Callers that need to
+// classify a failure (notably the CLI's top-level JSON error envelope) match
+// on this instead of every RunE having to tag its own db.Open call — the
+// classification belongs to the store, not to 150 call sites.
+var ErrDatabaseUnavailable = errors.New("database unavailable")
+
+// ErrIssueNotFound marks a lookup for an issue ID that is not in the database,
+// so "that id does not exist" is distinguishable from a storage failure
+// without matching on message text.
+var ErrIssueNotFound = errors.New("issue not found")
+
+// openFailure tags an Open error with ErrDatabaseUnavailable while leaving the
+// error itself — message included — exactly as it was. Reporting both through
+// Unwrap keeps errors.Is/As working for the original error too.
+type openFailure struct{ err error }
+
+func (e *openFailure) Error() string { return e.err.Error() }
+
+func (e *openFailure) Unwrap() []error { return []error{e.err, ErrDatabaseUnavailable} }
+
+// unavailable marks err as a database-availability failure.
+func unavailable(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &openFailure{err: err}
+}
 
 // QueryValidator is set by main to validate TDQ queries without import cycle.
 // Returns nil if valid, error describing parse failure otherwise.
@@ -51,12 +81,12 @@ func Open(baseDir string) (*DB, error) {
 
 	// Check if db exists
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("database not found: run 'td init' first")
+		return nil, unavailable(fmt.Errorf("database not found: run 'td init' first"))
 	}
 
 	conn, err := openConn(dbPath)
 	if err != nil {
-		return nil, err
+		return nil, unavailable(err)
 	}
 
 	db := &DB{conn: conn, baseDir: baseDir}
@@ -64,7 +94,7 @@ func Open(baseDir string) (*DB, error) {
 	// Run any pending migrations
 	if _, err := db.RunMigrations(); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("run migrations: %w", err)
+		return nil, unavailable(fmt.Errorf("run migrations: %w", err))
 	}
 
 	return db, nil

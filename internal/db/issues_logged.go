@@ -160,7 +160,7 @@ func (db *DB) scanIssueRowFrom(store reviewSyncStore, id string) (*models.Issue,
 		&deferUntil, &dueDate, &issue.DeferCount,
 	)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("issue not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrIssueNotFound, id)
 	}
 	if err != nil {
 		return nil, err

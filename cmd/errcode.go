@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/output"
 )
 
@@ -91,16 +92,28 @@ func errorCode(err error) (string, bool) {
 // topLevelErrorCode resolves the error code for the JSON envelope Execute emits
 // for an error that reached the top level.
 //
-// A coded error reports its own code. Everything else falls back to
-// invalid_input, which is what the uncoded population is dominated by: cobra's
-// own parse and argument-validation failures (unknown flag, unknown command,
-// "accepts at most N arg(s)", missing required flag) plus the hand-written
-// "issue ID required. Usage: ..." validations. Reporting those as anything else
-// would trade one wrong code for another; call sites that fail for a different
-// reason should say so with withErrorCode instead.
+// A coded error reports its own code. Failures the store itself classifies are
+// recognised next: an unopenable database and a missing issue are the two most
+// common operational failures, and they reach the top level uncoded from most
+// of the ~150 RunE returns that simply pass db.Open's or GetIssue's error up.
+// Matching the store's sentinels here classifies them for every command at
+// once, instead of tagging each call site by hand and mislabelling whichever
+// ones get missed.
+//
+// Everything else falls back to invalid_input, which is what the remaining
+// uncoded population is: cobra's own parse and argument-validation failures
+// (unknown flag, unknown command, "accepts at most N arg(s)", missing required
+// flag) plus the hand-written "issue ID required. Usage: ..." validations. A
+// call site that fails for some other reason should say so with withErrorCode.
 func topLevelErrorCode(err error) string {
 	if code, ok := errorCode(err); ok && code != "" {
 		return code
+	}
+	switch {
+	case errors.Is(err, db.ErrDatabaseUnavailable):
+		return output.ErrCodeDatabaseError
+	case errors.Is(err, db.ErrIssueNotFound):
+		return output.ErrCodeNotFound
 	}
 	return output.ErrCodeInvalidInput
 }

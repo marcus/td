@@ -182,3 +182,83 @@ func TestCommandErrorsCarryTheirCode(t *testing.T) {
 		t.Errorf("missing issue: code = %q, want %q (err: %v)", got, output.ErrCodeNotFound, err)
 	}
 }
+
+// TestStoreFailuresClassifiedCentrally covers td-be12a0: the two operational
+// failures that reach the top level uncoded from most of the ~150 RunE returns
+// must still be classified, because the store tags them, not the call site.
+func TestStoreFailuresClassifiedCentrally(t *testing.T) {
+	uninitialized := t.TempDir()
+	_, openErr := db.Open(uninitialized)
+	if openErr == nil {
+		t.Fatal("Open on a directory with no database must fail")
+	}
+	if !errors.Is(openErr, db.ErrDatabaseUnavailable) {
+		t.Errorf("Open error must match db.ErrDatabaseUnavailable, got %v", openErr)
+	}
+	if got := topLevelErrorCode(openErr); got != output.ErrCodeDatabaseError {
+		t.Errorf("uncoded db.Open error: code = %q, want %q", got, output.ErrCodeDatabaseError)
+	}
+	// The message a caller reads is unchanged by the tagging.
+	if openErr.Error() != "database not found: run 'td init' first" {
+		t.Errorf("message = %q, want the original", openErr.Error())
+	}
+
+	initialized := t.TempDir()
+	database, err := db.Initialize(initialized)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	_, getErr := database.GetIssue("td-missing-999")
+	if getErr == nil {
+		t.Fatal("GetIssue of a missing id must fail")
+	}
+	if !errors.Is(getErr, db.ErrIssueNotFound) {
+		t.Errorf("GetIssue error must match db.ErrIssueNotFound, got %v", getErr)
+	}
+	if got := topLevelErrorCode(getErr); got != output.ErrCodeNotFound {
+		t.Errorf("uncoded GetIssue error: code = %q, want %q", got, output.ErrCodeNotFound)
+	}
+	if getErr.Error() != "issue not found: td-missing-999" {
+		t.Errorf("message = %q, want the original", getErr.Error())
+	}
+
+	// An explicit code still wins over the sentinel mapping.
+	coded := withErrorCode(output.ErrCodeConflict, openErr)
+	if got := topLevelErrorCode(coded); got != output.ErrCodeConflict {
+		t.Errorf("explicitly coded error: code = %q, want %q", got, output.ErrCodeConflict)
+	}
+}
+
+// TestUntaggedCommandsReportDatabaseError runs commands that never tagged their
+// db.Open error — the population td-be12a0 was filed about — and checks the
+// envelope they would produce.
+func TestUntaggedCommandsReportDatabaseError(t *testing.T) {
+	saveAndRestoreGlobals(t)
+
+	uninitialized := t.TempDir()
+	baseDirOverride = &uninitialized
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"list", func() error { return listCmd.RunE(listCmd, nil) }},
+		{"start", func() error { return startCmd.RunE(startCmd, []string{"td-anything"}) }},
+		{"approve", func() error { return approveCmd.RunE(approveCmd, []string{"td-anything"}) }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var err error
+			_ = captureStdout(t, func() { err = tc.run() })
+			if err == nil {
+				t.Fatalf("%s against an uninitialized project must fail", tc.name)
+			}
+			if got := topLevelErrorCode(err); got != output.ErrCodeDatabaseError {
+				t.Errorf("%s: code = %q, want %q (err: %v)", tc.name, got, output.ErrCodeDatabaseError, err)
+			}
+		})
+	}
+}
