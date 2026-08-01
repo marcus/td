@@ -159,7 +159,10 @@ td unstart --session ses_abc123                  # preview: what it holds
 td unstart --session ses_abc123 --force --json   # release exactly those claims
 ```
 
-This releases every `in_progress` claim held by ONE named session. There is no
+This releases every claim held by ONE named session — the `in_progress` ones,
+plus any `open` issue that still names it as implementer. (An open issue with a
+holder is a leak: older builds of `td reopen` and `td unblock` left one behind.
+Selecting it here is what makes such a row reclaimable at all.) There is no
 liveness heuristic: the caller already knows which session died, because it is
 the one whose process it just killed. In a fleet of N parallel slots this is
 the only safe reaper — releasing by idle time instead would sweep every other
@@ -270,7 +273,8 @@ exact opposite of the intent.
 
 `td session cleanup --older-than <dur>` deletes idle session rows. Those rows
 are what makes a leaked claim reclaimable, so cleanup **skips any session that
-still holds an `in_progress` claim** and names it in its output (`held` in
+still holds a claim** — `in_progress`, or an `open` issue that still names it —
+and names it in its output (`held` in
 JSON, a warning otherwise) together with the command that clears it. Without
 that, a cron running both would delete the row first and strand the issue.
 

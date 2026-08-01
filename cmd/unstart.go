@@ -711,7 +711,7 @@ func init() {
 	rootCmd.AddCommand(unstartCmd)
 
 	unstartCmd.Flags().String("reason", "", "Reason for unstarting")
-	unstartCmd.Flags().String("session", "", "Release every in_progress claim held by this session id (exact; no liveness guess)")
-	unstartCmd.Flags().String("stale", "", "Release in_progress claims whose holder has been inactive longer than this (e.g. 2h, 90m, 1d). No default: must exceed your longest healthy tick. Only mutations move the signal — see docs/multi-agent-sessions.md")
+	unstartCmd.Flags().String("session", "", "Release every claim held by this session id (in_progress, plus open issues that still name it; exact, no liveness guess)")
+	unstartCmd.Flags().String("stale", "", "Release claims (in_progress, plus open issues that still name a holder) whose holder has been inactive longer than this (e.g. 2h, 90m, 1d). No default: must exceed your longest healthy tick. Only mutations move the signal — see docs/multi-agent-sessions.md")
 	unstartCmd.Flags().Bool("force", false, "With --session/--stale, actually release the claims (default previews)")
 }

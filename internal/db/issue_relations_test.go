@@ -1539,6 +1539,55 @@ func TestCascadeUnblockDependents_SingleDep(t *testing.T) {
 	}
 }
 
+// TestCascadeUnblockDependents_ClearsTheImplementerClaim: the auto-unblock is
+// the automatic form of `td unblock`, and it releases the claim for the same
+// reason the command does — the issue lands on open, and an open issue is
+// unclaimed work. It matters more here than in the manual case: nobody typed a
+// command, so nobody is watching the leak happen. An issue left open AND held
+// is the state no reclamation surface could see before td-d2e612.
+func TestCascadeUnblockDependents_ClearsTheImplementerClaim(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
+	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
+	_ = db.CreateIssue(blocker)
+	_ = db.CreateIssue(dependent)
+	_ = db.AddDependency(dependent.ID, blocker.ID, "depends_on")
+
+	// Started, then blocked: `td block` keeps the implementer on purpose, so
+	// this is the state the cascade actually finds.
+	dependent.ImplementerSession = "ses_held"
+	if err := db.UpdateIssue(dependent); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	count, _ := db.CascadeUnblockDependents(blocker.ID, "test-session")
+	if count != 1 {
+		t.Fatalf("expected 1 unblocked, got %d", count)
+	}
+
+	updated, _ := db.GetIssue(dependent.ID)
+	if updated.Status != models.StatusOpen || updated.ImplementerSession != "" {
+		t.Fatalf("auto-unblock left the claim in place: status=%s implementer=%q",
+			updated.Status, updated.ImplementerSession)
+	}
+
+	// The holder must not still be counted as holding a claim — that is what
+	// keeps `td session cleanup` from reporting a claim nobody can find.
+	held, err := db.SessionsHoldingClaims()
+	if err != nil {
+		t.Fatalf("SessionsHoldingClaims failed: %v", err)
+	}
+	if held["ses_held"] != 0 {
+		t.Fatalf("released claim still counted as held: %v", held)
+	}
+}
+
 func TestCascadeUnblockDependents_AllDepsClosed(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Initialize(dir)

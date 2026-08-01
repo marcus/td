@@ -551,7 +551,7 @@ var sessionCleanupCmd = &cobra.Command{
 					"last_activity": sess.LastActive().UTC().Format(time.RFC3339),
 					"age_seconds":   int64(now.Sub(sess.LastActive()).Seconds()),
 					"claims":        held[sess.ID],
-					"reason":        "still holds in_progress claims; release them first (td unstart --session " + sess.ID + " --force)",
+					"reason":        "still holds unreleased claims; release them first (td unstart --session " + sess.ID + " --force)",
 				})
 			}
 			action := "would_cleanup_sessions"
@@ -573,7 +573,7 @@ var sessionCleanupCmd = &cobra.Command{
 
 		warnHolders := func() {
 			for _, sess := range holders {
-				output.Warning("kept %s: still holds %d in_progress claim(s); release with `td unstart --session %s --force`",
+				output.Warning("kept %s: still holds %d unreleased claim(s); release with `td unstart --session %s --force`",
 					sess.ID, held[sess.ID], sess.ID)
 			}
 		}

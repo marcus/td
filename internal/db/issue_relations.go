@@ -330,6 +330,13 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 		}
 
 		issue.Status = models.StatusOpen
+		// The automatic form of `td unblock`, and it releases the claim for
+		// the same reason the command does: the issue lands on open, and an
+		// open issue is unclaimed work. Leaving the implementer set here is
+		// worse than in the manual case — nobody typed a command, so nobody is
+		// watching, and the holder may be a session that stopped work when the
+		// issue was blocked hours ago. See cmd/block.go unblockCmd.
+		issue.ImplementerSession = ""
 		if err := db.updateIssueAndLog(issue, sessionID, models.ActionUnblock); err != nil {
 			continue
 		}
