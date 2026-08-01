@@ -51,7 +51,7 @@ Supports stdin input for multi-line messages or piped input:
 		database, err := db.Open(baseDir)
 		if err != nil {
 			emitErr("%v", err)
-			return err
+			return withErrorCode(output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
@@ -144,7 +144,7 @@ Supports stdin input for multi-line messages or piped input:
 		_, err = database.GetIssue(issueID)
 		if err != nil {
 			emitErr("%v", err)
-			return err
+			return withErrorCode(output.ErrCodeNotFound, err)
 		}
 
 		// Determine log type

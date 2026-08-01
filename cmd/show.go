@@ -28,7 +28,7 @@ Examples:
 		database, err := db.Open(baseDir)
 		if err != nil {
 			output.Error("%v", err)
-			return err
+			return withErrorCode(output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
@@ -124,11 +124,11 @@ Examples:
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
 			if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
-				output.JSONError("not_found", err.Error())
+				output.JSONError(output.ErrCodeNotFound, err.Error())
 			} else {
 				output.Error("%v", err)
 			}
-			return err
+			return withErrorCode(output.ErrCodeNotFound, err)
 		}
 
 		// Get logs and handoff

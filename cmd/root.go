@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/suggest"
 	"github.com/marcus/td/internal/workdir"
@@ -106,8 +105,12 @@ func Execute() {
 		// parsing itself failed on an unknown flag. This must run before the
 		// unknown-flag/workflow-hint handling so json callers never get the
 		// human-oriented hint text.
+		//
+		// The envelope reports the error's own code when it carries one (see
+		// withErrorCode); invalid_input is the fallback for uncoded errors,
+		// which are dominated by cobra usage failures.
 		if jsonErrorRequested() {
-			output.JSONError(output.ErrCodeInvalidInput, err.Error())
+			emitTopLevelJSONError(err)
 			os.Exit(1)
 		}
 

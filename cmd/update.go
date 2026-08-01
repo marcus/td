@@ -42,7 +42,7 @@ var updateCmd = &cobra.Command{
 		database, err := db.Open(baseDir)
 		if err != nil {
 			emitErr("%v", err)
-			return err
+			return withErrorCode(output.ErrCodeDatabaseError, err)
 		}
 		defer database.Close()
 
