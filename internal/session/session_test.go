@@ -569,3 +569,25 @@ func TestEdgeCasesSessionMigration(t *testing.T) {
 		})
 	}
 }
+
+// TestParseDurationRejectsOutOfRangeDays: `days * 24 * time.Hour` overflows
+// int64 nanoseconds past ~106751 days, and the wrapped value can land back in
+// positive territory — `213504d` became 25m26s. A duration that gates a
+// destructive sweep must never silently mean the opposite of what was typed.
+func TestParseDurationRejectsOutOfRangeDays(t *testing.T) {
+	for _, s := range []string{"213504d", "106752d", "9223372036854775807d"} {
+		if d, err := ParseDuration(s); err == nil {
+			t.Errorf("ParseDuration(%q) = %v, want an out-of-range error", s, d)
+		}
+	}
+	// The boundary still parses, and ordinary values are untouched.
+	if d, err := ParseDuration("106751d"); err != nil || d <= 0 {
+		t.Errorf("ParseDuration(106751d) = %v, %v", d, err)
+	}
+	if d, err := ParseDuration("30d"); err != nil || d != 30*24*time.Hour {
+		t.Errorf("ParseDuration(30d) = %v, %v", d, err)
+	}
+	if _, err := ParseDuration("banana"); err == nil {
+		t.Error("ParseDuration(banana) must fail")
+	}
+}

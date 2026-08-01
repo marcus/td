@@ -357,16 +357,31 @@ func GetWithContextCheck(database *db.DB) (*Session, error) {
 	return GetOrCreate(database)
 }
 
-// ParseDuration parses human-readable duration strings
+// maxDurationDays is the largest whole-day value time.Duration can hold
+// (math.MaxInt64 nanoseconds ≈ 106751 days). Anything beyond it overflows.
+const maxDurationDays = int64(1<<63-1) / int64(24*time.Hour)
+
+// ParseDuration parses human-readable duration strings.
+//
+// The `d` (days) suffix is td's own extension — time.ParseDuration stops at
+// hours. Days are multiplied into nanoseconds, so the multiplication MUST be
+// range-checked: an unchecked `days * 24 * time.Hour` wraps silently, and a
+// wrapped value that lands back in positive territory is indistinguishable
+// from a deliberate short duration. That is not a cosmetic bug where the
+// result gates a destructive sweep — an operator writing an
+// intended-as-never `--stale 213504d` would get a 25-minute reaper.
 func ParseDuration(s string) (time.Duration, error) {
 	if d, err := time.ParseDuration(s); err == nil {
 		return d, nil
 	}
 
 	if strings.HasSuffix(s, "d") {
-		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		days, err := strconv.ParseInt(strings.TrimSuffix(s, "d"), 10, 64)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("invalid duration: %s", s)
+		}
+		if days > maxDurationDays || days < -maxDurationDays {
+			return 0, fmt.Errorf("duration out of range: %s (max %dd)", s, maxDurationDays)
 		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
