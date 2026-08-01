@@ -4,6 +4,12 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Stale-claim reclamation
+
+- **`td unstart --stale <duration>` releases claims whose holder is gone** (td-9b2e4a). An agent killed mid-work — by a subscription usage limit, a wall-clock timeout, a crash — never hands off and never unstarts, so its `in_progress` claim leaks: the work never returns to the ready queue and a supervisor watching for ready work reads a broken fleet as an idle one. td already tracks each session's last activity, so td is the right owner of "this claim's holder is gone" rather than every harness that drives it.
+- It **previews by default and mutates only with `--force`**, copying `td session cleanup`, and reuses the same duration parser (`2h`, `90m`, `1d`). `--json` lists each claim with its issue id, the holding session, that session's idle time, and its last activity; the released issue records `claim released: implementer session ses_x idle 3h0m0s (threshold 2h)` in its history.
+- **There is deliberately no default threshold.** The dangerous failure is releasing a live agent's claim, after which two agents work the same issue. The threshold must exceed the longest a healthy agent can run without touching td — in a supervisor loop, the tick timeout. td's signal is last activity, and its limitation (an agent quietly working for an hour looks like an agent that died an hour ago) is documented in `docs/multi-agent-sessions.md`. `sessions.agent_pid` is deliberately not used to sharpen it: sessions sync between machines, so a pid from another host is meaningless locally. The calling session's own claim is never released, and claims whose holder cannot be measured are reported rather than reclaimed.
+
 ### Fixed
 
 - **`td unstart`, `block`, `reopen`, and `unblock` report rejections through their exit code** (td-34c833), completing the work started in td-b76671 and td-f9cfab. All four incremented a `skipped` counter for missing ids, invalid transitions, and update failures and then returned `nil`, so a command that performed no requested mutation still reported shell success. The semantics match the commands already fixed: a batch exits non-zero when nothing mutated and at least one target genuinely failed; a documented idempotent retry (unstarting an already-open issue, blocking an already-blocked one) stays exit 0; a mixed batch with at least one real mutation stays exit 0, so callers relying on partial success are unaffected. `--json` callers get exactly one error envelope naming the target that failed.

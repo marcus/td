@@ -23,6 +23,7 @@ Complete reference for all `td` commands.
 |---------|-------------|
 | `td start <id>` | Begin work (status -> in_progress) |
 | `td unstart <id>` | Revert to open |
+| `td unstart --stale <dur> [--force]` | Release `in_progress` claims whose implementer session has been idle longer than `<dur>` (e.g. `2h`, `1d`). Previews by default; `--force` releases. `--json` reports each claim with its holding session and idle time. No default threshold — it must exceed your longest healthy agent run |
 | `td log "message" [flags]` | Log progress. Flags: `--decision`, `--blocker`, `--hypothesis`, `--tried`, `--result` |
 | `td handoff <id> [flags]` | Capture state. Flags: `--done`, `--remaining`, `--decision`, `--uncertain` |
 | `td review <id>` | Submit for review. Submitting session is recorded as `review_requested_by_session` |

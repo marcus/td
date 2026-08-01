@@ -141,3 +141,53 @@ recording that is more honest than `--self-review`. td does not verify the name.
 
 This keeps delegated reviews genuinely independent instead of collapsing into the
 orchestrator's session.
+
+## Reclaiming claims from killed agents
+
+An agent that is killed mid-work — by a subscription usage limit, a wall-clock
+timeout, a crashed harness — never runs `td handoff` and never runs
+`td unstart`. Its `in_progress` claim stays on the issue, so the work never
+returns to the ready queue. A supervisor that watches "ready work" sees the
+fleet go quiet and reads it as idle rather than broken.
+
+`td unstart --stale <duration>` releases claims whose implementer session has
+been idle longer than `<duration>`:
+
+```bash
+td unstart --stale 2h                 # preview: what would be released
+td unstart --stale 2h --force --json  # release, and report what was released
+```
+
+It previews by default and mutates only with `--force`, like
+`td session cleanup`. The `--json` envelope lists each claim with its issue id,
+the holding session, that session's idle time, and its last activity, so a
+supervisor can log exactly what it reclaimed. Released issues carry the reason
+in their history (`claim released: implementer session ses_x idle 3h0m0s
+(threshold 2h)`), so the cause is visible in `td show`.
+
+### Choosing the threshold
+
+**The threshold must exceed the longest a healthy agent can run without
+touching td** — in a supervisor loop, your tick timeout. There is deliberately
+no default: too short a value releases a live agent's claim, a second agent
+picks the issue up, and two agents work the same issue in parallel. That is a
+worse failure than the leak this fixes.
+
+td's liveness signal is the implementer session's **last activity**: the
+timestamp updated whenever that session runs a td command. It is the honest
+signal, and it has a real limitation — an agent legitimately working for an
+hour without running a td command looks exactly like an agent that died an hour
+ago. td does not use `sessions.agent_pid` to sharpen this, because sessions
+sync between machines and a pid from another host means nothing locally (worse,
+it can collide with an unrelated live process). If you want a tighter
+threshold, make your agents run `td log` periodically; that is what moves last
+activity.
+
+Two claims are never touched:
+
+- **The calling session's own claim.** It is definitionally live.
+- **Claims whose holder cannot be measured** — no implementer recorded, or the
+  session row is gone (e.g. already removed by `td session cleanup`). These are
+  reported under `unresolved` in the JSON output and as a warning in human
+  output. Release them explicitly with `td unstart <id>` once you have
+  established the holder really is gone.
