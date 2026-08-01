@@ -29,13 +29,15 @@ var featureCmd = &cobra.Command{
 // The columns of the human table are the fields: state is the resolved value
 // as a string ("on"/"off" for the boolean registry, the mode name for the
 // string-valued review_policy_mode) so both kinds of flag share one row shape.
-// enabled carries the boolean reading for the flags that have one, and is
-// omitted for the string-valued flag rather than reported as a misleading
-// false.
+// enabled carries the boolean reading for the flags that have one and is null
+// for the string-valued flag: "not applicable" rather than a misleading false.
+// It is deliberately NOT omitempty — every row must carry every key, so a
+// caller can read row["enabled"] on any row without a field-existence check.
+// Key absence would be a third rendering of "empty" alongside null and false.
 type featureListEntry struct {
 	Name        string `json:"name"`
 	State       string `json:"state"`
-	Enabled     *bool  `json:"enabled,omitempty"`
+	Enabled     *bool  `json:"enabled"`
 	Source      string `json:"source"`
 	Description string `json:"description"`
 }

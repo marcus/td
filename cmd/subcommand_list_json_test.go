@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
@@ -130,14 +132,73 @@ func TestFeatureListJSONOutput(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s missing from --json output", features.ReviewPolicyMode)
 	}
-	// The string-valued flag reports its mode as state and deliberately omits
-	// enabled rather than reporting a misleading false.
+	// The string-valued flag reports its mode as state and its enabled as null
+	// — "not applicable", rather than a misleading false.
 	if mode.State == "" || mode.State == "on" || mode.State == "off" {
 		t.Fatalf("%s state = %q, want a policy mode name", features.ReviewPolicyMode, mode.State)
 	}
 	if mode.Enabled != nil {
-		t.Fatalf("%s must omit enabled, got %v", features.ReviewPolicyMode, *mode.Enabled)
+		t.Fatalf("%s enabled = %v, want null", features.ReviewPolicyMode, *mode.Enabled)
 	}
+}
+
+// TestFeatureListJSONAlwaysEmitsEveryKey pins that no row omits a key. Absence
+// would be a third rendering of "empty" alongside null and false, and would
+// KeyError a caller that ranges the array reading row["enabled"] — so the
+// assertion is made against the raw JSON, which is where omitempty would show
+// up, not against the decoded struct, which cannot see the difference.
+func TestFeatureListJSONAlwaysEmitsEveryKey(t *testing.T) {
+	setupReadJSONTest(t)
+	setJSONFlag(t, true)
+
+	out := captureStdout(t, func() {
+		if err := featureListCmd.RunE(featureListCmd, nil); err != nil {
+			t.Fatalf("feature list RunE: %v", err)
+		}
+	})
+
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rows); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	if len(rows) == 0 {
+		t.Fatal("feature list --json returned no rows")
+	}
+	wantKeys := []string{"name", "state", "enabled", "source", "description"}
+	for i, row := range rows {
+		if len(row) != len(wantKeys) {
+			t.Fatalf("row %d has keys %v, want exactly %v", i, keysOf(row), wantKeys)
+		}
+		for _, k := range wantKeys {
+			if _, ok := row[k]; !ok {
+				t.Fatalf("row %d (%s) is missing key %q: %v", i, row["name"], k, keysOf(row))
+			}
+		}
+	}
+
+	// Exactly one row — the string-valued flag — renders enabled as null, and
+	// it renders it, rather than dropping the key.
+	nulls := 0
+	for _, row := range rows {
+		if string(row["enabled"]) == "null" {
+			nulls++
+			if string(row["name"]) != `"`+features.ReviewPolicyMode+`"` {
+				t.Fatalf("unexpected null enabled on row %s", row["name"])
+			}
+		}
+	}
+	if nulls != 1 {
+		t.Fatalf("got %d rows with enabled=null, want exactly 1 (%s)", nulls, features.ReviewPolicyMode)
+	}
+}
+
+func keysOf(row map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(row))
+	for k := range row {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // TestFeatureListHumanOutputUnchanged pins the table header and a known row.
@@ -214,6 +275,88 @@ func TestWSListJSONOutput(t *testing.T) {
 	// Not the active session for this scope, and not ended.
 	if got.Status != "abandoned" {
 		t.Fatalf("status = %q, want abandoned", got.Status)
+	}
+}
+
+// TestWSListStatusDerivation exercises all three status branches — the
+// abandoned case alone leaves "active" and "completed" free to be anything at
+// all. Both the JSON status field and the human bracketed marker are asserted,
+// since the two now derive from the same value.
+func TestWSListStatusDerivation(t *testing.T) {
+	database, _ := setupReadJSONTest(t)
+
+	// Active: the session recorded as active for this scope.
+	active := &models.WorkSession{Name: "active ws", SessionID: "ses_read_json_test"}
+	if err := database.CreateWorkSession(active); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	_, scope, err := getCurrentStateSession(database, getBaseDir())
+	if err != nil {
+		t.Fatalf("getCurrentStateSession failed: %v", err)
+	}
+	if err := database.SetActiveWorkSession(scope, active.ID); err != nil {
+		t.Fatalf("SetActiveWorkSession failed: %v", err)
+	}
+
+	// Completed: ended, as `ws end` leaves it.
+	completed := &models.WorkSession{Name: "completed ws", SessionID: "ses_read_json_test"}
+	if err := database.CreateWorkSession(completed); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	ended := time.Now()
+	completed.EndedAt = &ended
+	if err := database.UpdateWorkSession(completed); err != nil {
+		t.Fatalf("UpdateWorkSession failed: %v", err)
+	}
+
+	// Abandoned: never ended, and not the active one.
+	abandoned := &models.WorkSession{Name: "abandoned ws", SessionID: "ses_read_json_test"}
+	if err := database.CreateWorkSession(abandoned); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+
+	want := map[string]string{
+		active.ID:    "active",
+		completed.ID: "completed",
+		abandoned.ID: "abandoned",
+	}
+
+	setJSONFlag(t, true)
+	jsonOut := captureStdout(t, func() {
+		if err := wsListCmd.RunE(wsListCmd, nil); err != nil {
+			t.Fatalf("ws list RunE: %v", err)
+		}
+	})
+	entries := decodeWSListEntries(t, jsonOut)
+	if len(entries) != 3 {
+		t.Fatalf("ws list --json returned %d sessions, want 3: %q", len(entries), jsonOut)
+	}
+	for _, entry := range entries {
+		wantStatus, ok := want[entry.ID]
+		if !ok {
+			t.Fatalf("unexpected session %s in output", entry.ID)
+		}
+		if entry.Status != wantStatus {
+			t.Fatalf("%s (%s) status = %q, want %q", entry.ID, entry.Name, entry.Status, wantStatus)
+		}
+	}
+
+	setJSONFlag(t, false)
+	humanOut := captureStdout(t, func() {
+		if err := wsListCmd.RunE(wsListCmd, nil); err != nil {
+			t.Fatalf("ws list RunE: %v", err)
+		}
+	})
+	for id, status := range want {
+		marker := "[" + status + "]"
+		for _, line := range strings.Split(humanOut, "\n") {
+			if strings.Contains(line, id) && !strings.Contains(line, marker) {
+				t.Fatalf("human line for %s missing %s: %q", id, marker, line)
+			}
+		}
+		if !strings.Contains(humanOut, marker) {
+			t.Fatalf("human output missing %s marker: %q", marker, humanOut)
+		}
 	}
 }
 
