@@ -287,6 +287,54 @@ func TestUpdateIssueLoggedRejectsConcurrentWrite(t *testing.T) {
 	}
 }
 
+// TestUpdateIssueLoggedAllowsUnloadedSnapshot pins the intentional exemption
+// in the staleness guard: an issue that was never loaded from the DB carries a
+// zero UpdatedAt and is written unguarded. `td system import --force`
+// (cmd/system.go) depends on this — it builds an Issue from parsed markdown
+// and overwrites the existing row by ID.
+func TestUpdateIssueLoggedAllowsUnloadedSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:    "Original title",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// A freshly constructed Issue carrying only an ID: no UpdatedAt, so
+	// there is no loaded snapshot for the guard to compare against.
+	imported := &models.Issue{
+		ID:       issue.ID,
+		Title:    "Imported title",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if !imported.UpdatedAt.IsZero() {
+		t.Fatal("test premise broken: constructed issue should have a zero UpdatedAt")
+	}
+	if err := database.UpdateIssueLogged(imported, "sess-import", models.ActionUpdate); err != nil {
+		t.Fatalf("UpdateIssueLogged with an unloaded snapshot failed: %v", err)
+	}
+
+	got, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if got.Title != "Imported title" {
+		t.Fatalf("title = %q, want %q (unloaded-snapshot write did not apply)", got.Title, "Imported title")
+	}
+}
+
 // TestUpdateIssueLoggedUnconditionalBypassesStaleGuard verifies undo's write
 // path is unaffected by the staleness guard: it must be able to restore an
 // older snapshot even though the persisted updated_at has since moved on.

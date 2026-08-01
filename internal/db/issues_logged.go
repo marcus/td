@@ -97,6 +97,16 @@ func (e *StaleIssueStatusError) Error() string {
 // StaleIssueUpdateError indicates some other write persisted between the
 // caller loading the issue and this write applying. Rejecting the write
 // avoids silently reverting whatever the intervening write changed.
+//
+// It is a conflict, not a fault: nothing was written, the intervening change
+// is intact, and the caller's move is to re-read the issue and re-apply. API
+// callers should map it to 409, never 500 (see serve.WriteIssueWriteError).
+//
+// The guard keys off the caller's loaded UpdatedAt, so a caller that never
+// loaded the row — one that builds an Issue from scratch, e.g. `td system
+// import --force` — carries a zero UpdatedAt and is deliberately exempt.
+// TestUpdateIssueLoggedAllowsUnloadedSnapshot pins that exemption; removing it
+// would break import, so change it on purpose or not at all.
 type StaleIssueUpdateError struct {
 	IssueID string
 	Loaded  time.Time

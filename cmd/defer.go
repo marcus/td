@@ -52,7 +52,7 @@ var deferCmd = &cobra.Command{
 			issue.DeferUntil = nil
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-				emitErr("failed to clear deferral for %s: %v", issueID, err)
+				emitErr("%s", describeIssueWriteFailure(database, "clear the deferral for", issueID, err))
 				return err
 			}
 
@@ -94,7 +94,7 @@ var deferCmd = &cobra.Command{
 		issue.DeferUntil = &dateStr
 
 		if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-			emitErr("failed to defer %s: %v", issueID, err)
+			emitErr("%s", describeIssueWriteFailure(database, "defer", issueID, err))
 			return err
 		}
 

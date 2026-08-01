@@ -237,7 +237,7 @@ var updateCmd = &cobra.Command{
 			}
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-				emitErr("failed to update %s: %v", issueID, err)
+				emitErr("%s", describeIssueWriteFailure(database, "update", issueID, err))
 				continue
 			}
 

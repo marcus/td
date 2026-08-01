@@ -183,10 +183,11 @@ Examples:
 			issue.ImplementerSession = sess.ID
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionStart); err != nil {
+				message := describeIssueWriteFailure(database, "start", issueID, err)
 				if isJSON {
-					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to update %s: %v", issueID, err))
+					output.JSONError(output.ErrCodeDatabaseError, message)
 				} else {
-					emitWarn("failed to update %s: %v", issueID, err)
+					emitWarn("%s", message)
 				}
 				failed++
 				continue

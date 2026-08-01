@@ -168,7 +168,7 @@ Or use flags with values, stdin (-), or file (@path):
 
 		// Update issue timestamp
 		if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-			emitWarn("failed to update issue: %v", err)
+			emitWarn("%s", describeIssueWriteFailure(database, "record a handoff for", issueID, err))
 		}
 
 		// Output

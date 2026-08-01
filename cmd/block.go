@@ -86,7 +86,7 @@ var blockCmd = &cobra.Command{
 			issue.Status = models.StatusBlocked
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionBlock); err != nil {
-				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to block %s: %v", issueID, err)
+				failTransition(isJSON, output.ErrCodeDatabaseError, "%s", describeIssueWriteFailure(database, "block", issueID, err))
 				failed++
 				continue
 			}
@@ -220,7 +220,7 @@ Examples:
 			issue.ImplementerSession = ""
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReopen); err != nil {
-				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to reopen %s: %v", issueID, err)
+				failTransition(isJSON, output.ErrCodeDatabaseError, "%s", describeIssueWriteFailure(database, "reopen", issueID, err))
 				failed++
 				continue
 			}
@@ -341,7 +341,7 @@ Examples:
 			issue.Status = models.StatusOpen
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUnblock); err != nil {
-				failTransition(isJSON, output.ErrCodeDatabaseError, "failed to unblock %s: %v", issueID, err)
+				failTransition(isJSON, output.ErrCodeDatabaseError, "%s", describeIssueWriteFailure(database, "unblock", issueID, err))
 				failed++
 				continue
 			}

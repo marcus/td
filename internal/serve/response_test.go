@@ -2,11 +2,15 @@ package serve
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/pkg/monitor"
@@ -74,6 +78,57 @@ func TestWriteError(t *testing.T) {
 	}
 	if env.Error.Message != "issue not found: td-xyz" {
 		t.Errorf("error.message = %q, want %q", env.Error.Message, "issue not found: td-xyz")
+	}
+}
+
+// TestWriteIssueWriteErrorMapsStaleToConflict pins the status mapping for a
+// stale-snapshot rejection: it is a client-retryable conflict, so a 409 tells
+// an API client to re-read and retry. A 500 would send it away from a healthy
+// server.
+func TestWriteIssueWriteErrorMapsStaleToConflict(t *testing.T) {
+	w := httptest.NewRecorder()
+	staleErr := &db.StaleIssueUpdateError{
+		IssueID: "td-abc123",
+		Loaded:  time.Now().Add(-time.Minute),
+		Current: time.Now(),
+	}
+	WriteIssueWriteError(w, fmt.Errorf("update issue: %w", staleErr), "td-abc123", "failed to update issue")
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+
+	var env Envelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if env.Error == nil {
+		t.Fatal("error should not be nil")
+	}
+	if env.Error.Code != ErrConflict {
+		t.Errorf("error.code = %q, want %q", env.Error.Code, ErrConflict)
+	}
+	if !strings.Contains(env.Error.Message, "td-abc123") {
+		t.Errorf("error.message = %q, want it to name the issue", env.Error.Message)
+	}
+}
+
+// TestWriteIssueWriteErrorMapsOtherErrorsToInternal keeps the mapping narrow:
+// only a staleness rejection is reclassified; a genuine failure stays a 500.
+func TestWriteIssueWriteErrorMapsOtherErrorsToInternal(t *testing.T) {
+	w := httptest.NewRecorder()
+	WriteIssueWriteError(w, errors.New("disk on fire"), "td-abc123", "failed to update issue")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+
+	var env Envelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if env.Error == nil || env.Error.Code != ErrInternal {
+		t.Fatalf("error = %+v, want code %q", env.Error, ErrInternal)
 	}
 }
 

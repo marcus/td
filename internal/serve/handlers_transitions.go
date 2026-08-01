@@ -479,7 +479,7 @@ func handleTransition(ctx HandlerContext, w http.ResponseWriter, r *http.Request
 	}
 	if persistErr != nil {
 		slog.Error("transition issue", "err", persistErr, "id", issueID, "to", spec.toStatus)
-		WriteError(w, ErrInternal, "failed to update issue", http.StatusInternalServerError)
+		WriteIssueWriteError(w, persistErr, issueID, "failed to update issue")
 		return
 	}
 

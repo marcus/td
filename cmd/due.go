@@ -45,7 +45,7 @@ var dueCmd = &cobra.Command{
 			issue.DueDate = nil
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-				output.Error("failed to update %s: %v", issueID, err)
+				output.Error("%s", describeIssueWriteFailure(database, "update the due date for", issueID, err))
 				return err
 			}
 
@@ -71,7 +71,7 @@ var dueCmd = &cobra.Command{
 			issue.DueDate = &dateStr
 
 			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
-				output.Error("failed to update %s: %v", issueID, err)
+				output.Error("%s", describeIssueWriteFailure(database, "update the due date for", issueID, err))
 				return err
 			}
 

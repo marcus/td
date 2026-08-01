@@ -5,6 +5,7 @@ package serve
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -100,6 +101,23 @@ func WriteValidation(w http.ResponseWriter, fields []FieldError) {
 	}); err != nil {
 		slog.Error("write validation response", "err", err)
 	}
+}
+
+// WriteIssueWriteError maps an error from an issue write helper onto the right
+// HTTP status. A stale-snapshot rejection (db.StaleIssueUpdateError) is a
+// client-retryable conflict, not a server fault: the caller loaded the issue,
+// someone else wrote it, and the caller should re-read and re-apply. Reporting
+// it as 500 would tell an API client (usually an agent) to back off from a
+// healthy server instead of retrying. Anything else stays a 500.
+func WriteIssueWriteError(w http.ResponseWriter, err error, issueID, fallback string) {
+	var stale *db.StaleIssueUpdateError
+	if errors.As(err, &stale) {
+		WriteError(w, ErrConflict, fmt.Sprintf(
+			"issue %s was modified by another session after it was read; re-read the issue and retry",
+			issueID), http.StatusConflict)
+		return
+	}
+	WriteError(w, ErrInternal, fallback, http.StatusInternalServerError)
 }
 
 // ============================================================================

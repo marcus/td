@@ -254,7 +254,7 @@ func HandleUpdateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Reques
 	// Update atomically with action log
 	if err := ctx.DB.UpdateIssueLogged(issue, ctx.SessionID, models.ActionUpdate); err != nil {
 		slog.Error("update issue", "err", err, "id", issueID)
-		WriteError(w, ErrInternal, "failed to update issue", http.StatusInternalServerError)
+		WriteIssueWriteError(w, err, issueID, "failed to update issue")
 		return
 	}
 

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -11,6 +12,31 @@ import (
 	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/workflow"
 )
+
+// describeIssueWriteError renders an issue-write failure for the status bar.
+// A stale-snapshot rejection is the monitor's most likely write failure: a
+// pane row, or an open modal, holds an issue loaded on the last refresh tick,
+// and another session wrote the row in between. That is recoverable by
+// refreshing, so say so instead of surfacing the raw updated_at timestamps —
+// and above all do not fail silently, which leaves the user pressing a key
+// that appears to do nothing.
+func describeIssueWriteError(action string, err error) string {
+	var stale *db.StaleIssueUpdateError
+	if errors.As(err, &stale) {
+		return "Cannot " + action + ": issue changed in another session — refresh and retry"
+	}
+	return "Failed to " + action + ": " + err.Error()
+}
+
+// issueWriteFailure sets the status bar to an issue-write failure and returns
+// the usual auto-clear tick, so every write path reports failures the same way.
+func (m *Model) issueWriteFailure(action string, err error) tea.Cmd {
+	m.StatusMessage = describeIssueWriteError(action, err)
+	m.StatusIsError = true
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return ClearStatusMsg{}
+	})
+}
 
 // monitorApproveInputs bundles the facts the shared reviewpolicy package needs
 // to decide whether a monitor session may approve the selected issue. Exposed
@@ -186,7 +212,7 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		issue.ImplementerSession = m.SessionID
 	}
 	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionReview); err != nil {
-		return m, nil
+		return m, m.issueWriteFailure("move to review", err)
 	}
 
 	// Cascade DOWN to descendants if this is a parent issue (epic)
@@ -196,18 +222,28 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 			models.StatusInProgress,
 		})
 		if err == nil && len(descendants) > 0 {
+			var skipped []string
 			for _, child := range descendants {
 				child.Status = models.StatusInReview
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionReview)
+				// A child whose write is rejected did not move, so it must
+				// not get a log entry claiming it did.
+				if err := m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionReview); err != nil {
+					skipped = append(skipped, child.ID)
+					continue
+				}
 				_ = m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
 					Message:   "Cascaded review from " + issueID,
 					Type:      models.LogTypeProgress,
 				})
+			}
+			if len(skipped) > 0 {
+				m.StatusMessage = "Review cascade skipped " + strings.Join(skipped, ", ") + " (changed in another session)"
+				m.StatusIsError = true
 			}
 		}
 	}
@@ -366,7 +402,7 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	issue.ClosedAt = &now
 	if err := m.DB.UpdateIssueLogged(issue, m.SessionID, models.ActionClose); err != nil {
 		m.closeCloseConfirmModal()
-		return m, nil
+		return m, m.issueWriteFailure("close", err)
 	}
 
 	// Add progress log with optional reason
@@ -391,13 +427,20 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 			models.StatusInReview,
 		})
 		if err == nil && len(descendants) > 0 {
+			var skipped []string
 			for _, child := range descendants {
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
 				if child.ImplementerSession == "" {
 					child.ImplementerSession = m.SessionID
 				}
-				_ = m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionClose)
+				// A child whose write is rejected is still open: skip both
+				// the log entry and the dependent unblock that only make
+				// sense once it is actually closed.
+				if err := m.DB.UpdateIssueLogged(child, m.SessionID, models.ActionClose); err != nil {
+					skipped = append(skipped, child.ID)
+					continue
+				}
 				_ = m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
 					SessionID: m.SessionID,
@@ -405,6 +448,10 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 					Type:      models.LogTypeProgress,
 				})
 				m.DB.CascadeUnblockDependents(child.ID, m.SessionID)
+			}
+			if len(skipped) > 0 {
+				m.StatusMessage = "Close cascade skipped " + strings.Join(skipped, ", ") + " (changed in another session)"
+				m.StatusIsError = true
 			}
 		}
 	}
