@@ -292,3 +292,148 @@ func TestSessionFamilyHumanOutputUnchanged(t *testing.T) {
 		t.Fatalf("unexpected human session list output: %q", listOut)
 	}
 }
+
+// TestSessionListMarksTheCurrentSession: `current` was computed by comparing
+// the stored agent_type against the bare agent TYPE, but createSession stores
+// the full fingerprint ("claude-code_94806"). The result was inverted — false
+// for the real current session, and true for any row that happened to store a
+// bare type. The `*` marker in human output had the same bug.
+func TestSessionListMarksTheCurrentSession(t *testing.T) {
+	database, sessionID := setupSessionJSONTest(t)
+
+	// A fabricated row that the old bare-type comparison would have matched.
+	impostor := &db.SessionRow{
+		ID:           "ses_impostor",
+		Branch:       session.GetCurrentBranch(),
+		AgentType:    "explicit",
+		StartedAt:    time.Now().Add(-time.Hour),
+		LastActivity: time.Now().Add(-time.Hour),
+	}
+	if err := database.UpsertSession(impostor); err != nil {
+		t.Fatalf("UpsertSession failed: %v", err)
+	}
+
+	setJSONFlag(t, true)
+	out := captureStdout(t, func() {
+		if err := sessionListCmd.RunE(sessionListCmd, nil); err != nil {
+			t.Fatalf("sessionListCmd.RunE failed: %v", err)
+		}
+	})
+	var rows []struct {
+		Session string `json:"session"`
+		Current bool   `json:"current"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("output is not a valid JSON array: %v\noutput: %q", err, out)
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		seen[row.Session] = row.Current
+	}
+	if !seen[sessionID] {
+		t.Fatalf("the real current session %s is not marked current: %q", sessionID, out)
+	}
+	if seen["ses_impostor"] {
+		t.Fatalf("an unrelated row was marked current: %q", out)
+	}
+
+	setJSONFlag(t, false)
+	human := captureStdout(t, func() {
+		if err := sessionListCmd.RunE(sessionListCmd, nil); err != nil {
+			t.Fatalf("sessionListCmd.RunE failed: %v", err)
+		}
+	})
+	for _, line := range strings.Split(human, "\n") {
+		if strings.Contains(line, sessionID) && !strings.HasPrefix(line, "*") {
+			t.Fatalf("current session line is not marked with *: %q", line)
+		}
+		if strings.Contains(line, "ses_impostor") && strings.HasPrefix(line, "*") {
+			t.Fatalf("impostor line is marked current: %q", line)
+		}
+	}
+}
+
+// TestWhoamiCarriesBranchAndAgent: without them a JSON caller cannot correlate
+// itself against a row of `td session list` at all.
+func TestWhoamiCarriesBranchAndAgent(t *testing.T) {
+	setupSessionJSONTest(t)
+	setJSONFlag(t, true)
+
+	out := captureStdout(t, func() {
+		if err := whoamiCmd.RunE(whoamiCmd, nil); err != nil {
+			t.Fatalf("whoamiCmd.RunE failed: %v", err)
+		}
+	})
+	var env struct {
+		Branch string `json:"branch"`
+		Agent  string `json:"agent"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %q", err, out)
+	}
+	if env.Branch == "" || env.Agent == "" {
+		t.Fatalf("whoami must report branch and agent: %q", out)
+	}
+
+	listOut := captureStdout(t, func() {
+		if err := sessionListCmd.RunE(sessionListCmd, nil); err != nil {
+			t.Fatalf("sessionListCmd.RunE failed: %v", err)
+		}
+	})
+	var rows []struct {
+		Branch  string `json:"branch"`
+		Agent   string `json:"agent"`
+		Current bool   `json:"current"`
+	}
+	if err := json.Unmarshal([]byte(listOut), &rows); err != nil {
+		t.Fatalf("session list output is not valid JSON: %v", err)
+	}
+	var matched bool
+	for _, row := range rows {
+		if row.Current && row.Branch == env.Branch && row.Agent == env.Agent {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatalf("whoami's branch/agent do not correlate with session list: %q vs %q", out, listOut)
+	}
+}
+
+// TestWhoamiHumanStartedIsUTC: the human line formatted LOCAL time with a
+// hardcoded literal Z, so it read as UTC and was off by the local offset —
+// sitting next to a correct JSON value in the same command.
+func TestWhoamiHumanStartedIsUTC(t *testing.T) {
+	setupSessionJSONTest(t)
+
+	setJSONFlag(t, true)
+	jsonOut := captureStdout(t, func() {
+		if err := whoamiCmd.RunE(whoamiCmd, nil); err != nil {
+			t.Fatalf("whoamiCmd.RunE failed: %v", err)
+		}
+	})
+	var env struct {
+		Started string `json:"started"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	setJSONFlag(t, false)
+	human := captureStdout(t, func() {
+		if err := whoamiCmd.RunE(whoamiCmd, nil); err != nil {
+			t.Fatalf("whoamiCmd.RunE failed: %v", err)
+		}
+	})
+	var started string
+	for _, line := range strings.Split(human, "\n") {
+		if strings.HasPrefix(line, "STARTED: ") {
+			started = strings.TrimSpace(strings.TrimPrefix(line, "STARTED: "))
+		}
+	}
+	if started != env.Started {
+		t.Fatalf("human STARTED %q disagrees with JSON started %q", started, env.Started)
+	}
+	if _, err := time.Parse(time.RFC3339, started); err != nil {
+		t.Fatalf("STARTED %q is not RFC3339: %v", started, err)
+	}
+}

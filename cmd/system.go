@@ -222,8 +222,13 @@ var whoamiCmd = &cobra.Command{
 			if touched == nil {
 				touched = []string{}
 			}
+			// branch and agent are what correlate this session against a
+			// row of `td session list`; without them a JSON caller cannot
+			// find itself in that list at all.
 			payload := map[string]any{
 				"session":        sess.ID,
+				"branch":         sess.Branch,
+				"agent":          sess.AgentType,
 				"started":        sess.StartedAt.UTC().Format(time.RFC3339),
 				"issues_touched": touched,
 			}
@@ -237,7 +242,8 @@ var whoamiCmd = &cobra.Command{
 		}
 
 		fmt.Printf("SESSION: %s\n", sess.Display())
-		fmt.Printf("STARTED: %s\n", sess.StartedAt.Format("2006-01-02T15:04:05Z"))
+		// The literal Z in the layout claimed UTC while printing local time.
+		fmt.Printf("STARTED: %s\n", sess.StartedAt.UTC().Format(time.RFC3339))
 
 		if sess.PreviousSessionID != "" {
 			fmt.Printf("PREVIOUS SESSION: %s\n", sess.PreviousSessionID)
@@ -342,8 +348,19 @@ var sessionListCmd = &cobra.Command{
 			return err
 		}
 
-		currentBranch := session.GetCurrentBranch()
-		fp := session.GetAgentFingerprint()
+		// "current" means "the row this shell's next td command would use".
+		// Comparing branch + agent type + pid by hand got that wrong: the
+		// stored agent_type is the full fingerprint ("claude-code_94806"),
+		// never the bare type, so the comparison was false for the real
+		// current session and true for any row that happened to store a bare
+		// type. Asking the session layer for the current row instead applies
+		// the whole identity key (branch, fingerprint, context, worktree) and
+		// cannot drift from it. It deliberately does not create a session:
+		// listing is a read.
+		currentID := ""
+		if cur, err := session.Get(database); err == nil && cur != nil {
+			currentID = cur.ID
+		}
 
 		if isJSON {
 			// A bare array (empty when there are no sessions), matching the
@@ -359,7 +376,7 @@ var sessionListCmd = &cobra.Command{
 					"name":          sess.Name,
 					"last_activity": lastActive.UTC().Format(time.RFC3339),
 					"age_seconds":   int64(now.Sub(lastActive).Seconds()),
-					"current":       sess.Branch == currentBranch && sess.AgentType == string(fp.Type) && sess.AgentPID == fp.PID,
+					"current":       sess.ID == currentID,
 				})
 			}
 			return output.JSON(rows)
@@ -375,7 +392,7 @@ var sessionListCmd = &cobra.Command{
 
 		for _, sess := range sessions {
 			marker := " "
-			if sess.Branch == currentBranch && sess.AgentType == string(fp.Type) && sess.AgentPID == fp.PID {
+			if sess.ID == currentID {
 				marker = "*"
 			}
 
@@ -434,12 +451,30 @@ var sessionCleanupCmd = &cobra.Command{
 			return err
 		}
 
+		// A session row is what makes a leaked claim reclaimable: it carries
+		// the last-activity timestamp `td unstart --stale` measures and the id
+		// `td unstart --session` names. Deleting a holder's row by the same
+		// idleness predicate that makes its claim reclaimable strands the
+		// issue permanently — cleanup and reclamation would race, and on a
+		// cron cleanup always wins. So cleanup skips holders and says so.
+		held, err := database.SessionsHoldingClaims()
+		if err != nil {
+			emitErr("failed to check held claims: %v", err)
+			return err
+		}
+
 		now := time.Now()
 		var toDelete []session.Session
+		var holders []session.Session
 		for _, sess := range sessions {
-			if now.Sub(sess.LastActive()) > maxAge {
-				toDelete = append(toDelete, sess)
+			if now.Sub(sess.LastActive()) <= maxAge {
+				continue
 			}
+			if held[sess.ID] > 0 {
+				holders = append(holders, sess)
+				continue
+			}
+			toDelete = append(toDelete, sess)
 		}
 
 		emitJSON := func(deleted int) error {
@@ -453,23 +488,48 @@ var sessionCleanupCmd = &cobra.Command{
 					"age_seconds":   int64(now.Sub(sess.LastActive()).Seconds()),
 				})
 			}
+			kept := make([]map[string]any, 0, len(holders))
+			for _, sess := range holders {
+				kept = append(kept, map[string]any{
+					"session":       sess.ID,
+					"branch":        sess.Branch,
+					"agent":         sess.AgentType,
+					"last_activity": sess.LastActive().UTC().Format(time.RFC3339),
+					"age_seconds":   int64(now.Sub(sess.LastActive()).Seconds()),
+					"claims":        held[sess.ID],
+					"reason":        "still holds in_progress claims; release them first (td unstart --session " + sess.ID + " --force)",
+				})
+			}
 			action := "would_cleanup_sessions"
 			if force {
 				action = "cleaned_up_sessions"
+			}
+			if len(holders) > 0 {
+				action += "_with_held_claims"
 			}
 			return output.EmitResult(action, map[string]any{
 				"older_than": olderThan,
 				"forced":     force,
 				"count":      deleted,
 				"sessions":   rows,
+				"held":       kept,
+				"held_count": len(kept),
 			})
+		}
+
+		warnHolders := func() {
+			for _, sess := range holders {
+				output.Warning("kept %s: still holds %d in_progress claim(s); release with `td unstart --session %s --force`",
+					sess.ID, held[sess.ID], sess.ID)
+			}
 		}
 
 		if len(toDelete) == 0 {
 			if isJSON {
 				return emitJSON(0)
 			}
-			fmt.Printf("No sessions older than %s found.\n", olderThan)
+			fmt.Printf("No deletable sessions older than %s found.\n", olderThan)
+			warnHolders()
 			return nil
 		}
 
@@ -482,20 +542,26 @@ var sessionCleanupCmd = &cobra.Command{
 				fmt.Printf("  - %s (branch: %s)\n", sess.ID, sess.Branch)
 			}
 			fmt.Println("\nRun with --force to delete.")
+			warnHolders()
 			return nil
 		}
 
-		deleted, err := session.CleanupStaleSessions(database, maxAge)
+		ids := make([]string, 0, len(toDelete))
+		for _, sess := range toDelete {
+			ids = append(ids, sess.ID)
+		}
+		deleted, err := database.DeleteSessionsByID(ids)
 		if err != nil {
 			emitErr("cleanup failed: %v", err)
 			return err
 		}
 
 		if isJSON {
-			return emitJSON(deleted)
+			return emitJSON(int(deleted))
 		}
 
 		fmt.Printf("Deleted %d stale session(s).\n", deleted)
+		warnHolders()
 		return nil
 	},
 }
