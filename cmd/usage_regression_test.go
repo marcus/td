@@ -1,10 +1,31 @@
 package cmd
 
 import (
+	"os"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+// registeredSilenceUsage is the SilenceUsage each workflow command carries as
+// registered — captured once, before any test can touch it.
+//
+// It cannot be a package-level initializer: variable initialization runs BEFORE
+// the init() functions that register the commands, so it would snapshot the
+// zero value and assert nothing. TestMain runs after all init(), which is
+// exactly the state a real `td` process starts in. Every command in the test
+// binary shares one singleton and several tests mutate SilenceUsage (RunE sets
+// it), so reading it at assert time measures the test binary's history rather
+// than the registration.
+var registeredSilenceUsage map[string]bool
+
+func TestMain(m *testing.M) {
+	registeredSilenceUsage = make(map[string]bool)
+	for name, cmd := range workflowUsageCommands() {
+		registeredSilenceUsage[name] = cmd.SilenceUsage
+	}
+	os.Exit(m.Run())
+}
 
 // workflowUsageCommands are the commands that set SilenceUsage to suppress
 // Cobra's usage block after a per-issue failure they already reported.
@@ -27,16 +48,12 @@ func workflowUsageCommands() map[string]*cobra.Command {
 // invocation. Cobra reports those BEFORE RunE runs, so the suppression has to
 // happen inside RunE (the idiom already used by `td handoff-check`).
 func TestWorkflowCommandsKeepUsageForArgErrors(t *testing.T) {
-	for name, cmd := range workflowUsageCommands() {
-		// Each command runs in its own process in real use; the test binary
-		// shares these singletons, so start from the as-registered state.
-		cmd.SilenceUsage = false
-		if cmd.SilenceUsage {
-			t.Fatalf("%s: unreachable", name)
-		}
+	if len(registeredSilenceUsage) != len(workflowUsageCommands()) {
+		t.Fatalf("registration snapshot covers %d of %d commands",
+			len(registeredSilenceUsage), len(workflowUsageCommands()))
 	}
 	for name, cmd := range workflowUsageCommands() {
-		if cmd.SilenceUsage {
+		if registeredSilenceUsage[name] {
 			t.Errorf("%s suppresses usage at registration time, so arg-count and "+
 				"flag-parse errors print no usage", name)
 		}
