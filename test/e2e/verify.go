@@ -130,7 +130,13 @@ func (v *Verifier) VerifyConvergence(actorA, actorB string) []VerifyResult {
 			if commonA == commonB {
 				v.add("issues match", true, "common set matches (extra rows from known sync limitation)")
 			} else {
-				v.add("issues match", false, fmt.Sprintf("common set diverges:\nA: %s\nB: %s", truncate(commonA, 500), truncate(commonB, 500)))
+				// Symmetric difference, not two truncated dumps. The old form
+				// printed 500 chars of each side, and since divergence is
+				// usually one field of one row well past that cutoff, both
+				// sides rendered identically on screen — unreadable, and
+				// indistinguishable from a spurious failure. Same reasoning as
+				// the logs-match diff that exposed td-018ee1.
+				v.add("issues match", false, "common set diverges:\n"+truncate(rowDiff(actorA, commonA, actorB, commonB), 2000))
 			}
 		}
 	}
@@ -164,7 +170,7 @@ func (v *Verifier) VerifyConvergence(actorA, actorB string) []VerifyResult {
 		if a == b {
 			v.add(sc.name+" match", true, "")
 		} else {
-			v.add(sc.name+" match", false, fmt.Sprintf("diverges:\nA: %s\nB: %s", truncate(a, 300), truncate(b, 300)))
+			v.add(sc.name+" match", false, "diverges: "+truncate(rowDiff(actorA, a, actorB, b), 2000))
 		}
 	}
 
@@ -327,8 +333,8 @@ func (v *Verifier) VerifyCausalOrdering(actor string) []VerifyResult {
 	}
 
 	// Track first-seen action per entity
-	created := make(map[string]int)   // entity_id -> server_seq of create
-	started := make(map[string]int)   // issue_id -> server_seq of start
+	created := make(map[string]int) // entity_id -> server_seq of create
+	started := make(map[string]int) // issue_id -> server_seq of start
 	violations := 0
 	var details []string
 
@@ -616,5 +622,3 @@ func sqlInClause(ids []string) string {
 	}
 	return strings.Join(quoted, ",")
 }
-
-

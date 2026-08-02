@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 
@@ -51,6 +52,55 @@ func queryDB(h *Harness, actor, query string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// rowDiff renders the symmetric difference between two newline-separated row
+// dumps. A convergence failure is only actionable if you can see the rows one
+// side has and the other does not, so the counts alone are never enough.
+func rowDiff(actorA, dumpA, actorB, dumpB string) string {
+	split := func(s string) []string {
+		if s == "" {
+			return nil
+		}
+		return strings.Split(s, "\n")
+	}
+	count := func(rows []string) map[string]int {
+		m := make(map[string]int, len(rows))
+		for _, r := range rows {
+			m[r]++
+		}
+		return m
+	}
+	rowsA, rowsB := split(dumpA), split(dumpB)
+	ca, cb := count(rowsA), count(rowsB)
+
+	only := func(mine, theirs map[string]int) []string {
+		var out []string
+		for row, n := range mine {
+			if extra := n - theirs[row]; extra > 0 {
+				for range extra {
+					out = append(out, row)
+				}
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	onlyA, onlyB := only(ca, cb), only(cb, ca)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s has %d rows, %s has %d rows", actorA, len(rowsA), actorB, len(rowsB))
+	if len(onlyA) == 0 && len(onlyB) == 0 {
+		b.WriteString("\n  (same multiset of rows — ordering differs)")
+		return b.String()
+	}
+	for _, r := range onlyA {
+		fmt.Fprintf(&b, "\n  only on %s: %s", actorA, r)
+	}
+	for _, r := range onlyB {
+		fmt.Fprintf(&b, "\n  only on %s: %s", actorB, r)
+	}
+	return b.String()
+}
+
 // verifyConvergence checks that two actors have matching non-deleted issues.
 func verifyConvergence(h *Harness, actorA, actorB string) []VerifyResult {
 	var results []VerifyResult
@@ -75,10 +125,7 @@ func verifyConvergence(h *Harness, actorA, actorB string) []VerifyResult {
 	if commentsA == commentsB {
 		results = append(results, pass("comments match"))
 	} else {
-		results = append(results, fail("comments match",
-			fmt.Sprintf("%s has %d lines, %s has %d lines",
-				actorA, len(strings.Split(commentsA, "\n")),
-				actorB, len(strings.Split(commentsB, "\n")))))
+		results = append(results, fail("comments match", rowDiff(actorA, commentsA, actorB, commentsB)))
 	}
 
 	// Logs
@@ -87,10 +134,7 @@ func verifyConvergence(h *Harness, actorA, actorB string) []VerifyResult {
 	if logsA == logsB {
 		results = append(results, pass("logs match"))
 	} else {
-		results = append(results, fail("logs match",
-			fmt.Sprintf("%s has %d lines, %s has %d lines",
-				actorA, len(strings.Split(logsA, "\n")),
-				actorB, len(strings.Split(logsB, "\n")))))
+		results = append(results, fail("logs match", rowDiff(actorA, logsA, actorB, logsB)))
 	}
 
 	// Dependencies
@@ -603,5 +647,114 @@ func ScenarioBurstNoSync(h *Harness, rng *rand.Rand) []VerifyResult {
 	// Verify full convergence
 	results = append(results, verifyConvergence(h, "alice", "bob")...)
 
+	return results
+}
+
+// ScenarioAutoCascadeLogsSync proves end-to-end what the unit tests assert
+// locally: the log rows that td writes as a SIDE EFFECT of a cascade
+// ("Auto-cascaded to closed (all children complete)" and "Auto-unblocked
+// (dependency X closed)") reach the other client.
+//
+// These rows are the dangerous case for the sync model. A peer applying the
+// incoming issue events does not re-run the cascade, so it never recomputes
+// them; and the sync engine derives its events exclusively from action_log, so
+// if the writing client does not record a create/logs entry the row exists on
+// one client forever and the two databases silently disagree. Alice does the
+// whole cascade inside a partition so the only way the rows can reach bob is
+// as synced events.
+func ScenarioAutoCascadeLogsSync(h *Harness) []VerifyResult {
+	var results []VerifyResult
+
+	// An epic with two children — cascade only fires for epic parents.
+	out, err := h.TdA("create", "auto-cascade-epic", "--type", "epic", "--priority", "P1")
+	if err != nil {
+		return []VerifyResult{fail("create epic", fmt.Sprintf("%v: %s", err, out))}
+	}
+	epicID := extractIssueID(out)
+	if epicID == "" {
+		return []VerifyResult{fail("create epic", "no ID")}
+	}
+
+	var childIDs []string
+	for i := 0; i < 2; i++ {
+		out, err := h.TdA("create", fmt.Sprintf("auto-cascade-child-%d", i),
+			"--type", "task", "--priority", "P2", "--parent", epicID)
+		if err != nil {
+			return append(results, fail(fmt.Sprintf("create child %d", i), fmt.Sprintf("%v: %s", err, out)))
+		}
+		id := extractIssueID(out)
+		if id == "" {
+			return append(results, fail(fmt.Sprintf("create child %d", i), "no ID"))
+		}
+		childIDs = append(childIDs, id)
+	}
+
+	// A dependent blocked on the last child, so closing that child auto-unblocks it.
+	out, err = h.TdA("create", "auto-cascade-dependent", "--type", "task", "--priority", "P2")
+	if err != nil {
+		return append(results, fail("create dependent", fmt.Sprintf("%v: %s", err, out)))
+	}
+	dependentID := extractIssueID(out)
+	if dependentID == "" {
+		return append(results, fail("create dependent", "no ID"))
+	}
+	if out, err := h.TdA("dep", "add", dependentID, childIDs[1]); err != nil {
+		return append(results, fail("dep add", fmt.Sprintf("%v: %s", err, out)))
+	}
+	if out, err := h.TdA("block", dependentID, "--reason", "waiting on the cascade child"); err != nil {
+		return append(results, fail("block dependent", fmt.Sprintf("%v: %s", err, out)))
+	}
+
+	// Both actors start from the same state; everything after this is alice
+	// alone, unsynced, until the convergence sync at the end.
+	if err := h.SyncAll(); err != nil {
+		return append(results, fail("auto-cascade seed sync", err.Error()))
+	}
+
+	// Close both children. The second close cascades the epic to closed (writing
+	// the "Auto-cascaded" log) and auto-unblocks the dependent (writing the
+	// "Auto-unblocked" log). Bob is partitioned off for all of it.
+	for i, cid := range childIDs {
+		if out, err := h.TdA("close", cid, "--reason", "auto-cascade child close"); err != nil {
+			return append(results, fail(fmt.Sprintf("close child %d", i), fmt.Sprintf("%v: %s", err, out)))
+		}
+	}
+
+	// Alice must actually have produced both side-effect rows; otherwise the
+	// convergence check below would pass without testing anything.
+	for _, want := range []string{"Auto-cascaded to closed", "Auto-unblocked (dependency"} {
+		got, err := queryDB(h, "alice", fmt.Sprintf(
+			"SELECT COUNT(*) FROM logs WHERE message LIKE '%s%%'", want))
+		if err != nil {
+			return append(results, fail("query alice cascade logs", err.Error()))
+		}
+		if strings.TrimSpace(got) == "0" {
+			return append(results, fail("cascade side effect produced",
+				fmt.Sprintf("alice wrote no %q log; the scenario did not exercise the cascade path", want)))
+		}
+		results = append(results, pass(fmt.Sprintf("alice wrote the %q log", want)))
+	}
+
+	if err := h.SyncAll(); err != nil {
+		return append(results, fail("auto-cascade convergence sync", err.Error()))
+	}
+
+	// The point of the scenario: bob has the side-effect rows too.
+	for _, want := range []string{"Auto-cascaded to closed", "Auto-unblocked (dependency"} {
+		got, err := queryDB(h, "bob", fmt.Sprintf(
+			"SELECT COUNT(*) FROM logs WHERE message LIKE '%s%%'", want))
+		if err != nil {
+			results = append(results, fail("query bob cascade logs", err.Error()))
+			continue
+		}
+		if strings.TrimSpace(got) == "0" {
+			results = append(results, fail(fmt.Sprintf("bob received the %q log", want),
+				"the row exists only on alice — it produced no sync event"))
+			continue
+		}
+		results = append(results, pass(fmt.Sprintf("bob received the %q log", want)))
+	}
+
+	results = append(results, verifyConvergence(h, "alice", "bob")...)
 	return results
 }

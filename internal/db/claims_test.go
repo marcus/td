@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -133,6 +134,43 @@ func TestReleaseClaimsReleasesAnOpenButHeldIssue(t *testing.T) {
 	got, _ := database.GetIssue(issue.ID)
 	if got.ImplementerSession != "" {
 		t.Fatalf("claim not cleared: %q", got.ImplementerSession)
+	}
+}
+
+// TestReleaseClaimsEmitsASyncEventForTheProgressLog guards a convergence bug:
+// the sync engine derives its events from action_log, so the progress log
+// naming the release reason must have a matching create/logs entry. Without
+// one the row exists on the releasing client and nowhere else, forever —
+// backfill cannot rescue it because it only runs before a client's first pull.
+func TestReleaseClaimsEmitsASyncEventForTheProgressLog(t *testing.T) {
+	database := claimTestDB(t)
+	issue := newClaimedIssue(t, database, "released with a reason", "ses_dead")
+
+	outcomes, err := database.ReleaseClaims(
+		[]ClaimRelease{{IssueID: issue.ID, LogMessage: "chaos unstart"}}, "ses_supervisor")
+	if err != nil {
+		t.Fatalf("ReleaseClaims: %v", err)
+	}
+	if !outcomes[0].Released {
+		t.Fatalf("expected release, got %+v", outcomes[0])
+	}
+
+	var logID string
+	if err := database.conn.QueryRow(
+		`SELECT id FROM logs WHERE issue_id = ? AND message = 'chaos unstart'`,
+		issue.ID).Scan(&logID); err != nil {
+		t.Fatalf("progress log not written: %v", err)
+	}
+
+	var newData string
+	if err := database.conn.QueryRow(
+		`SELECT new_data FROM action_log
+		 WHERE entity_type = 'logs' AND entity_id = ? AND action_type = 'create'`,
+		logID).Scan(&newData); err != nil {
+		t.Fatalf("no sync event for progress log %s: %v", logID, err)
+	}
+	if !strings.Contains(newData, "chaos unstart") {
+		t.Fatalf("sync event payload missing the message: %s", newData)
 	}
 }
 

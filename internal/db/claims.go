@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -192,6 +193,30 @@ func (db *DB) recordClaimReleaseHistory(tx *sql.Tx, prev, next *models.Issue, se
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		logID, next.ID, sessionID, "", logMessage, models.LogTypeProgress, next.UpdatedAt); err != nil {
 		return fmt.Errorf("write progress log: %w", err)
+	}
+
+	// The sync engine derives its events from action_log, so a logs row written
+	// without a matching action_log entry is invisible to every other client:
+	// the release is recorded here and nowhere else, permanently. Backfill does
+	// not rescue it either — it only runs before a client's first pull.
+	logActionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate log action ID: %w", err)
+	}
+	logData, err := json.Marshal(map[string]any{
+		"id": logID, "issue_id": next.ID, "session_id": sessionID,
+		"work_session_id": "", "message": logMessage,
+		"type": models.LogTypeProgress, "timestamp": next.UpdatedAt,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal progress log: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO action_log
+		(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, 'create', 'logs', ?, '', ?, ?, 0)`,
+		logActionID, sessionID, logID, string(logData),
+		formatActionLogTimestamp(next.UpdatedAt)); err != nil {
+		return fmt.Errorf("log progress log action: %w", err)
 	}
 	return nil
 }

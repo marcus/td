@@ -119,3 +119,18 @@ func TestBurstNoSync(t *testing.T) {
 	results := e2e.ScenarioBurstNoSync(h, rng)
 	reportResults(t, results)
 }
+
+// TestAutoCascadeLogsSync guards the class of bug where a log row written as a
+// local side effect of a cascade never reaches the other client. See
+// ScenarioAutoCascadeLogsSync.
+func TestAutoCascadeLogsSync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping e2e test in short mode")
+	}
+
+	cfg := e2e.DefaultConfig()
+	h := e2e.Setup(t, cfg)
+
+	results := e2e.ScenarioAutoCascadeLogsSync(h)
+	reportResults(t, results)
+}

@@ -285,6 +285,10 @@ func (db *DB) updateIssueAndLogFromPrevious(issue, prev *models.Issue, sessionID
 }
 
 func (db *DB) updateIssueAndLogFromPreviousStore(store reviewSyncStore, issue, prev *models.Issue, sessionID string, actionType models.ActionType) error {
+	// An issue landing on open is unclaimed work: release the implementer
+	// claim here, once, for every surface. See releaseClaimOnOpen.
+	releaseClaimOnOpen(issue)
+
 	// Review invalidation must succeed before the issue mutation. The review
 	// helper commits its row update and sync event atomically; on an injected
 	// action_log failure this returns without changing the issue.
@@ -345,19 +349,71 @@ func (db *DB) updateIssueAndLogFromPreviousStore(store reviewSyncStore, issue, p
 	return nil
 }
 
+// insertLogRowWithSyncEvent writes one logs row and the create/logs action_log
+// entry that makes it visible to sync, through the same store — pass a *sql.Tx
+// and the pair is atomic.
+//
+// Every logs producer must go through a helper that does BOTH. The sync engine
+// derives its events exclusively from action_log (internal/sync/client.go
+// GetPendingEvents), so a logs row written without a matching action_log entry
+// exists on the writing client and nowhere else, permanently:
+// sync.BackfillOrphanEntities cannot rescue it because it bails out once
+// last_pulled_server_seq > 0, i.e. after the client's first pull. This has now
+// been fixed twice at two different producers (recordClaimReleaseHistory in
+// claims.go, and addLogEntry below); keeping the two writes inside one helper
+// is what stops there being a third.
+func insertLogRowWithSyncEvent(store reviewSyncStore, log *models.Log) error {
+	if _, err := store.Exec(`
+		INSERT INTO logs (id, issue_id, session_id, work_session_id, message, type, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, log.ID, log.IssueID, log.SessionID, log.WorkSessionID, log.Message, log.Type, log.Timestamp); err != nil {
+		return err
+	}
+
+	actionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate log action ID: %w", err)
+	}
+	newData, err := json.Marshal(map[string]any{
+		"id": log.ID, "issue_id": log.IssueID, "session_id": log.SessionID,
+		"work_session_id": log.WorkSessionID, "message": log.Message,
+		"type": log.Type, "timestamp": log.Timestamp,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal log entry: %w", err)
+	}
+	if _, err := store.Exec(`INSERT INTO action_log
+		(id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, 'create', 'logs', ?, '', ?, ?, 0)`,
+		actionID, log.SessionID, log.ID, string(newData),
+		formatActionLogTimestamp(log.Timestamp)); err != nil {
+		return fmt.Errorf("log log-entry action: %w", err)
+	}
+	return nil
+}
+
 // addLogEntry inserts a progress log entry WITHOUT acquiring withWriteLock.
 // Caller MUST already hold the write lock.
+//
+// The logs row and its create/logs sync event go in together, in one
+// transaction — see insertLogRowWithSyncEvent for why that pairing is not
+// optional.
 func (db *DB) addLogEntry(issueID, sessionID, message string, logType models.LogType) error {
 	id, err := generateLogID()
 	if err != nil {
 		return fmt.Errorf("generate log ID: %w", err)
 	}
-	now := time.Now()
-	_, err = db.conn.Exec(`
-		INSERT INTO logs (id, issue_id, session_id, work_session_id, message, type, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, id, issueID, sessionID, "", message, logType, now)
-	return err
+	entry := &models.Log{
+		ID:        id,
+		IssueID:   issueID,
+		SessionID: sessionID,
+		Message:   message,
+		Type:      logType,
+		Timestamp: time.Now(),
+	}
+	return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
+		return insertLogRowWithSyncEvent(tx, entry)
+	})
 }
 
 // UpdateIssueLogged updates an issue and logs the action atomically within a single withWriteLock call.
@@ -452,6 +508,10 @@ func (db *DB) updateIssueAndLogFromPreviousWithReviewMetaStore(
 	store reviewSyncStore, issue, prev *models.Issue, sessionID string, actionType models.ActionType,
 	createdReviewID, priorActiveReviewID string,
 ) error {
+	// Same invariant as the plain writer: open is unclaimed. See
+	// releaseClaimOnOpen.
+	releaseClaimOnOpen(issue)
+
 	// Approve / close-after-review are NOT review-invalidating: status goes
 	// in_review -> closed, and the approve path intentionally creates the
 	// review row it wants to keep active. All other invalidating mutations
