@@ -1856,12 +1856,11 @@ Examples:
 				if adminReason != "" {
 					extra["admin"] = adminReason
 				}
-				if len(cascadedParents) > 0 {
-					extra["cascaded_parents"] = cascadedParents
-				}
-				if len(unblockedDependents) > 0 {
-					extra["unblocked_dependents"] = unblockedDependents
-				}
+				// Both cascade lists are unconditional: [] when nothing
+				// cascaded, never an absent key, matching the contract the
+				// rest of the --json family follows.
+				extra["cascaded_parents"] = jsonList(cascadedParents)
+				extra["unblocked_dependents"] = jsonList(unblockedDependents)
 				if err := output.EmitIssue("closed", closedIssue, extra); err != nil {
 					return err
 				}

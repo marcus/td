@@ -153,13 +153,14 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 				"active_work_session": wsID,
 				"focused_issue":       focusedID,
 			}
-			if len(inProgress) > 0 {
-				issueIDs := make([]string, len(inProgress))
-				for i, issue := range inProgress {
-					issueIDs[i] = issue.ID
-				}
-				result["in_progress_issues"] = issueIDs
+			// in_progress_issues is unconditional: an absent key is a third
+			// rendering of "nothing" alongside [] and null, and the only one a
+			// caller cannot field-access (KeyError in Python, undefined in JS).
+			issueIDs := make([]string, 0, len(inProgress))
+			for _, issue := range inProgress {
+				issueIDs = append(issueIDs, issue.ID)
 			}
+			result["in_progress_issues"] = jsonList(issueIDs)
 			return output.JSON(result)
 		}
 
