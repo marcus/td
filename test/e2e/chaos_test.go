@@ -5,6 +5,7 @@ import (
 	"flag"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -221,6 +222,10 @@ func TestChaosSync(t *testing.T) {
 
 	// Fail test on unexpected action failures
 	if eng.Stats.UnexpectedFailures > 0 {
-		t.Errorf("%d unexpected action failures", eng.Stats.UnexpectedFailures)
+		for _, r := range eng.Stats.Unexpected {
+			t.Errorf("unexpected failure: action=%s actor=%s target=%s\n  output: %s",
+				r.Action, r.Actor, r.Target, strings.TrimSpace(r.Output))
+		}
+		t.Errorf("%d unexpected action failures (seed %d)", eng.Stats.UnexpectedFailures, seed)
 	}
 }

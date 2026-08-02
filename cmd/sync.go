@@ -782,24 +782,42 @@ var syncAlwaysOnCmd = &cobra.Command{
 	},
 }
 
+// wireSyncCommands attaches the always-reachable sync subcommands (enable,
+// disable and the read-only status diagnostic) to exactly one `td sync` parent
+// and returns that parent for registration on the root command.
+//
+// enable/disable and status must be reachable regardless of the SyncCLI gate:
+// a user who disabled sync has to be able to turn it back on, and `status` is
+// the first diagnostic to reach for when sync looks stuck. They go on the full
+// syncCmd when SyncCLI is on, else on the minimal always-on parent — exactly
+// one, never both, since double-registration would leave a command with the
+// wrong parent. (td-78b482)
+//
+// The gate is a parameter rather than a call to features.IsEnabledForProcess so
+// that both branches are testable in a single process. init() runs against the
+// ambient env before any test does, so a test that only inspects the resulting
+// command tree can only ever observe whichever branch the developer's shell
+// happened to select. (td-6fda71)
+func wireSyncCommands(syncCLIEnabled bool, full, alwaysOn *cobra.Command, subs ...*cobra.Command) *cobra.Command {
+	parent := alwaysOn
+	if syncCLIEnabled {
+		parent = full
+	}
+	for _, sub := range subs {
+		parent.AddCommand(sub)
+	}
+	return parent
+}
+
 func init() {
 	syncCmd.Flags().Bool("push", false, "Push only")
 	syncCmd.Flags().Bool("pull", false, "Pull only")
 	syncCmd.Flags().Bool("status", false, "Show sync status only")
 
-	// enable/disable and the read-only `status` diagnostic must be reachable
-	// regardless of the SyncCLI gate. Register them on exactly one parent (the
-	// full syncCmd when SyncCLI is on, else the minimal always-on parent) so we
-	// never double-register a command and panic. (td-78b482)
-	if features.IsEnabledForProcess(features.SyncCLI.Name) {
-		syncCmd.AddCommand(syncEnableCmd)
-		syncCmd.AddCommand(syncDisableCmd)
-		syncCmd.AddCommand(syncStatusCmd)
-		rootCmd.AddCommand(syncCmd)
-	} else {
-		syncAlwaysOnCmd.AddCommand(syncEnableCmd)
-		syncAlwaysOnCmd.AddCommand(syncDisableCmd)
-		syncAlwaysOnCmd.AddCommand(syncStatusCmd)
-		rootCmd.AddCommand(syncAlwaysOnCmd)
-	}
+	parent := wireSyncCommands(
+		features.IsEnabledForProcess(features.SyncCLI.Name),
+		syncCmd, syncAlwaysOnCmd,
+		syncEnableCmd, syncDisableCmd, syncStatusCmd,
+	)
+	rootCmd.AddCommand(parent)
 }

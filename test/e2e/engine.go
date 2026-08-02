@@ -32,8 +32,8 @@ type IssueState struct {
 
 // ActionStats tracks per-action-type outcomes.
 type ActionStats struct {
-	OK      int
-	ExpFail int
+	OK        int
+	ExpFail   int
 	UnexpFail int
 }
 
@@ -50,6 +50,13 @@ type ChaosStats struct {
 	BurstActions       int
 	EdgeDataUsed       int
 	PerAction          map[string]*ActionStats
+
+	// Unexpected retains the full result of every unexpected failure so the
+	// test can name what broke. A bare count ("4 unexpected action failures")
+	// tells you nothing about which command refused or why, which is how the
+	// td-018ee1 sync bug stayed hidden behind this suite for three sessions —
+	// a summary statistic reads as noise, a named command reads as a bug.
+	Unexpected []ActionResult
 }
 
 // ChaosEngine drives random mutations against a Harness.
@@ -62,10 +69,10 @@ type ChaosEngine struct {
 	Issues      map[string]*IssueState // id -> state
 	IssueOrder  []string               // ordered list of all created issue IDs
 	Boards      []string
-	DepPairs    map[string]bool   // "from_to" -> true
-	ParentChild map[string]string // childID -> parentID
-	IssueFiles  map[string]string // "issueID~filePath" -> role
-	ActiveWS    map[string]string // actor -> ws name
+	DepPairs    map[string]bool            // "from_to" -> true
+	ParentChild map[string]string          // childID -> parentID
+	IssueFiles  map[string]string          // "issueID~filePath" -> role
+	ActiveWS    map[string]string          // actor -> ws name
 	WSTagged    map[string]map[string]bool // actor -> set of tagged issue IDs
 
 	Stats ChaosStats
@@ -188,6 +195,30 @@ func isExpectedFailure(output string) bool {
 		"cycle",
 		"circular",
 		"not in expected status",
+		// State-drift refusals. The engine selects a target from its own local
+		// model; a sync can land a real change in between, so the command is
+		// correct to refuse. Both markers below are precise evidence of exactly
+		// that, rather than a word that happens to appear in the message:
+		//
+		//   "td-x is not closed (status: in_progress)"          <- reopen
+		//   "issue not in_progress: td-x (status: in_review)"   <- unstart
+		//   "cannot reject td-x: must be in_review
+		//    (currently in_progress)"                           <- reject
+		//   "cannot approve td-x: status changed from in_review
+		//    to in_progress in another session"                 <- td-e38551 guard
+		//
+		// Deliberately narrow. The rest of this list matches bare words
+		// ("already", "blocked", "not found") and is far too permissive — that
+		// permissiveness is why this suite masked the td-018ee1 sync data-loss
+		// bug for three sessions. Do not add vague patterns here to make a run
+		// green; a refusal that does not name a concrete status is not proven
+		// to be state drift, and the engine's Stats.Unexpected now prints the
+		// command and output so an unclassified failure can be diagnosed
+		// instead of guessed at. Tightening the existing entries is tracked
+		// separately.
+		"(status: ",
+		"(currently ",
+		"status changed from",
 		"invalid status",
 		"cannot transition",
 		"not found",
@@ -232,6 +263,7 @@ func (e *ChaosEngine) recordResult(r ActionResult) {
 	default:
 		pa.UnexpFail++
 		e.Stats.UnexpectedFailures++
+		e.Stats.Unexpected = append(e.Stats.Unexpected, r)
 	}
 }
 

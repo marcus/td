@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/marcus/td/internal/config"
+	"github.com/marcus/td/internal/features"
 	"github.com/spf13/cobra"
 )
 
@@ -187,26 +188,78 @@ func hasSubcommand(parent *cobra.Command, name string) bool {
 	return false
 }
 
-// TestSyncStatusReachableWhenSyncCLIOff asserts the read-only `status`
-// subcommand is registered on the always-on sync parent so it is reachable even
-// when SyncCLI is off. The test binary's init() runs with SyncCLI at its default
-// (off), so the always-on parent is the one that gets wired up. Registration on
-// the two parents is mutually exclusive by design (avoids double-registration),
-// so we only assert the active parent here; the SyncCLI=on path is covered by
-// the manual `TD_FEATURE_SYNC_CLI=1 sync status --help` verification and by
-// TestSyncStatusRegistrationMutuallyExclusive below.
+// wireSyncCommandsForTest runs the real wiring logic over throwaway stand-ins
+// for the two parents and the three always-reachable subcommands, so a test can
+// exercise either branch without re-parenting the package-level command tree
+// that the rest of the suite (and Execute) depends on.
+func wireSyncCommandsForTest(syncCLIEnabled bool) (chosen, full, alwaysOn *cobra.Command) {
+	full = &cobra.Command{Use: "sync"}
+	alwaysOn = &cobra.Command{Use: "sync"}
+	chosen = wireSyncCommands(syncCLIEnabled, full, alwaysOn,
+		&cobra.Command{Use: "enable"},
+		&cobra.Command{Use: "disable"},
+		&cobra.Command{Use: "status"},
+	)
+	return chosen, full, alwaysOn
+}
+
+// alwaysReachableSyncSubcommands are the subcommands that must stay reachable
+// no matter how the SyncCLI gate resolves: the kill-switch pair (a user who
+// disabled sync must be able to re-enable it) and the read-only diagnostic.
+var alwaysReachableSyncSubcommands = []string{"status", "enable", "disable"}
+
+// TestSyncStatusReachableWhenSyncCLIOff asserts that when SyncCLI is OFF the
+// always-on parent carries status/enable/disable and the full parent carries
+// none of them.
+//
+// This drives wireSyncCommands directly instead of inspecting the package
+// command tree. The tree is built by init() (cmd/sync.go) from the *ambient
+// process* env before any test runs, so t.Setenv cannot move it and an
+// observational test silently changes meaning with the developer's shell: with
+// TD_FEATURE_SYNC_CLI=1 exported — which CLAUDE.md recommends putting in
+// ~/.zshenv, so it is set in every agent subshell — it would assert the
+// SyncCLI-ON path and never check the case it is named for. Passing the gate as
+// a parameter makes the off-branch verifiable in every environment. (td-6fda71)
 func TestSyncStatusReachableWhenSyncCLIOff(t *testing.T) {
-	if !hasSubcommand(syncAlwaysOnCmd, "status") {
-		t.Error("expected `status` on the always-on sync parent (reachable when SyncCLI is off)")
+	chosen, full, alwaysOn := wireSyncCommandsForTest(false)
+
+	if chosen != alwaysOn {
+		t.Fatal("SyncCLI off must select the always-on sync parent")
 	}
-	if !hasSubcommand(syncAlwaysOnCmd, "enable") || !hasSubcommand(syncAlwaysOnCmd, "disable") {
-		t.Error("expected enable/disable to remain on the always-on sync parent")
+	for _, name := range alwaysReachableSyncSubcommands {
+		if !hasSubcommand(alwaysOn, name) {
+			t.Errorf("expected `%s` on the always-on sync parent (reachable when SyncCLI is off)", name)
+		}
+		if hasSubcommand(full, name) {
+			t.Errorf("`%s` must not also land on the full sync parent when SyncCLI is off", name)
+		}
 	}
 }
 
-// TestSyncStatusRegistrationMutuallyExclusive guards against double-registration:
-// `status` must live under exactly one of the two parents, never both (cobra
-// panics on AddCommand of an already-parented command).
+// TestSyncStatusReachableWhenSyncCLIOn is the mirror case: with the gate on,
+// the same subcommands live under the full sync parent and the always-on parent
+// stays empty (it is not registered on root at all in that configuration).
+func TestSyncStatusReachableWhenSyncCLIOn(t *testing.T) {
+	chosen, full, alwaysOn := wireSyncCommandsForTest(true)
+
+	if chosen != full {
+		t.Fatal("SyncCLI on must select the full sync parent")
+	}
+	for _, name := range alwaysReachableSyncSubcommands {
+		if !hasSubcommand(full, name) {
+			t.Errorf("expected `%s` on the full sync parent (SyncCLI on)", name)
+		}
+		if hasSubcommand(alwaysOn, name) {
+			t.Errorf("`%s` must not also land on the always-on sync parent when SyncCLI is on", name)
+		}
+	}
+}
+
+// TestSyncStatusRegistrationMutuallyExclusive guards the tree this process
+// actually built: `status` must live under exactly one of the two parents,
+// never both (double-registration would leave it with the wrong parent) and
+// never neither (unreachable). This holds whichever way the ambient gate
+// resolved, so it needs no env control.
 func TestSyncStatusRegistrationMutuallyExclusive(t *testing.T) {
 	onFull := hasSubcommand(syncCmd, "status")
 	onAlwaysOn := hasSubcommand(syncAlwaysOnCmd, "status")
@@ -215,6 +268,22 @@ func TestSyncStatusRegistrationMutuallyExclusive(t *testing.T) {
 	}
 	if !onFull && !onAlwaysOn {
 		t.Error("`status` registered on NEITHER parent — not reachable")
+	}
+}
+
+// TestSyncCommandsWiredFromProcessGate ties the pure wiring function back to
+// the real command tree: init() must have wired the live parents through
+// wireSyncCommands with the process gate, so the parent selected by the ambient
+// gate is the one carrying the real subcommands.
+func TestSyncCommandsWiredFromProcessGate(t *testing.T) {
+	parent, label := syncCmd, "full sync parent (SyncCLI on)"
+	if !features.IsEnabledForProcess(features.SyncCLI.Name) {
+		parent, label = syncAlwaysOnCmd, "always-on sync parent (SyncCLI off)"
+	}
+	for _, name := range alwaysReachableSyncSubcommands {
+		if !hasSubcommand(parent, name) {
+			t.Errorf("expected `%s` on the %s", name, label)
+		}
 	}
 }
 
