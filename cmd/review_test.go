@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -108,7 +105,20 @@ func TestClearFocusIfNeededNoFocus(t *testing.T) {
 	}
 }
 
+// runReviewCommand returns stdout and stderr concatenated, which is what the
+// assertions on review's own rendered output want. Tests that care WHICH
+// stream a line landed on — diagnostics belong on stderr — should call
+// runReviewCommandStreams instead.
 func runReviewCommand(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	stdout, stderr := runReviewCommandStreams(t, dir, args...)
+	return stdout + stderr
+}
+
+// runReviewCommandStreams runs reviewCmd with both standard streams captured
+// separately. output.Warning and output.Error write to stderr, so a helper
+// that captured only stdout would silently drop every diagnostic.
+func runReviewCommandStreams(t *testing.T, dir string, args ...string) (string, string) {
 	t.Helper()
 
 	saveAndRestoreGlobals(t)
@@ -125,25 +135,16 @@ func runReviewCommand(t *testing.T, dir string, args ...string) string {
 	_ = reviewCmd.Flags().Set("note", "")
 	_ = reviewCmd.Flags().Set("notes", "")
 
-	var output bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-
-	runErr := reviewCmd.RunE(reviewCmd, args)
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&output, r)
+	var runErr error
+	stdout, stderr := captureStdoutStderr(t, func() {
+		runErr = reviewCmd.RunE(reviewCmd, args)
+	})
 
 	if runErr != nil {
 		t.Fatalf("reviewCmd.RunE returned error: %v", runErr)
 	}
 
-	return output.String()
+	return stdout, stderr
 }
 
 func reviewCommandSessionID(t *testing.T, database *db.DB) string {
@@ -1397,13 +1398,13 @@ func TestReviewWarnsWhenAutoCreatingHandoffWithoutContext(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	output := runReviewCommand(t, dir, issue.ID)
+	stdout, stderr := runReviewCommandStreams(t, dir, issue.ID)
 
-	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
-		t.Fatalf("expected auto-handoff warning, got %q", output)
+	if !strings.Contains(stderr, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected auto-handoff warning on stderr, got %q", stderr)
 	}
-	if !strings.Contains(output, "REVIEW REQUESTED "+issue.ID) {
-		t.Fatalf("expected review output for %q, got %q", issue.ID, output)
+	if !strings.Contains(stdout, "REVIEW REQUESTED "+issue.ID) {
+		t.Fatalf("expected review output for %q, got %q", issue.ID, stdout)
 	}
 
 	handoff, err := database.GetLatestHandoff(issue.ID)
@@ -1442,10 +1443,10 @@ func TestReviewWarnsWhenOnlyRoutineWorkflowLogsExist(t *testing.T) {
 		t.Fatalf("AddLog failed: %v", err)
 	}
 
-	output := runReviewCommand(t, dir, issue.ID)
+	_, stderr := runReviewCommandStreams(t, dir, issue.ID)
 
-	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
-		t.Fatalf("expected warning to remain for routine logs, got %q", output)
+	if !strings.Contains(stderr, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected warning to remain for routine logs, got %q", stderr)
 	}
 }
 
@@ -1475,13 +1476,13 @@ func TestReviewWarnsWhenSubstantiveLogsBelongToDifferentSession(t *testing.T) {
 		t.Fatalf("AddLog failed: %v", err)
 	}
 
-	output := runReviewCommand(t, dir, issue.ID)
+	stdout, stderr := runReviewCommandStreams(t, dir, issue.ID)
 
-	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
-		t.Fatalf("expected warning when substantive logs are from another session, got %q", output)
+	if !strings.Contains(stderr, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected warning when substantive logs are from another session, got %q", stderr)
 	}
-	if !strings.Contains(output, "REVIEW REQUESTED "+issue.ID) {
-		t.Fatalf("expected review output for %q, got %q", issue.ID, output)
+	if !strings.Contains(stdout, "REVIEW REQUESTED "+issue.ID) {
+		t.Fatalf("expected review output for %q, got %q", issue.ID, stdout)
 	}
 }
 

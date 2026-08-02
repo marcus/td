@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"bytes"
 	"errors"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -45,22 +42,15 @@ func runApproveCmd(t *testing.T, args []string, flags map[string]string) (string
 		}
 	}
 
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-
-	runErr := approveCmd.RunE(approveCmd, args)
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	// captureOutput, not captureStdout: these assertions read the rejection
+	// text from output.Error, which is a diagnostic and lives on stderr.
+	var runErr error
+	out := captureOutput(t, func() {
+		runErr = approveCmd.RunE(approveCmd, args)
+	})
 
 	resetFlags()
-	return buf.String(), runErr
+	return out, runErr
 }
 
 // currentSessionID returns the generated session ID for the current TD_SESSION_ID

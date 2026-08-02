@@ -97,19 +97,26 @@ func setSessionFlag(t *testing.T, id, force string) {
 	setWorkflowExitFlag(t, unstartCmd, "force", force)
 }
 
+// runUnstart returns STDOUT only, keeping JSON-mode output decodable;
+// diagnostics land on stderr. Use runUnstartStreams to assert on one.
 func runUnstart(t *testing.T, args []string, wantErr bool) string {
+	out, _ := runUnstartStreams(t, args, wantErr)
+	return out
+}
+
+func runUnstartStreams(t *testing.T, args []string, wantErr bool) (string, string) {
 	t.Helper()
 	var err error
-	out := captureStdout(t, func() {
+	stdout, stderr := captureStdoutStderr(t, func() {
 		err = unstartCmd.RunE(unstartCmd, args)
 	})
 	if wantErr && err == nil {
-		t.Fatalf("expected failure, got success. output: %q", out)
+		t.Fatalf("expected failure, got success. output: %q / %q", stdout, stderr)
 	}
 	if !wantErr && err != nil {
-		t.Fatalf("unstart failed: %v (output %q)", err, out)
+		t.Fatalf("unstart failed: %v (output %q / %q)", err, stdout, stderr)
 	}
-	return out
+	return stdout, stderr
 }
 
 func decodeEnvelope(t *testing.T, out string) staleEnvelope {
@@ -255,10 +262,11 @@ func TestUnstartStaleReportsLineageHeldClaimsAsUnresolved(t *testing.T) {
 
 	// The human path must warn rather than print a bare "no claims".
 	setJSONFlag(t, false)
-	out := runStale(t, false)
-	if !strings.Contains(out, "not evaluated:") ||
-		!strings.Contains(out, "3 claim(s) left unresolved") {
-		t.Fatalf("human output must not drop the lineage-held claims: %q", out)
+	// The unresolved-claims notice is a warning, so it is on stderr.
+	staleOut, staleWarn := runStaleStreams(t, false)
+	if !strings.Contains(staleOut+staleWarn, "not evaluated:") ||
+		!strings.Contains(staleOut+staleWarn, "3 claim(s) left unresolved") {
+		t.Fatalf("human output must not drop the lineage-held claims: %q / %q", staleOut, staleWarn)
 	}
 }
 
@@ -685,9 +693,10 @@ func TestUnstartReleasesALeakedClaimOnAnOpenIssue(t *testing.T) {
 		t.Fatalf("claim not released: status=%s implementer=%q", st, holder)
 	}
 
-	// Now it really is a no-op.
-	out = runUnstart(t, []string{issue.ID}, false)
-	if !strings.Contains(out, "already unstarted") {
-		t.Fatalf("a genuinely unclaimed open issue must be an idempotent no-op: %q", out)
+	// Now it really is a no-op. The "already unstarted" notice is a warning,
+	// so it arrives on stderr.
+	noopOut, noopWarn := runUnstartStreams(t, []string{issue.ID}, false)
+	if !strings.Contains(noopOut+noopWarn, "already unstarted") {
+		t.Fatalf("a genuinely unclaimed open issue must be an idempotent no-op: %q / %q", noopOut, noopWarn)
 	}
 }

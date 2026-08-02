@@ -97,7 +97,9 @@ func TestStartExitSemantics(t *testing.T) {
 		t.Fatalf("UpdateIssue different-owner start: %v", err)
 	}
 	var otherOwnerErr error
-	otherOwnerOut := captureStdout(t, func() {
+	// captureOutput: the "cannot start" line is a diagnostic on stderr, and
+	// the once-only assertion below is about the whole user-visible output.
+	otherOwnerOut := captureOutput(t, func() {
 		otherOwnerErr = startCmd.RunE(startCmd, []string{otherOwner.ID})
 	})
 	requireSilentFailure(t, otherOwnerErr)

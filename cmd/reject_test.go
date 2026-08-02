@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -28,25 +25,16 @@ func runRejectCommand(t *testing.T, dir string, args ...string) string {
 	_ = rejectCmd.Flags().Set("note", "")
 	_ = rejectCmd.Flags().Set("notes", "")
 
-	var output bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-
-	runErr := rejectCmd.RunE(rejectCmd, args)
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&output, r)
+	var runErr error
+	out := captureOutput(t, func() {
+		runErr = rejectCmd.RunE(rejectCmd, args)
+	})
 
 	if runErr != nil {
 		t.Fatalf("rejectCmd.RunE returned error: %v", runErr)
 	}
 
-	return output.String()
+	return out
 }
 
 func TestRejectOpenIssueIsIdempotent(t *testing.T) {

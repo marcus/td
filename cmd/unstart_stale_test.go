@@ -137,19 +137,27 @@ func setStaleFlags(t *testing.T, stale, force string) {
 	setWorkflowExitFlag(t, unstartCmd, "session", "")
 }
 
+// runStale returns STDOUT only, so JSON-mode callers can decode it directly;
+// diagnostics from output.Error/Warning are on stderr by design. Use
+// runStaleStreams to assert on a warning.
 func runStale(t *testing.T, wantErr bool) string {
+	out, _ := runStaleStreams(t, wantErr)
+	return out
+}
+
+func runStaleStreams(t *testing.T, wantErr bool) (string, string) {
 	t.Helper()
 	var err error
-	out := captureStdout(t, func() {
+	stdout, stderr := captureStdoutStderr(t, func() {
 		err = unstartCmd.RunE(unstartCmd, nil)
 	})
 	if wantErr && err == nil {
-		t.Fatalf("expected failure, got success. output: %q", out)
+		t.Fatalf("expected failure, got success. output: %q / %q", stdout, stderr)
 	}
 	if !wantErr && err != nil {
-		t.Fatalf("unstart --stale failed: %v (output %q)", err, out)
+		t.Fatalf("unstart --stale failed: %v (output %q / %q)", err, stdout, stderr)
 	}
-	return out
+	return stdout, stderr
 }
 
 // TestUnstartStalePreviewDoesNotRelease is the safety property: preview is the

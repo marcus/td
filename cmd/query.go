@@ -223,10 +223,10 @@ BOARDS:
 		// Say so whenever the output is not the whole answer. Written to stderr
 		// so machine-readable output stays clean.
 		if res.Truncated {
-			output.WarningErr("showing %d of %d matches (--limit %d; use -n 0 for all)", len(results), res.Matched, limit)
+			output.Warning("showing %d of %d matches (--limit %d; use -n 0 for all)", len(results), res.Matched, limit)
 		}
 		if res.ScanLimited {
-			output.WarningErr("only the first %d issues were scanned; anything beyond that was not considered (raise with --max-scan)", maxScan)
+			output.Warning("only the first %d issues were scanned; anything beyond that was not considered (raise with --max-scan)", maxScan)
 		}
 
 		return nil

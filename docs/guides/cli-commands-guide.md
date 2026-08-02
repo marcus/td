@@ -291,6 +291,18 @@ newlines still yield valid, parseable JSON on a single line. Error codes are the
 `cannot_self_approve`, `handoff_required`, `database_error`, `git_error`,
 `no_active_session`).
 
+**stdout carries only the result; diagnostics go to stderr.** The same failure
+usually also prints a human `ERROR:` line, and warnings (`Warning: ...`) can be
+emitted on any command. Those go to **stderr**, so `stdout` stays parseable:
+
+```console
+$ td list --json 2>/dev/null | jq .
+{"error": {"code": "database_error", "message": "database not found: run 'td init' first"}}
+```
+
+Do not merge the streams (`2>&1`) before parsing. Read stderr separately when
+you want the human text.
+
 ### Bulk operations (NDJSON)
 
 Commands that accept multiple ids (e.g. `td start id1 id2`) emit **one JSON

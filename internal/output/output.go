@@ -40,29 +40,55 @@ const (
 	ModeJSON
 )
 
-// Success prints a success message
+// The stream split here is the contract that keeps `--json` usable:
+//
+//	stdout = the command's RESULT (JSON envelopes, listings, confirmations)
+//	stderr = DIAGNOSTICS about the command (errors, warnings, notices)
+//
+// Error and Warning are diagnostics, so they go to stderr unconditionally —
+// not "only when --json is set". A great many commands print a human error
+// line and then emit a JSON envelope; routing by mode would mean auditing
+// every one of those ~68 sites to pass a mode down, and would still leave
+// stdout carrying two kinds of thing. Sending diagnostics to stderr always is
+// both the smaller change and what every other CLI does, so piping stdout to
+// a parser works without the caller having to know which code path ran.
+//
+// Success and Info stay on stdout: their content IS the result (see below).
+
+// Success prints a success message. This is the human-mode RESULT of a
+// mutation — the counterpart of the JSON envelope emitted on the --json path,
+// and normally in the sibling branch of the same if/else. It stays on stdout:
+// a user running `td add ... > out.txt` expects the confirmation in the file,
+// and moving it would hide the command's own answer from anyone reading
+// stdout. It is not a diagnostic.
 func Success(format string, args ...interface{}) {
 	fmt.Println(successStyle.Render(fmt.Sprintf(format, args...)))
 }
 
-// Error prints an error message
+// Error prints an error message to stderr. It is a diagnostic about the
+// command, never the command's result, and it is frequently printed on the
+// same path that then emits a JSON error envelope on stdout — printing both
+// to stdout leaves a --json caller with unparseable output. A terminal user
+// sees no difference: stderr is unbuffered and interleaved on a tty.
 func Error(format string, args ...interface{}) {
-	fmt.Println(errorStyle.Render("ERROR: " + fmt.Sprintf(format, args...)))
+	fmt.Fprintln(os.Stderr, errorStyle.Render("ERROR: "+fmt.Sprintf(format, args...)))
 }
 
-// Warning prints a warning message
+// Warning prints a warning message to stderr, for the same reason as Error: a
+// warning annotates the command, it is not what the command was asked to
+// produce. (This function used to print to stdout, which is why a separate
+// WarningErr existed; now that Warning itself is safe, WarningErr is gone and
+// its call sites use Warning.)
 func Warning(format string, args ...interface{}) {
-	fmt.Println(warningStyle.Render("Warning: " + fmt.Sprintf(format, args...)))
-}
-
-// WarningErr prints a warning message to stderr. Use this instead of Warning
-// for out-of-band notices (e.g. background auto-sync) so the message does not
-// corrupt stdout when a command is emitting machine-readable JSON.
-func WarningErr(format string, args ...interface{}) {
 	fmt.Fprintln(os.Stderr, warningStyle.Render("Warning: "+fmt.Sprintf(format, args...)))
 }
 
-// Info prints an info message
+// Info prints an info message to stdout. Unlike Error and Warning, Info's
+// content is primary output — "No boards found" is the literal answer to
+// `td board list`, and moving it to stderr would empty stdout for a command
+// that succeeded. Info is the one of these four where a stderr move would be
+// a new bug rather than a fix, so it stays put; anything genuinely
+// out-of-band should call Warning instead.
 func Info(format string, args ...interface{}) {
 	fmt.Println(fmt.Sprintf(format, args...))
 }

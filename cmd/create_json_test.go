@@ -36,23 +36,66 @@ func setJSONFlag(t *testing.T, on bool) {
 
 // captureStdout runs fn with os.Stdout redirected to a pipe and returns what
 // was written.
+//
+// Diagnostics (output.Error, output.Warning) go to STDERR, so this returns
+// only the command's result. A test asserting on an "ERROR:" or "Warning:"
+// line must use captureOutput or captureStderr instead.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
+	stdout, _ := captureStdoutStderr(t, fn)
+	return stdout
+}
+
+// captureStderr returns only what fn wrote to os.Stderr — the stream that
+// carries output.Error and output.Warning.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	_, stderr := captureStdoutStderr(t, fn)
+	return stderr
+}
+
+// captureOutput returns both streams concatenated. Use it where a test
+// asserts on a command's rendered output as a whole and does not care which
+// stream a given line arrived on.
+func captureOutput(t *testing.T, fn func()) string {
+	t.Helper()
+	stdout, stderr := captureStdoutStderr(t, fn)
+	return stdout + stderr
+}
+
+// captureStdoutStderr runs fn with both standard streams redirected to pipes
+// and returns them separately. This is the single capture implementation in
+// the package; the variants above are projections of it.
+//
+// Note the pipes are drained only after fn returns, so a command writing more
+// than the pipe buffer (~64KB) to one stream would block. No command under
+// test comes close, and the previous single-stream helpers had the same
+// property.
+func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
+	t.Helper()
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	rOut, wOut, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe failed: %v", err)
 	}
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		_ = wOut.Close()
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout, os.Stderr = wOut, wErr
+	defer func() { os.Stdout, os.Stderr = oldStdout, oldStderr }()
 
 	fn()
 
-	_ = w.Close()
-	os.Stdout = oldStdout
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	return buf.String()
+	_ = wOut.Close()
+	_ = wErr.Close()
+	os.Stdout, os.Stderr = oldStdout, oldStderr
+
+	var outBuf, errBuf bytes.Buffer
+	_, _ = io.Copy(&outBuf, rOut)
+	_, _ = io.Copy(&errBuf, rErr)
+	return outBuf.String(), errBuf.String()
 }
 
 // TestCreateJSONOutputEmitsFullIssue verifies that `td add "..." --json`

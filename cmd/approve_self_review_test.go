@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -21,21 +18,14 @@ func setTrustedMode(t *testing.T) {
 // runShowCapture runs `td show <id>` and returns its stdout.
 func runShowCapture(t *testing.T, issueID string) string {
 	t.Helper()
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-	runErr := showCmd.RunE(showCmd, []string{issueID})
-	_ = w.Close()
-	os.Stdout = oldStdout
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = showCmd.RunE(showCmd, []string{issueID})
+	})
 	if runErr != nil {
 		t.Fatalf("showCmd.RunE: %v", runErr)
 	}
-	return buf.String()
+	return out
 }
 
 // TestSelfReviewRejectedInNonTrustedModes verifies the flag errors clearly in

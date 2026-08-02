@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -144,25 +141,15 @@ func TestApproveNoArgsUsesSingleReviewableIssue(t *testing.T) {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
 
-	var output bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-
-	runErr := approveCmd.RunE(approveCmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&output, r)
+	var runErr error
+	got := captureOutput(t, func() {
+		runErr = approveCmd.RunE(approveCmd, []string{})
+	})
 
 	if runErr != nil {
 		t.Fatalf("approveCmd.RunE returned error: %v", runErr)
 	}
 
-	got := output.String()
 	if !strings.Contains(got, "APPROVED "+issue.ID) {
 		t.Fatalf("expected approval output for %q, got %s", issue.ID, got)
 	}
@@ -206,25 +193,15 @@ func TestApproveClosedIssueIsIdempotent(t *testing.T) {
 		t.Fatalf("UpdateIssue failed: %v", err)
 	}
 
-	var output bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w
-
-	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
-
-	_ = w.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&output, r)
+	var runErr error
+	got := captureOutput(t, func() {
+		runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
+	})
 
 	if runErr != nil {
 		t.Fatalf("approveCmd.RunE returned error: %v", runErr)
 	}
 
-	got := output.String()
 	if !strings.Contains(got, "already approved/closed") {
 		t.Fatalf("expected idempotent approval output, got %s", got)
 	}
@@ -279,17 +256,10 @@ func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
 		t.Fatalf("set reason: %v", err)
 	}
 
-	var first bytes.Buffer
-	oldStdout := os.Stdout
-	r1, w1, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w1
-	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
-	_ = w1.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&first, r1)
+	var runErr error
+	_ = captureOutput(t, func() {
+		runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
+	})
 	if runErr != nil {
 		t.Fatalf("first approveCmd.RunE returned error: %v", runErr)
 	}
@@ -298,21 +268,13 @@ func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
 		t.Fatalf("clear reason: %v", err)
 	}
 
-	var second bytes.Buffer
-	r2, w2, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	os.Stdout = w2
-	runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
-	_ = w2.Close()
-	os.Stdout = oldStdout
-	_, _ = io.Copy(&second, r2)
+	got := captureOutput(t, func() {
+		runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
+	})
 	if runErr != nil {
 		t.Fatalf("second approveCmd.RunE returned error: %v", runErr)
 	}
 
-	got := second.String()
 	if !strings.Contains(got, "Recent transition: approved") {
 		t.Fatalf("expected latest approval transition in %s", got)
 	}

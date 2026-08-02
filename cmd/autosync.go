@@ -233,7 +233,7 @@ func warnIfSyncStranded(baseDir string) {
 	lastStrandedWarnAt = time.Now()
 	strandedWarnMu.Unlock()
 
-	output.WarningErr("sync: this project is configured for sync but autosync is off — %d change(s) not being pushed. Run 'td sync status'.", pending)
+	output.Warning("sync: this project is configured for sync but autosync is off — %d change(s) not being pushed. Run 'td sync status'.", pending)
 }
 
 // autoSyncOnce runs a push and optional pull silently. It returns the number of
@@ -350,7 +350,7 @@ func autoSyncAfterMutation() {
 	// autoSyncOnce returns 0 when sync is disabled/unconfigured, so this never
 	// warns spuriously.
 	if pending := autoSyncOnce(); pending > 0 {
-		output.WarningErr("sync: %d local change(s) not yet pushed to remote (will retry on next td command)", pending)
+		output.Warning("sync: %d local change(s) not yet pushed to remote (will retry on next td command)", pending)
 	}
 }
 
