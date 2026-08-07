@@ -95,15 +95,15 @@ func TestAuditForeignKeys_DetectsOrphans(t *testing.T) {
 	}
 
 	expect := map[string]int{
-		"issues.parent_id -> issues.id":               1,
-		"handoffs.issue_id -> issues.id":              1,
-		"git_snapshots.issue_id -> issues.id":         1,
-		"issue_files.issue_id -> issues.id":           1,
-		"issue_dependencies.issue_id -> issues.id":    1,
-		"issue_dependencies.depends_on_id -> issues.id": 1,
+		"issues.parent_id -> issues.id":                           1,
+		"handoffs.issue_id -> issues.id":                          1,
+		"git_snapshots.issue_id -> issues.id":                     1,
+		"issue_files.issue_id -> issues.id":                       1,
+		"issue_dependencies.issue_id -> issues.id":                1,
+		"issue_dependencies.depends_on_id -> issues.id":           1,
 		"work_session_issues.work_session_id -> work_sessions.id": 1,
-		"work_session_issues.issue_id -> issues.id":   1,
-		"comments.issue_id -> issues.id":              1,
+		"work_session_issues.issue_id -> issues.id":               1,
+		"comments.issue_id -> issues.id":                          1,
 	}
 
 	for rel, want := range expect {
@@ -114,7 +114,7 @@ func TestAuditForeignKeys_DetectsOrphans(t *testing.T) {
 }
 
 // TestAuditForeignKeys_IgnoresEmptyFKValues ensures default-empty FK columns
-// (e.g. issues.parent_id='') are not counted as orphans.
+// (e.g. issues.parent_id=”) are not counted as orphans.
 func TestAuditForeignKeys_IgnoresEmptyFKValues(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Initialize(dir)

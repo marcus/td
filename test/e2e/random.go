@@ -8,12 +8,12 @@ import (
 
 // Edge-case strings for adversarial testing.
 var edgeStrings = []string{
-	"",                                // empty
-	"x",                               // single char
-	strings.Repeat("A", 1200),         // very long
+	"",                        // empty
+	"x",                       // single char
+	strings.Repeat("A", 1200), // very long
 	"\xf0\x9f\x94\xa5\xf0\x9f\x90\x9b\xe2\x9c\x85\xf0\x9f\x9a\x80\xf0\x9f\x92\x80\xf0\x9f\x8e\x89", // emoji
-	"\u6d4b\u8bd5\u4e2d\u6587\u6570\u636e\u5904\u7406",                                                  // CJK
-	"\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",                          // RTL Arabic
+	"\u6d4b\u8bd5\u4e2d\u6587\u6570\u636e\u5904\u7406",                                             // CJK
+	"\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",                    // RTL Arabic
 	"line one\nline two\nline three",
 	"it's a test with 'single quotes'",
 	`she said "hello world"`,

@@ -37,7 +37,7 @@ func TestIsDevelopmentVersion(t *testing.T) {
 		{"devel", true},
 
 		// Case sensitivity
-		{"DEV", false},      // case-sensitive, so should be false
+		{"DEV", false}, // case-sensitive, so should be false
 		{"DEVEL", false},
 		{"Dev", false},
 
@@ -94,13 +94,13 @@ func TestUpdateCommand(t *testing.T) {
 		{"../../.env", ""},
 
 		// Invalid: prerelease identifier errors
-		{"v1.2.3--", ""},         // double hyphen
-		{"v1.2.3-", ""},          // trailing hyphen
-		{"v1.2.3-beta-", ""},     // trailing hyphen in prerelease
-		{"v1.2.3-.beta", ""},     // leading dot after hyphen
-		{"v1.2.3-beta.", ""},     // trailing dot
-		{"v1.2.3-beta..rc", ""},  // double dot
-		{"v1.2.3-_invalid", ""},  // underscore in prerelease
+		{"v1.2.3--", ""},        // double hyphen
+		{"v1.2.3-", ""},         // trailing hyphen
+		{"v1.2.3-beta-", ""},    // trailing hyphen in prerelease
+		{"v1.2.3-.beta", ""},    // leading dot after hyphen
+		{"v1.2.3-beta.", ""},    // trailing dot
+		{"v1.2.3-beta..rc", ""}, // double dot
+		{"v1.2.3-_invalid", ""}, // underscore in prerelease
 		{"v1.2.3-beta_release", ""},
 
 		// Invalid: missing version parts

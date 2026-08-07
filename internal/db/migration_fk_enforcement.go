@@ -12,10 +12,10 @@ import (
 //
 //  1. Cleans up the FK orphans identified by the Wave 1 audit (td-b8dd0d).
 //     Policies (justified per relation):
-//     - issues.parent_id: nullify to '' (empty-string sentinel) — preserve
-//       the issue itself; parent link was dangling.
+//     - issues.parent_id: nullify to ” (empty-string sentinel) — preserve
+//     the issue itself; parent link was dangling.
 //     - handoffs/git_snapshots/issue_dependencies/issue_session_history:
-//       DELETE — a row referring to a missing issue has no meaningful value.
+//     DELETE — a row referring to a missing issue has no meaningful value.
 //  2. Rewrites child tables to add ON DELETE CASCADE where td's
 //     internal/sync/events.go already performs a manual cascade delete. This
 //     makes the DB enforce what the app code does. internal/sync/events.go
@@ -23,13 +23,13 @@ import (
 //     after the manual path removes rows). td-0001eb will remove the
 //     manual emulation once this is in.
 //  3. issues.parent_id FK: the constraint is DROPPED at the schema level.
-//     Rationale: td's codebase uses '' (empty string) as the "no parent"
+//     Rationale: td's codebase uses ” (empty string) as the "no parent"
 //     sentinel throughout (INSERTs, UPDATEs, sync event payloads). SQLite
-//     FK semantics treat '' as a real value, not as NULL, so a schema-level
+//     FK semantics treat ” as a real value, not as NULL, so a schema-level
 //     FK on parent_id would reject every top-level issue insert (since no
-//     issue has id = ''). Migrating every writer to use NULL is out of
+//     issue has id = ”). Migrating every writer to use NULL is out of
 //     scope for td-4846e6; keeping parent_id unconstrained matches the
-//     long-standing behaviour, preserves the audit (which treats '' as not
+//     long-standing behaviour, preserves the audit (which treats ” as not
 //     a link), and leaves deleting a parent as non-cascading (children
 //     become orphans with stale parent_ids until the app or a follow-up
 //     cleanup rewrites them). The fk_audit keeps flagging any true orphans.

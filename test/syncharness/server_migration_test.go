@@ -7,9 +7,9 @@ import (
 // TestServerMigration verifies that a client can re-sync all events after the server
 // loses track of previously synced events (e.g., migration to a new server).
 // The scenario:
-//   1. Client creates an issue, pushes to server - synced_at is set
-//   2. Server "dies" - simulate by clearing synced_at on client's action_log
-//   3. Client pushes again - events should sync successfully to the new server
+//  1. Client creates an issue, pushes to server - synced_at is set
+//  2. Server "dies" - simulate by clearing synced_at on client's action_log
+//  3. Client pushes again - events should sync successfully to the new server
 func TestServerMigration(t *testing.T) {
 	const projID = "proj-migration"
 	h := NewHarness(t, 1, projID)

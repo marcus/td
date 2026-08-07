@@ -193,7 +193,7 @@ func TestUpdateWithNoPreviousDataFallback(t *testing.T) {
 		EntityType:      "issues",
 		EntityID:        "td-FM3",
 		Payload:         []byte(payload),
-		ClientTimestamp:  time.Now(),
+		ClientTimestamp: time.Now(),
 	}
 
 	// Insert directly into server
@@ -252,7 +252,7 @@ func TestUpdateNonExistentRowFallback(t *testing.T) {
 		EntityType:      "issues",
 		EntityID:        "td-FM4",
 		Payload:         []byte(payload),
-		ClientTimestamp:  time.Now(),
+		ClientTimestamp: time.Now(),
 	}
 
 	// Insert directly into server
@@ -326,7 +326,7 @@ func TestEmptyDiffNoOp(t *testing.T) {
 		EntityType:      "issues",
 		EntityID:        "td-FM5",
 		Payload:         []byte(payload),
-		ClientTimestamp:  time.Now(),
+		ClientTimestamp: time.Now(),
 	}
 
 	// Insert directly into server

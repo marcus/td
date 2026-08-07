@@ -7,8 +7,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/internal/syncclient"
+	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/pkg/monitor/modal"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
