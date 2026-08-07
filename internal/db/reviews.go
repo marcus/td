@@ -549,8 +549,42 @@ func (db *DB) supersedeApprovalIfLinked(issueID, sessionID string) {
 			return
 		}
 	}
-	_, _ = db.conn.Exec(
-		`UPDATE issues SET reviewer_session = '', reviewed_at = NULL WHERE id = ?`,
-		issueID,
-	)
+	_ = db.clearIssueReviewStamp(issueID, sessionID)
+}
+
+// clearIssueReviewStamp clears issues.reviewer_session / reviewed_at AND
+// records the action_log entry that makes the change visible to sync.
+//
+// The bare `UPDATE issues SET reviewer_session = ”, reviewed_at = NULL` this
+// replaces is the update-side form of the td-018ee1 / td-8aa916 defect. The
+// sync engine derives its outbound events exclusively from action_log
+// (internal/sync/client.go GetPendingEvents), so a column mutated without a
+// matching entry stays on the writing client forever: the row itself has a
+// create event, so BackfillOrphanEntities sees nothing to rescue, and
+// BackfillStaleIssues gives up once last_pulled_server_seq > 0. The reviewing
+// peer keeps a reviewer_session this client cleared, permanently — which is
+// what TestChaosSync reported as `issues match — common set diverges`.
+//
+// TestActionLogReconstructsEveryIssue (sync_update_invariant_test.go) is the
+// global guard: it replays each issue's action_log the way the receiving side
+// applies it and fails if the replay does not reproduce the row.
+//
+// Callers reach this from outside withWriteLock (the side-table mutation has
+// already committed), so the logged write takes the lock itself. Errors are
+// returned but callers treat them as best-effort: the primary mutation has
+// succeeded and a failed badge cleanup must not fail the user's link op.
+func (db *DB) clearIssueReviewStamp(issueID, sessionID string) error {
+	return db.withWriteLock(func() error {
+		prev, err := db.scanIssueRow(issueID)
+		if err != nil || prev == nil {
+			return err
+		}
+		if prev.ReviewerSession == "" && prev.ReviewedAt == nil {
+			return nil
+		}
+		next := *prev
+		next.ReviewerSession = ""
+		next.ReviewedAt = nil
+		return db.updateIssueAndLogFromPrevious(&next, prev, sessionID, models.ActionUpdate)
+	})
 }
