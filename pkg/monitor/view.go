@@ -380,7 +380,7 @@ func (m Model) activityTableStyleFunc(visibleCursor int, isActive bool, colWidth
 // when ANSI codes affect width calculation.
 func (m Model) formatActivityRow(item ActivityItem, messageWidth int) []string {
 	// Pre-styled cells using existing style functions
-	timestamp := timestampStyle.Render(item.Timestamp.Format("15:04"))
+	timestamp := timestampStyle.Render(item.Timestamp.Local().Format("15:04"))
 	session := subtleStyle.Render(truncateSession(item.SessionID))
 	badge := formatActivityBadge(item.Type) // existing function with styling
 	issueID := ""
@@ -1087,10 +1087,10 @@ func (m Model) renderModal() string {
 		metadataLine += fmt.Sprintf("  %dpts", issue.Points)
 	}
 	// Add created timestamp in subtle style
-	metadataLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
+	metadataLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Local().Format("2006-01-02 15:04")))
 	// Add closed timestamp if closed
 	if issue.ClosedAt != nil {
-		metadataLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
+		metadataLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Local().Format("2006-01-02 15:04")))
 	}
 	lines = append(lines, metadataLine)
 
@@ -1118,7 +1118,7 @@ func (m Model) renderModal() string {
 	if issue.ReviewerSession != "" {
 		reviewerLine := subtleStyle.Render("Reviewer: ") + truncateSession(issue.ReviewerSession)
 		if issue.ReviewedAt != nil {
-			reviewerLine += subtleStyle.Render("  at ") + issue.ReviewedAt.Format("2006-01-02 15:04")
+			reviewerLine += subtleStyle.Render("  at ") + issue.ReviewedAt.Local().Format("2006-01-02 15:04")
 		}
 		// Freshness: only emit (fresh) when an active (non-superseded)
 		// approval row exists. Relying on ReviewerSession alone is lossy once
@@ -1156,7 +1156,7 @@ func (m Model) renderModal() string {
 			if r.SupersededAt != nil {
 				status = " (superseded)"
 			}
-			lines = append(lines, "  "+truncateSession(r.ReviewerSession)+" "+r.Decision+status+" "+r.CreatedAt.Format("2006-01-02 15:04"))
+			lines = append(lines, "  "+truncateSession(r.ReviewerSession)+" "+r.Decision+status+" "+r.CreatedAt.Local().Format("2006-01-02 15:04"))
 		}
 	}
 
@@ -1306,7 +1306,7 @@ func (m Model) renderModal() string {
 	// Latest handoff
 	if modal.Handoff != nil {
 		lines = append(lines, sectionHeader.Render("LATEST HANDOFF"))
-		lines = append(lines, timestampStyle.Render(modal.Handoff.Timestamp.Format("2006-01-02 15:04"))+" "+
+		lines = append(lines, timestampStyle.Render(modal.Handoff.Timestamp.Local().Format("2006-01-02 15:04"))+" "+
 			subtleStyle.Render(truncateSession(modal.Handoff.SessionID)))
 		if len(modal.Handoff.Done) > 0 {
 			lines = append(lines, readyColor.Render("Done:"))
@@ -1341,7 +1341,7 @@ func (m Model) renderModal() string {
 	if len(modal.Comments) > 0 {
 		lines = append(lines, sectionHeader.Render(fmt.Sprintf("COMMENTS (%d)", len(modal.Comments))))
 		for _, c := range modal.Comments {
-			line := timestampStyle.Render(c.CreatedAt.Format("01-02 15:04")) + " " +
+			line := timestampStyle.Render(c.CreatedAt.Local().Format("01-02 15:04")) + " " +
 				subtleStyle.Render(truncateSession(c.SessionID)) + " " +
 				truncateString(c.Text, contentWidth-25)
 			lines = append(lines, line)
@@ -2118,7 +2118,7 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 // Legacy renderCloseConfirmation removed - close confirmation now uses declarative modal
 
 func renderLogLines(log models.Log, contentWidth int) []string {
-	prefix := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
+	prefix := timestampStyle.Render(log.Timestamp.Local().Format("01-02 15:04")) + " " +
 		subtleStyle.Render(truncateSession(log.SessionID)) + " "
 	prefixWidth := lipgloss.Width(prefix)
 	messageWidth := contentWidth - prefixWidth
@@ -2148,12 +2148,12 @@ var warningStyle = lipgloss.NewStyle().Foreground(warningColor)
 
 // formatDeferUntil formats a defer_until date string for display.
 func formatDeferUntil(dateStr string) string {
-	t, err := time.Parse("2006-01-02", dateStr)
+	t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
 	if err != nil {
 		return dateStr
 	}
 	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	days := int(t.Sub(today).Hours() / 24)
 	switch {
 	case days < 0:
@@ -2169,12 +2169,12 @@ func formatDeferUntil(dateStr string) string {
 
 // formatDueDate formats a due_date string for display with urgency styling.
 func formatDueDate(dateStr string) string {
-	t, err := time.Parse("2006-01-02", dateStr)
+	t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
 	if err != nil {
 		return dateStr
 	}
 	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	days := int(t.Sub(today).Hours() / 24)
 	switch {
 	case days < 0:
@@ -2287,7 +2287,7 @@ func (m Model) renderFooter() string {
 		statusToast = style.Render(fmt.Sprintf(" %s ", m.StatusMessage))
 	}
 
-	refresh := timestampStyle.Render(fmt.Sprintf("Last: %s", m.LastRefresh.Format("15:04:05")))
+	refresh := timestampStyle.Render(fmt.Sprintf("Last: %s", m.LastRefresh.Local().Format("15:04:05")))
 
 	// Calculate spacing
 	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(sessionsIndicator) - lipgloss.Width(handoffAlert) - lipgloss.Width(reviewAlert) - lipgloss.Width(updateNotif) - lipgloss.Width(statusToast) - lipgloss.Width(refresh) - 2

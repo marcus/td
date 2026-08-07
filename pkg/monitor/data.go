@@ -205,7 +205,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 	logs, _ := database.GetRecentLogsAll(limit)
 	for _, log := range logs {
 		items = append(items, ActivityItem{
-			Timestamp: log.Timestamp,
+			Timestamp: log.Timestamp.Local(),
 			SessionID: log.SessionID,
 			Type:      "log",
 			IssueID:   log.IssueID,
@@ -219,7 +219,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 	actions, _ := database.GetRecentActionsAll(limit)
 	for _, action := range actions {
 		items = append(items, ActivityItem{
-			Timestamp:    action.Timestamp,
+			Timestamp:    action.Timestamp.Local(),
 			SessionID:    action.SessionID,
 			Type:         "action",
 			IssueID:      action.EntityID,
@@ -236,7 +236,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 	comments, _ := database.GetRecentCommentsAll(limit)
 	for _, comment := range comments {
 		items = append(items, ActivityItem{
-			Timestamp: comment.CreatedAt,
+			Timestamp: comment.CreatedAt.Local(),
 			SessionID: comment.SessionID,
 			Type:      "comment",
 			IssueID:   comment.IssueID,
