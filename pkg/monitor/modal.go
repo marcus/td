@@ -521,7 +521,7 @@ func (m *Model) createHandoffsModal() *modal.Modal {
 	items := make([]modal.ListItem, 0, len(m.HandoffsData))
 	for i, h := range m.HandoffsData {
 		// Format: [timestamp] [session] [issue_id] done:X remaining:Y
-		timestamp := h.Timestamp.Local().Format("01-02 15:04")
+		timestamp := formatLocalTime(h.Timestamp, "01-02 15:04")
 		session := truncateSession(h.SessionID)
 		issueID := h.IssueID
 
@@ -1310,7 +1310,7 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	)
 
 	// Timestamp + session header
-	header := item.Timestamp.Local().Format("2006-01-02 15:04:05")
+	header := formatLocalTime(item.Timestamp, "2006-01-02 15:04:05")
 	if item.SessionID != "" {
 		header += "  session:" + truncateSession(item.SessionID)
 	}

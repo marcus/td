@@ -654,7 +654,7 @@ func formatNoteAge(t time.Time) string {
 		}
 		return fmt.Sprintf("%dd ago", days)
 	default:
-		return t.Local().Format("Jan 2")
+		return formatLocalTime(t, "Jan 2")
 	}
 }
 

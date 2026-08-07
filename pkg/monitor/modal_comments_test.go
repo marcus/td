@@ -123,12 +123,10 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 				CreatedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 			},
 			validate: func(t *testing.T, output string) {
-				// Should contain timestamp in MM-DD HH:MM format
-				if !strings.Contains(output, "01-15") {
-					t.Error("output should contain timestamp date 01-15")
-				}
-				if !strings.Contains(output, "10:30") {
-					t.Error("output should contain timestamp time 10:30")
+				// Should contain local wall-clock timestamp (UTC 10:30 → local).
+				wantTS := formatLocalTime(time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), "01-02 15:04")
+				if !strings.Contains(output, wantTS) {
+					t.Errorf("output should contain local timestamp %q, got %q", wantTS, output)
 				}
 				// Should contain session ID
 				if !strings.Contains(output, "short") {
@@ -150,9 +148,10 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 				CreatedAt: time.Date(2024, 1, 15, 14, 45, 0, 0, time.UTC),
 			},
 			validate: func(t *testing.T, output string) {
-				// Should contain timestamp
-				if !strings.Contains(output, "01-15") {
-					t.Error("output should contain timestamp date")
+				// Should contain local wall-clock date from the UTC instant.
+				wantDate := formatLocalTime(time.Date(2024, 1, 15, 14, 45, 0, 0, time.UTC), "01-02")
+				if !strings.Contains(output, wantDate) {
+					t.Errorf("output should contain local timestamp date %q", wantDate)
 				}
 				// Session should be truncated to 10 chars
 				if !strings.Contains(output, "this-is-a-") {
@@ -212,9 +211,10 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 				t.Errorf("created at = %v, want %v", comment.CreatedAt, tt.comment.CreatedAt)
 			}
 
-			// Generate a simplified output to validate
+			// Generate a simplified output to validate — use the same
+			// local-timezone formatting path as renderModal.
 			output := fmt.Sprintf("%s %s %s",
-				comment.CreatedAt.Format("01-02 15:04"),
+				formatLocalTime(comment.CreatedAt, "01-02 15:04"),
 				comment.SessionID,
 				comment.Text,
 			)
@@ -382,40 +382,28 @@ func TestModalCommentsTimestampFormatting(t *testing.T) {
 	_ = issue
 
 	tests := []struct {
-		name             string
-		timestamp        time.Time
-		expectedDatePart string // MM-DD format
-		expectedTimePart string // HH:MM format
+		name      string
+		timestamp time.Time
 	}{
 		{
-			name:             "morning time",
-			timestamp:        time.Date(2024, 1, 15, 9, 5, 0, 0, time.UTC),
-			expectedDatePart: "01-15",
-			expectedTimePart: "09:05",
+			name:      "morning time",
+			timestamp: time.Date(2024, 1, 15, 9, 5, 0, 0, time.UTC),
 		},
 		{
-			name:             "afternoon time",
-			timestamp:        time.Date(2024, 1, 15, 14, 30, 0, 0, time.UTC),
-			expectedDatePart: "01-15",
-			expectedTimePart: "14:30",
+			name:      "afternoon time",
+			timestamp: time.Date(2024, 1, 15, 14, 30, 0, 0, time.UTC),
 		},
 		{
-			name:             "midnight",
-			timestamp:        time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-			expectedDatePart: "01-15",
-			expectedTimePart: "00:00",
+			name:      "midnight",
+			timestamp: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:             "end of day",
-			timestamp:        time.Date(2024, 1, 15, 23, 59, 0, 0, time.UTC),
-			expectedDatePart: "01-15",
-			expectedTimePart: "23:59",
+			name:      "end of day",
+			timestamp: time.Date(2024, 1, 15, 23, 59, 0, 0, time.UTC),
 		},
 		{
-			name:             "different month",
-			timestamp:        time.Date(2024, 12, 25, 10, 30, 0, 0, time.UTC),
-			expectedDatePart: "12-25",
-			expectedTimePart: "10:30",
+			name:      "different month",
+			timestamp: time.Date(2024, 12, 25, 10, 30, 0, 0, time.UTC),
 		},
 	}
 
@@ -429,15 +417,20 @@ func TestModalCommentsTimestampFormatting(t *testing.T) {
 				CreatedAt: tt.timestamp,
 			}
 
-			// Validate timestamp formatting
-			formatted := comment.CreatedAt.Format("01-02 15:04")
-			if !strings.Contains(formatted, tt.expectedDatePart) {
-				t.Errorf("timestamp format = %s, should contain date %s",
-					formatted, tt.expectedDatePart)
+			// Production display uses local wall clock (formatLocalTime), not UTC Format.
+			formatted := formatLocalTime(comment.CreatedAt, "01-02 15:04")
+			want := tt.timestamp.Local().Format("01-02 15:04")
+			if formatted != want {
+				t.Errorf("timestamp format = %s, want local wall clock %s", formatted, want)
 			}
-			if !strings.Contains(formatted, tt.expectedTimePart) {
-				t.Errorf("timestamp format = %s, should contain time %s",
-					formatted, tt.expectedTimePart)
+			// Date and time parts must match the local conversion.
+			wantDate := tt.timestamp.Local().Format("01-02")
+			wantTime := tt.timestamp.Local().Format("15:04")
+			if !strings.Contains(formatted, wantDate) {
+				t.Errorf("timestamp format = %s, should contain date %s", formatted, wantDate)
+			}
+			if !strings.Contains(formatted, wantTime) {
+				t.Errorf("timestamp format = %s, should contain time %s", formatted, wantTime)
 			}
 		})
 	}
