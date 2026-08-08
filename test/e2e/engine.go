@@ -206,6 +206,9 @@ func isExpectedFailure(output string) bool {
 		//    (currently in_progress)"                           <- reject
 		//   "cannot approve td-x: status changed from in_review
 		//    to in_progress in another session"                 <- td-e38551 guard
+		//   "cannot start td-x: invalid transition from closed"  <- start/unstart/
+		//                                                           block/unblock/
+		//                                                           review/reopen
 		//
 		// Deliberately narrow. The rest of this list matches bare words
 		// ("already", "blocked", "not found") and is far too permissive — that
@@ -220,6 +223,7 @@ func isExpectedFailure(output string) bool {
 		"(currently ",
 		"status changed from",
 		"invalid status",
+		"invalid transition from",
 		"cannot transition",
 		"not found",
 		"no such",
