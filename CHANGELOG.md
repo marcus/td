@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.56.0] - 2026-08-08
+
+### Bug Fixes
+
+- **Review stamps cleared by `supersedeApprovalIfLinked` now sync to peers.** Superseding a linked review used to clear `issues.reviewer_session` / `reviewed_at` with a bare `UPDATE`, with no matching `action_log` entry. The sync engine derives every outbound event from `action_log`, so the clearing client kept the change forever and a peer that had already pulled once could never receive it — the row's own `create` event gave `BackfillOrphanEntities` nothing to rescue. `TestChaosSync` had been reporting this as `issues match — common set diverges`. Fixed by routing the clear through the same logged update path other mutations use; `TestActionLogReconstructsEveryIssue` now globally guards against a mutation reaching the `issues` table without a corresponding `action_log` entry, rather than relying on catching each call site by hand.
+- **The monitor now displays every timestamp and due/defer date in local time,** and day-boundary math (today/tomorrow labeling) uses civil-day diffs instead of raw duration arithmetic, so a DST transition can no longer mislabel tomorrow as today. Formatting is centralized on a single `formatLocalTime` helper instead of being reimplemented at each call site (td-3e362c).
+
+### Developer
+
+- **`make install-local` / `make use-homebrew` / `make install-status`** bring the machine-wide dev-install switching pattern from sidecar and tasks to td, so the machine-wide `td` binary can be swapped between a local build and the installed Homebrew release without hand-editing symlinks. `install-local` and `install-worktree` refuse feature branches/linked worktrees where that would be a mistake, and refuse to replace a `td` that isn't either a managed build or a Homebrew link. Plain `make install` remains an unmanaged `go install` into `GOBIN` (td-83f436).
+- gofmt applied across the codebase to clear formatting drift accumulated across recent commits.
+
 ## [v0.55.0] - 2026-08-01
 
 ### Breaking: diagnostics moved to stderr
