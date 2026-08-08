@@ -1,6 +1,6 @@
 .PHONY: help fmt test test-dev-install install install-local install-worktree \
 	use-homebrew install-status tag release check-clean check-version \
-	check-main check-pushed install-hooks
+	check-main check-pushed check-changelog check-ci install-hooks
 
 SHELL := /bin/sh
 
@@ -24,7 +24,7 @@ help:
 		"  make use-homebrew              # restore the installed Homebrew release" \
 		"  make install                   # unmanaged go install into GOBIN" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
-		"  make release VERSION=vX.Y.Z    # test + verify pushed main + tag + push"
+		"  make release VERSION=vX.Y.Z    # verify changelog+CI+pushed main, test, tag + push"
 
 fmt:
 	gofmt -w .
@@ -69,6 +69,33 @@ check-pushed:
 	@git remote get-url origin >/dev/null 2>&1 || (echo "Error: no 'origin' remote configured" && exit 1)
 	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || (echo "Error: HEAD must match origin/main; push main before releasing" && exit 1)
 
+check-changelog:
+	@grep -Fq "## [$(VERSION)] - " CHANGELOG.md || (echo "Error: CHANGELOG.md has no $(VERSION) release entry" && exit 1)
+
+# Go CI (currently tests only; lint isn't wired in yet, see go-ci.yml) must be
+# green on the commit being released. Fails closed if red, still running, or
+# hasn't started. Skips with a warning if gh can't resolve a GitHub repo here
+# (e.g. no origin, or origin isn't github.com/marcus/td).
+check-ci:
+	@if ! command -v gh >/dev/null 2>&1 || ! gh repo view >/dev/null 2>&1; then \
+		echo "Warning: gh unavailable or origin is not a resolvable GitHub repo; skipping automated Go CI status check" >&2; \
+		exit 0; \
+	fi; \
+	head=$$(git rev-parse origin/main); \
+	runs=$$(gh run list --workflow=go-ci.yml --branch main --limit 20 --json headSha,status,conclusion -q "[.[] | select(.headSha == \"$$head\")]" 2>/dev/null || echo '[]'); \
+	count=$$(echo "$$runs" | jq 'length'); \
+	if [ "$$count" = 0 ]; then \
+		echo "Error: no Go CI run found for $$head yet; wait for it to start" && exit 1; \
+	fi; \
+	status=$$(echo "$$runs" | jq -r '.[0].status'); \
+	conclusion=$$(echo "$$runs" | jq -r '.[0].conclusion'); \
+	if [ "$$status" != completed ]; then \
+		echo "Error: Go CI is still $$status on $$head; wait for it to finish" && exit 1; \
+	fi; \
+	if [ "$$conclusion" != success ]; then \
+		echo "Error: Go CI is $$conclusion on $$head; fix it before releasing" && exit 1; \
+	fi
+
 tag: check-clean check-version check-main
 	@git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null && (echo "Error: tag $(VERSION) already exists" && exit 1) || true
 	git tag -a "$(VERSION)" -m "Release $(VERSION)"
@@ -79,7 +106,7 @@ tag: check-clean check-version check-main
 		echo "Created tag $(VERSION) (no 'origin' remote found)"; \
 	fi
 
-release: check-clean check-version check-main check-pushed
+release: check-clean check-version check-main check-pushed check-changelog check-ci
 	$(MAKE) test
 	$(MAKE) tag VERSION="$(VERSION)"
 	git push origin "$(VERSION)"

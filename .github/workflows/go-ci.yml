@@ -1,0 +1,44 @@
+name: Go CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/go-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - ".github/workflows/go-ci.yml"
+
+permissions:
+  contents: read
+
+# golangci-lint is not wired in here yet: td has never run it and the
+# codebase currently carries ~2100 pre-existing findings (mostly errcheck).
+# Landing lint as a CI gate needs its own remediation pass, not a rider on
+# this fix. Until then, tests are the gate — td previously had *no* CI at
+# all on push/PR to main, unlike sidecar, and that gap is what this closes.
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI go test ./...
