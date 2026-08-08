@@ -40,5 +40,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # internal/workdir's worktree tests shell out to `git commit`, which
+      # needs an identity; runner images don't set one globally.
+      - name: Configure git identity for tests
+        run: |
+          git config --global user.email "ci@td.invalid"
+          git config --global user.name "td CI"
+
       - name: Test
         run: env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI go test ./...
