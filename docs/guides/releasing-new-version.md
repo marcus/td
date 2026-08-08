@@ -152,8 +152,9 @@ gh release view "$VERSION"
 Notes for agents:
 - Do **not** use bare `gh run watch` (it prompts to pick a run). Pass an explicit
   run id and `--exit-status`.
-- The local machine's `td` is upgraded via Homebrew (`brew upgrade td`) or a dev
-  build (`make install`). A release does not upgrade the local binary by itself.
+- The local machine's `td` is upgraded via Homebrew (`brew upgrade td` followed
+  by `make use-homebrew` if a dev build is currently active) or a dev build
+  (`make install-local`). A release does not upgrade the local binary by itself.
 - If the `update-homebrew-tap` job fails (e.g. token/permissions), the GitHub
   release still succeeds — re-run just that job from the Actions UI or bump the
   formula manually in `marcus/homebrew-tap`.
@@ -161,7 +162,11 @@ Notes for agents:
 ## Local Development Builds
 
 ```bash
-make install                                   # build + install, version from `git describe`
+make install-local                             # activate the main checkout machine-wide
+make install-worktree                          # activate the current branch/worktree
+make install-status                            # show which td is active
+make use-homebrew                              # switch back to the Homebrew release
+make install                                   # unmanaged go install into GOBIN
 go install -ldflags "-X main.Version=vX.Y.Z" . # explicit version
 ```
 

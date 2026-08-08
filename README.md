@@ -185,18 +185,38 @@ See [SPEC.md](./SPEC.md) for detailed schemas and workflows.
 # Build
 go build -o td .
 
-# Install from your local working tree
-make install
+# Activate the canonical main checkout machine-wide
+make install-local
 
-# Install with an explicit dev version injected (useful for local binaries)
-make install-dev
+# Deliberately activate the current branch/worktree instead
+make install-worktree
+
+# Show which td is active and what each shell actually resolves
+make install-status
+
+# Restore the installed Homebrew release
+make use-homebrew
+
+# Unmanaged go install into GOBIN (does not change Homebrew links)
+make install
 
 # Format code
 make fmt
 
 # Install git pre-commit hook (gofmt, go vet, go build on staged files)
 make install-hooks
+
+# Test install switching against an isolated fake Homebrew prefix
+make test-dev-install
 ```
+
+`make install-local` refuses feature branches and linked worktrees so an
+incidental checkout cannot silently replace the normal development binary; use
+`make install-worktree` when that replacement is intentional. Both managed
+commands swap the `td` symlink in Homebrew's `bin` directory, keep every build
+under `~/.local/state/td/dev-installs` with metadata recording its source
+checkout, revision and dirty state, and roll back if activation fails. They
+refuse to touch a `td` that is neither a managed build nor a Homebrew link.
 
 ## Tests & Quality Checks
 

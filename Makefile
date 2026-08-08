@@ -1,4 +1,6 @@
-.PHONY: help fmt test install tag release check-clean check-version check-main check-pushed install-hooks
+.PHONY: help fmt test test-dev-install install install-local install-worktree \
+	use-homebrew install-status tag release check-clean check-version \
+	check-main check-pushed install-hooks
 
 SHELL := /bin/sh
 
@@ -6,7 +8,7 @@ SHELL := /bin/sh
 #   make release VERSION=v0.2.0
 VERSION ?=
 
-# A helpful dev version string (used by install-dev)
+# A helpful dev version string (used by install)
 GIT_DESCRIBE := $(shell git describe --tags --always --dirty 2>/dev/null)
 
 help:
@@ -15,7 +17,12 @@ help:
 		"  make fmt                       # gofmt -w ." \
 		"  make install-hooks             # install git pre-commit hook" \
 		"  make test                      # full tests with release-safe environment" \
-		"  make install                   # build and install with version from git" \
+		"  make test-dev-install          # test install switching in a fake prefix" \
+		"  make install-local             # activate the canonical main checkout" \
+		"  make install-worktree          # activate the current branch/worktree" \
+		"  make install-status            # show the active install and shell resolution" \
+		"  make use-homebrew              # restore the installed Homebrew release" \
+		"  make install                   # unmanaged go install into GOBIN" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
 		"  make release VERSION=vX.Y.Z    # test + verify pushed main + tag + push"
 
@@ -25,10 +32,28 @@ fmt:
 test:
 	env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI GOWORK=off go test ./...
 
+test-dev-install:
+	./scripts/test-dev-install.sh
+
+# Unmanaged Go install into GOBIN. Does not touch Homebrew links, and does not
+# decide which td wins PATH precedence. Use install-local for that.
 install:
 	@V="$(GIT_DESCRIBE)"; V=$${V:-dev}; \
 	echo "Installing td $$V"; \
 	go install -ldflags "-X main.Version=$$V" .
+
+# Managed machine-wide development installs and Homebrew switching.
+install-local:
+	./scripts/dev-install.sh install-local
+
+install-worktree:
+	./scripts/dev-install.sh install-worktree
+
+use-homebrew:
+	./scripts/dev-install.sh use-homebrew
+
+install-status:
+	./scripts/dev-install.sh status
 
 check-clean:
 	@test -z "$$(git status --porcelain)" || (echo "Error: working tree is not clean" && exit 1)

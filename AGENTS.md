@@ -55,7 +55,17 @@ needs a mechanical independence boundary rather than an honesty-based one.
 ```bash
 go build -o td .           # Build locally
 make test                  # Test with the release-safe environment
+
+make install-local         # Activate the canonical main checkout machine-wide
+make install-worktree      # Deliberately activate the current branch/worktree
+make install-status        # Show the active install and real shell resolution
+make use-homebrew          # Restore the installed Homebrew release
 ```
+
+`make install` is an unmanaged `go install` into `GOBIN`; it does not alter
+Homebrew links or guarantee which `td` wins PATH precedence. Prefer
+`make install-local` / `make use-homebrew` to switch between builds, and
+`make install-status` when a stale binary is suspected.
 
 ## Version & Release
 
