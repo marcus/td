@@ -79,20 +79,34 @@ func kanbanColumnColor(cat TaskListCategory) color.Color {
 	}
 }
 
-// visibleKanbanColumns returns occupied columns in canonical order.
-// An empty board falls back to the full order so the overlay still has
-// structure and width math never divides by zero.
+// kanbanPinnedColumns are always shown so a new or sparse board still
+// has a Review / WIP / Ready shape instead of collapsing to one fat lane.
+var kanbanPinnedColumns = []TaskListCategory{
+	CategoryReviewable,
+	CategoryInProgress,
+	CategoryReady,
+}
+
+// visibleKanbanColumns returns pinned columns plus any other occupied
+// lane, in canonical order. Empty extras (rework, ready-to-close, …)
+// stay hidden so they do not steal width.
 func visibleKanbanColumns(data TaskListData) []TaskListCategory {
-	var occupied []TaskListCategory
+	want := make(map[TaskListCategory]bool, len(kanbanColumnOrder))
+	for _, cat := range kanbanPinnedColumns {
+		want[cat] = true
+	}
 	for _, cat := range kanbanColumnOrder {
 		if len(kanbanColumnIssues(data, cat)) > 0 {
-			occupied = append(occupied, cat)
+			want[cat] = true
 		}
 	}
-	if len(occupied) == 0 {
-		return append([]TaskListCategory(nil), kanbanColumnOrder...)
+	visible := make([]TaskListCategory, 0, len(want))
+	for _, cat := range kanbanColumnOrder {
+		if want[cat] {
+			visible = append(visible, cat)
+		}
 	}
-	return occupied
+	return visible
 }
 
 func kanbanColumnIndex(cat TaskListCategory) int {
@@ -254,11 +268,27 @@ func (m *Model) clampKanbanRow() {
 	}
 }
 
+// kanbanBoxFrameLines is the vertical chrome the box itself adds around
+// the inner grid: 2 for the border, plus 2 padding newlines when a
+// custom ModalRenderer is in use (sidecar). The card budget must leave
+// this room or OverlayModal / the embedder clips the bottom rule.
+func (m Model) kanbanBoxFrameLines() int {
+	if m.ModalRenderer != nil {
+		return 4
+	}
+	return 2
+}
+
 // kanbanDimensions computes layout dimensions for the kanban view.
 func (m Model) kanbanDimensions() (modalWidth, modalHeight, colWidth, maxVisibleCards int) {
+	maxInnerH := m.Height - m.kanbanBoxFrameLines()
+	if maxInnerH < kanbanChromeLines+kanbanCardHeight {
+		maxInnerH = kanbanChromeLines + kanbanCardHeight
+	}
+
 	if m.KanbanFullscreen {
 		modalWidth = m.Width - 2
-		modalHeight = m.Height
+		modalHeight = maxInnerH
 	} else {
 		modalWidth = m.Width * 90 / 100
 		if modalWidth < 60 {
@@ -267,29 +297,47 @@ func (m Model) kanbanDimensions() (modalWidth, modalHeight, colWidth, maxVisible
 		if modalWidth > 160 {
 			modalWidth = 160
 		}
+		if modalWidth > m.Width-2 && m.Width > 2 {
+			modalWidth = m.Width - 2
+		}
 		modalHeight = m.Height * 85 / 100
-		if modalHeight < 12 {
-			modalHeight = m.Height - 2
+		if modalHeight < kanbanChromeLines+kanbanCardHeight {
+			modalHeight = maxInnerH
 		}
 		if modalHeight > 50 {
 			modalHeight = 50
 		}
+		if modalHeight > maxInnerH {
+			modalHeight = maxInnerH
+		}
 	}
 
-	contentWidth := modalWidth - 4
+	// Width(modalWidth-2) plus border and padding wraps at modalWidth-6.
+	contentWidth := modalWidth - 6
 	numCols := len(visibleKanbanColumns(m.BoardMode.SwimlaneData))
 	if numCols < 1 {
 		numCols = 1
 	}
 	separatorWidth := numCols - 1
 	colWidth = (contentWidth - separatorWidth) / numCols
+	if colWidth < 1 {
+		colWidth = 1
+	}
+	// Prefer a readable column, but never exceed the wrap budget — one
+	// extra occupied lane used to inflate every grid line and clip the
+	// bottom rule.
 	if colWidth < minKanbanColWidth {
-		colWidth = minKanbanColWidth
+		fitted := minKanbanColWidth
+		if fitted*numCols+separatorWidth > contentWidth {
+			fitted = (contentWidth - separatorWidth) / numCols
+			if fitted < 1 {
+				fitted = 1
+			}
+		}
+		colWidth = fitted
 	}
 
-	// Available height for cards (subtract header, divider, column headers, divider,
-	// up scroll indicator, down scroll indicator)
-	availableCardHeight := modalHeight - 8
+	availableCardHeight := modalHeight - kanbanChromeLines
 	if availableCardHeight < kanbanCardHeight {
 		availableCardHeight = kanbanCardHeight
 	}
@@ -353,6 +401,10 @@ const kanbanCardHeight = 3
 
 // minKanbanColWidth is the minimum column width to render.
 const minKanbanColWidth = 16
+
+// kanbanChromeLines is the fixed row count around the card grid: title,
+// top rule, column headers, header rule, up hint, down hint, bottom rule.
+const kanbanChromeLines = 7
 
 // kanbanScrollInfo tracks whether a column has hidden content above/below.
 type kanbanScrollInfo struct {
@@ -508,28 +560,22 @@ func (m Model) renderKanbanView() string {
 	upIndicatorLine := m.renderKanbanScrollIndicatorLine(scrollInfos, colWidth, sep, true)
 	downIndicatorLine := m.renderKanbanScrollIndicatorLine(scrollInfos, colWidth, sep, false)
 
-	// Assemble full content
-	var content strings.Builder
-	content.WriteString(header)
-	content.WriteString("\n")
-	content.WriteString(divider)
-	content.WriteString("\n")
-	content.WriteString(headerLine)
-	content.WriteString("\n")
-	content.WriteString(divider)
-	content.WriteString("\n")
-	content.WriteString(upIndicatorLine)
-	content.WriteString("\n")
-	for _, line := range cardLines {
-		content.WriteString(line)
-		content.WriteString("\n")
+	// Assemble full content. The last line is the bottom rule so the grid
+	// does not sit open-ended when OverlayModal or an embedder clips slack.
+	var body []string
+	body = append(body, header, divider, headerLine, divider, upIndicatorLine)
+	body = append(body, cardLines...)
+	body = append(body, downIndicatorLine)
+	for len(body)+1 < modalHeight {
+		body = append(body, strings.Repeat(" ", actualContentWidth))
 	}
-	content.WriteString(downIndicatorLine)
-
-	// Render in a modal box
-	boxContent := content.String()
-	// Trim trailing newline
-	boxContent = strings.TrimRight(boxContent, "\n")
+	body = append(body, divider)
+	for i, line := range body {
+		if ansi.StringWidth(line) > actualContentWidth {
+			body[i] = ansi.Truncate(line, actualContentWidth, "")
+		}
+	}
+	boxContent := strings.Join(body, "\n")
 
 	if m.KanbanFullscreen {
 		return m.renderKanbanFullscreen(boxContent, modalWidth, modalHeight)
@@ -585,7 +631,7 @@ func (m Model) renderKanbanBox(content string, width, height int) string {
 		BorderForeground(borderColor).
 		Padding(0, 1).
 		Width(width - 2).
-		MaxHeight(height)
+		Height(height)
 	return style.Render(content)
 }
 
@@ -597,7 +643,7 @@ func (m Model) renderKanbanFullscreen(content string, width, height int) string 
 		BorderForeground(borderColor).
 		Padding(0, 1).
 		Width(width - 2).
-		Height(height - 2)
+		Height(height)
 	return style.Render(content)
 }
 

@@ -2,8 +2,11 @@ package monitor
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -186,10 +189,31 @@ func TestVisibleKanbanColumnsOmitsEmpty(t *testing.T) {
 	}
 }
 
-func TestVisibleKanbanColumnsEmptyBoardKeepsAll(t *testing.T) {
+func TestVisibleKanbanColumnsEmptyBoardKeepsPinned(t *testing.T) {
 	got := visibleKanbanColumns(TaskListData{})
-	if len(got) != len(kanbanColumnOrder) {
-		t.Fatalf("empty board visible = %d, want full order %d", len(got), len(kanbanColumnOrder))
+	want := kanbanPinnedColumns
+	if len(got) != len(want) {
+		t.Fatalf("empty board visible = %v, want pinned %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("empty board visible[%d] = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestVisibleKanbanColumnsPinsReviewWipReady(t *testing.T) {
+	got := visibleKanbanColumns(TaskListData{
+		Closed: []models.Issue{{ID: "c1"}},
+	})
+	want := []TaskListCategory{CategoryReviewable, CategoryInProgress, CategoryReady, CategoryClosed}
+	if len(got) != len(want) {
+		t.Fatalf("visible = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("visible[%d] = %s, want %s", i, got[i], want[i])
+		}
 	}
 }
 
@@ -204,10 +228,10 @@ func TestClampKanbanColSnapsToNearestOccupied(t *testing.T) {
 		t.Errorf("clamp from empty ReadyToClose: col = %d, want 3 (InProgress)", m.KanbanCol)
 	}
 
-	m.KanbanCol = 8 // Closed, empty — snap left to last occupied
+	m.KanbanCol = 8 // Closed, empty — snap left to last visible (Ready is pinned)
 	m.clampKanbanCol()
-	if m.KanbanCol != 3 {
-		t.Errorf("clamp from empty Closed: col = %d, want 3 (InProgress)", m.KanbanCol)
+	if m.KanbanCol != 4 {
+		t.Errorf("clamp from empty Closed: col = %d, want 4 (Ready)", m.KanbanCol)
 	}
 }
 
@@ -361,8 +385,8 @@ func TestKanbanFullscreenToggle(t *testing.T) {
 	if modalWidth != m.Width-2 {
 		t.Errorf("fullscreen modalWidth = %d, want %d", modalWidth, m.Width-2)
 	}
-	if modalHeight != m.Height {
-		t.Errorf("fullscreen modalHeight = %d, want %d", modalHeight, m.Height)
+	if modalHeight != m.Height-m.kanbanBoxFrameLines() {
+		t.Errorf("fullscreen modalHeight = %d, want %d", modalHeight, m.Height-m.kanbanBoxFrameLines())
 	}
 
 	// Toggle back to overlay
@@ -420,24 +444,62 @@ func TestKanbanDimensions(t *testing.T) {
 	}
 }
 
-func TestKanbanDimensionsWidenWhenColumnsHidden(t *testing.T) {
-	empty := Model{Width: 120, Height: 40}
-	_, _, emptyWidth, _ := empty.kanbanDimensions()
+func TestKanbanRenderFitsViewportAndKeepsBottomRule(t *testing.T) {
+	// Sidecar (and OverlayModal) clip anything past the allocated height.
+	// The last visible line of the boxed kanban must remain the bottom rule,
+	// not a cut-off card or a missing border.
+	sizes := []struct{ w, h int }{
+		{80, 24},
+		{120, 40},
+		{160, 50},
+	}
+	for _, sz := range sizes {
+		m := newKanbanTestModel(TaskListData{
+			Reviewable: makeIssues("r", 20),
+			InProgress: makeIssues("w", 8),
+			Ready:      makeIssues("d", 8),
+			Closed:     makeIssues("c", 5),
+		})
+		m.Width = sz.w
+		m.Height = sz.h
 
-	occupied := Model{
+		out := m.renderKanbanView()
+		gotH := lipgloss.Height(out)
+		if gotH > sz.h {
+			t.Errorf("%dx%d: rendered height %d exceeds viewport", sz.w, sz.h, gotH)
+		}
+		lines := strings.Split(out, "\n")
+		if len(lines) == 0 {
+			t.Fatalf("%dx%d: empty render", sz.w, sz.h)
+		}
+		last := ansi.Strip(lines[len(lines)-1])
+		if !strings.Contains(last, "╰") && !strings.Contains(last, "─") {
+			t.Errorf("%dx%d: last line %q is not a bottom rule", sz.w, sz.h, last)
+		}
+	}
+}
+
+func TestKanbanDimensionsWidenWhenColumnsHidden(t *testing.T) {
+	sparse := Model{Width: 120, Height: 40} // pinned Review / WIP / Ready
+	_, _, sparseWidth, _ := sparse.kanbanDimensions()
+
+	crowded := Model{
 		Width:  120,
 		Height: 40,
 		BoardMode: BoardMode{
 			SwimlaneData: TaskListData{
-				Reviewable: []models.Issue{{ID: "r1"}},
-				InProgress: []models.Issue{{ID: "ip1"}},
-				Ready:      []models.Issue{{ID: "rd1"}},
+				Reviewable:    []models.Issue{{ID: "r1"}},
+				ReadyToClose:  []models.Issue{{ID: "rtc1"}},
+				NeedsRework:   []models.Issue{{ID: "rw1"}},
+				InProgress:    []models.Issue{{ID: "ip1"}},
+				Ready:         []models.Issue{{ID: "rd1"}},
+				PendingReview: []models.Issue{{ID: "pr1"}},
 			},
 		},
 	}
-	_, _, occupiedWidth, _ := occupied.kanbanDimensions()
-	if occupiedWidth <= emptyWidth {
-		t.Errorf("occupied colWidth %d should be wider than empty-board colWidth %d", occupiedWidth, emptyWidth)
+	_, _, crowdedWidth, _ := crowded.kanbanDimensions()
+	if sparseWidth <= crowdedWidth {
+		t.Errorf("sparse colWidth %d should be wider than crowded colWidth %d", sparseWidth, crowdedWidth)
 	}
 }
 
