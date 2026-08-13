@@ -2,6 +2,21 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.57.0] - 2026-08-13
+
+### Bug Fixes
+
+- **Review buckets are painted, and reopening an issue supersedes the previous approval** (td-245126). Ready-to-close and pending-other rows were classified but never rendered, so they appeared as a blank gap with no status tag. Separately, reopening a closed issue left the prior close's approval active, so a resubmitted issue looked closable when it was actually awaiting review. Those buckets now render on swimlanes, the task list, and kanban, and `closed → open` is treated as a new review epoch on the shared write path. The status and review state machines are now documented in `docs/status-and-review.md`.
+- **Undoing a close no longer discards the review it just restored.** The reopen rule above matched every transition out of `closed`, including the `closed → in_review` that undoing an approve or close-after-review performs, so the undo path cleared `superseded_at` on the prior review and then immediately set it again. Reopen is now specifically `closed → open`, the one edge out of `closed` in the state machine.
+- **The monitor's kanban hides empty columns instead of crushing card width.** Every swimlane category used to get a full-width column, so usually-empty buckets like Ready to Close squeezed the occupied ones; occupied columns now share the space and `h`/`l` skip the holes.
+- **The kanban overlay keeps a stable three-column skeleton and its closing rule.** Review / WIP / Ready always stay so a new board has a shape, grid lines no longer wrap (width had ignored border and padding, letting min-width overflow), and the last row is no longer clipped by `MaxHeight`.
+
+### Developer
+
+- **td now has Go CI on push and PR to main.** Previously only a release-tag workflow existed, so a broken build or test regression could sit on main undetected until the next release. The workflow is test-only for now: golangci-lint is deliberately excluded because td has ~2100 pre-existing findings that need their own remediation pass.
+- **`make release` fails closed on a missing changelog entry or a non-green Go CI** for the commit being released. Both were previously only things to remember.
+- Fixed two failures that only appear on a clean CI runner: `internal/workdir`'s worktree tests shell out to `git commit`, which needs an identity that GitHub Actions images do not set globally; and `TestChaosSync` now recognizes `invalid transition from` as expected state drift, which is the shared refusal string across `start`, `unstart`, `block`, `review`, and `ws`.
+
 ## [v0.56.0] - 2026-08-08
 
 ### Bug Fixes

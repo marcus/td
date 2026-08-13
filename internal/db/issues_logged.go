@@ -39,7 +39,11 @@ func reviewInvalidatingDiff(prev, next *models.Issue, cascadedReparent bool) rev
 	}
 	// Reopen is a new review epoch. The leftover approval that justified
 	// the previous close must not make a later in_review look closable.
-	if prev.Status == models.StatusClosed && next.Status != models.StatusClosed {
+	// Reopen is specifically closed -> open, the one edge out of closed in
+	// docs/status-and-review.md. A wider test would also catch the
+	// closed -> in_review that undoing a close-after-review performs, and
+	// re-supersede the very review that undo just restored.
+	if prev.Status == models.StatusClosed && next.Status == models.StatusOpen {
 		m.Reopened = true
 	}
 	m.ReparentCascade = cascadedReparent
