@@ -57,6 +57,8 @@ open → in_progress → in_review → closed
 - `in_review` — work is done and awaiting review
 - `closed` — reviewed and approved
 
+Status is only half the picture. Approvals live on a separate `issue_reviews` row that can outlive a close; reopen starts a new review epoch. See [Status and review](status-and-review.md) for the two machines and how the monitor buckets are derived from them.
+
 Independent review is preferred. In the default `trusted` mode, an implementer who cannot get one has two honest options: name whoever actually reviewed the work with `td approve <id> --reviewed-by "<who>"`, or acknowledge a genuine self-review with `td approve <id> --self-review --reason "..."`. td records which path was used. Once an approval has been recorded, any session may perform the final close.
 
 ### Sessions

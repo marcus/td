@@ -315,6 +315,35 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	}
 }
 
+func TestIntegration_Reopen_SupersedesActiveApproval(t *testing.T) {
+	baseURL, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+	setDelegatedMode(t, database.BaseDir())
+
+	issueID := seedInReviewIssue(t, database, "ses-other-impl")
+	reviewID, err := database.CreateIssueReview(db.NewReview{IssueID: issueID, ReviewerSession: "ses-reviewer", Decision: reviewpolicy.DecisionApproved})
+	if err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+	issue, _ := database.GetIssue(issueID)
+	issue.Status = models.StatusClosed
+	issue.ReviewerSession = "ses-reviewer"
+	if err := database.UpdateIssueLogged(issue, "ses-reviewer", models.ActionApprove); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	resp := iDoJSON(t, "POST", baseURL+"/v1/issues/"+issueID+"/reopen", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reopen status=%d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	active, _ := database.GetActiveApprovalReview(issueID)
+	if active != nil {
+		t.Fatalf("active approval %s should have been superseded by reopen (row still live)", reviewID)
+	}
+}
+
 func TestIntegration_Reject_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T) {
 	baseURL, database, cleanup := setupIntegrationServer(t)
 	defer cleanup()

@@ -10,10 +10,12 @@ import (
 func TestKanbanColumnIssues(t *testing.T) {
 	data := TaskListData{
 		Reviewable:    []models.Issue{{ID: "r1"}},
+		ReadyToClose:  []models.Issue{{ID: "rtc1"}},
 		NeedsRework:   []models.Issue{{ID: "nw1"}, {ID: "nw2"}},
 		InProgress:    []models.Issue{{ID: "ip1"}},
 		Ready:         []models.Issue{{ID: "rd1"}, {ID: "rd2"}, {ID: "rd3"}},
 		PendingReview: []models.Issue{{ID: "pr1"}, {ID: "pr2"}},
+		PendingOther:  []models.Issue{{ID: "po1"}},
 		Blocked:       nil,
 		Closed:        []models.Issue{{ID: "c1"}},
 	}
@@ -23,10 +25,12 @@ func TestKanbanColumnIssues(t *testing.T) {
 		expected int
 	}{
 		{CategoryReviewable, 1},
+		{CategoryReadyToClose, 1},
 		{CategoryNeedsRework, 2},
 		{CategoryInProgress, 1},
 		{CategoryReady, 3},
 		{CategoryPendingReview, 2},
+		{CategoryPendingOther, 1},
 		{CategoryBlocked, 0},
 		{CategoryClosed, 1},
 	}
@@ -55,13 +59,16 @@ func newKanbanTestModel(data TaskListData) Model {
 }
 
 func TestKanbanNavigation(t *testing.T) {
-	// Column order: 0=Review, 1=Rework, 2=InProgress, 3=Ready, 4=PendingReview, 5=Blocked, 6=Closed
+	// Column order: 0=Review, 1=ReadyToClose, 2=Rework, 3=InProgress,
+	// 4=Ready, 5=PendingReview, 6=PendingOther, 7=Blocked, 8=Closed
 	m := newKanbanTestModel(TaskListData{
 		Reviewable:    []models.Issue{{ID: "r1"}, {ID: "r2"}},
+		ReadyToClose:  nil,
 		NeedsRework:   nil,
 		InProgress:    []models.Issue{{ID: "ip1"}},
 		Ready:         []models.Issue{{ID: "rd1"}},
 		PendingReview: nil,
+		PendingOther:  nil,
 		Blocked:       nil,
 		Closed:        []models.Issue{{ID: "c1"}, {ID: "c2"}, {ID: "c3"}},
 	})
@@ -90,7 +97,7 @@ func TestKanbanNavigation(t *testing.T) {
 		t.Errorf("after moveUp at top: row = %d, want 0", m.KanbanRow)
 	}
 
-	// Test move right to col 1 (NeedsRework - empty)
+	// Test move right to col 1 (ReadyToClose - empty)
 	m.kanbanMoveRight()
 	if m.KanbanCol != 1 {
 		t.Errorf("after moveRight: col = %d, want 1", m.KanbanCol)
@@ -99,44 +106,48 @@ func TestKanbanNavigation(t *testing.T) {
 		t.Errorf("after moveRight to empty col: row = %d, want 0", m.KanbanRow)
 	}
 
-	// Move right to InProgress (col 2)
+	// Move right to Rework (col 2), then InProgress (col 3)
 	m.kanbanMoveRight()
-	if m.KanbanCol != 2 {
-		t.Errorf("after second moveRight: col = %d, want 2", m.KanbanCol)
+	m.kanbanMoveRight()
+	if m.KanbanCol != 3 {
+		t.Errorf("after moveRight to InProgress: col = %d, want 3", m.KanbanCol)
 	}
 
-	// Move all the way to Closed (col 6)
-	m.kanbanMoveRight() // col 3 (Ready)
-	m.kanbanMoveRight() // col 4 (PendingReview)
-	m.kanbanMoveRight() // col 5 (Blocked)
-	m.kanbanMoveRight() // col 6 (Closed)
-	if m.KanbanCol != 6 {
-		t.Errorf("col should be 6, got %d", m.KanbanCol)
+	// Move all the way to Closed (col 8)
+	m.kanbanMoveRight() // col 4 (Ready)
+	m.kanbanMoveRight() // col 5 (PendingReview)
+	m.kanbanMoveRight() // col 6 (PendingOther)
+	m.kanbanMoveRight() // col 7 (Blocked)
+	m.kanbanMoveRight() // col 8 (Closed)
+	if m.KanbanCol != 8 {
+		t.Errorf("col should be 8, got %d", m.KanbanCol)
 	}
 
 	// Move right at rightmost column (should not move)
 	m.kanbanMoveRight()
-	if m.KanbanCol != 6 {
-		t.Errorf("after moveRight at rightmost: col = %d, want 6", m.KanbanCol)
+	if m.KanbanCol != 8 {
+		t.Errorf("after moveRight at rightmost: col = %d, want 8", m.KanbanCol)
 	}
 
-	// Col 6 (Closed) has 3 items - move down to row 2
+	// Col 8 (Closed) has 3 items - move down to row 2
 	m.kanbanMoveDown()
 	m.kanbanMoveDown()
 	if m.KanbanRow != 2 {
 		t.Errorf("after moving down in Closed: row = %d, want 2", m.KanbanRow)
 	}
 
-	// Move left to Blocked (col 5, empty) - row should clamp to 0
+	// Move left to Blocked (col 7, empty) - row should clamp to 0
 	m.kanbanMoveLeft()
-	if m.KanbanCol != 5 {
-		t.Errorf("after moveLeft: col = %d, want 5", m.KanbanCol)
+	if m.KanbanCol != 7 {
+		t.Errorf("after moveLeft: col = %d, want 7", m.KanbanCol)
 	}
 	if m.KanbanRow != 0 {
 		t.Errorf("after moveLeft to empty col: row = %d, want 0", m.KanbanRow)
 	}
 
 	// Move left to col 0
+	m.kanbanMoveLeft() // col 6
+	m.kanbanMoveLeft() // col 5
 	m.kanbanMoveLeft() // col 4
 	m.kanbanMoveLeft() // col 3
 	m.kanbanMoveLeft() // col 2
@@ -165,7 +176,7 @@ func TestKanbanClampRow(t *testing.T) {
 	}
 
 	// Empty column
-	m.KanbanCol = 1 // NeedsRework is empty
+	m.KanbanCol = 2 // NeedsRework is empty
 	m.KanbanRow = 5
 	m.clampKanbanRow()
 	if m.KanbanRow != 0 {
@@ -234,8 +245,8 @@ func TestKanbanPerColumnScroll(t *testing.T) {
 	// Record column 0 scroll
 	col0Scroll := m.KanbanColScrolls[0]
 
-	// Move to Closed column (col 6)
-	m.KanbanCol = 6
+	// Move to Closed column (col 8)
+	m.KanbanCol = 8
 	m.clampKanbanRow()
 	m.ensureKanbanCursorVisible()
 
@@ -249,16 +260,16 @@ func TestKanbanPerColumnScroll(t *testing.T) {
 		m.kanbanMoveDown()
 	}
 
-	// Column 6 scroll should be > 0 (if there are enough items)
+	// Column 8 scroll should be > 0 (if there are enough items)
 	if len(m.BoardMode.SwimlaneData.Closed) > maxVisible {
-		if m.KanbanColScrolls[6] <= 0 {
-			t.Errorf("column 6 scroll should be > 0, got %d", m.KanbanColScrolls[6])
+		if m.KanbanColScrolls[8] <= 0 {
+			t.Errorf("column 8 scroll should be > 0, got %d", m.KanbanColScrolls[8])
 		}
 	}
 
 	// Column 0 scroll should still be preserved
 	if m.KanbanColScrolls[0] != col0Scroll {
-		t.Errorf("column 0 scroll changed after scrolling col 6: got %d, want %d", m.KanbanColScrolls[0], col0Scroll)
+		t.Errorf("column 0 scroll changed after scrolling col 8: got %d, want %d", m.KanbanColScrolls[0], col0Scroll)
 	}
 }
 

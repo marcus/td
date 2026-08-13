@@ -899,6 +899,7 @@ func TestIsReviewInvalidatingMutation(t *testing.T) {
 		{"minor", func(m *IssueMutation) { m.MinorChanged = true }},
 		{"parent_id", func(m *IssueMutation) { m.ParentIDChanged = true }},
 		{"status_from_review_not_closing", func(m *IssueMutation) { m.StatusChangedFromReviewNotClosing = true }},
+		{"reopened", func(m *IssueMutation) { m.Reopened = true }},
 		{"linked_files", func(m *IssueMutation) { m.LinkedFilesChanged = true }},
 		{"dependencies", func(m *IssueMutation) { m.DependenciesChanged = true }},
 		{"work_session_tags", func(m *IssueMutation) { m.WorkSessionTagsChanged = true }},

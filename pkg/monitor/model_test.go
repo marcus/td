@@ -178,27 +178,31 @@ func TestBuildTaskListRows(t *testing.T) {
 	m := Model{
 		TaskList: TaskListData{
 			Reviewable:    []models.Issue{{ID: "r1"}, {ID: "r2"}},
+			ReadyToClose:  []models.Issue{{ID: "rtc1"}},
 			NeedsRework:   []models.Issue{{ID: "rw1"}},
 			InProgress:    []models.Issue{{ID: "ip1"}},
 			Ready:         []models.Issue{{ID: "rd1"}},
 			PendingReview: []models.Issue{{ID: "pr1"}},
+			PendingOther:  []models.Issue{{ID: "oth1"}},
 			Blocked:       []models.Issue{{ID: "b1"}, {ID: "b2"}, {ID: "b3"}},
 		},
 	}
 
 	m.buildTaskListRows()
 
-	// Order should be: Reviewable, NeedsRework, InProgress, Ready, PendingReview, Blocked
+	// Order should be: Reviewable, ReadyToClose, NeedsRework, InProgress, Ready, PendingReview, PendingOther, Blocked
 	expected := []struct {
 		id       string
 		category TaskListCategory
 	}{
 		{"r1", CategoryReviewable},
 		{"r2", CategoryReviewable},
+		{"rtc1", CategoryReadyToClose},
 		{"rw1", CategoryNeedsRework},
 		{"ip1", CategoryInProgress},
 		{"rd1", CategoryReady},
 		{"pr1", CategoryPendingReview},
+		{"oth1", CategoryPendingOther},
 		{"b1", CategoryBlocked},
 		{"b2", CategoryBlocked},
 		{"b3", CategoryBlocked},

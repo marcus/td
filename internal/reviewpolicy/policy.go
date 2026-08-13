@@ -562,6 +562,12 @@ type IssueMutation struct {
 	// supersede its own approval.
 	StatusChangedFromReviewNotClosing bool
 
+	// Reopened is true when an issue leaves closed (today that is only
+	// closed -> open). Close keeps its own approval active so
+	// close-after-review still has a row to consult; reopen starts a new
+	// review epoch and must not inherit that leftover gold stamp.
+	Reopened bool
+
 	LinkedFilesChanged     bool
 	DependenciesChanged    bool
 	WorkSessionTagsChanged bool
@@ -583,6 +589,7 @@ func IsReviewInvalidatingMutation(m IssueMutation) bool {
 		m.MinorChanged ||
 		m.ParentIDChanged ||
 		m.StatusChangedFromReviewNotClosing ||
+		m.Reopened ||
 		m.LinkedFilesChanged ||
 		m.DependenciesChanged ||
 		m.WorkSessionTagsChanged ||

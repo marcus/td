@@ -527,3 +527,81 @@ func TestUnloggedVariants_NoActionLog(t *testing.T) {
 		t.Errorf("UpdateIssue (unlogged) created %d action_log entries, want 0", count)
 	}
 }
+
+func TestReviewInvalidatingDiff_Reopen(t *testing.T) {
+	closed := &models.Issue{ID: "td-x", Status: models.StatusClosed, Title: "same"}
+	open := &models.Issue{ID: "td-x", Status: models.StatusOpen, Title: "same"}
+	inReview := &models.Issue{ID: "td-x", Status: models.StatusInReview, Title: "same"}
+
+	reopen := reviewInvalidatingDiff(closed, open, false)
+	if !reopen.Reopened {
+		t.Fatal("closed -> open should set Reopened")
+	}
+	if reopen.StatusChangedFromReviewNotClosing {
+		t.Fatal("reopen is not a leave-review transition")
+	}
+
+	// Approve / close-after-review must still keep the approval.
+	closeAfterReview := reviewInvalidatingDiff(inReview, closed, false)
+	if closeAfterReview.Reopened || closeAfterReview.StatusChangedFromReviewNotClosing {
+		t.Fatalf("in_review -> closed must not invalidate: %+v", closeAfterReview)
+	}
+
+	// Reject still uses the existing leave-review flag, not Reopened.
+	reject := reviewInvalidatingDiff(inReview, open, false)
+	if !reject.StatusChangedFromReviewNotClosing {
+		t.Fatal("in_review -> open should set StatusChangedFromReviewNotClosing")
+	}
+	if reject.Reopened {
+		t.Fatal("reject is not a reopen")
+	}
+}
+
+func TestUpdateIssueLogged_ReopenSupersedesActiveApproval(t *testing.T) {
+	database, err := Initialize(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "approved then reopened",
+		Type:   models.TypeTask,
+		Status: models.StatusInReview,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.CreateIssueReview(NewReview{
+		IssueID:         issue.ID,
+		ReviewerSession: "ses-reviewer",
+		Decision:        "approved",
+		Summary:         "ship it",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Close without superseding — the approval is what justified the close.
+	issue.Status = models.StatusClosed
+	if err := database.UpdateIssueLogged(issue, "ses-reviewer", models.ActionApprove); err != nil {
+		t.Fatal(err)
+	}
+	active, err := database.GetActiveApprovalReview(issue.ID)
+	if err != nil || active == nil {
+		t.Fatalf("close should keep the approval active: active=%+v err=%v", active, err)
+	}
+
+	issue.Status = models.StatusOpen
+	issue.ReviewerSession = ""
+	issue.ClosedAt = nil
+	if err := database.UpdateIssueLogged(issue, "ses-later", models.ActionReopen); err != nil {
+		t.Fatal(err)
+	}
+	active, err = database.GetActiveApprovalReview(issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != nil {
+		t.Fatalf("reopen should supersede the leftover approval, still active: %+v", active)
+	}
+}

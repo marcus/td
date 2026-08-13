@@ -133,6 +133,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Reviewable", Description: "You can review these (independent session, no active approval)"},
 		{Keys: "Ready to Close", Description: "Approval already recorded; ready for delegated close"},
 		{Keys: "Pending Review", Description: "Your implementations waiting on someone else to review"},
+		{Keys: "Pending Other", Description: "Someone else's work waiting on a reviewer who is not you"},
 	}
 	for _, b := range reviewBucketLines {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))

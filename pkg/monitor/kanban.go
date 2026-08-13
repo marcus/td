@@ -16,10 +16,12 @@ import (
 // status additions are automatically included.
 var kanbanColumnOrder = []TaskListCategory{
 	CategoryReviewable,
+	CategoryReadyToClose,
 	CategoryNeedsRework,
 	CategoryInProgress,
 	CategoryReady,
 	CategoryPendingReview,
+	CategoryPendingOther,
 	CategoryBlocked,
 	CategoryClosed,
 }
@@ -29,6 +31,8 @@ func kanbanColumnLabel(cat TaskListCategory) string {
 	switch cat {
 	case CategoryReviewable:
 		return "REVIEW"
+	case CategoryReadyToClose:
+		return "TO CLOSE"
 	case CategoryNeedsRework:
 		return "REWORK"
 	case CategoryInProgress:
@@ -37,6 +41,8 @@ func kanbanColumnLabel(cat TaskListCategory) string {
 		return "READY"
 	case CategoryPendingReview:
 		return "P.REVIEW"
+	case CategoryPendingOther:
+		return "P.OTHER"
 	case CategoryBlocked:
 		return "BLOCKED"
 	case CategoryClosed:
@@ -52,6 +58,8 @@ func kanbanColumnColor(cat TaskListCategory) color.Color {
 	switch cat {
 	case CategoryReviewable:
 		return secondaryColor // purple (in_review)
+	case CategoryReadyToClose:
+		return lipgloss.Color("78") // teal (approved, closable)
 	case CategoryNeedsRework:
 		return warningColor // orange (needs action)
 	case CategoryInProgress:
@@ -60,6 +68,8 @@ func kanbanColumnColor(cat TaskListCategory) color.Color {
 		return successColor // green (open/ready)
 	case CategoryPendingReview:
 		return lipgloss.Color("183") // light purple (pending review)
+	case CategoryPendingOther:
+		return lipgloss.Color("103") // muted purple (not your action)
 	case CategoryBlocked:
 		return errorColor // red (blocked)
 	case CategoryClosed:
@@ -74,6 +84,8 @@ func kanbanColumnIssues(data TaskListData, cat TaskListCategory) []models.Issue 
 	switch cat {
 	case CategoryReviewable:
 		return data.Reviewable
+	case CategoryReadyToClose:
+		return data.ReadyToClose
 	case CategoryNeedsRework:
 		return data.NeedsRework
 	case CategoryInProgress:
@@ -82,6 +94,8 @@ func kanbanColumnIssues(data TaskListData, cat TaskListCategory) []models.Issue 
 		return data.Ready
 	case CategoryPendingReview:
 		return data.PendingReview
+	case CategoryPendingOther:
+		return data.PendingOther
 	case CategoryBlocked:
 		return data.Blocked
 	case CategoryClosed:

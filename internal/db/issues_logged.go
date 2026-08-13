@@ -37,6 +37,11 @@ func reviewInvalidatingDiff(prev, next *models.Issue, cascadedReparent bool) rev
 		next.Status != models.StatusClosed {
 		m.StatusChangedFromReviewNotClosing = true
 	}
+	// Reopen is a new review epoch. The leftover approval that justified
+	// the previous close must not make a later in_review look closable.
+	if prev.Status == models.StatusClosed && next.Status != models.StatusClosed {
+		m.Reopened = true
+	}
 	m.ReparentCascade = cascadedReparent
 	return m
 }
