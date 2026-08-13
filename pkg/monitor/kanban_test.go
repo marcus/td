@@ -59,8 +59,8 @@ func newKanbanTestModel(data TaskListData) Model {
 }
 
 func TestKanbanNavigation(t *testing.T) {
-	// Column order: 0=Review, 1=ReadyToClose, 2=Rework, 3=InProgress,
-	// 4=Ready, 5=PendingReview, 6=PendingOther, 7=Blocked, 8=Closed
+	// Occupied columns: 0=Review, 3=InProgress, 4=Ready, 8=Closed.
+	// Empty lanes are hidden and skipped by h/l.
 	m := newKanbanTestModel(TaskListData{
 		Reviewable:    []models.Issue{{ID: "r1"}, {ID: "r2"}},
 		ReadyToClose:  nil,
@@ -97,67 +97,51 @@ func TestKanbanNavigation(t *testing.T) {
 		t.Errorf("after moveUp at top: row = %d, want 0", m.KanbanRow)
 	}
 
-	// Test move right to col 1 (ReadyToClose - empty)
-	m.kanbanMoveRight()
-	if m.KanbanCol != 1 {
-		t.Errorf("after moveRight: col = %d, want 1", m.KanbanCol)
-	}
-	if m.KanbanRow != 0 {
-		t.Errorf("after moveRight to empty col: row = %d, want 0", m.KanbanRow)
-	}
-
-	// Move right to Rework (col 2), then InProgress (col 3)
-	m.kanbanMoveRight()
+	// Skip empty ReadyToClose + Rework; land on InProgress
 	m.kanbanMoveRight()
 	if m.KanbanCol != 3 {
-		t.Errorf("after moveRight to InProgress: col = %d, want 3", m.KanbanCol)
+		t.Errorf("after moveRight: col = %d, want 3 (InProgress)", m.KanbanCol)
+	}
+	if m.KanbanRow != 0 {
+		t.Errorf("after moveRight: row = %d, want 0", m.KanbanRow)
 	}
 
-	// Move all the way to Closed (col 8)
-	m.kanbanMoveRight() // col 4 (Ready)
-	m.kanbanMoveRight() // col 5 (PendingReview)
-	m.kanbanMoveRight() // col 6 (PendingOther)
-	m.kanbanMoveRight() // col 7 (Blocked)
-	m.kanbanMoveRight() // col 8 (Closed)
+	m.kanbanMoveRight() // Ready
+	if m.KanbanCol != 4 {
+		t.Errorf("after second moveRight: col = %d, want 4 (Ready)", m.KanbanCol)
+	}
+
+	m.kanbanMoveRight() // skip empty pending/blocked → Closed
 	if m.KanbanCol != 8 {
-		t.Errorf("col should be 8, got %d", m.KanbanCol)
+		t.Errorf("after third moveRight: col = %d, want 8 (Closed)", m.KanbanCol)
 	}
 
-	// Move right at rightmost column (should not move)
 	m.kanbanMoveRight()
 	if m.KanbanCol != 8 {
 		t.Errorf("after moveRight at rightmost: col = %d, want 8", m.KanbanCol)
 	}
 
-	// Col 8 (Closed) has 3 items - move down to row 2
 	m.kanbanMoveDown()
 	m.kanbanMoveDown()
 	if m.KanbanRow != 2 {
 		t.Errorf("after moving down in Closed: row = %d, want 2", m.KanbanRow)
 	}
 
-	// Move left to Blocked (col 7, empty) - row should clamp to 0
+	// Skip empty Blocked; land on Ready
 	m.kanbanMoveLeft()
-	if m.KanbanCol != 7 {
-		t.Errorf("after moveLeft: col = %d, want 7", m.KanbanCol)
+	if m.KanbanCol != 4 {
+		t.Errorf("after moveLeft: col = %d, want 4 (Ready)", m.KanbanCol)
 	}
 	if m.KanbanRow != 0 {
-		t.Errorf("after moveLeft to empty col: row = %d, want 0", m.KanbanRow)
+		t.Errorf("after moveLeft: row = %d, want 0", m.KanbanRow)
 	}
 
-	// Move left to col 0
-	m.kanbanMoveLeft() // col 6
-	m.kanbanMoveLeft() // col 5
-	m.kanbanMoveLeft() // col 4
-	m.kanbanMoveLeft() // col 3
-	m.kanbanMoveLeft() // col 2
-	m.kanbanMoveLeft() // col 1
-	m.kanbanMoveLeft() // col 0
+	m.kanbanMoveLeft() // InProgress
+	m.kanbanMoveLeft() // Review
 	if m.KanbanCol != 0 {
 		t.Errorf("col should be 0, got %d", m.KanbanCol)
 	}
 
-	// Move left at leftmost (should not move)
 	m.kanbanMoveLeft()
 	if m.KanbanCol != 0 {
 		t.Errorf("after moveLeft at leftmost: col = %d, want 0", m.KanbanCol)
@@ -181,6 +165,49 @@ func TestKanbanClampRow(t *testing.T) {
 	m.clampKanbanRow()
 	if m.KanbanRow != 0 {
 		t.Errorf("clampKanbanRow on empty col: row = %d, want 0", m.KanbanRow)
+	}
+}
+
+func TestVisibleKanbanColumnsOmitsEmpty(t *testing.T) {
+	data := TaskListData{
+		Reviewable: []models.Issue{{ID: "r1"}},
+		InProgress: []models.Issue{{ID: "ip1"}},
+		Ready:      []models.Issue{{ID: "rd1"}},
+	}
+	got := visibleKanbanColumns(data)
+	want := []TaskListCategory{CategoryReviewable, CategoryInProgress, CategoryReady}
+	if len(got) != len(want) {
+		t.Fatalf("visible = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("visible[%d] = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestVisibleKanbanColumnsEmptyBoardKeepsAll(t *testing.T) {
+	got := visibleKanbanColumns(TaskListData{})
+	if len(got) != len(kanbanColumnOrder) {
+		t.Fatalf("empty board visible = %d, want full order %d", len(got), len(kanbanColumnOrder))
+	}
+}
+
+func TestClampKanbanColSnapsToNearestOccupied(t *testing.T) {
+	m := newKanbanTestModel(TaskListData{
+		Reviewable: []models.Issue{{ID: "r1"}},
+		InProgress: []models.Issue{{ID: "ip1"}},
+	})
+	m.KanbanCol = 1 // ReadyToClose, empty
+	m.clampKanbanCol()
+	if m.KanbanCol != 3 {
+		t.Errorf("clamp from empty ReadyToClose: col = %d, want 3 (InProgress)", m.KanbanCol)
+	}
+
+	m.KanbanCol = 8 // Closed, empty — snap left to last occupied
+	m.clampKanbanCol()
+	if m.KanbanCol != 3 {
+		t.Errorf("clamp from empty Closed: col = %d, want 3 (InProgress)", m.KanbanCol)
 	}
 }
 
@@ -390,6 +417,27 @@ func TestKanbanDimensions(t *testing.T) {
 	}
 	if maxCards < 1 {
 		t.Errorf("maxVisibleCards should be >= 1, got %d", maxCards)
+	}
+}
+
+func TestKanbanDimensionsWidenWhenColumnsHidden(t *testing.T) {
+	empty := Model{Width: 120, Height: 40}
+	_, _, emptyWidth, _ := empty.kanbanDimensions()
+
+	occupied := Model{
+		Width:  120,
+		Height: 40,
+		BoardMode: BoardMode{
+			SwimlaneData: TaskListData{
+				Reviewable: []models.Issue{{ID: "r1"}},
+				InProgress: []models.Issue{{ID: "ip1"}},
+				Ready:      []models.Issue{{ID: "rd1"}},
+			},
+		},
+	}
+	_, _, occupiedWidth, _ := occupied.kanbanDimensions()
+	if occupiedWidth <= emptyWidth {
+		t.Errorf("occupied colWidth %d should be wider than empty-board colWidth %d", occupiedWidth, emptyWidth)
 	}
 }
 

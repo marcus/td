@@ -850,6 +850,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Clamp kanban cursor if the kanban view is open (data may have changed)
 			if m.KanbanOpen {
+				m.clampKanbanCol()
 				m.clampKanbanRow()
 				m.ensureKanbanCursorVisible()
 			}

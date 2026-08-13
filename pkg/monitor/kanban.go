@@ -79,6 +79,40 @@ func kanbanColumnColor(cat TaskListCategory) color.Color {
 	}
 }
 
+// visibleKanbanColumns returns occupied columns in canonical order.
+// An empty board falls back to the full order so the overlay still has
+// structure and width math never divides by zero.
+func visibleKanbanColumns(data TaskListData) []TaskListCategory {
+	var occupied []TaskListCategory
+	for _, cat := range kanbanColumnOrder {
+		if len(kanbanColumnIssues(data, cat)) > 0 {
+			occupied = append(occupied, cat)
+		}
+	}
+	if len(occupied) == 0 {
+		return append([]TaskListCategory(nil), kanbanColumnOrder...)
+	}
+	return occupied
+}
+
+func kanbanColumnIndex(cat TaskListCategory) int {
+	for i, c := range kanbanColumnOrder {
+		if c == cat {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m Model) visibleKanbanColIndexes() []int {
+	visible := visibleKanbanColumns(m.BoardMode.SwimlaneData)
+	indexes := make([]int, len(visible))
+	for i, cat := range visible {
+		indexes[i] = kanbanColumnIndex(cat)
+	}
+	return indexes
+}
+
 // kanbanColumnIssues returns the issues for a given category from the swimlane data.
 func kanbanColumnIssues(data TaskListData, cat TaskListCategory) []models.Issue {
 	switch cat {
@@ -137,21 +171,29 @@ func (m *Model) closeKanbanView() {
 	m.KanbanColScrolls = nil
 }
 
-// kanbanMoveLeft moves the cursor to the previous column, clamping row to valid range.
+// kanbanMoveLeft moves the cursor to the previous visible column.
 func (m *Model) kanbanMoveLeft() {
-	if m.KanbanCol > 0 {
-		m.KanbanCol--
-		m.clampKanbanRow()
-		m.ensureKanbanCursorVisible()
+	visible := m.visibleKanbanColIndexes()
+	for i, col := range visible {
+		if col == m.KanbanCol && i > 0 {
+			m.KanbanCol = visible[i-1]
+			m.clampKanbanRow()
+			m.ensureKanbanCursorVisible()
+			return
+		}
 	}
 }
 
-// kanbanMoveRight moves the cursor to the next column, clamping row to valid range.
+// kanbanMoveRight moves the cursor to the next visible column.
 func (m *Model) kanbanMoveRight() {
-	if m.KanbanCol < len(kanbanColumnOrder)-1 {
-		m.KanbanCol++
-		m.clampKanbanRow()
-		m.ensureKanbanCursorVisible()
+	visible := m.visibleKanbanColIndexes()
+	for i, col := range visible {
+		if col == m.KanbanCol && i < len(visible)-1 {
+			m.KanbanCol = visible[i+1]
+			m.clampKanbanRow()
+			m.ensureKanbanCursorVisible()
+			return
+		}
 	}
 }
 
@@ -173,8 +215,36 @@ func (m *Model) kanbanMoveUp() {
 	}
 }
 
+// clampKanbanCol snaps the column cursor onto a visible column. Prefer the
+// nearest column to the right so a disappearing lane does not jump backward
+// past work that is still on the board.
+func (m *Model) clampKanbanCol() {
+	visible := m.visibleKanbanColIndexes()
+	if len(visible) == 0 {
+		m.KanbanCol = 0
+		return
+	}
+	for _, col := range visible {
+		if col == m.KanbanCol {
+			return
+		}
+	}
+	for _, col := range visible {
+		if col > m.KanbanCol {
+			m.KanbanCol = col
+			m.KanbanRow = 0
+			return
+		}
+	}
+	m.KanbanCol = visible[len(visible)-1]
+	m.KanbanRow = 0
+}
+
 // clampKanbanRow clamps the row cursor to valid range in the current column.
 func (m *Model) clampKanbanRow() {
+	if m.KanbanCol < 0 || m.KanbanCol >= len(kanbanColumnOrder) {
+		m.KanbanCol = 0
+	}
 	cat := kanbanColumnOrder[m.KanbanCol]
 	issues := kanbanColumnIssues(m.BoardMode.SwimlaneData, cat)
 	if len(issues) == 0 {
@@ -207,7 +277,10 @@ func (m Model) kanbanDimensions() (modalWidth, modalHeight, colWidth, maxVisible
 	}
 
 	contentWidth := modalWidth - 4
-	numCols := len(kanbanColumnOrder)
+	numCols := len(visibleKanbanColumns(m.BoardMode.SwimlaneData))
+	if numCols < 1 {
+		numCols = 1
+	}
 	separatorWidth := numCols - 1
 	colWidth = (contentWidth - separatorWidth) / numCols
 	if colWidth < minKanbanColWidth {
@@ -293,7 +366,11 @@ func (m Model) renderKanbanView() string {
 
 	modalWidth, modalHeight, colWidth, maxVisibleCards := m.kanbanDimensions()
 
-	numCols := len(kanbanColumnOrder)
+	visible := visibleKanbanColumns(data)
+	numCols := len(visible)
+	if numCols < 1 {
+		numCols = 1
+	}
 	separatorWidth := numCols - 1
 	actualContentWidth := colWidth*numCols + separatorWidth
 
@@ -317,7 +394,7 @@ func (m Model) renderKanbanView() string {
 
 	// Build column headers
 	var colHeaders []string
-	for i, cat := range kanbanColumnOrder {
+	for _, cat := range visible {
 		issues := kanbanColumnIssues(data, cat)
 		color := kanbanColumnColor(cat)
 		label := kanbanColumnLabel(cat)
@@ -328,7 +405,7 @@ func (m Model) renderKanbanView() string {
 			Foreground(color)
 
 		// If this column is selected, underline the header
-		if i == m.KanbanCol {
+		if kanbanColumnIndex(cat) == m.KanbanCol {
 			headerStyle = headerStyle.Underline(true)
 		}
 
@@ -351,16 +428,14 @@ func (m Model) renderKanbanView() string {
 	// Build separator line
 	divider := kanbanSepStyle.Render(strings.Repeat("─", actualContentWidth))
 
-	// Compute per-column scroll offsets. Use stored offsets for all columns
-	// but ensure the selected column's cursor is visible.
+	// Compute per-visible-column scroll offsets from the order-indexed store.
 	colScrolls := make([]int, numCols)
-	for i := range kanbanColumnOrder {
-		if i < len(m.KanbanColScrolls) {
-			colScrolls[i] = m.KanbanColScrolls[i]
+	for i, cat := range visible {
+		orderIdx := kanbanColumnIndex(cat)
+		if orderIdx >= 0 && orderIdx < len(m.KanbanColScrolls) {
+			colScrolls[i] = m.KanbanColScrolls[orderIdx]
 		}
-		// Clamp scroll to valid bounds for this column
-		colCat := kanbanColumnOrder[i]
-		issues := kanbanColumnIssues(data, colCat)
+		issues := kanbanColumnIssues(data, cat)
 		maxScroll := len(issues) - maxVisibleCards
 		if maxScroll < 0 {
 			maxScroll = 0
@@ -373,8 +448,15 @@ func (m Model) renderKanbanView() string {
 		}
 	}
 	// For selected column, ensure cursor is visible
-	if m.KanbanCol >= 0 && m.KanbanCol < numCols {
-		scroll := colScrolls[m.KanbanCol]
+	selVis := -1
+	for i, cat := range visible {
+		if kanbanColumnIndex(cat) == m.KanbanCol {
+			selVis = i
+			break
+		}
+	}
+	if selVis >= 0 {
+		scroll := colScrolls[selVis]
 		if m.KanbanRow < scroll {
 			scroll = m.KanbanRow
 		} else if m.KanbanRow >= scroll+maxVisibleCards {
@@ -383,12 +465,12 @@ func (m Model) renderKanbanView() string {
 		if scroll < 0 {
 			scroll = 0
 		}
-		colScrolls[m.KanbanCol] = scroll
+		colScrolls[selVis] = scroll
 	}
 
 	// Build per-column scroll indicators
 	scrollInfos := make([]kanbanScrollInfo, numCols)
-	for i, colCat := range kanbanColumnOrder {
+	for i, colCat := range visible {
 		issues := kanbanColumnIssues(data, colCat)
 		scrollInfos[i] = kanbanScrollInfo{
 			hasAbove: colScrolls[i] > 0,
@@ -402,7 +484,7 @@ func (m Model) renderKanbanView() string {
 		// Each card takes kanbanCardHeight lines
 		for cardLine := 0; cardLine < kanbanCardHeight; cardLine++ {
 			var cells []string
-			for colIdx, colCat := range kanbanColumnOrder {
+			for colIdx, colCat := range visible {
 				issues := kanbanColumnIssues(data, colCat)
 
 				dataRow := visRow + colScrolls[colIdx]
@@ -410,7 +492,7 @@ func (m Model) renderKanbanView() string {
 				var cellContent string
 				if dataRow < len(issues) {
 					issue := issues[dataRow]
-					isSelected := colIdx == m.KanbanCol && dataRow == m.KanbanRow
+					isSelected := kanbanColumnIndex(colCat) == m.KanbanCol && dataRow == m.KanbanRow
 					cellContent = m.renderKanbanCardLine(issue, cardLine, colWidth, isSelected)
 				} else {
 					cellContent = strings.Repeat(" ", colWidth)
