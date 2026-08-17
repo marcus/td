@@ -16,7 +16,7 @@ type ListNotesOptions struct {
 	Archived       *bool  // nil = don't filter, true = only archived, false = only unarchived
 	IncludeDeleted bool   // include soft-deleted notes
 	Search         string // search title/content
-	Limit          int    // max results (default 50 if 0)
+	Limit          int    // max results; <=0 means unlimited
 }
 
 // marshalNote returns a JSON representation of a note for action_log storage.
@@ -125,6 +125,11 @@ func (db *DB) GetNote(id string) (*models.Note, error) {
 	return note, nil
 }
 
+// GetNoteIncludingDeleted retrieves a note by ID, including soft-deleted rows.
+func (db *DB) GetNoteIncludingDeleted(id string) (*models.Note, error) {
+	return db.scanNoteRow(id)
+}
+
 // ListNotes returns notes matching the filter options.
 func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 	query := `SELECT id, title, content, created_at, updated_at, pinned, archived, deleted_at
@@ -163,13 +168,11 @@ func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 
 	query += " ORDER BY pinned DESC, updated_at DESC"
 
-	// Limit
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
+	// Limit<=0 means unlimited (pkg/notes and the Sidecar UI list everything).
+	if opts.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, opts.Limit)
 	}
-	query += " LIMIT ?"
-	args = append(args, limit)
 
 	rows, err := db.conn.Query(query, args...)
 	if err != nil {
@@ -296,68 +299,102 @@ func (db *DB) DeleteNote(id string) error {
 
 // PinNote sets a note's pinned status to true.
 func (db *DB) PinNote(id string) error {
-	return db.withWriteLock(func() error {
-		now := time.Now()
-		result, err := db.conn.Exec(`UPDATE notes SET pinned = 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
-			now.Format(time.RFC3339), id)
-		if err != nil {
-			return err
-		}
-		rows, _ := result.RowsAffected()
-		if rows == 0 {
-			return fmt.Errorf("note not found: %s", id)
-		}
-		return nil
-	})
+	return db.setNoteFlag(id, "pinned", true)
 }
 
 // UnpinNote sets a note's pinned status to false.
 func (db *DB) UnpinNote(id string) error {
-	return db.withWriteLock(func() error {
-		now := time.Now()
-		result, err := db.conn.Exec(`UPDATE notes SET pinned = 0, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
-			now.Format(time.RFC3339), id)
-		if err != nil {
-			return err
-		}
-		rows, _ := result.RowsAffected()
-		if rows == 0 {
-			return fmt.Errorf("note not found: %s", id)
-		}
-		return nil
-	})
+	return db.setNoteFlag(id, "pinned", false)
 }
 
 // ArchiveNote sets a note's archived status to true.
 func (db *DB) ArchiveNote(id string) error {
-	return db.withWriteLock(func() error {
-		now := time.Now()
-		result, err := db.conn.Exec(`UPDATE notes SET archived = 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
-			now.Format(time.RFC3339), id)
-		if err != nil {
-			return err
-		}
-		rows, _ := result.RowsAffected()
-		if rows == 0 {
-			return fmt.Errorf("note not found: %s", id)
-		}
-		return nil
-	})
+	return db.setNoteFlag(id, "archived", true)
 }
 
 // UnarchiveNote sets a note's archived status to false.
 func (db *DB) UnarchiveNote(id string) error {
-	return db.withWriteLock(func() error {
+	return db.setNoteFlag(id, "archived", false)
+}
+
+// RestoreNote clears deleted_at on a soft-deleted note and logs the action.
+func (db *DB) RestoreNote(id string) (*models.Note, error) {
+	var restored models.Note
+	err := db.withWriteLock(func() error {
+		prev, err := db.scanNoteRow(id)
+		if err != nil {
+			return err
+		}
+		if prev.DeletedAt == nil {
+			return fmt.Errorf("note not deleted: %s", id)
+		}
+		previousData := marshalNote(prev)
+
 		now := time.Now()
-		result, err := db.conn.Exec(`UPDATE notes SET archived = 0, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+		_, err = db.conn.Exec(`UPDATE notes SET deleted_at = NULL, updated_at = ? WHERE id = ?`,
 			now.Format(time.RFC3339), id)
 		if err != nil {
 			return err
 		}
-		rows, _ := result.RowsAffected()
-		if rows == 0 {
+
+		restored = *prev
+		restored.DeletedAt = nil
+		restored.UpdatedAt = now
+		return db.insertNoteAction(string(models.ActionRestore), id, previousData, marshalNote(&restored), now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &restored, nil
+}
+
+func (db *DB) setNoteFlag(id, column string, value bool) error {
+	if column != "pinned" && column != "archived" {
+		return fmt.Errorf("unsupported note flag %q", column)
+	}
+	return db.withWriteLock(func() error {
+		prev, err := db.scanNoteRow(id)
+		if err != nil {
+			return err
+		}
+		if prev.DeletedAt != nil {
 			return fmt.Errorf("note not found: %s", id)
 		}
-		return nil
+		previousData := marshalNote(prev)
+
+		now := time.Now()
+		flag := 0
+		if value {
+			flag = 1
+		}
+		_, err = db.conn.Exec(
+			`UPDATE notes SET `+column+` = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
+			flag, now.Format(time.RFC3339), id)
+		if err != nil {
+			return err
+		}
+
+		next := *prev
+		next.UpdatedAt = now
+		switch column {
+		case "pinned":
+			next.Pinned = value
+		case "archived":
+			next.Archived = value
+		}
+		return db.insertNoteAction(string(models.ActionUpdate), id, previousData, marshalNote(&next), now)
 	})
+}
+
+func (db *DB) insertNoteAction(actionType, noteID, previousData, newData string, now time.Time) error {
+	actionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate action ID: %w", err)
+	}
+	_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		actionID, "", actionType, "note", noteID, previousData, newData, formatActionLogTimestamp(now))
+	if err != nil {
+		return fmt.Errorf("log action: %w", err)
+	}
+	return nil
 }
