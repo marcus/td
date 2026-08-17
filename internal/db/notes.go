@@ -25,6 +25,29 @@ func marshalNote(note *models.Note) string {
 	return string(data)
 }
 
+// parseNoteDeletedAt treats any non-empty deleted_at as deleted.
+// Historical rows were written as time.Time.String() or with a space instead of T.
+func parseNoteDeletedAt(raw string) *time.Time {
+	if raw == "" {
+		return nil
+	}
+	layouts := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05+00:00",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return &t
+		}
+	}
+	t := time.Unix(0, 0).UTC()
+	return &t
+}
+
 // scanNoteRow reads a note row from the DB. Caller must hold write lock if used inside withWriteLock.
 func (db *DB) scanNoteRow(id string) (*models.Note, error) {
 	var note models.Note
@@ -48,11 +71,8 @@ func (db *DB) scanNoteRow(id string) (*models.Note, error) {
 	note.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
 	note.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAtStr)
 
-	if deletedAt.Valid && deletedAt.String != "" {
-		t, err := time.Parse(time.RFC3339, deletedAt.String)
-		if err == nil {
-			note.DeletedAt = &t
-		}
+	if deletedAt.Valid {
+		note.DeletedAt = parseNoteDeletedAt(deletedAt.String)
 	}
 
 	return &note, nil
@@ -197,11 +217,8 @@ func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 		note.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
 		note.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAtStr)
 
-		if deletedAt.Valid && deletedAt.String != "" {
-			t, err := time.Parse(time.RFC3339, deletedAt.String)
-			if err == nil {
-				note.DeletedAt = &t
-			}
+		if deletedAt.Valid {
+			note.DeletedAt = parseNoteDeletedAt(deletedAt.String)
 		}
 
 		notes = append(notes, note)
