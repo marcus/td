@@ -2,6 +2,16 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.58.0] - 2026-08-16
+
+### Features
+
+- **Public `github.com/marcus/td/pkg/notes` API** (td-ac3876). In-process clients (Sidecar's Notes plugin) can open a project database and create, list, update, delete, restore, pin, and archive notes through the same `withWriteLock` + `action_log` path as `td note`. `List` with `Limit<=0` returns every row. Pin and archive now write `action_log` so those toggles sync. `RestoreNote` undeletes a soft-deleted note.
+
+### Bug Fixes
+
+- **Historical `notes.deleted_at` values are recognized as deleted.** Older Sidecar rows used `time.Time.String()` or a space instead of `T`. RFC3339-only parsing left `DeletedAt` nil, so those notes disappeared from every list. Any non-empty `deleted_at` now counts as deleted.
+
 ## [v0.57.0] - 2026-08-13
 
 ### Bug Fixes
