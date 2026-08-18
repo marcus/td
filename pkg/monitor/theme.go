@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"image/color"
 	"reflect"
+	"strings"
 
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/td/internal/models"
@@ -47,6 +49,7 @@ type Theme struct {
 	Surface       string
 	SurfaceRaised string
 	Selection     string
+	Backdrop      string // dimmed background content behind overlays
 
 	Border       string
 	BorderMuted  string
@@ -83,6 +86,7 @@ func DefaultTheme() Theme {
 		Surface:       "237",
 		SurfaceRaised: "238",
 		Selection:     "237",
+		Backdrop:      "242",
 		Border:        "240",
 		BorderMuted:   "245",
 		BorderActive:  "212",
@@ -120,6 +124,13 @@ func normalizedTheme(theme Theme) (Theme, error) {
 
 func themeIsZero(theme Theme) bool {
 	return theme == (Theme{})
+}
+
+// themeColorHex converts Lip Gloss' accepted ANSI and hex inputs to the hex
+// form expected by Glamour/Chroma style primitives.
+func themeColorHex(value string) string {
+	r, g, b, _ := lipgloss.Color(value).RGBA()
+	return fmt.Sprintf("#%02X%02X%02X", uint8(r>>8), uint8(g>>8), uint8(b>>8))
 }
 
 // monitorStyles contains only model-owned, derived presentation state. The
@@ -339,6 +350,67 @@ func themedTextInputStyles(theme Theme) textinput.Styles {
 	return styles
 }
 
+func formTheme(theme Theme) huh.Theme {
+	// The standalone monitor used Dracula before model themes existed. Return
+	// the library theme itself so the default rendering remains byte-for-byte
+	// compatible rather than approximating it from semantic slots.
+	if themeIsZero(theme) || theme == DefaultTheme() {
+		return huh.ThemeFunc(huh.ThemeDracula)
+	}
+
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		styles := huh.ThemeBase(isDark)
+		color := func(value string) color.Color { return lipgloss.Color(value) }
+
+		styles.Form.Base = styles.Form.Base.Foreground(color(theme.TextPrimary))
+		styles.Group.Title = styles.Group.Title.Foreground(color(theme.Primary)).Bold(true)
+		styles.Group.Description = styles.Group.Description.Foreground(color(theme.TextMuted))
+		styles.FieldSeparator = styles.FieldSeparator.Foreground(color(theme.BorderMuted))
+
+		focused := &styles.Focused
+		focused.Base = focused.Base.BorderForeground(color(theme.BorderActive))
+		focused.Card = focused.Base
+		focused.Title = focused.Title.Foreground(color(theme.Primary)).Bold(true)
+		focused.NoteTitle = focused.NoteTitle.Foreground(color(theme.Primary)).Bold(true)
+		focused.Description = focused.Description.Foreground(color(theme.TextMuted))
+		focused.ErrorIndicator = focused.ErrorIndicator.Foreground(color(theme.Error))
+		focused.ErrorMessage = focused.ErrorMessage.Foreground(color(theme.Error))
+		focused.Directory = focused.Directory.Foreground(color(theme.Link))
+		focused.File = focused.File.Foreground(color(theme.TextPrimary))
+		focused.SelectSelector = focused.SelectSelector.Foreground(color(theme.Accent))
+		focused.NextIndicator = focused.NextIndicator.Foreground(color(theme.Accent))
+		focused.PrevIndicator = focused.PrevIndicator.Foreground(color(theme.Accent))
+		focused.Option = focused.Option.Foreground(color(theme.TextPrimary))
+		focused.MultiSelectSelector = focused.MultiSelectSelector.Foreground(color(theme.Accent))
+		focused.SelectedOption = focused.SelectedOption.Foreground(color(theme.Success))
+		focused.SelectedPrefix = focused.SelectedPrefix.Foreground(color(theme.Success))
+		focused.UnselectedOption = focused.UnselectedOption.Foreground(color(theme.TextPrimary))
+		focused.UnselectedPrefix = focused.UnselectedPrefix.Foreground(color(theme.TextMuted))
+		focused.FocusedButton = focused.FocusedButton.Foreground(color(theme.OnPrimary)).Background(color(theme.Primary)).Bold(true)
+		focused.Next = focused.FocusedButton
+		focused.BlurredButton = focused.BlurredButton.Foreground(color(theme.TextSecondary)).Background(color(theme.SurfaceRaised))
+		focused.TextInput.Cursor = focused.TextInput.Cursor.Foreground(color(theme.Accent))
+		focused.TextInput.CursorText = focused.TextInput.CursorText.Foreground(color(theme.TextSelection)).Background(color(theme.Selection))
+		focused.TextInput.Placeholder = focused.TextInput.Placeholder.Foreground(color(theme.TextMuted))
+		focused.TextInput.Prompt = focused.TextInput.Prompt.Foreground(color(theme.Accent))
+		focused.TextInput.Text = focused.TextInput.Text.Foreground(color(theme.TextPrimary))
+
+		styles.Blurred = *focused
+		styles.Blurred.Base = focused.Base.BorderStyle(lipgloss.HiddenBorder()).BorderForeground(color(theme.BorderMuted))
+		styles.Blurred.Card = styles.Blurred.Base
+		styles.Blurred.Title = styles.Blurred.Title.Foreground(color(theme.TextSecondary)).Bold(false)
+		styles.Blurred.NoteTitle = styles.Blurred.NoteTitle.Foreground(color(theme.TextSecondary)).Bold(false)
+		styles.Blurred.Description = styles.Blurred.Description.Foreground(color(theme.TextSubtle))
+		styles.Blurred.SelectSelector = lipgloss.NewStyle().SetString("  ")
+		styles.Blurred.MultiSelectSelector = lipgloss.NewStyle().SetString("  ")
+		styles.Blurred.NextIndicator = lipgloss.NewStyle()
+		styles.Blurred.PrevIndicator = lipgloss.NewStyle()
+		styles.Blurred.TextInput.Prompt = styles.Blurred.TextInput.Prompt.Foreground(color(theme.TextMuted))
+		styles.Blurred.TextInput.Text = styles.Blurred.TextInput.Text.Foreground(color(theme.TextSecondary))
+		return styles
+	})
+}
+
 // renderStyles preserves the default appearance for legacy tests and callers
 // that construct Model values directly instead of using a constructor.
 func (m Model) renderStyles() monitorStyles {
@@ -417,6 +489,32 @@ func (m Model) renderButton(label string, focused, hovered, danger bool) string 
 		Bold(bold).
 		Padding(0, 2).
 		Render(label)
+}
+
+func (m Model) renderButtonPair(leftLabel, rightLabel string, leftFocused, rightFocused, leftHovered, rightHovered, leftDanger, rightDanger bool) string {
+	left := m.renderButton(leftLabel, leftFocused, leftHovered, leftDanger)
+	right := m.renderButton(rightLabel, rightFocused, rightHovered, rightDanger)
+	return left + "  " + right
+}
+
+func (m Model) renderHelpLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return line
+	}
+	theme := m.themeOrDefault()
+	if strings.HasSuffix(trimmed, ":") || strings.Contains(trimmed, "Key Bindings") || strings.Contains(trimmed, "Search Syntax") {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary)).Bold(true).Render(line)
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(theme.TextPrimary)).Render(line)
+}
+
+func (m Model) renderHelpText(content string) string {
+	lines := strings.Split(content, "\n")
+	for i := range lines {
+		lines[i] = m.renderHelpLine(lines[i])
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) highlightRow(line string, width int) string {

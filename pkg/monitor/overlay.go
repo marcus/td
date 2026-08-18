@@ -11,7 +11,7 @@ import (
 // DimStyle applies a dim gray color to background content behind modals.
 // We strip existing ANSI codes and apply gray because SGR 2 (faint) doesn't
 // reliably combine with existing color codes in most terminals.
-var DimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+var DimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(DefaultTheme().Backdrop))
 
 // maxLineWidth returns the maximum visual width of the given lines.
 func maxLineWidth(lines []string) int {
@@ -27,12 +27,20 @@ func maxLineWidth(lines []string) int {
 
 // dimLine strips ANSI codes and applies dim gray styling.
 func dimLine(s string) string {
-	return DimStyle.Render(ansi.Strip(s))
+	return dimLineWithStyle(s, DimStyle)
+}
+
+func dimLineWithStyle(s string, style lipgloss.Style) string {
+	return style.Render(ansi.Strip(s))
 }
 
 // compositeRow overlays modalLine onto bgLine at position modalStartX.
 // Returns: dimmed-left-segment + modalLine + dimmed-right-segment
 func compositeRow(bgLine, modalLine string, modalStartX, modalWidth, totalWidth int) string {
+	return compositeRowWithStyle(bgLine, modalLine, modalStartX, modalWidth, totalWidth, DimStyle)
+}
+
+func compositeRowWithStyle(bgLine, modalLine string, modalStartX, modalWidth, totalWidth int, dimStyle lipgloss.Style) string {
 	var result strings.Builder
 
 	// Strip ANSI from background for consistent dimming
@@ -44,7 +52,7 @@ func compositeRow(bgLine, modalLine string, modalStartX, modalWidth, totalWidth 
 		// Use ansi.Truncate to get visual-width-based substring
 		leftSeg := ansi.Truncate(stripped, modalStartX, "")
 		leftWidth := ansi.StringWidth(leftSeg)
-		result.WriteString(DimStyle.Render(leftSeg))
+		result.WriteString(dimStyle.Render(leftSeg))
 		// Pad if background is shorter than modal position
 		if leftWidth < modalStartX {
 			result.WriteString(strings.Repeat(" ", modalStartX-leftWidth))
@@ -59,7 +67,7 @@ func compositeRow(bgLine, modalLine string, modalStartX, modalWidth, totalWidth 
 	if rightStartX < totalWidth && bgWidth > rightStartX {
 		// Use ansi.Cut to get visual-width-based substring from position
 		rightSeg := ansi.Cut(stripped, rightStartX, bgWidth)
-		result.WriteString(DimStyle.Render(rightSeg))
+		result.WriteString(dimStyle.Render(rightSeg))
 	}
 
 	return result.String()
@@ -68,6 +76,10 @@ func compositeRow(bgLine, modalLine string, modalStartX, modalWidth, totalWidth 
 // OverlayModal composites a modal on top of a dimmed background.
 // The modal is centered, with dimmed background visible on all sides.
 func OverlayModal(background, modal string, width, height int) string {
+	return overlayModalWithStyle(background, modal, width, height, DimStyle)
+}
+
+func overlayModalWithStyle(background, modal string, width, height int, dimStyle lipgloss.Style) string {
 	bgLines := strings.Split(background, "\n")
 	modalLines := strings.Split(modal, "\n")
 
@@ -99,12 +111,17 @@ func OverlayModal(background, modal string, width, height int) string {
 		modalRowIdx := y - startY
 		if modalRowIdx >= 0 && modalRowIdx < modalHeight {
 			// Composite: dimmed-left + modal + dimmed-right
-			result = append(result, compositeRow(bgLine, modalLines[modalRowIdx], startX, modalWidth, width))
+			result = append(result, compositeRowWithStyle(bgLine, modalLines[modalRowIdx], startX, modalWidth, width, dimStyle))
 		} else {
 			// Pure dimmed background (above or below modal)
-			result = append(result, dimLine(bgLine))
+			result = append(result, dimLineWithStyle(bgLine, dimStyle))
 		}
 	}
 
 	return strings.Join(result, "\n")
+}
+
+func (m Model) overlayModal(background, modal string) string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(m.themeOrDefault().Backdrop))
+	return overlayModalWithStyle(background, modal, m.Width, m.Height, dim)
 }

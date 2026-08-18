@@ -392,9 +392,10 @@ type IssueDetailsMsg struct {
 
 // MarkdownRenderedMsg carries pre-rendered markdown for the modal
 type MarkdownRenderedMsg struct {
-	IssueID      string
-	DescRender   string
-	AcceptRender string
+	IssueID       string
+	DescRender    string
+	AcceptRender  string
+	ThemeRevision uint64
 }
 
 // HandoffsDataMsg carries fetched handoffs data for the modal

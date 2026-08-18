@@ -72,6 +72,11 @@ type FormState struct {
 	Autofill      *AutofillState // Active dropdown state (nil when not showing)
 	AutofillEpics []AutofillItem // Cached epics (for parent field, type=epic only)
 	AutofillAll   []AutofillItem // Cached all open issues (for dependencies field)
+
+	// theme is retained across the few form rebuilds needed for toggling fields
+	// and autocomplete selection. A zero value preserves the historical
+	// standalone Dracula appearance.
+	theme Theme
 }
 
 // NewFormState creates a new form state for creating an issue
@@ -250,11 +255,24 @@ func (fs *FormState) buildForm() {
 	}
 
 	// Configure form appearance
-	fs.Form.WithTheme(huh.ThemeFunc(huh.ThemeDracula))
+	fs.Form.WithTheme(formTheme(fs.theme))
 
 	// Apply width if set (ensures text wrapping works after form rebuild)
 	if fs.Width > 0 {
 		fs.Form.WithWidth(fs.Width)
+	}
+}
+
+// setTheme updates both the retained rebuild theme and the currently open Huh
+// form. Huh applies themes in place, so field values, focus, validation and
+// autocomplete state remain owned by the existing form.
+func (fs *FormState) setTheme(theme Theme) {
+	if fs == nil {
+		return
+	}
+	fs.theme = theme
+	if fs.Form != nil {
+		fs.Form.WithTheme(formTheme(theme))
 	}
 }
 

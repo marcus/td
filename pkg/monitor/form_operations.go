@@ -27,6 +27,7 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 
 	// Create form state
 	m.FormState = NewFormState(FormModeCreate, parentID)
+	m.FormState.setTheme(m.themeOrDefault())
 	m.FormOpen = true
 	m.FormScrollOffset = 0
 
@@ -62,6 +63,7 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 
 	// Create form state with issue data
 	m.FormState = NewFormStateForEdit(issue)
+	m.FormState.setTheme(m.themeOrDefault())
 	m.FormOpen = true
 	m.FormScrollOffset = 0
 
@@ -401,7 +403,7 @@ func (m Model) formScrollForFocusedField() int {
 
 	submitFocused := m.FormState.ButtonFocus == formButtonFocusSubmit
 	cancelFocused := m.FormState.ButtonFocus == formButtonFocusCancel
-	buttons := renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, false, false, false, false)
+	buttons := m.renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, false, false, false, false)
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons)
 
 	allLines := strings.Split(inner, "\n")
@@ -513,7 +515,7 @@ func (m Model) formScrollToBottom() int {
 	}
 
 	formView := m.FormState.Form.View()
-	buttons := renderButtonPair("Submit", "Cancel", true, false, false, false, false, false)
+	buttons := m.renderButtonPair("Submit", "Cancel", true, false, false, false, false, false)
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons)
 
 	allLines := strings.Split(inner, "\n")

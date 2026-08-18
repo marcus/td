@@ -18,9 +18,9 @@ type MarkdownThemeConfig struct {
 	// Only used when SyntaxTheme is set.
 	MarkdownTheme string
 
-	// Colors provides explicit hex colors for custom styling.
-	// When set (Primary != ""), builds a custom style from these colors.
-	// Takes precedence over SyntaxTheme/MarkdownTheme.
+	// Colors provides explicit hex colors for custom markdown styling. When
+	// SyntaxTheme is also set it applies only to fenced-code tokens; the
+	// semantic colors continue to style headings, links and inline code.
 	Colors *MarkdownColorPalette
 }
 
@@ -29,12 +29,28 @@ type MarkdownThemeConfig struct {
 type MarkdownColorPalette struct {
 	Primary   string // Keywords, functions, links - e.g., "#7C3AED"
 	Secondary string // Strings, secondary headers - e.g., "#3B82F6"
+	Accent    string // Types, identifiers, and level-four headers
 	Success   string // Comments - e.g., "#10B981"
 	Warning   string // Numbers, literals, inline code - e.g., "#F59E0B"
 	Error     string // Errors, deleted - e.g., "#EF4444"
 	Muted     string // Punctuation, subtle text - e.g., "#6B7280"
 	Text      string // Primary text - e.g., "#F9FAFB"
 	BgCode    string // Code block background - e.g., "#374151"
+	Link      string // Link destinations; falls back to Secondary for compatibility
+}
+
+func (p *MarkdownColorPalette) accent() string {
+	if p.Accent != "" {
+		return p.Accent
+	}
+	return p.Secondary
+}
+
+func (p *MarkdownColorPalette) link() string {
+	if p.Link != "" {
+		return p.Link
+	}
+	return p.Secondary
 }
 
 // Default hex colors for td monitor palette (used when no theme config).
@@ -117,7 +133,7 @@ func buildChromaStyleFromPalette(p *MarkdownColorPalette) *ansi.Chroma {
 		Keyword:          ansi.StylePrimitive{Color: ptrString(p.Primary), Bold: ptrBool(true)},
 		KeywordReserved:  ansi.StylePrimitive{Color: ptrString(p.Primary), Bold: ptrBool(true)},
 		KeywordNamespace: ansi.StylePrimitive{Color: ptrString(p.Primary)},
-		KeywordType:      ansi.StylePrimitive{Color: ptrString(p.Secondary)},
+		KeywordType:      ansi.StylePrimitive{Color: ptrString(p.accent())},
 
 		// Strings: secondary color
 		LiteralString:       ansi.StylePrimitive{Color: ptrString(p.Secondary)},
@@ -134,14 +150,14 @@ func buildChromaStyleFromPalette(p *MarkdownColorPalette) *ansi.Chroma {
 
 		// Names/identifiers
 		Name:          ansi.StylePrimitive{Color: ptrString(p.Text)},
-		NameBuiltin:   ansi.StylePrimitive{Color: ptrString(p.Secondary)},
-		NameClass:     ansi.StylePrimitive{Color: ptrString(p.Secondary), Bold: ptrBool(true)},
+		NameBuiltin:   ansi.StylePrimitive{Color: ptrString(p.accent())},
+		NameClass:     ansi.StylePrimitive{Color: ptrString(p.accent()), Bold: ptrBool(true)},
 		NameConstant:  ansi.StylePrimitive{Color: ptrString(p.Warning)},
 		NameDecorator: ansi.StylePrimitive{Color: ptrString(p.Primary)},
 		NameException: ansi.StylePrimitive{Color: ptrString(p.Error)},
 		NameFunction:  ansi.StylePrimitive{Color: ptrString(p.Primary)},
 		NameTag:       ansi.StylePrimitive{Color: ptrString(p.Primary)},
-		NameAttribute: ansi.StylePrimitive{Color: ptrString(p.Secondary)},
+		NameAttribute: ansi.StylePrimitive{Color: ptrString(p.accent())},
 		NameOther:     ansi.StylePrimitive{Color: ptrString(p.Text)},
 
 		// Operators and punctuation
@@ -359,7 +375,7 @@ func buildGlamourStyleFromPalette(p *MarkdownColorPalette) ansi.StyleConfig {
 		H4: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
 				Prefix: "#### ",
-				Color:  ptrString(p.Secondary),
+				Color:  ptrString(p.accent()),
 			},
 		},
 		H5: ansi.StyleBlock{
@@ -398,7 +414,7 @@ func buildGlamourStyleFromPalette(p *MarkdownColorPalette) ansi.StyleConfig {
 			Unticked: "[ ] ",
 		},
 		Link: ansi.StylePrimitive{
-			Color:     ptrString(p.Secondary),
+			Color:     ptrString(p.link()),
 			Underline: ptrBool(true),
 		},
 		LinkText: ansi.StylePrimitive{
@@ -460,7 +476,9 @@ func getGlamourOptions(width int) []glamour.TermRendererOption {
 }
 
 // getGlamourOptionsWithTheme returns glamour renderer options using the provided theme config.
-// Priority: Colors > SyntaxTheme/MarkdownTheme > default td palette.
+// Priority: Colors style markdown roles; SyntaxTheme may override fenced-code
+// token colors within that style. A legacy name-only config uses the selected
+// light/dark Glamour base. Nil uses td's standalone palette.
 func getGlamourOptionsWithTheme(width int, theme *MarkdownThemeConfig) []glamour.TermRendererOption {
 	// No theme config: use default td palette
 	if theme == nil {
@@ -469,8 +487,13 @@ func getGlamourOptionsWithTheme(width int, theme *MarkdownThemeConfig) []glamour
 
 	// Explicit colors provided: build custom style from palette
 	if theme.Colors != nil && theme.Colors.Primary != "" {
+		style := buildGlamourStyleFromPalette(theme.Colors)
+		if theme.SyntaxTheme != "" {
+			style.CodeBlock.Theme = theme.SyntaxTheme
+			style.CodeBlock.Chroma = nil
+		}
 		return []glamour.TermRendererOption{
-			glamour.WithStyles(buildGlamourStyleFromPalette(theme.Colors)),
+			glamour.WithStyles(style),
 			glamour.WithWordWrap(width),
 		}
 	}

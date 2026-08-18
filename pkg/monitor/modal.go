@@ -330,11 +330,13 @@ func (m Model) modalContentWidth() int {
 // renderMarkdownAsync returns a command that renders markdown in background
 func (m Model) renderMarkdownAsync(issueID, desc, accept string, width int) tea.Cmd {
 	theme := m.MarkdownTheme // capture for closure
+	revision := m.themeRevision
 	return func() tea.Msg {
 		return MarkdownRenderedMsg{
-			IssueID:      issueID,
-			DescRender:   preRenderMarkdown(desc, width, theme),
-			AcceptRender: preRenderMarkdown(accept, width, theme),
+			IssueID:       issueID,
+			DescRender:    preRenderMarkdown(desc, width, theme),
+			AcceptRender:  preRenderMarkdown(accept, width, theme),
+			ThemeRevision: revision,
 		}
 	}
 }
@@ -462,9 +464,9 @@ func (m *Model) createTDQHelpModal() *modal.Modal {
 	registry := m.Keymap
 	md.AddSection(modal.ThemedCustom(
 		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
-			styles := newMonitorStyles(monitorTheme(theme))
+			helpModel := Model{theme: monitorTheme(theme)}
 			return modal.RenderedSection{
-				Content: styles.title.Render(ansi.Strip(registry.GenerateTDQHelp())),
+				Content: helpModel.renderHelpText(ansi.Strip(registry.GenerateTDQHelp())),
 			}
 		},
 		nil, // No update handling needed

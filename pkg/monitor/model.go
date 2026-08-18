@@ -251,8 +251,9 @@ type Model struct {
 
 	// Theme and all styles derived from it are model-owned so multiple monitors
 	// can render different palettes safely in the same process.
-	theme  Theme
-	styles monitorStyles
+	theme         Theme
+	styles        monitorStyles
+	themeRevision uint64 // rejects async ANSI rendered for an older palette
 }
 
 // NewModel creates a new monitor model
@@ -399,19 +400,38 @@ func (m *Model) SetTheme(theme Theme) error {
 	markdown := markdownThemeConfig(normalized)
 	m.theme = normalized
 	m.styles = styles
+	m.themeRevision++
 	m.SearchInput.SetStyles(themedTextInputStyles(normalized))
 	m.MarkdownTheme = markdown
+	if m.FormState != nil {
+		m.FormState.setTheme(normalized)
+	}
+	for i := range m.ModalStack {
+		entry := &m.ModalStack[i]
+		if entry.Issue == nil {
+			continue
+		}
+		entry.DescRender = preRenderMarkdown(entry.Issue.Description, m.modalContentWidth(), markdown)
+		entry.AcceptRender = preRenderMarkdown(entry.Issue.Acceptance, m.modalContentWidth(), markdown)
+		entry.ContentLines = m.estimateModalContentLines(entry)
+	}
+	if m.NotesState != nil && m.NotesState.DetailNote != nil {
+		m.NotesState.DetailRender = preRenderMarkdown(m.NotesState.DetailNote.Content, m.modalContentWidth(), markdown)
+	}
 	m.rethemeDeclarativeModals(normalized)
 	return nil
 }
 
 func markdownThemeConfig(theme Theme) *MarkdownThemeConfig {
-	if theme.SyntaxTheme == "" && theme.MarkdownTheme == "" {
-		return nil
-	}
 	return &MarkdownThemeConfig{
 		SyntaxTheme:   theme.SyntaxTheme,
 		MarkdownTheme: theme.MarkdownTheme,
+		Colors: &MarkdownColorPalette{
+			Primary: themeColorHex(theme.Primary), Secondary: themeColorHex(theme.Secondary), Accent: themeColorHex(theme.Accent),
+			Success: themeColorHex(theme.Success), Warning: themeColorHex(theme.Warning),
+			Error: themeColorHex(theme.Error), Muted: themeColorHex(theme.TextMuted),
+			Text: themeColorHex(theme.TextPrimary), BgCode: themeColorHex(theme.Surface), Link: themeColorHex(theme.Link),
+		},
 	}
 }
 
@@ -739,11 +759,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MarkdownRenderedMsg:
 		// Only update if this is for the currently open modal
-		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID {
+		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID && msg.ThemeRevision == m.themeRevision {
 			modal.DescRender = msg.DescRender
 			modal.AcceptRender = msg.AcceptRender
 			// Recalculate content lines after markdown rendering
 			modal.ContentLines = m.estimateModalContentLines(modal)
+		}
+		return m, nil
+
+	case NoteMarkdownRenderedMsg:
+		if m.NotesState != nil && m.NotesState.DetailNote != nil &&
+			msg.NoteID == m.NotesState.DetailNote.ID && msg.ThemeRevision == m.themeRevision {
+			m.NotesState.DetailRender = msg.Render
 		}
 		return m, nil
 

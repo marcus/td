@@ -54,8 +54,9 @@ type NoteDetailMsg struct {
 
 // NoteMarkdownRenderedMsg carries pre-rendered markdown for a note.
 type NoteMarkdownRenderedMsg struct {
-	NoteID string
-	Render string
+	NoteID        string
+	Render        string
+	ThemeRevision uint64
 }
 
 // NoteSavedMsg carries the result of creating/updating a note.
@@ -131,10 +132,11 @@ func (m Model) fetchNotesWithArchived() tea.Cmd {
 func (m Model) renderNoteMarkdownAsync(noteID, content string) tea.Cmd {
 	width := m.modalContentWidth()
 	theme := m.MarkdownTheme
+	revision := m.themeRevision
 	return func() tea.Msg {
 		return NoteMarkdownRenderedMsg{
-			NoteID: noteID,
-			Render: preRenderMarkdown(content, width, theme),
+			NoteID: noteID, Render: preRenderMarkdown(content, width, theme),
+			ThemeRevision: revision,
 		}
 	}
 }
@@ -226,15 +228,16 @@ func (m *Model) createNoteDetailModal() *modal.Modal {
 	md.AddSection(modal.Text(meta))
 	md.AddSection(modal.Spacer())
 
-	// Rendered markdown content
-	content := ns.DetailRender
-	if content == "" {
-		content = note.Content
-	}
-	empty := content == ""
+	// Read the retained-source render cache on every frame. Capturing the
+	// current string here would leave an already-open notes modal showing ANSI
+	// from the previous theme after SetTheme regenerates the cache.
 	md.AddSection(modal.ThemedCustom(
 		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
-			if empty {
+			content := ns.DetailRender
+			if content == "" {
+				content = note.Content
+			}
+			if content == "" {
 				return modal.RenderedSection{Content: newMonitorStyles(monitorTheme(theme)).subtle.Render("(empty)")}
 			}
 			return modal.RenderedSection{Content: content}
@@ -587,30 +590,6 @@ func (m Model) toggleNoteArchive(note *models.Note) (tea.Model, tea.Cmd) {
 
 // --- Formatting Helpers ---
 
-func formatNoteListItem(note models.Note, width int) string {
-	var parts []string
-
-	// Pin indicator
-	if note.Pinned {
-		parts = append(parts, titleStyle.Render("*"))
-	}
-
-	// Title
-	titleText := note.Title
-	if note.Archived {
-		titleText = subtleStyle.Render(titleText + " (archived)")
-	} else {
-		titleText = titleStyle.Render(titleText)
-	}
-	parts = append(parts, titleText)
-
-	// Relative time
-	age := formatNoteAge(note.UpdatedAt)
-	parts = append(parts, subtleStyle.Render(age))
-
-	return strings.Join(parts, " ")
-}
-
 func (m Model) formatNoteListItem(note models.Note, width int) string {
 	styles := m.renderStyles()
 	var parts []string
@@ -625,27 +604,6 @@ func (m Model) formatNoteListItem(note models.Note, width int) string {
 	}
 	parts = append(parts, titleText, styles.subtle.Render(formatNoteAge(note.UpdatedAt)))
 	return strings.Join(parts, " ")
-}
-
-func formatNoteMeta(note *models.Note) string {
-	var parts []string
-
-	if note.Pinned {
-		parts = append(parts, titleStyle.Render("Pinned"))
-	}
-	if note.Archived {
-		parts = append(parts, subtleStyle.Render("Archived"))
-	}
-
-	age := formatNoteAge(note.UpdatedAt)
-	created := formatNoteAge(note.CreatedAt)
-
-	parts = append(parts, subtleStyle.Render(fmt.Sprintf("Updated %s", age)))
-	if created != age {
-		parts = append(parts, subtleStyle.Render(fmt.Sprintf("Created %s", created)))
-	}
-
-	return strings.Join(parts, "  ")
 }
 
 func (m Model) formatNoteMeta(note *models.Note) string {

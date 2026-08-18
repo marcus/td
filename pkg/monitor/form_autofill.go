@@ -274,13 +274,15 @@ func (m Model) renderFormAutofillDropdown() string {
 		return ""
 	}
 	af := m.FormState.Autofill
+	styles := m.renderStyles()
+	theme := m.themeOrDefault()
 
 	if len(af.Filtered) == 0 {
 		if af.Query != "" {
-			return subtleStyle.Render("  No matching issues")
+			return styles.subtle.Render("  No matching issues")
 		}
 		if af.FieldKey == formKeyParent && len(m.FormState.AutofillEpics) == 0 {
-			return subtleStyle.Render("  No epics found")
+			return styles.subtle.Render("  No epics found")
 		}
 		return ""
 	}
@@ -303,7 +305,7 @@ func (m Model) renderFormAutofillDropdown() string {
 	if af.FieldKey == formKeyDependencies {
 		fieldLabel = "issues"
 	}
-	lines = append(lines, subtleStyle.Render(fmt.Sprintf("  Matching %s:", fieldLabel)))
+	lines = append(lines, styles.subtle.Render(fmt.Sprintf("  Matching %s:", fieldLabel)))
 
 	for i := 0; i < dropdownCount; i++ {
 		item := af.Filtered[i]
@@ -323,19 +325,19 @@ func (m Model) renderFormAutofillDropdown() string {
 
 		line := fmt.Sprintf("%s%s  %s", prefix, item.ID, title)
 		if i == af.Idx {
-			line = lipgloss.NewStyle().Foreground(primaryColor).Render(line)
+			line = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary)).Render(line)
 		} else {
-			line = subtleStyle.Render(line)
+			line = styles.subtle.Render(line)
 		}
 		lines = append(lines, line)
 	}
 
 	if len(af.Filtered) > maxDropdown {
-		lines = append(lines, subtleStyle.Render(
+		lines = append(lines, styles.subtle.Render(
 			fmt.Sprintf("  ... and %d more", len(af.Filtered)-maxDropdown)))
 	}
 
-	lines = append(lines, subtleStyle.Render("  ↑/↓ navigate  Enter select"))
+	lines = append(lines, styles.subtle.Render("  ↑/↓ navigate  Enter select"))
 
 	return strings.Join(lines, "\n")
 }

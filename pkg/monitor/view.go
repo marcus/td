@@ -32,28 +32,28 @@ func (m Model) renderView() string {
 	if m.HelpOpen {
 		base := m.renderBaseView()
 		helpModal := m.renderHelp()
-		return OverlayModal(base, helpModal, m.Width, m.Height)
+		return m.overlayModal(base, helpModal)
 	}
 
 	// Render TDQ help modal if open (using declarative modal)
 	if m.ShowTDQHelp && m.TDQHelpModal != nil && m.TDQHelpMouseHandler != nil {
 		base := m.renderBaseView()
 		tdqHelpContent := m.TDQHelpModal.Render(m.Width, m.Height, m.TDQHelpMouseHandler)
-		return OverlayModal(base, tdqHelpContent, m.Width, m.Height)
+		return m.overlayModal(base, tdqHelpContent)
 	}
 
 	// Render getting started modal if open (using declarative modal)
 	if m.GettingStartedOpen && m.GettingStartedModal != nil && m.GettingStartedMouseHandler != nil {
 		base := m.renderBaseView()
 		gettingStartedContent := m.GettingStartedModal.Render(m.Width, m.Height, m.GettingStartedMouseHandler)
-		return OverlayModal(base, gettingStartedContent, m.Width, m.Height)
+		return m.overlayModal(base, gettingStartedContent)
 	}
 
 	// Render sync prompt modal if open (using declarative modal)
 	if m.SyncPromptOpen && m.SyncPromptModal != nil {
 		base := m.renderBaseView()
 		syncPromptContent := m.SyncPromptModal.Render(m.Width, m.Height, m.SyncPromptMouse)
-		return OverlayModal(base, syncPromptContent, m.Width, m.Height)
+		return m.overlayModal(base, syncPromptContent)
 	}
 
 	// Render base view (panels + footer)
@@ -62,67 +62,67 @@ func (m Model) renderView() string {
 	// Overlay form modal if open
 	if m.FormOpen && m.FormState != nil {
 		form := m.renderFormModal()
-		return OverlayModal(base, form, m.Width, m.Height)
+		return m.overlayModal(base, form)
 	}
 
 	// Overlay delete confirmation dialog if open
 	if m.ConfirmOpen {
 		confirm := m.renderDeleteConfirmation()
-		return OverlayModal(base, confirm, m.Width, m.Height)
+		return m.overlayModal(base, confirm)
 	}
 
 	// Overlay close confirmation dialog if open (declarative modal)
 	if m.CloseConfirmOpen && m.CloseConfirmModal != nil && m.CloseConfirmMouseHandler != nil {
 		confirm := m.CloseConfirmModal.Render(m.Width, m.Height, m.CloseConfirmMouseHandler)
-		return OverlayModal(base, confirm, m.Width, m.Height)
+		return m.overlayModal(base, confirm)
 	}
 
 	// Overlay self-review confirmation dialog if open (declarative modal)
 	if m.SelfReviewConfirmOpen && m.SelfReviewConfirmModal != nil && m.SelfReviewConfirmMouseHandler != nil {
 		sr := m.SelfReviewConfirmModal.Render(m.Width, m.Height, m.SelfReviewConfirmMouseHandler)
-		return OverlayModal(base, sr, m.Width, m.Height)
+		return m.overlayModal(base, sr)
 	}
 
 	// Overlay record-review dialog if open (declarative modal)
 	if m.RecordReviewOpen && m.RecordReviewModal != nil && m.RecordReviewMouseHandler != nil {
 		rr := m.RecordReviewModal.Render(m.Width, m.Height, m.RecordReviewMouseHandler)
-		return OverlayModal(base, rr, m.Width, m.Height)
+		return m.overlayModal(base, rr)
 	}
 
 	// Overlay activity detail modal if open
 	if m.ActivityDetailOpen && m.ActivityDetailModal != nil && m.ActivityDetailMouseHandler != nil {
 		detail := m.ActivityDetailModal.Render(m.Width, m.Height, m.ActivityDetailMouseHandler)
-		return OverlayModal(base, detail, m.Width, m.Height)
+		return m.overlayModal(base, detail)
 	}
 
 	// Overlay stats modal if open
 	if m.StatsOpen {
 		stats := m.renderStatsModal()
-		return OverlayModal(base, stats, m.Width, m.Height)
+		return m.overlayModal(base, stats)
 	}
 
 	// Overlay handoffs modal if open
 	if m.HandoffsOpen {
 		handoffs := m.renderHandoffsModal()
-		return OverlayModal(base, handoffs, m.Width, m.Height)
+		return m.overlayModal(base, handoffs)
 	}
 
 	// Overlay board editor if open (on top of board picker)
 	if m.BoardEditorOpen && m.BoardEditorModal != nil && m.BoardEditorMouseHandler != nil {
 		boardEditor := m.BoardEditorModal.Render(m.Width, m.Height, m.BoardEditorMouseHandler)
-		return OverlayModal(base, boardEditor, m.Width, m.Height)
+		return m.overlayModal(base, boardEditor)
 	}
 
 	// Overlay board picker if open
 	if m.BoardPickerOpen {
 		picker := m.renderBoardPicker()
-		return OverlayModal(base, picker, m.Width, m.Height)
+		return m.overlayModal(base, picker)
 	}
 
 	// Overlay modal if open (issue detail modals - can be opened on top of kanban)
 	if m.ModalOpen() {
 		modal := m.renderModal()
-		return OverlayModal(base, modal, m.Width, m.Height)
+		return m.overlayModal(base, modal)
 	}
 
 	// Kanban view if open (after modal check so modals render on top)
@@ -131,7 +131,7 @@ func (m Model) renderView() string {
 		if m.KanbanFullscreen {
 			return kanban
 		}
-		return OverlayModal(base, kanban, m.Width, m.Height)
+		return m.overlayModal(base, kanban)
 	}
 
 	return base
@@ -1740,17 +1740,19 @@ func (m Model) renderFormModal() string {
 	cancelFocused := m.FormState.ButtonFocus == formButtonFocusCancel
 	submitHovered := m.FormState.ButtonHover == 1
 	cancelHovered := m.FormState.ButtonHover == 2
-	buttons := renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, submitHovered, cancelHovered, false, false)
+	styles := m.renderStyles()
+	theme := m.themeOrDefault()
+	buttons := m.renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, submitHovered, cancelHovered, false, false)
 
 	// Build footer with key hints (truncated to fit modal content width)
 	var footerParts []string
 	if m.FormState.ShowExtended {
-		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:hide extended"))
+		footerParts = append(footerParts, styles.subtle.Render("Ctrl+X:hide extended"))
 	} else {
-		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:show extended"))
+		footerParts = append(footerParts, styles.subtle.Render("Ctrl+X:show extended"))
 	}
-	footerParts = append(footerParts, subtleStyle.Render("Tab:next  Shift+Tab:prev  Enter:select"))
-	footerParts = append(footerParts, subtleStyle.Render("Ctrl+S:submit  Esc:cancel"))
+	footerParts = append(footerParts, styles.subtle.Render("Tab:next  Shift+Tab:prev  Enter:select"))
+	footerParts = append(footerParts, styles.subtle.Render("Ctrl+S:submit  Esc:cancel"))
 	footer := strings.Join(footerParts, "  ")
 	if lipgloss.Width(footer) > formWidth {
 		footer = lipgloss.NewStyle().MaxWidth(formWidth).Render(footer)
@@ -1823,15 +1825,15 @@ func (m Model) renderFormModal() string {
 		var indicator string
 		canScrollUp := scrollOffset > 0
 		canScrollDown := end < totalLines
-		upArrow := subtleStyle.Render("▲")
-		downArrow := subtleStyle.Render("▼")
+		upArrow := styles.subtle.Render("▲")
+		downArrow := styles.subtle.Render("▼")
 		switch {
 		case canScrollUp && canScrollDown:
-			indicator = upArrow + subtleStyle.Render(" scroll ") + downArrow
+			indicator = upArrow + styles.subtle.Render(" scroll ") + downArrow
 		case canScrollUp:
-			indicator = upArrow + subtleStyle.Render(" top visible — PgUp/Shift+Tab to scroll")
+			indicator = upArrow + styles.subtle.Render(" top visible — PgUp/Shift+Tab to scroll")
 		default:
-			indicator = downArrow + subtleStyle.Render(" more below — PgDn/Tab to scroll")
+			indicator = downArrow + styles.subtle.Render(" more below — PgDn/Tab to scroll")
 		}
 
 		visibleInner = strings.Join(visible, "\n") + "\n" + indicator
@@ -1860,7 +1862,7 @@ func (m Model) renderFormModal() string {
 
 	// Default lipgloss rendering
 	// Select border color - cyan for forms (different from issue modals)
-	borderColor := lipgloss.Color("45") // Cyan
+	borderColor := lipgloss.Color(theme.Info)
 
 	var actualHeight int
 	if scrolled {
@@ -1877,6 +1879,8 @@ func (m Model) renderFormModal() string {
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
+		Foreground(lipgloss.Color(theme.TextPrimary)).
+		Background(lipgloss.Color(theme.Surface)).
 		Padding(1, 2).
 		Width(modalWidth).
 		Height(actualHeight)
@@ -2157,8 +2161,9 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 // Legacy renderCloseConfirmation removed - close confirmation now uses declarative modal
 
 func renderLogLines(log models.Log, contentWidth int) []string {
-	prefix := timestampStyle.Render(formatLocalTime(log.Timestamp, "01-02 15:04")) + " " +
-		subtleStyle.Render(truncateSession(log.SessionID)) + " "
+	styles := newMonitorStyles(DefaultTheme())
+	prefix := styles.timestamp.Render(formatLocalTime(log.Timestamp, "01-02 15:04")) + " " +
+		styles.subtle.Render(truncateSession(log.SessionID)) + " "
 	prefixWidth := lipgloss.Width(prefix)
 	messageWidth := contentWidth - prefixWidth
 	if messageWidth < 1 {
@@ -2204,10 +2209,6 @@ func (m Model) renderLogLines(log models.Log, contentWidth int) []string {
 	return lines
 }
 
-// Error style for modal
-var errorStyle = lipgloss.NewStyle().Foreground(errorColor)
-var warningStyle = lipgloss.NewStyle().Foreground(warningColor)
-
 // formatLocalTime formats t in the process local timezone.
 // All monitor wall-clock timestamps should go through this (or .Local()) so
 // UTC-stored DB values render as local time rather than UTC wall clock.
@@ -2241,7 +2242,7 @@ func formatDeferUntil(dateStr string) string {
 	days := calendarDaysBetween(today, t)
 	switch {
 	case days < 0:
-		return warningStyle.Render(t.Format("Jan 2") + " (past)")
+		return newMonitorStyles(DefaultTheme()).modalWarning.Render(t.Format("Jan 2") + " (past)")
 	case days == 0:
 		return "today"
 	case days == 1:
@@ -2288,11 +2289,11 @@ func formatDueDate(dateStr string) string {
 		if n == 1 {
 			s = ""
 		}
-		return errorStyle.Render(fmt.Sprintf("OVERDUE by %d day%s", n, s))
+		return newMonitorStyles(DefaultTheme()).modalError.Render(fmt.Sprintf("OVERDUE by %d day%s", n, s))
 	case days == 0:
-		return warningStyle.Render("due TODAY")
+		return newMonitorStyles(DefaultTheme()).modalWarning.Render("due TODAY")
 	case days <= 7:
-		return warningStyle.Render(fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days))
+		return newMonitorStyles(DefaultTheme()).modalWarning.Render(fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days))
 	default:
 		return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
 	}
@@ -2511,7 +2512,7 @@ func (m Model) renderHelp() string {
 	}
 	if scroll < totalLines {
 		for i := scroll; i < endIdx; i++ {
-			content.WriteString(displayLines[i])
+			content.WriteString(m.renderHelpLine(displayLines[i]))
 			if i < endIdx-1 {
 				content.WriteString("\n")
 			}
@@ -2741,10 +2742,3 @@ func truncateSession(sessionID string) string {
 	}
 	return sessionID[:10]
 }
-
-// Color styles for task list sections
-var (
-	readyColor   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	reviewColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
-	blockedColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-)
