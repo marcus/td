@@ -34,6 +34,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 - [AI Agent Testimonials](#ai-agent-testimonials)
 - [Documentation Site](#documentation-site)
 - [Design Philosophy](#design-philosophy)
+- [Built on td](#built-on-td)
 - [Contributing](#contributing)
 - [Support](#support)
 - [License](#license)
@@ -589,6 +590,10 @@ Full documentation is available at [marcus.github.io/td](https://marcus.github.i
 - Go (single binary, no runtime deps)
 - SQLite (pure Go, no CGO)
 - Cobra for CLI
+
+## Built on td
+
+- **[td-gui](https://github.com/madic-creates/td-gui)** by [@madic-creates](https://github.com/madic-creates) — A local, single-binary web UI for `td` projects with issue detail, structured handoffs, review dialogs, and backlog/swimlane boards.
 
 ## Contributing
 
