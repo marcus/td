@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.59.0] - 2026-08-18
+
+### Features
+
+- **The embedded monitor takes its theme from the host** (td-2930ee). A host that embeds `pkg/monitor` — Sidecar's td tab — can now hand it a model-scoped theme, and every surface honors it: the core list, kanban and swimlane renderers, both the declarative and legacy modals, the notes and form paths, markdown, and the Huh select filters. Rethemes apply live without losing selection, scroll position, filter text, or in-flight form state, and a regression guard fails the build if a renderer reaches past the theme contract for a hardcoded color.
+- **`td note restore`, `list --deleted`, and `show --include-deleted`** bring soft-deleted notes to the CLI. This is what let Sidecar's Notes plugin drop its in-process database access (see the corruption fix below).
+
+### Bug Fixes
+
+- **td no longer corrupts `.todos/issues.db` under mixed embedded and CLI use.** modernc's WAL shared-memory coordination destroyed the database five times in two days whenever a long-lived embedded connection (Sidecar's monitor and notes store) ran alongside bursts of short-lived CLI processes — a 0-byte `-wal`, a populated `-shm`, and `database disk image is malformed`. td now uses TRUNCATE rollback-journal mode, which has no `-shm`/`-wal` state to race on. Slower per-write journaling means bursts queue past the old 500ms write lock, so the lock timeout now matches the 5s SQLite busy_timeout (td-adbf16).
+- **Themed modals are no longer splotchy.** Lip Gloss emits a block background once per line, so any nested style's reset left the rest of that line on the terminal's default background, and host chrome renderers padded short lines with unstyled spaces of their own. `pkg/monitor/ansifill` re-applies the surface after every SGR that would drop back to the default, leaves genuine nested backgrounds (a selected row, a badge) intact, and pads to width when the host owns the chrome.
+
 ## [v0.58.0] - 2026-08-16
 
 ### Features
