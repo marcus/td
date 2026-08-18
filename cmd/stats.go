@@ -10,9 +10,10 @@ var statsCmd = &cobra.Command{
 	Long: `Unified command for viewing td analytics and diagnostic information.
 
 Subcommands:
-  analytics  - Command usage statistics (most/least used, never used)
-  security   - Security exception audit log
-  errors     - Failed command attempts`,
+  analytics   - Command usage statistics (most/least used, never used)
+  bus-factor  - Code ownership concentration risks
+  security    - Security exception audit log
+  errors      - Failed command attempts`,
 	GroupID: "system",
 }
 
