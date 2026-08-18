@@ -255,7 +255,7 @@ func (fs *FormState) buildForm() {
 	}
 
 	// Configure form appearance
-	fs.Form.WithTheme(formTheme(fs.theme))
+	fs.Form.WithTheme(fs.huhTheme())
 
 	// Apply width if set (ensures text wrapping works after form rebuild)
 	if fs.Width > 0 {
@@ -263,16 +263,26 @@ func (fs *FormState) buildForm() {
 	}
 }
 
-// setTheme updates both the retained rebuild theme and the currently open Huh
-// form. Huh applies themes in place, so field values, focus, validation and
-// autocomplete state remain owned by the existing form.
+// huhTheme is installed once on every Huh field and resolves fs.theme lazily.
+// Huh fields intentionally ignore a second WithTheme call, so a stable wrapper
+// is required for live retheme without rebuilding the form.
+func (fs *FormState) huhTheme() huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		return formStyles(fs.theme, isDark)
+	})
+}
+
+// setTheme changes the value observed by the stable Huh theme wrapper. The
+// form and its fields stay intact, preserving values, focus and validation.
 func (fs *FormState) setTheme(theme Theme) {
 	if fs == nil {
 		return
 	}
 	fs.theme = theme
 	if fs.Form != nil {
-		fs.Form.WithTheme(formTheme(theme))
+		// Groups snapshot help styles when WithTheme is called. Fields ignore a
+		// replacement theme, but retain the original lazy wrapper above.
+		fs.Form.WithTheme(fs.huhTheme())
 	}
 }
 

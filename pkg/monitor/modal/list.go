@@ -8,9 +8,10 @@ import (
 
 // ListItem represents an item in a list section.
 type ListItem struct {
-	ID    string // Unique identifier for this item
-	Label string // Display text
-	Data  any    // Optional associated data
+	ID          string             // Unique identifier for this item
+	Label       string             // Display text
+	ThemedLabel func(Theme) string // Optional label resolved from the current modal theme
+	Data        any                // Optional associated data
 }
 
 // ListOption is a functional option for List sections.
@@ -89,6 +90,10 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 		}
 
 		item := s.items[itemIdx]
+		label := item.Label
+		if item.ThemedLabel != nil {
+			label = item.ThemedLabel(s.styles.theme)
+		}
 		isSelected := s.selectedIdx != nil && *s.selectedIdx == itemIdx
 		isHovered := item.ID == hoverID
 
@@ -109,7 +114,7 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 		}
 
 		// Render item
-		line := cursor + style.Render(item.Label)
+		line := cursor + style.Render(label)
 		if i > 0 {
 			sb.WriteString("\n")
 		}

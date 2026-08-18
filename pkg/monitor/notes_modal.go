@@ -174,10 +174,12 @@ func (m *Model) createNotesListModal() *modal.Modal {
 	items := make([]modal.ListItem, 0, len(ns.Notes))
 	contentWidth := modalWidth - 6 // border + padding + cursor
 	for i, note := range ns.Notes {
-		label := m.formatNoteListItem(note, contentWidth)
+		note := note // retain this list item's value independently of the range
 		items = append(items, modal.ListItem{
-			ID:    fmt.Sprintf("note-%d", i),
-			Label: label,
+			ID: fmt.Sprintf("note-%d", i),
+			ThemedLabel: func(theme modal.Theme) string {
+				return formatNoteListItemWithStyles(note, contentWidth, newMonitorStyles(monitorTheme(theme)))
+			},
 		})
 	}
 
@@ -224,8 +226,12 @@ func (m *Model) createNoteDetailModal() *modal.Modal {
 	)
 
 	// Note metadata
-	meta := m.formatNoteMeta(note)
-	md.AddSection(modal.Text(meta))
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			return modal.RenderedSection{Content: formatNoteMetaWithStyles(note, newMonitorStyles(monitorTheme(theme)))}
+		},
+		nil,
+	))
 	md.AddSection(modal.Spacer())
 
 	// Read the retained-source render cache on every frame. Capturing the
@@ -591,7 +597,10 @@ func (m Model) toggleNoteArchive(note *models.Note) (tea.Model, tea.Cmd) {
 // --- Formatting Helpers ---
 
 func (m Model) formatNoteListItem(note models.Note, width int) string {
-	styles := m.renderStyles()
+	return formatNoteListItemWithStyles(note, width, m.renderStyles())
+}
+
+func formatNoteListItemWithStyles(note models.Note, width int, styles monitorStyles) string {
 	var parts []string
 	if note.Pinned {
 		parts = append(parts, styles.title.Render("*"))
@@ -607,7 +616,10 @@ func (m Model) formatNoteListItem(note models.Note, width int) string {
 }
 
 func (m Model) formatNoteMeta(note *models.Note) string {
-	styles := m.renderStyles()
+	return formatNoteMetaWithStyles(note, m.renderStyles())
+}
+
+func formatNoteMetaWithStyles(note *models.Note, styles monitorStyles) string {
 	var parts []string
 	if note.Pinned {
 		parts = append(parts, styles.title.Render("Pinned"))

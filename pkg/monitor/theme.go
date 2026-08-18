@@ -351,64 +351,82 @@ func themedTextInputStyles(theme Theme) textinput.Styles {
 }
 
 func formTheme(theme Theme) huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		return formStyles(theme, isDark)
+	})
+}
+
+func formStyles(theme Theme, isDark bool) *huh.Styles {
 	// The standalone monitor used Dracula before model themes existed. Return
 	// the library theme itself so the default rendering remains byte-for-byte
 	// compatible rather than approximating it from semantic slots.
 	if themeIsZero(theme) || theme == DefaultTheme() {
-		return huh.ThemeFunc(huh.ThemeDracula)
+		return huh.ThemeDracula(isDark)
 	}
 
-	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
-		styles := huh.ThemeBase(isDark)
-		color := func(value string) color.Color { return lipgloss.Color(value) }
+	styles := huh.ThemeBase(isDark)
+	color := func(value string) color.Color { return lipgloss.Color(value) }
 
-		styles.Form.Base = styles.Form.Base.Foreground(color(theme.TextPrimary))
-		styles.Group.Title = styles.Group.Title.Foreground(color(theme.Primary)).Bold(true)
-		styles.Group.Description = styles.Group.Description.Foreground(color(theme.TextMuted))
-		styles.FieldSeparator = styles.FieldSeparator.Foreground(color(theme.BorderMuted))
+	styles.Form.Base = styles.Form.Base.Foreground(color(theme.TextPrimary))
+	styles.Group.Title = styles.Group.Title.Foreground(color(theme.Primary)).Bold(true)
+	styles.Group.Description = styles.Group.Description.Foreground(color(theme.TextMuted))
+	styles.FieldSeparator = styles.FieldSeparator.Foreground(color(theme.BorderMuted))
 
-		focused := &styles.Focused
-		focused.Base = focused.Base.BorderForeground(color(theme.BorderActive))
-		focused.Card = focused.Base
-		focused.Title = focused.Title.Foreground(color(theme.Primary)).Bold(true)
-		focused.NoteTitle = focused.NoteTitle.Foreground(color(theme.Primary)).Bold(true)
-		focused.Description = focused.Description.Foreground(color(theme.TextMuted))
-		focused.ErrorIndicator = focused.ErrorIndicator.Foreground(color(theme.Error))
-		focused.ErrorMessage = focused.ErrorMessage.Foreground(color(theme.Error))
-		focused.Directory = focused.Directory.Foreground(color(theme.Link))
-		focused.File = focused.File.Foreground(color(theme.TextPrimary))
-		focused.SelectSelector = focused.SelectSelector.Foreground(color(theme.Accent))
-		focused.NextIndicator = focused.NextIndicator.Foreground(color(theme.Accent))
-		focused.PrevIndicator = focused.PrevIndicator.Foreground(color(theme.Accent))
-		focused.Option = focused.Option.Foreground(color(theme.TextPrimary))
-		focused.MultiSelectSelector = focused.MultiSelectSelector.Foreground(color(theme.Accent))
-		focused.SelectedOption = focused.SelectedOption.Foreground(color(theme.Success))
-		focused.SelectedPrefix = focused.SelectedPrefix.Foreground(color(theme.Success))
-		focused.UnselectedOption = focused.UnselectedOption.Foreground(color(theme.TextPrimary))
-		focused.UnselectedPrefix = focused.UnselectedPrefix.Foreground(color(theme.TextMuted))
-		focused.FocusedButton = focused.FocusedButton.Foreground(color(theme.OnPrimary)).Background(color(theme.Primary)).Bold(true)
-		focused.Next = focused.FocusedButton
-		focused.BlurredButton = focused.BlurredButton.Foreground(color(theme.TextSecondary)).Background(color(theme.SurfaceRaised))
-		focused.TextInput.Cursor = focused.TextInput.Cursor.Foreground(color(theme.Accent))
-		focused.TextInput.CursorText = focused.TextInput.CursorText.Foreground(color(theme.TextSelection)).Background(color(theme.Selection))
-		focused.TextInput.Placeholder = focused.TextInput.Placeholder.Foreground(color(theme.TextMuted))
-		focused.TextInput.Prompt = focused.TextInput.Prompt.Foreground(color(theme.Accent))
-		focused.TextInput.Text = focused.TextInput.Text.Foreground(color(theme.TextPrimary))
+	focused := &styles.Focused
+	focused.Base = focused.Base.BorderForeground(color(theme.BorderActive))
+	focused.Card = focused.Base
+	focused.Title = focused.Title.Foreground(color(theme.Primary)).Bold(true)
+	focused.NoteTitle = focused.NoteTitle.Foreground(color(theme.Primary)).Bold(true)
+	focused.Description = focused.Description.Foreground(color(theme.TextMuted))
+	focused.ErrorIndicator = focused.ErrorIndicator.Foreground(color(theme.Error))
+	focused.ErrorMessage = focused.ErrorMessage.Foreground(color(theme.Error))
+	focused.Directory = focused.Directory.Foreground(color(theme.Link))
+	focused.File = focused.File.Foreground(color(theme.TextPrimary))
+	focused.SelectSelector = focused.SelectSelector.Foreground(color(theme.Accent))
+	focused.NextIndicator = focused.NextIndicator.Foreground(color(theme.Accent))
+	focused.PrevIndicator = focused.PrevIndicator.Foreground(color(theme.Accent))
+	focused.Option = focused.Option.Foreground(color(theme.TextPrimary))
+	focused.MultiSelectSelector = focused.MultiSelectSelector.Foreground(color(theme.Accent))
+	focused.SelectedOption = focused.SelectedOption.Foreground(color(theme.Success))
+	focused.SelectedPrefix = focused.SelectedPrefix.Foreground(color(theme.Success))
+	focused.UnselectedOption = focused.UnselectedOption.Foreground(color(theme.TextPrimary))
+	focused.UnselectedPrefix = focused.UnselectedPrefix.Foreground(color(theme.TextMuted))
+	focused.FocusedButton = focused.FocusedButton.Foreground(color(theme.OnPrimary)).Background(color(theme.Primary)).Bold(true)
+	focused.Next = focused.FocusedButton
+	focused.BlurredButton = focused.BlurredButton.Foreground(color(theme.TextSecondary)).Background(color(theme.SurfaceRaised))
+	focused.TextInput.Cursor = focused.TextInput.Cursor.Foreground(color(theme.Accent))
+	focused.TextInput.CursorText = focused.TextInput.CursorText.Foreground(color(theme.TextSelection)).Background(color(theme.Selection))
+	focused.TextInput.Placeholder = focused.TextInput.Placeholder.Foreground(color(theme.TextMuted))
+	focused.TextInput.Prompt = focused.TextInput.Prompt.Foreground(color(theme.Accent))
+	focused.TextInput.Text = focused.TextInput.Text.Foreground(color(theme.TextPrimary))
 
-		styles.Blurred = *focused
-		styles.Blurred.Base = focused.Base.BorderStyle(lipgloss.HiddenBorder()).BorderForeground(color(theme.BorderMuted))
-		styles.Blurred.Card = styles.Blurred.Base
-		styles.Blurred.Title = styles.Blurred.Title.Foreground(color(theme.TextSecondary)).Bold(false)
-		styles.Blurred.NoteTitle = styles.Blurred.NoteTitle.Foreground(color(theme.TextSecondary)).Bold(false)
-		styles.Blurred.Description = styles.Blurred.Description.Foreground(color(theme.TextSubtle))
-		styles.Blurred.SelectSelector = lipgloss.NewStyle().SetString("  ")
-		styles.Blurred.MultiSelectSelector = lipgloss.NewStyle().SetString("  ")
-		styles.Blurred.NextIndicator = lipgloss.NewStyle()
-		styles.Blurred.PrevIndicator = lipgloss.NewStyle()
-		styles.Blurred.TextInput.Prompt = styles.Blurred.TextInput.Prompt.Foreground(color(theme.TextMuted))
-		styles.Blurred.TextInput.Text = styles.Blurred.TextInput.Text.Foreground(color(theme.TextSecondary))
-		return styles
-	})
+	styles.Blurred = *focused
+	styles.Blurred.Base = focused.Base.BorderStyle(lipgloss.HiddenBorder()).BorderForeground(color(theme.BorderMuted))
+	styles.Blurred.Card = styles.Blurred.Base
+	styles.Blurred.Title = styles.Blurred.Title.Foreground(color(theme.TextSecondary)).Bold(false)
+	styles.Blurred.NoteTitle = styles.Blurred.NoteTitle.Foreground(color(theme.TextSecondary)).Bold(false)
+	styles.Blurred.Description = styles.Blurred.Description.Foreground(color(theme.TextSubtle))
+	styles.Blurred.SelectSelector = lipgloss.NewStyle().SetString("  ")
+	styles.Blurred.MultiSelectSelector = lipgloss.NewStyle().SetString("  ")
+	styles.Blurred.NextIndicator = lipgloss.NewStyle()
+	styles.Blurred.PrevIndicator = lipgloss.NewStyle()
+	styles.Blurred.TextInput.Prompt = styles.Blurred.TextInput.Prompt.Foreground(color(theme.TextMuted))
+	styles.Blurred.TextInput.Text = styles.Blurred.TextInput.Text.Foreground(color(theme.TextSecondary))
+
+	// ThemeBase inherits Bubbles' fixed dark help palette. Huh copies these
+	// values into each field's visible key/description footer, so every slot
+	// must be replaced for light and host-provided monitor themes.
+	keyStyle := lipgloss.NewStyle().Foreground(color(theme.Primary))
+	descStyle := lipgloss.NewStyle().Foreground(color(theme.TextMuted))
+	separatorStyle := lipgloss.NewStyle().Foreground(color(theme.TextSubtle))
+	styles.Help.ShortKey = keyStyle
+	styles.Help.ShortDesc = descStyle
+	styles.Help.ShortSeparator = separatorStyle
+	styles.Help.FullKey = keyStyle
+	styles.Help.FullDesc = descStyle
+	styles.Help.FullSeparator = separatorStyle
+	styles.Help.Ellipsis = separatorStyle
+	return styles
 }
 
 // renderStyles preserves the default appearance for legacy tests and callers

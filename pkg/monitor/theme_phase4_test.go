@@ -3,6 +3,7 @@ package monitor
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
@@ -106,6 +107,150 @@ func TestSetThemeRegeneratesOpenNoteWithoutRebuildingModal(t *testing.T) {
 	if got := m.NotesModal.Render(m.Width, m.Height, nil); !strings.Contains(got, "38;2;209;2;3") {
 		t.Fatalf("open notes modal retained stale ANSI: %q", got)
 	}
+}
+
+func TestSetThemeRethemesCapturedNoteLabelsAndMetadata(t *testing.T) {
+	note := models.Note{
+		ID: "note-colors", Title: "Captured note color marker", Content: "## Markdown marker",
+		Pinned: true, Archived: true, CreatedAt: time.Now().Add(-2 * time.Hour), UpdatedAt: time.Now(),
+	}
+
+	t.Run("standalone defaults do not survive", func(t *testing.T) {
+		m := NewModel(nil, "test", 0, "dev", t.TempDir())
+		m.Width, m.Height = 90, 32
+		m.NotesState = &NotesState{Notes: []models.Note{note}, DetailNote: &note, DetailRender: preRenderMarkdown(note.Content, 60, nil)}
+
+		m.NotesModal = m.createNotesListModal()
+		listBefore := m.NotesModal
+		if err := m.SetTheme(phase4TestTheme()); err != nil {
+			t.Fatal(err)
+		}
+		if m.NotesModal != listBefore {
+			t.Fatal("live retheme rebuilt the notes list")
+		}
+		list := m.NotesModal.Render(m.Width, m.Height, nil)
+		wantList := formatNoteListItemWithStyles(note, 66, m.renderStyles())
+		if !strings.Contains(list, wantList) {
+			t.Fatalf("notes list did not rebind label through current theme:\nwant fragment %q\nrender %q", wantList, list)
+		}
+		assertNoANSIColors(t, list, "38;5;255", "38;5;241")
+
+		m.NotesModal = m.createNoteDetailModal()
+		detailBefore := m.NotesModal
+		// Return through DefaultTheme and then the hostile palette so the same
+		// captured detail section has to shed standalone metadata ANSI.
+		if err := m.SetTheme(DefaultTheme()); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.SetTheme(phase4TestTheme()); err != nil {
+			t.Fatal(err)
+		}
+		if m.NotesModal != detailBefore {
+			t.Fatal("live retheme rebuilt the note detail")
+		}
+		detail := m.NotesModal.Render(m.Width, m.Height, nil)
+		wantMeta := formatNoteMetaWithStyles(&note, m.renderStyles())
+		if !strings.Contains(detail, wantMeta) {
+			t.Fatalf("note detail did not rebind metadata through current theme:\nwant fragment %q\nrender %q", wantMeta, detail)
+		}
+		assertNoANSIColors(t, detail, "38;5;255", "38;5;241")
+	})
+
+	t.Run("previous custom palette does not survive", func(t *testing.T) {
+		m := NewModel(nil, "test", 0, "dev", t.TempDir())
+		m.Width, m.Height = 90, 32
+		oldTheme := phase4TestTheme()
+		oldTheme.TextPrimary = "#111213"
+		oldTheme.TextMuted = "#212223"
+		oldTheme.Primary = "#313233"
+		if err := m.SetTheme(oldTheme); err != nil {
+			t.Fatal(err)
+		}
+		m.NotesState = &NotesState{Notes: []models.Note{note}, DetailNote: &note, DetailRender: preRenderMarkdown(note.Content, 60, m.MarkdownTheme)}
+		m.NotesModal = m.createNotesListModal()
+		oldFragments := []string{"38;2;17;18;19", "38;2;33;34;35", "38;2;49;50;51"}
+		before := m.NotesModal.Render(m.Width, m.Height, nil)
+		if !containsAny(before, oldFragments...) {
+			t.Fatalf("test setup did not render the prior palette: %q", before)
+		}
+
+		if err := m.SetTheme(phase4TestTheme()); err != nil {
+			t.Fatal(err)
+		}
+		list := m.NotesModal.Render(m.Width, m.Height, nil)
+		assertNoANSIColors(t, list, oldFragments...)
+
+		m.NotesModal = m.createNoteDetailModal()
+		if err := m.SetTheme(oldTheme); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.SetTheme(phase4TestTheme()); err != nil {
+			t.Fatal(err)
+		}
+		detail := m.NotesModal.Render(m.Width, m.Height, nil)
+		assertNoANSIColors(t, detail, oldFragments...)
+		if !strings.Contains(detail, "38;2;209;2;3") {
+			t.Fatalf("note markdown did not repaint with the new palette: %q", detail)
+		}
+	})
+}
+
+func TestCustomHuhThemeReplacesEveryInheritedHelpColor(t *testing.T) {
+	theme := phase4TestTheme()
+	theme.Primary = "#010203"
+	theme.TextMuted = "#040506"
+	theme.TextSubtle = "#070809"
+	styles := formTheme(theme).Theme(true)
+
+	wantKey := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary)).Render("X")
+	wantDesc := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.TextMuted)).Render("X")
+	wantSeparator := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.TextSubtle)).Render("X")
+	for name, got := range map[string]string{
+		"short key": styles.Help.ShortKey.Render("X"), "full key": styles.Help.FullKey.Render("X"),
+		"short description": styles.Help.ShortDesc.Render("X"), "full description": styles.Help.FullDesc.Render("X"),
+		"short separator": styles.Help.ShortSeparator.Render("X"), "full separator": styles.Help.FullSeparator.Render("X"),
+		"ellipsis": styles.Help.Ellipsis.Render("X"),
+	} {
+		want := wantSeparator
+		if strings.Contains(name, "key") {
+			want = wantKey
+		} else if strings.Contains(name, "description") {
+			want = wantDesc
+		}
+		if got != want {
+			t.Errorf("Huh %s style = %q, want %q", name, got, want)
+		}
+	}
+
+	fs := NewFormState(FormModeCreate, "")
+	fs.setTheme(theme)
+	_ = fs.Form.Init()
+	view := fs.Form.View()
+	assertNoANSIColors(t, view,
+		"38;2;98;98;98", "38;2;74;74;74", "38;2;60;60;60", // Bubbles help defaults
+		"38;2;68;71;90", "38;2;189;147;249", "38;2;241;250;140", "38;2;248;248;242", "38;2;98;114;164", // Dracula fields
+	)
+	if !strings.Contains(view, "38;2;4;5;6") {
+		t.Fatalf("rendered Huh footer did not receive monitor description color: %q", view)
+	}
+}
+
+func assertNoANSIColors(t *testing.T, content string, fragments ...string) {
+	t.Helper()
+	for _, fragment := range fragments {
+		if strings.Contains(content, fragment) {
+			t.Errorf("render retained stale ANSI color %q: %q", fragment, content)
+		}
+	}
+}
+
+func containsAny(content string, fragments ...string) bool {
+	for _, fragment := range fragments {
+		if strings.Contains(content, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestThemeDrivesHelpAutocompleteAndOverlay(t *testing.T) {
