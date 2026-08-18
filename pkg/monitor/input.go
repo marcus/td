@@ -1538,8 +1538,8 @@ func (m Model) handleFormDialogClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 
 	contentStartX := modalX + 3
-	submitWidth := lipgloss.Width(renderButton("Submit", false, false, false))
-	cancelWidth := lipgloss.Width(renderButton("Cancel", false, false, false))
+	submitWidth := lipgloss.Width(m.renderButton("Submit", false, false, false))
+	cancelWidth := lipgloss.Width(m.renderButton("Cancel", false, false, false))
 
 	submitStartX := contentStartX
 	submitEndX := submitStartX + submitWidth
@@ -1583,8 +1583,8 @@ func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
 	}
 
 	contentStartX := modalX + 3
-	submitWidth := lipgloss.Width(renderButton("Submit", false, false, false))
-	cancelWidth := lipgloss.Width(renderButton("Cancel", false, false, false))
+	submitWidth := lipgloss.Width(m.renderButton("Submit", false, false, false))
+	cancelWidth := lipgloss.Width(m.renderButton("Cancel", false, false, false))
 
 	submitStartX := contentStartX
 	submitEndX := submitStartX + submitWidth

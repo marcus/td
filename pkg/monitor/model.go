@@ -327,7 +327,9 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 	return &m, nil
 }
 
-// EmbeddedOptions configures an embedded monitor model.
+// EmbeddedOptions configures an embedded monitor model. Theme supplies td's
+// content palette; PanelRenderer and ModalRenderer optionally retain
+// host-owned border chrome.
 type EmbeddedOptions struct {
 	BaseDir       string        // Base directory for database and config
 	Interval      time.Duration // Refresh interval
@@ -343,7 +345,9 @@ type EmbeddedOptions struct {
 	MarkdownTheme *MarkdownThemeConfig
 }
 
-// NewEmbeddedWithOptions creates a monitor model with custom options.
+// NewEmbeddedWithOptions creates a monitor model with custom options. A
+// partial Theme inherits missing slots from DefaultTheme; any invalid explicit
+// color is rejected before the database is opened.
 // It uses a shared database connection pool to prevent connection leaks when
 // Model values are copied in Update().
 // The caller must call Close() when done to release resources.
@@ -386,10 +390,12 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 	return &m, nil
 }
 
-// SetTheme atomically validates and applies a semantic palette to the monitor.
-// It changes presentation state only: database, polling, navigation, selection,
-// modal, and form state are left untouched. Call it from the host's Bubble Tea
-// goroutine rather than concurrently with Update or View.
+// SetTheme atomically validates and applies a semantic palette to the running
+// monitor. Invalid explicit colors return an error without changing the prior
+// theme or child presentation state. Valid changes repaint cached markdown and
+// open child views while preserving database, polling, navigation, selection,
+// modal, note, and form interaction state. Call SetTheme from the host's Bubble
+// Tea goroutine rather than concurrently with Update or View.
 func (m *Model) SetTheme(theme Theme) error {
 	normalized, err := normalizedTheme(theme)
 	if err != nil {

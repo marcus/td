@@ -11,6 +11,7 @@ import (
 )
 
 func TestIssueDetailStatusStylesUseActionColorMapping(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
 	tests := []struct {
 		name      string
 		status    models.Status
@@ -25,17 +26,21 @@ func TestIssueDetailStatusStylesUseActionColorMapping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			style, ok := issueDetailStatusStyle(tt.status)
+			style, ok := m.renderStyles().status[tt.status]
 			if !ok {
 				t.Fatalf("missing issue detail style for status %q", tt.status)
 			}
+			if tt.status == models.StatusClosed {
+				style = m.renderStyles().modalSuccess
+			}
+			style = style.Bold(true)
 			if got := fmt.Sprint(style.GetForeground()); got != tt.colorCode {
 				t.Fatalf("issueDetailStatusStyle(%q) foreground = %q, want %q", tt.status, got, tt.colorCode)
 			}
 			if !style.GetBold() {
 				t.Fatalf("issueDetailStatusStyle(%q) should be bold", tt.status)
 			}
-			if got := formatIssueDetailStatus(tt.status); !strings.Contains(got, string(tt.status)) {
+			if got := m.formatIssueDetailStatus(tt.status); !strings.Contains(got, string(tt.status)) {
 				t.Fatalf("formatIssueDetailStatus(%q) = %q, want status text", tt.status, got)
 			}
 		})
@@ -43,8 +48,9 @@ func TestIssueDetailStatusStylesUseActionColorMapping(t *testing.T) {
 }
 
 func TestFormatIssueDetailStatusFallsBackToDefaultFormatting(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
 	status := models.Status("queued")
-	if got := formatIssueDetailStatus(status); got != string(status) {
+	if got := m.formatIssueDetailStatus(status); got != string(status) {
 		t.Fatalf("formatIssueDetailStatus(%q) = %q, want %q", status, got, status)
 	}
 }

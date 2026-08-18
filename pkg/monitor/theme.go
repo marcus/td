@@ -13,9 +13,10 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-// Theme is the host-neutral semantic palette used by the monitor. Color
+// Theme is the host-neutral semantic palette used by one monitor model. Color
 // fields accept the same hexadecimal and ANSI color strings as lipgloss.Color.
-// Empty fields inherit the corresponding value from DefaultTheme.
+// Empty fields inherit the corresponding value from DefaultTheme, so embedders
+// may provide partial themes and remain compatible when td adds a new slot.
 //
 // SyntaxTheme and MarkdownTheme select the optional Chroma and Glamour themes.
 // They are names rather than colors and may be left empty to use td's defaults.
@@ -61,7 +62,8 @@ type Theme struct {
 	MarkdownTheme string
 }
 
-// DefaultTheme returns a fresh copy of td's standalone monitor palette.
+// DefaultTheme returns a fresh copy of td's standalone monitor palette. It is
+// also the fallback for every empty field supplied by an embedder.
 func DefaultTheme() Theme {
 	return Theme{
 		Primary:       "212",

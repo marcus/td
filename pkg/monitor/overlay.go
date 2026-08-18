@@ -8,10 +8,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// DimStyle applies a dim gray color to background content behind modals.
-// We strip existing ANSI codes and apply gray because SGR 2 (faint) doesn't
-// reliably combine with existing color codes in most terminals.
-var DimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(DefaultTheme().Backdrop))
+// DimStyle is the standalone default used by the legacy overlay helpers.
+//
+// Deprecated: embedded and model-owned rendering uses Model's Theme instead.
+// This variable remains for source compatibility with existing callers of
+// OverlayModal; changing it cannot retheme a running Model.
+var DimStyle = defaultDimStyle()
 
 // maxLineWidth returns the maximum visual width of the given lines.
 func maxLineWidth(lines []string) int {
@@ -28,6 +30,10 @@ func maxLineWidth(lines []string) int {
 // dimLine strips ANSI codes and applies dim gray styling.
 func dimLine(s string) string {
 	return dimLineWithStyle(s, DimStyle)
+}
+
+func defaultDimStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(DefaultTheme().Backdrop))
 }
 
 func dimLineWithStyle(s string, style lipgloss.Style) string {

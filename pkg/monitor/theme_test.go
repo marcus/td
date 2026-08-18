@@ -42,19 +42,22 @@ func colorFragment(rendered, marker string) string {
 func TestDefaultThemePreservesStandaloneSteelThread(t *testing.T) {
 	m := NewModel(nil, "test", 0, "dev", t.TempDir())
 	styles := m.renderStyles()
+	legacyPanel := func(border string) lipgloss.Style {
+		return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(border)).Padding(0, 1)
+	}
 
 	styleCases := []struct {
 		name string
 		got  string
 		want string
 	}{
-		{"inactive panel", styles.panel.Render("panel"), panelStyle.Render("panel")},
-		{"active panel", styles.activePanel.Render("panel"), activePanelStyle.Render("panel")},
-		{"hover panel", styles.hoverPanel.Render("panel"), hoverPanelStyle.Render("panel")},
-		{"divider hover", styles.dividerHoverPanel.Render("panel"), dividerHoverPanelStyle.Render("panel")},
-		{"divider active", styles.dividerActivePanel.Render("panel"), dividerActivePanelStyle.Render("panel")},
-		{"panel title", styles.panelTitle.Render("TASK LIST"), panelTitleStyle.Render("TASK LIST")},
-		{"selection", m.highlightRow("task", 12), highlightRow("task", 12)},
+		{"inactive panel", styles.panel.Render("panel"), legacyPanel("240").Render("panel")},
+		{"active panel", styles.activePanel.Render("panel"), legacyPanel("212").Render("panel")},
+		{"hover panel", styles.hoverPanel.Render("panel"), legacyPanel("245").Render("panel")},
+		{"divider hover", styles.dividerHoverPanel.Render("panel"), legacyPanel("45").Render("panel")},
+		{"divider active", styles.dividerActivePanel.Render("panel"), legacyPanel("214").Render("panel")},
+		{"panel title", styles.panelTitle.Render("TASK LIST"), lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("237")).Foreground(lipgloss.Color("255")).Padding(0, 1).Render("TASK LIST")},
+		{"selection", m.highlightRow("task", 12), highlightRowWithSelection("task", 12, "\x1b[38;5;255;48;5;237m", "\x1b[48;5;237m")},
 	}
 	for _, tt := range styleCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -64,14 +67,12 @@ func TestDefaultThemePreservesStandaloneSteelThread(t *testing.T) {
 		})
 	}
 
-	for _, status := range []models.Status{
-		models.StatusOpen,
-		models.StatusInProgress,
-		models.StatusBlocked,
-		models.StatusInReview,
-		models.StatusClosed,
-	} {
-		if got, want := m.formatStatus(status), formatStatus(status); got != want {
+	legacyStatusColor := map[models.Status]string{
+		models.StatusOpen: "45", models.StatusInProgress: "214", models.StatusBlocked: "196",
+		models.StatusInReview: "141", models.StatusClosed: "241",
+	}
+	for status, color := range legacyStatusColor {
+		if got, want := m.formatStatus(status), lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(string(status)); got != want {
 			t.Fatalf("default status %q output changed: got %q, want %q", status, got, want)
 		}
 	}
@@ -410,11 +411,11 @@ func TestPhase2CoreRenderersUseContrastingModelPalettes(t *testing.T) {
 		t.Fatal("core output leaked the legacy hardcoded selection background")
 	}
 	legacyPrefixes := map[string]string{
-		"muted text":     stylePrefix(subtleStyle.Render("X"), "X"),
-		"active search":  stylePrefix(searchQueryActiveStyle.Render("X"), "X"),
-		"success toast":  stylePrefix(toastStyle.Render("X"), "X"),
-		"kanban divider": stylePrefix(kanbanSepStyle.Render("X"), "X"),
-		"bug icon":       stylePrefix(typeIconStyles[models.TypeBug].Render("X"), "X"),
+		"muted text":     stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("X"), "X"),
+		"active search":  stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("X"), "X"),
+		"success toast":  stylePrefix(lipgloss.NewStyle().Background(lipgloss.Color("42")).Foreground(lipgloss.Color("0")).Bold(true).Render("X"), "X"),
+		"kanban divider": stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("X"), "X"),
+		"bug icon":       stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("X"), "X"),
 	}
 	for name, legacy := range legacyPrefixes {
 		if legacy != "" && strings.Contains(firstOutput, legacy) {
@@ -447,7 +448,7 @@ func TestPhase2BoardEditorStatsAndEmptyStatesUseModelTheme(t *testing.T) {
 		!strings.Contains(stats, stylePrefix(styles.statusChart[models.StatusBlocked].Render("X"), "X")) {
 		t.Fatalf("stats content did not use themed section/chart styles: %q", stats)
 	}
-	if legacy := stylePrefix(statusChartStyles[models.StatusBlocked].Render("X"), "X"); strings.Contains(stats, legacy) {
+	if legacy := stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("X"), "X"); strings.Contains(stats, legacy) {
 		t.Fatalf("stats content leaked legacy td blocked-chart sequence %q", legacy)
 	}
 
