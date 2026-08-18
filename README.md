@@ -544,6 +544,21 @@ The dashboard displays:
 
 Navigate with arrow keys or j/k, refresh with `r`, close with `esc`.
 
+### Sidecar
+
+For a full terminal development environment, **[Sidecar](https://github.com/marcus/sidecar)** embeds `td monitor` alongside live git diffs, file browsing, and multi-agent workspace management:
+
+```
+┌─────────────────────────────┬─────────────────────┐
+│                             │                     │
+│   Claude Code / Cursor      │      Sidecar        │
+│                             │                     │
+│   $ claude                  │   [Git] [Files]     │
+│   > fix the auth bug...     │   [Tasks] [Workspaces]│
+│                             │                     │
+└─────────────────────────────┴─────────────────────┘
+```
+
 ## Issue Lifecycle
 
 ```
@@ -593,7 +608,12 @@ Full documentation is available at [marcus.github.io/td](https://marcus.github.i
 
 ## Built on td
 
+- **[Sidecar](https://github.com/marcus/sidecar)** — Terminal development dashboard embedding `td monitor` alongside real-time git diffs, file browsing, and multi-agent workspace management.
 - **[td-gui](https://github.com/madic-creates/td-gui)** by [@madic-creates](https://github.com/madic-creates) — A local, single-binary web UI for `td` projects with issue detail, structured handoffs, review dialogs, and backlog/swimlane boards.
+- **[myrlin-workbook](https://github.com/therealarthur/myrlin-workbook)** by [@therealarthur](https://github.com/therealarthur) — Browser-based developer workbook and session manager that surfaces `td` issues in doc panels/sidebars and promotes them to worktrees and agent sessions.
+- **[sergeant](https://github.com/callmeradical/sergeant)** by [@callmeradical](https://github.com/callmeradical) — Multi-agent coordination and dispatch CLI with deep `td` integration for findings routing, dispatch runs, and review gates.
+- **[pi-td](https://github.com/espennilsen/pi/tree/main/extensions/pi-td)** by [@espennilsen](https://github.com/espennilsen) — Extension for the [Pi](https://github.com/espennilsen/pi) coding agent harness providing native `td` tools and context hooks.
+- **[llm-agents.nix](https://github.com/numtide/llm-agents.nix)** by [@numtide](https://github.com/numtide) — Nix packages and Flakes for `td` within the LLM agent tooling ecosystem.
 
 ## Contributing
 
