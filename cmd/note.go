@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -84,7 +85,8 @@ Examples:
   td note list --pinned         # show only pinned notes
   td note list --archived       # show only archived notes
   td note list --all            # include archived notes
-  td note list --search "api"   # search by title/content`,
+  td note list --search "api"   # search by title/content
+  td note list --deleted        # show only soft-deleted notes`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		database, err := db.Open(getBaseDir())
@@ -99,6 +101,7 @@ Examples:
 		opts.Search, _ = cmd.Flags().GetString("search")
 
 		showAll, _ := cmd.Flags().GetBool("all")
+		deletedOnly, _ := cmd.Flags().GetBool("deleted")
 
 		if pinned, _ := cmd.Flags().GetBool("pinned"); pinned {
 			b := true
@@ -108,16 +111,38 @@ Examples:
 		if archived, _ := cmd.Flags().GetBool("archived"); archived {
 			b := true
 			opts.Archived = &b
-		} else if !showAll {
+		} else if !showAll && !deletedOnly {
 			// Default: exclude archived
 			b := false
 			opts.Archived = &b
+		}
+
+		opts.IncludeDeleted = deletedOnly
+
+		// The deleted-only filter runs after the query, so the SQL LIMIT
+		// must not truncate the candidate set; re-apply the limit below.
+		requestedLimit := opts.Limit
+		if deletedOnly {
+			opts.Limit = 0
 		}
 
 		notes, err := database.ListNotes(opts)
 		if err != nil {
 			output.Error("failed to list notes: %v", err)
 			return err
+		}
+
+		if deletedOnly {
+			kept := notes[:0]
+			for _, n := range notes {
+				if n.DeletedAt != nil {
+					kept = append(kept, n)
+				}
+			}
+			notes = kept
+			if requestedLimit > 0 && len(notes) > requestedLimit {
+				notes = notes[:requestedLimit]
+			}
 		}
 
 		// JSON output
@@ -159,7 +184,8 @@ var noteShowCmd = &cobra.Command{
 
 Examples:
   td note show nt-abc123
-  td note show nt-abc123 --json`,
+  td note show nt-abc123 --json
+  td note show nt-abc123 --include-deleted`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		database, err := db.Open(getBaseDir())
@@ -169,7 +195,12 @@ Examples:
 		}
 		defer database.Close()
 
-		note, err := database.GetNote(args[0])
+		var note *models.Note
+		if includeDeleted, _ := cmd.Flags().GetBool("include-deleted"); includeDeleted {
+			note, err = database.GetNoteIncludingDeleted(args[0])
+		} else {
+			note, err = database.GetNote(args[0])
+		}
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -296,6 +327,43 @@ var noteDeleteCmd = &cobra.Command{
 		}
 
 		fmt.Printf("DELETED %s\n", args[0])
+		return nil
+	},
+}
+
+var noteRestoreCmd = &cobra.Command{
+	Use:   "restore <id>",
+	Short: "Restore a soft-deleted note",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		isJSON := jsonMode(cmd)
+		emitErr := func(format string, args ...interface{}) {
+			if !isJSON {
+				output.Error(format, args...)
+			}
+		}
+
+		database, err := db.Open(getBaseDir())
+		if err != nil {
+			emitErr("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		note, err := database.RestoreNote(args[0])
+		if err != nil {
+			emitErr("%v", err)
+			return err
+		}
+
+		if isJSON {
+			return output.EmitResult("note_restored", map[string]any{
+				"id":   note.ID,
+				"note": note,
+			})
+		}
+
+		fmt.Printf("RESTORED %s\n", note.ID)
 		return nil
 	},
 }
@@ -437,6 +505,7 @@ func init() {
 	noteCmd.AddCommand(noteShowCmd)
 	noteCmd.AddCommand(noteEditCmd)
 	noteCmd.AddCommand(noteDeleteCmd)
+	noteCmd.AddCommand(noteRestoreCmd)
 	noteCmd.AddCommand(notePinCmd)
 	noteCmd.AddCommand(noteUnpinCmd)
 	noteCmd.AddCommand(noteArchiveCmd)
@@ -452,8 +521,10 @@ func init() {
 	noteListCmd.Flags().StringP("search", "s", "", "Search title/content")
 	noteListCmd.Flags().IntP("limit", "n", 50, "Max results")
 	noteListCmd.Flags().StringP("output", "o", "table", "Output format (table, json)")
+	noteListCmd.Flags().Bool("deleted", false, "Show only soft-deleted notes")
 
 	// noteShowCmd flags
+	noteShowCmd.Flags().Bool("include-deleted", false, "Allow showing a soft-deleted note")
 
 	// noteEditCmd flags
 	noteEditCmd.Flags().StringP("title", "t", "", "New title")
