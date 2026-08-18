@@ -177,6 +177,34 @@ func GetDiffStatsSince(sha string) (*DiffStats, error) {
 	return stats, nil
 }
 
+// GetDiffContent returns the raw unified diff between ref and the working tree.
+func GetDiffContent(ref string) (string, error) {
+	return runGit("diff", ref)
+}
+
+// GetDiffContentStaged returns the raw unified diff of staged changes.
+func GetDiffContentStaged() (string, error) {
+	return runGit("diff", "--cached")
+}
+
+// GetFileAtRef returns the contents of a file at a given git ref.
+func GetFileAtRef(ref, path string) ([]byte, error) {
+	output, err := runGit("show", ref+":"+path)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(output), nil
+}
+
+// GetStagedFile returns the contents of a file from the staging area (index).
+func GetStagedFile(path string) ([]byte, error) {
+	output, err := runGit("show", ":"+path)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(output), nil
+}
+
 // IsRepo checks if we're in a git repository
 func IsRepo() bool {
 	_, err := runGit("rev-parse", "--git-dir")
