@@ -319,8 +319,7 @@ func (m Model) modalContentWidth() int {
 	if modalWidth < 40 {
 		modalWidth = 40
 	}
-	// Content width accounts for border (2) and padding (2) = 4
-	contentWidth := modalWidth - 4
+	contentWidth := modalInnerWidth(modalWidth)
 	if contentWidth < 30 {
 		contentWidth = 30
 	}

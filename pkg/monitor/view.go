@@ -1070,7 +1070,7 @@ func (m Model) renderModal() string {
 		modalHeight = 15
 	}
 
-	contentWidth := modalWidth - 4 // Account for border and padding
+	contentWidth := modalInnerWidth(modalWidth)
 
 	var content strings.Builder
 
@@ -1415,8 +1415,9 @@ func (m Model) wrapStatsModal(content string, width, height int) string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedContent := m.fillModalSurface("\n"+content+"\n", hostContentWidth(width))
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeStats, 1)
+		// The host draws its own border and padding inside this outer box, so it
+		// gets the same outer dimensions the standalone box would occupy.
+		return m.ModalRenderer(paddedContent, width, height, ModalTypeStats, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1634,8 +1635,9 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeHandoffs, 1)
+		// The host draws its own border and padding inside this outer box, so it
+		// gets the same outer dimensions the standalone box would occupy.
+		return m.ModalRenderer(paddedInner, width, height, ModalTypeHandoffs, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1701,8 +1703,9 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeBoardPicker, 1)
+		// The host draws its own border and padding inside this outer box, so it
+		// gets the same outer dimensions the standalone box would occupy.
+		return m.ModalRenderer(paddedInner, width, height, ModalTypeBoardPicker, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1726,8 +1729,8 @@ func (m Model) renderFormModal() string {
 
 	modalWidth, _ := m.formModalDimensions()
 
-	// Set form width to match modal content area (modalWidth minus Padding(1,2) = 4 horizontal chars)
-	formWidth := modalWidth - 4
+	// Set form width to the modal content area.
+	formWidth := modalInnerWidth(modalWidth)
 	if formWidth > 0 {
 		m.FormState.Width = formWidth
 		m.FormState.Form.WithWidth(formWidth)
@@ -1857,8 +1860,7 @@ func (m Model) renderFormModal() string {
 				renderedHeight = maxHeight
 			}
 		}
-		// Add 2 to width: renderer expects outer dimensions with borders
-		return m.ModalRenderer(paddedInner, modalWidth+2, renderedHeight, ModalTypeForm, 1)
+		return m.ModalRenderer(paddedInner, modalWidth, renderedHeight, ModalTypeForm, 1)
 	}
 
 	// Default lipgloss rendering
@@ -2007,11 +2009,24 @@ func (m Model) fillModalSurface(content string, width int) string {
 	return ansifill.Lines(content, ansifill.Code(m.themeOrDefault().Surface), width)
 }
 
-// hostContentWidth converts a modal content width into the interior width a
-// chrome renderer exposes: it receives width+2 and spends one cell per side on
-// the border and one more per side on padding.
+// modalInnerWidth returns the columns available to content inside a modal box
+// of the given outer width.
+//
+// Lip Gloss v2 counts border and padding inside Width, so a Width(outer) box
+// with Padding(1, 2) leaves outer-6 columns. Content built for outer-4 (the v1
+// budget) overruns by two cells and Lip Gloss re-wraps the overrun onto its own
+// unindented line, which is what made wrapped log and description text jagged.
+func modalInnerWidth(outer int) int {
+	return outer - 6
+}
+
+// hostContentWidth converts a modal outer width into the interior width its
+// chrome renderer exposes: the host spends one cell per side on the border and
+// one more per side on padding, so its interior runs two cells wider than the
+// standalone one. Content is wrapped to modalInnerWidth for both; the surface
+// fill covers the difference so the host never pads with unstyled spaces.
 func hostContentWidth(width int) int {
-	return width - 2
+	return width - 4
 }
 
 // wrapModalWithDepth wraps content in a modal box with depth-aware styling
@@ -2057,8 +2072,9 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeIssue, depth)
+		// The host draws its own border and padding inside this outer box, so it
+		// gets the same outer dimensions the standalone box would occupy.
+		return m.ModalRenderer(paddedInner, width, height, ModalTypeIssue, depth)
 	}
 
 	// Default lipgloss rendering
@@ -2096,8 +2112,9 @@ func (m Model) wrapConfirmationModal(content string, width int) string {
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
 		paddedContent := m.fillModalSurface("\n"+content+"\n", hostContentWidth(width))
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeConfirmation, 1)
+		// The host draws its own border and padding inside this outer box, so it
+		// gets the same outer dimensions the standalone box would occupy.
+		return m.ModalRenderer(paddedContent, width, height, ModalTypeConfirmation, 1)
 	}
 
 	// Default lipgloss rendering
@@ -2563,7 +2580,7 @@ func (m Model) renderHelp() string {
 	inner := lipgloss.JoinVertical(lipgloss.Left, content.String(), "", footer)
 	if m.ModalRenderer != nil {
 		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(modalWidth))
-		return m.ModalRenderer(paddedInner, modalWidth+2, modalHeight+2, ModalTypeHelp, 1)
+		return m.ModalRenderer(paddedInner, modalWidth, modalHeight, ModalTypeHelp, 1)
 	}
 
 	// Style the modal

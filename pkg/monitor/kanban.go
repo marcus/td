@@ -555,9 +555,13 @@ func (m Model) renderKanbanView() string {
 	if m.ModalRenderer != nil {
 		// Add vertical padding to match lipgloss Padding behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines manually.
-		paddedContent := "\n" + boxContent + "\n"
-		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
-		return m.ModalRenderer(paddedContent, modalWidth+2, modalHeight+2, ModalTypeKanban, 1)
+		// The standalone box is Width(modalWidth-2) tall by modalHeight, so the
+		// host gets those same outer dimensions and draws its own chrome inside
+		// them. Filling the surface keeps it from padding short lines with
+		// unstyled spaces.
+		outerWidth := modalWidth - 2
+		paddedContent := m.fillModalSurface("\n"+boxContent+"\n", hostContentWidth(outerWidth))
+		return m.ModalRenderer(paddedContent, outerWidth, modalHeight, ModalTypeKanban, 1)
 	}
 	return m.renderKanbanBox(boxContent, modalWidth, modalHeight)
 }

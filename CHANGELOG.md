@@ -2,6 +2,12 @@
 
 All notable changes to td are documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **Wrapped modal text is no longer jagged.** Lip Gloss v2 counts border and padding inside `Width()`, but the legacy monitor modals still budgeted content for the v1 rule (`width-4`). Every wrapped log line, description, and acceptance block ran two cells past the box, and Lip Gloss re-wrapped the overrun onto its own unindented line. Content is now built for `width-6`, and standalone and embedded modals agree on one outer box: a host chrome renderer receives the same outer dimensions the standalone box occupies and its two-cell-thinner chrome exposes a slightly wider interior, which the surface fill covers. Form modal mouse hit-testing followed the same corrected geometry.
+
 ## [v0.59.0] - 2026-08-18
 
 ### Features
