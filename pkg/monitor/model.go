@@ -272,6 +272,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	searchInput.CharLimit = 200
 
 	theme := DefaultTheme()
+	searchInput.SetStyles(themedTextInputStyles(searchInput.Styles(), theme))
 	return Model{
 		DB:                database,
 		SessionID:         sessionID,
@@ -378,6 +379,7 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 	} else {
 		m.theme = normalized
 		m.styles = newMonitorStyles(normalized)
+		m.SearchInput.SetStyles(themedTextInputStyles(m.SearchInput.Styles(), normalized))
 		m.MarkdownTheme = markdownThemeConfig(normalized)
 	}
 	return &m, nil
@@ -397,6 +399,7 @@ func (m *Model) SetTheme(theme Theme) error {
 	markdown := markdownThemeConfig(normalized)
 	m.theme = normalized
 	m.styles = styles
+	m.SearchInput.SetStyles(themedTextInputStyles(m.SearchInput.Styles(), normalized))
 	m.MarkdownTheme = markdown
 	return nil
 }

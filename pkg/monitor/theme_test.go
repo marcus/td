@@ -1,13 +1,34 @@
 package monitor
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
+
+func phase2TestTheme() Theme {
+	return Theme{
+		Primary: "#110001", Secondary: "#220002", Accent: "#330003",
+		Success: "#440004", Warning: "#550005", Error: "#660006", Info: "#770007",
+		TextPrimary: "#880008", TextSecondary: "#990009", TextMuted: "#aa000a", TextSubtle: "#bb000b",
+		TextSelection: "#cc000c", OnPrimary: "#dd000d", OnWarning: "#ee000e", OnError: "#ff000f",
+		Background: "#010101", Surface: "#020202", SurfaceRaised: "#030303", Selection: "#040404",
+		Border: "#050505", BorderMuted: "#060606", BorderActive: "#070707", Link: "#080808",
+	}
+}
+
+func stylePrefix(rendered, marker string) string {
+	if i := strings.Index(rendered, marker); i >= 0 {
+		return rendered[:i]
+	}
+	return rendered
+}
 
 func TestDefaultThemePreservesStandaloneSteelThread(t *testing.T) {
 	m := NewModel(nil, "test", 0, "dev", t.TempDir())
@@ -255,5 +276,159 @@ func TestEmbeddedOptionsThemePrecedenceAndRendererCompatibility(t *testing.T) {
 	}
 	if m.MarkdownTheme == nil || m.MarkdownTheme.SyntaxTheme != "monokai" || m.MarkdownTheme.MarkdownTheme != "light" {
 		t.Fatalf("markdown compatibility state did not derive from Theme: %#v", m.MarkdownTheme)
+	}
+}
+
+func TestPhase2SemanticMappingsUseModelTheme(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	styles := m.renderStyles()
+	searchStyles := m.SearchInput.Styles()
+
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"priority", m.formatPriority(models.PriorityP1), styles.priority[models.PriorityP1].Render("P1")},
+		{"type", m.formatTypeIcon(models.TypeBug), styles.typeIcon[models.TypeBug].Render(typeIcons[models.TypeBug])},
+		{"activity", m.formatActivityBadge("comment"), styles.activityBadge["comment"].Render("[CMT]")},
+		{"review bucket", m.formatCategoryTag(CategoryReviewable), styles.category[CategoryReviewable].Render("[REV]")},
+		{"pending bucket", m.formatCategoryTag(CategoryPendingReview), styles.category[CategoryPendingReview].Render("[PRV]")},
+		{"closed bucket", m.formatCategoryTag(CategoryClosed), styles.category[CategoryClosed].Render("[CLS]")},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Fatalf("got %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+	if got := searchStyles.Focused.Text.Render("query"); !strings.Contains(got, "\x1b[38;2;136;0;8m") {
+		t.Fatalf("focused search text did not use TextPrimary: %q", got)
+	}
+	if got := searchStyles.Focused.Placeholder.Render("search"); !strings.Contains(got, "\x1b[38;2;170;0;10m") {
+		t.Fatalf("focused search placeholder did not use TextMuted: %q", got)
+	}
+}
+
+func TestPhase2CoreRenderersUseContrastingModelPalettes(t *testing.T) {
+	newModel := func(theme Theme) Model {
+		m := NewModel(nil, "test", 0, "dev", t.TempDir())
+		m.Width, m.Height = 96, 30
+		m.ActivePanel = PanelTaskList
+		m.SearchQuery = "theme"
+		m.StatusMessage = "saved"
+		m.LastRefresh = time.Now()
+		m.TaskList = TaskListData{Reviewable: []models.Issue{{ID: "td-review", Type: models.TypeBug, Priority: models.PriorityP1, Status: models.StatusInReview}}}
+		m.TaskListRows = BuildSwimlaneRows(m.TaskList)
+		m.Activity = []ActivityItem{{Type: "comment", IssueID: "td-review", Message: "themed"}}
+		m.BoardMode = BoardMode{Board: &models.Board{Name: "Theme"}, SwimlaneData: m.TaskList}
+		if err := m.SetTheme(theme); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	dark := phase2TestTheme()
+	light := phase2TestTheme()
+	light.Primary, light.Secondary, light.Warning, light.Error, light.Info = "#f10101", "#f20202", "#f30303", "#f40404", "#f50505"
+	light.TextPrimary, light.TextMuted, light.TextSubtle = "#111111", "#222222", "#333333"
+	light.Selection, light.Border, light.BorderActive = "#eeeeee", "#dddddd", "#cccccc"
+
+	first, second := newModel(dark), newModel(light)
+	render := func(m Model) string {
+		return strings.Join([]string{
+			m.renderTaskListPanel(10),
+			m.renderActivityPanel(8),
+			m.renderSearchBar(),
+			m.renderFooter(),
+			m.renderKanbanView(),
+		}, "\n")
+	}
+	firstOutput, secondOutput := render(first), render(second)
+	if firstOutput == secondOutput {
+		t.Fatal("contrasting model palettes rendered identical core monitor output")
+	}
+	for name, want := range map[string]string{
+		"selection":     first.renderStyles().selectionBackground,
+		"review":        stylePrefix(first.renderStyles().category[CategoryReviewable].Render("X"), "X"),
+		"search":        stylePrefix(first.renderStyles().searchActive.Render("X"), "X"),
+		"toast":         stylePrefix(first.renderStyles().toast.Render("X"), "X"),
+		"kanban border": stylePrefix(first.renderStyles().kanbanBox.Render("X"), "╭"),
+	} {
+		if !strings.Contains(firstOutput, want) {
+			t.Errorf("core output missing themed %s sequence %q", name, want)
+		}
+	}
+	if strings.Contains(firstOutput, "\x1b[48;5;237m") {
+		t.Fatal("core output leaked the legacy hardcoded selection background")
+	}
+	legacyPrefixes := map[string]string{
+		"muted text":     stylePrefix(subtleStyle.Render("X"), "X"),
+		"active search":  stylePrefix(searchQueryActiveStyle.Render("X"), "X"),
+		"success toast":  stylePrefix(toastStyle.Render("X"), "X"),
+		"kanban divider": stylePrefix(kanbanSepStyle.Render("X"), "X"),
+		"bug icon":       stylePrefix(typeIconStyles[models.TypeBug].Render("X"), "X"),
+	}
+	for name, legacy := range legacyPrefixes {
+		if legacy != "" && strings.Contains(firstOutput, legacy) {
+			t.Errorf("core output leaked legacy td %s sequence %q", name, legacy)
+		}
+	}
+}
+
+func TestPhase2BoardEditorStatsAndEmptyStatesUseModelTheme(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	styles := m.renderStyles()
+
+	m.BoardEditorPreview = &boardEditorPreviewData{Error: errors.New("bad query")}
+	query := textarea.New()
+	query.SetValue("bad")
+	m.BoardEditorQueryInput = &query
+	if got := m.renderBoardEditorQueryPreview(40); !strings.Contains(got, styles.errorText.Render("Error: bad query")) {
+		t.Fatalf("board editor preview did not use themed error style: %q", got)
+	}
+	if got := m.renderBoardEditorTDQRef(40); !strings.Contains(got, styles.boardEditorHeader.Render("TDQ Quick Reference")) {
+		t.Fatalf("board editor reference did not use themed header: %q", got)
+	}
+
+	m.StatsData = &StatsData{ExtendedStats: &models.ExtendedStats{ByStatus: map[models.Status]int{models.StatusBlocked: 2}}}
+	stats := m.renderStatsContent(50)
+	if !strings.Contains(stats, styles.sectionHeader.Render("STATUS BREAKDOWN")) ||
+		!strings.Contains(stats, stylePrefix(styles.statusChart[models.StatusBlocked].Render("X"), "X")) {
+		t.Fatalf("stats content did not use themed section/chart styles: %q", stats)
+	}
+	if legacy := stylePrefix(statusChartStyles[models.StatusBlocked].Render("X"), "X"); strings.Contains(stats, legacy) {
+		t.Fatalf("stats content leaked legacy td blocked-chart sequence %q", legacy)
+	}
+
+	m.Width = 60
+	empty := m.renderTaskListPanel(8)
+	if !strings.Contains(empty, styles.subtle.Render("No tasks available")) {
+		t.Fatalf("empty task-list state did not use themed muted text: %q", empty)
+	}
+}
+
+func TestPhase2SelectionPreservesNestedForegrounds(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	foreground := m.renderStyles().typeIcon[models.TypeBug].Render("X")
+	got := m.highlightRow(foreground+" plain", 20)
+	if !strings.Contains(got, foreground[:strings.Index(foreground, "X")]) {
+		t.Fatalf("selection removed nested foreground sequence: %q", got)
+	}
+	if strings.Count(got, m.renderStyles().selectionBackground) < 2 {
+		t.Fatalf("selection background was not restored after nested ANSI: %q", got)
+	}
+	if strings.Contains(got, "\x1b[48;5;237m") {
+		t.Fatal("selection used legacy ANSI 237 background")
 	}
 }

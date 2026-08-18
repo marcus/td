@@ -8,7 +8,6 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -208,26 +207,26 @@ func (m *Model) createBoardEditorModal() *modal.Modal {
 // renderBoardEditorQueryPreview renders the live query preview section.
 func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 	var sb strings.Builder
+	styles := m.renderStyles()
 
 	preview := m.BoardEditorPreview
 	if preview == nil {
-		sb.WriteString(subtleStyle.Render("Preview: (loading...)"))
+		sb.WriteString(styles.subtle.Render("Preview: (loading...)"))
 		return sb.String()
 	}
 
 	if m.BoardEditorQueryInput == nil {
-		sb.WriteString(subtleStyle.Render("Preview: (no query input)"))
+		sb.WriteString(styles.subtle.Render("Preview: (no query input)"))
 		return sb.String()
 	}
 	queryStr := m.BoardEditorQueryInput.Value()
 	if queryStr == "" {
-		sb.WriteString(subtleStyle.Render("Preview: (empty query matches all issues)"))
+		sb.WriteString(styles.subtle.Render("Preview: (empty query matches all issues)"))
 		return sb.String()
 	}
 
 	if preview.Error != nil {
-		errStyle := lipgloss.NewStyle().Foreground(errorColor)
-		sb.WriteString(errStyle.Render("Error: " + preview.Error.Error()))
+		sb.WriteString(styles.errorText.Render("Error: " + preview.Error.Error()))
 		return sb.String()
 	}
 
@@ -244,12 +243,12 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 			if maxLen > 0 && len(title) > maxLen {
 				title = title[:maxLen-3] + "..."
 			}
-			sb.WriteString("\n  " + subtleStyle.Render("• "+title))
+			sb.WriteString("\n  " + styles.subtle.Render("• "+title))
 		}
 		if preview.Count < 0 {
-			sb.WriteString("\n  " + subtleStyle.Render("... and more"))
+			sb.WriteString("\n  " + styles.subtle.Render("... and more"))
 		} else if preview.Count > len(preview.Titles) {
-			sb.WriteString(fmt.Sprintf("\n  "+subtleStyle.Render("... and %d more"), preview.Count-len(preview.Titles)))
+			sb.WriteString(fmt.Sprintf("\n  "+styles.subtle.Render("... and %d more"), preview.Count-len(preview.Titles)))
 		}
 	}
 
@@ -260,8 +259,8 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 func (m *Model) renderBoardEditorTDQRef(contentWidth int) string {
 	var sb strings.Builder
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
-	sb.WriteString(headerStyle.Render("TDQ Quick Reference") + "\n")
+	styles := m.renderStyles()
+	sb.WriteString(styles.boardEditorHeader.Render("TDQ Quick Reference") + "\n")
 	sb.WriteString("─────────────────────────────\n")
 	sb.WriteString("Fields: status, type, priority, labels, title\n")
 	sb.WriteString("Status: open, in_progress, blocked, in_review, closed\n")
@@ -272,7 +271,7 @@ func (m *Model) renderBoardEditorTDQRef(contentWidth int) string {
 	sb.WriteString("Sort:   sort:priority  sort:-created  sort:-updated\n")
 	sb.WriteString("Values: @me, today, -7d, EMPTY\n")
 	sb.WriteString("─────────────────────────────\n")
-	sb.WriteString(subtleStyle.Render("Example: type = bug AND priority <= P1"))
+	sb.WriteString(styles.subtle.Render("Example: type = bug AND priority <= P1"))
 
 	return sb.String()
 }

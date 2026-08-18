@@ -237,15 +237,16 @@ func TestClampKanbanColSnapsToNearestOccupied(t *testing.T) {
 
 func TestKanbanColumnLabelsAndColors(t *testing.T) {
 	// Verify all columns have labels and colors
+	styles := NewModel(nil, "test", 0, "dev", t.TempDir()).renderStyles()
 	for _, cat := range kanbanColumnOrder {
 		label := kanbanColumnLabel(cat)
 		if label == "" {
 			t.Errorf("kanbanColumnLabel(%s) returned empty string", cat)
 		}
 
-		color := kanbanColumnColor(cat)
-		if color == nil {
-			t.Errorf("kanbanColumnColor(%s) returned empty string", cat)
+		style, ok := styles.categoryHeader[cat]
+		if !ok || style.Render("column") == "column" {
+			t.Errorf("category header style for %s has no themed color", cat)
 		}
 	}
 }

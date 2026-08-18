@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"fmt"
-	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -49,33 +48,6 @@ func kanbanColumnLabel(cat TaskListCategory) string {
 		return "CLOSED"
 	default:
 		return string(cat)
-	}
-}
-
-// kanbanColumnColor returns the header color for each column category.
-// Colors are derived from the style variables defined in styles.go.
-func kanbanColumnColor(cat TaskListCategory) color.Color {
-	switch cat {
-	case CategoryReviewable:
-		return secondaryColor // purple (in_review)
-	case CategoryReadyToClose:
-		return lipgloss.Color("78") // teal (approved, closable)
-	case CategoryNeedsRework:
-		return warningColor // orange (needs action)
-	case CategoryInProgress:
-		return cyanColor // cyan (in_progress)
-	case CategoryReady:
-		return successColor // green (open/ready)
-	case CategoryPendingReview:
-		return lipgloss.Color("183") // light purple (pending review)
-	case CategoryPendingOther:
-		return lipgloss.Color("103") // muted purple (not your action)
-	case CategoryBlocked:
-		return errorColor // red (blocked)
-	case CategoryClosed:
-		return mutedColor // gray (closed)
-	default:
-		return lipgloss.Color("255")
 	}
 }
 
@@ -414,6 +386,7 @@ type kanbanScrollInfo struct {
 
 // renderKanbanView renders the full kanban overlay content.
 func (m Model) renderKanbanView() string {
+	styles := m.renderStyles()
 	data := m.BoardMode.SwimlaneData
 
 	modalWidth, modalHeight, colWidth, maxVisibleCards := m.kanbanDimensions()
@@ -431,12 +404,12 @@ func (m Model) renderKanbanView() string {
 	if m.BoardMode.Board != nil {
 		boardName = m.BoardMode.Board.Name
 	}
-	titleText := kanbanTitleStyle.Render(fmt.Sprintf(" Kanban: %s ", boardName))
+	titleText := styles.kanbanTitle.Render(fmt.Sprintf(" Kanban: %s ", boardName))
 	fsHint := "f:fullscreen"
 	if m.KanbanFullscreen {
 		fsHint = "f:overlay"
 	}
-	hintText := kanbanHintStyle.Render(fmt.Sprintf("  h/l:cols  j/k:rows  enter:open  %s  esc:close", fsHint))
+	hintText := styles.kanbanHint.Render(fmt.Sprintf("  h/l:cols  j/k:rows  enter:open  %s  esc:close", fsHint))
 
 	header := titleText + hintText
 	headerWidth := lipgloss.Width(header)
@@ -448,13 +421,10 @@ func (m Model) renderKanbanView() string {
 	var colHeaders []string
 	for _, cat := range visible {
 		issues := kanbanColumnIssues(data, cat)
-		color := kanbanColumnColor(cat)
 		label := kanbanColumnLabel(cat)
 		countStr := fmt.Sprintf(" (%d)", len(issues))
 
-		headerStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(color)
+		headerStyle := styles.category[cat].Bold(true)
 
 		// If this column is selected, underline the header
 		if kanbanColumnIndex(cat) == m.KanbanCol {
@@ -472,13 +442,13 @@ func (m Model) renderKanbanView() string {
 	}
 
 	// Separator character
-	sep := kanbanSepStyle.Render("│")
+	sep := styles.kanbanSeparator.Render("│")
 
 	// Build the column header line
 	headerLine := strings.Join(colHeaders, sep)
 
 	// Build separator line
-	divider := kanbanSepStyle.Render(strings.Repeat("─", actualContentWidth))
+	divider := styles.kanbanSeparator.Render(strings.Repeat("─", actualContentWidth))
 
 	// Compute per-visible-column scroll offsets from the order-indexed store.
 	colScrolls := make([]int, numCols)
@@ -606,7 +576,7 @@ func (m Model) renderKanbanScrollIndicatorLine(scrollInfos []kanbanScrollInfo, c
 			if !isUp {
 				arrow = "▼"
 			}
-			indicator := subtleStyle.Render(arrow)
+			indicator := m.renderStyles().subtle.Render(arrow)
 			indicatorWidth := lipgloss.Width(indicator)
 			padding := colWidth - indicatorWidth
 			if padding < 0 {
@@ -625,11 +595,7 @@ func (m Model) renderKanbanScrollIndicatorLine(scrollInfos []kanbanScrollInfo, c
 
 // renderKanbanBox wraps content in a styled box for the kanban overlay view.
 func (m Model) renderKanbanBox(content string, width, height int) string {
-	borderColor := primaryColor
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
+	style := m.renderStyles().kanbanBox.
 		Width(width - 2).
 		Height(height)
 	return style.Render(content)
@@ -637,11 +603,7 @@ func (m Model) renderKanbanBox(content string, width, height int) string {
 
 // renderKanbanFullscreen renders the kanban content to fill the full viewport.
 func (m Model) renderKanbanFullscreen(content string, width, height int) string {
-	borderColor := primaryColor
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
+	style := m.renderStyles().kanbanBox.
 		Width(width - 2).
 		Height(height)
 	return style.Render(content)
@@ -658,8 +620,8 @@ func (m Model) renderKanbanCardLine(issue models.Issue, line, width int, selecte
 	switch line {
 	case 0:
 		// Type icon + title
-		icon := formatTypeIcon(issue.Type)
-		prio := formatPriority(issue.Priority)
+		icon := m.formatTypeIcon(issue.Type)
+		prio := m.formatPriority(issue.Priority)
 		prefix := icon + " " + prio + " "
 		prefixWidth := lipgloss.Width(prefix)
 		titleWidth := cardWidth - prefixWidth
@@ -674,7 +636,7 @@ func (m Model) renderKanbanCardLine(issue models.Issue, line, width int, selecte
 
 	case 1:
 		// Issue ID + status badge
-		idStr := timestampStyle.Render(issue.ID)
+		idStr := m.renderStyles().timestamp.Render(issue.ID)
 		statusStr := m.formatStatus(issue.Status)
 		content = idStr + " " + statusStr
 
@@ -695,7 +657,7 @@ func (m Model) renderKanbanCardLine(issue models.Issue, line, width int, selecte
 
 	// Apply selection highlight
 	if selected {
-		content = highlightRow(content, cardWidth)
+		content = m.highlightRow(content, cardWidth)
 	}
 
 	return content
