@@ -493,6 +493,13 @@ func autoSyncApplyPullBatch(database *db.DB, events []tdsync.Event, deviceID str
 		return fmt.Errorf("store conflicts: %w", err)
 	}
 
+	// Same poison-event handling as the batch pull: deliberate drops and
+	// permanently-unappliable events are recorded and the cursor advances past
+	// them, so autosync cannot wedge either (td-8fe2bc).
+	if err := db.RecordSkippedEventsTx(tx, resolveApplyOutcome(result)); err != nil {
+		return fmt.Errorf("record skipped events: %w", err)
+	}
+
 	if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, lastServerSeq); err != nil {
 		return fmt.Errorf("update sync state: %w", err)
 	}

@@ -449,6 +449,14 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 
 	fields["id"] = entityID
 
+	// Only a fresh insert can orphan a row. An overwrite means the row is
+	// already present, so its parents are too — the FK held when it landed.
+	if !overwritten {
+		if err := checkParentsPresent(tx, entityType, fields); err != nil {
+			return applyResult{}, err
+		}
+	}
+
 	// Filter unknown columns for forward compatibility (spec: ignore unknown fields)
 	validCols, err := getTableColumns(tx, entityType)
 	if err != nil {

@@ -397,6 +397,68 @@ If a conflict overwrote data you need, the `local_data` field in `sync_conflicts
 sqlite3 .todos/issues.db "SELECT local_data FROM sync_conflicts WHERE entity_id='abc123'"
 ```
 
+## Skipped Events
+
+A remote event that **cannot** be applied is skipped and recorded rather than
+retried forever. Before this existed, one unappliable event halted a peer's sync
+permanently: the batch rolled back with the sync cursor preserved, so every
+later pull replayed the same batch, failed on the same event, and rolled back
+again — and no event behind it ever applied.
+
+### The rule: permanent vs. transient
+
+Only a **permanent** failure is skipped. The distinction is whether a retry
+could ever succeed:
+
+| | Examples | Behaviour |
+|---|---|---|
+| **Permanent** | FK / UNIQUE / NOT NULL / CHECK constraint violation, unknown entity or action type, undecodable payload, missing column | Recorded in `sync_skipped_events`; the cursor advances past it so the rest of the stream keeps flowing |
+| **Transient** | `database is locked`, disk I/O error, disk full, timeout, cancelled context | Batch rolls back, cursor is preserved, retried on the next pull — exactly as before |
+
+Anything unrecognised is treated as **transient**. The peer stalls loudly rather
+than silently skipping an event whose nature could not be established;
+quarantine is opt-in per error class, never a catch-all. See
+`IsPermanentApplyError` in `internal/sync/permanent.go`.
+
+### Skip reasons
+
+- **`orphaned_parent`** — a create whose `ON DELETE CASCADE` parent no longer
+  exists locally. This is a **deliberate drop, not an error**. Cascade means the
+  schema itself says the child must not outlive the parent, so there is no state
+  in which applying it is correct, and every other peer replaying the same
+  stream in order also ends without the row. Dropping it is what makes peers
+  agree. Only cascade FKs qualify: a plain FK carries no such guarantee, so a
+  violation there is quarantined instead of dropped.
+- **`quarantined`** — the event failed to apply with an error that cannot
+  succeed on retry. Stepping over it keeps the stream moving.
+
+### Inspecting skipped events
+
+Nothing is discarded silently. Every skip is durably recorded with its
+`server_seq`, entity, and error, and surfaced by `td sync status`:
+
+```bash
+td sync status
+# Skipped events ........ 2 (orphaned_parent=1, quarantined=1)
+#   seq 88  quarantined  create issues/td-z
+#       constraint failed: NOT NULL constraint failed
+#   seq 71  orphaned_parent  create board_issue_positions/bip_x
+#       orphaned board_issue_positions/bip_x: board_id references missing boards/bd-y
+
+td sync status --json   # skipped_events + recent_skipped
+```
+
+The full payload is retained, so a skipped event can always be inspected or
+replayed by hand:
+
+```bash
+sqlite3 .todos/issues.db "SELECT server_seq, reason, error, payload FROM sync_skipped_events"
+```
+
+A non-zero `quarantined` count is worth investigating: it usually means schema
+skew between peers or a genuinely malformed event. An `orphaned_parent` count is
+normal background noise when boards are created and deleted concurrently.
+
 ## Observability
 
 ### Client-side indicators
