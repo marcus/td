@@ -699,7 +699,10 @@ func (m Model) wrapSimpleModal(title, content string, width int) string {
 	titleLine := m.renderStyles().title.Render(title)
 	body := titleLine + "\n\n" + content
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(m.fillModalSurface("\n"+body+"\n", hostContentWidth(width)), width+2, modalHeight+2, ModalTypeNotes, 1)
+		// The standalone box below is Width(width-2); the host gets that same
+		// outer width and spends one border plus one padding cell per side.
+		outerWidth := width - 2
+		return m.ModalRenderer(m.fillModalSurface("\n"+body+"\n", hostContentWidth(outerWidth)), outerWidth, modalHeight, ModalTypeNotes, 1)
 	}
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

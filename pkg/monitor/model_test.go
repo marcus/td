@@ -1723,22 +1723,22 @@ func TestModalContentWidth(t *testing.T) {
 		{
 			name:        "normal terminal 100 chars",
 			termWidth:   100,
-			expectWidth: 76, // (100 * 80 / 100) - 4 = 76
+			expectWidth: 74, // (100 * 80 / 100) - 6 = 74
 		},
 		{
 			name:        "wide terminal 150 chars",
 			termWidth:   150,
-			expectWidth: 96, // capped at 100, minus 4 = 96
+			expectWidth: 94, // capped at 100, minus 6 = 94
 		},
 		{
 			name:        "narrow terminal 50 chars",
 			termWidth:   50,
-			expectWidth: 36, // (50 * 80 / 100) - 4 = 36
+			expectWidth: 34, // (50 * 80 / 100) - 6 = 34
 		},
 		{
 			name:        "very narrow terminal 30 chars",
 			termWidth:   30,
-			expectWidth: 36, // modal min 40, content min 36
+			expectWidth: 34, // modal min 40, content 34
 		},
 	}
 

@@ -32,7 +32,7 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 
 	// Set form width for text wrapping (subtract modal horizontal padding)
 	modalWidth, _ := m.formModalDimensions()
-	formWidth := modalWidth - 4
+	formWidth := modalInnerWidth(modalWidth)
 	m.FormState.Width = formWidth
 	m.FormState.Form.WithWidth(formWidth)
 
@@ -74,7 +74,7 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 
 	// Set form width for text wrapping (subtract modal horizontal padding)
 	modalWidth, _ := m.formModalDimensions()
-	formWidth := modalWidth - 4
+	formWidth := modalInnerWidth(modalWidth)
 	m.FormState.Width = formWidth
 	m.FormState.Form.WithWidth(formWidth)
 
@@ -394,7 +394,7 @@ func (m Model) formScrollForFocusedField() int {
 
 	// Build full inner content (mirrors renderFormModal)
 	modalWidth, _ := m.formModalDimensions()
-	formWidth := modalWidth - 4
+	formWidth := modalInnerWidth(modalWidth)
 	if formWidth > 0 {
 		m.FormState.Form.WithWidth(formWidth)
 	}
@@ -507,7 +507,7 @@ func (m Model) formScrollToBottom() int {
 	}
 
 	modalWidth, _ := m.formModalDimensions()
-	formWidth := modalWidth - 4
+	formWidth := modalInnerWidth(modalWidth)
 	if formWidth > 0 {
 		m.FormState.Form.WithWidth(formWidth)
 	}

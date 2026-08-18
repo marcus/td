@@ -1524,7 +1524,8 @@ func (m Model) handleFormDialogClick(x, y int) (tea.Model, tea.Cmd) {
 	formView := m.FormState.Form.View()
 	formHeight := lipgloss.Height(formView)
 
-	modalOuterWidth := modalWidth + 2
+	// Width() spans the whole box in Lip Gloss v2: border and padding included.
+	modalOuterWidth := modalWidth
 	modalOuterHeight := modalHeight + 2
 
 	modalX := (m.Width - modalOuterWidth) / 2
@@ -1567,7 +1568,8 @@ func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
 	formView := m.FormState.Form.View()
 	formHeight := lipgloss.Height(formView)
 
-	modalOuterWidth := modalWidth + 2
+	// Width() spans the whole box in Lip Gloss v2: border and padding included.
+	modalOuterWidth := modalWidth
 	modalOuterHeight := modalHeight + 2
 
 	modalX := (m.Width - modalOuterWidth) / 2
