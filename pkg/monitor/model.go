@@ -248,6 +248,11 @@ type Model struct {
 
 	// Markdown theme (for embedding with shared theme)
 	MarkdownTheme *MarkdownThemeConfig // Custom markdown/syntax theme (nil = default td colors)
+
+	// Theme and all styles derived from it are model-owned so multiple monitors
+	// can render different palettes safely in the same process.
+	theme  Theme
+	styles monitorStyles
 }
 
 // NewModel creates a new monitor model
@@ -266,6 +271,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	searchInput.SetWidth(50) // Reasonable width for search queries
 	searchInput.CharLimit = 200
 
+	theme := DefaultTheme()
 	return Model{
 		DB:                database,
 		SessionID:         sessionID,
@@ -290,6 +296,8 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		DraggingDivider:   -1,
 		DividerHover:      -1,
 		BaseDir:           baseDir,
+		theme:             theme,
+		styles:            newMonitorStyles(theme),
 	}
 }
 
@@ -324,10 +332,12 @@ type EmbeddedOptions struct {
 	Version       string        // Version string for display
 	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
 	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)
+	Theme         Theme         // Semantic monitor palette; empty fields inherit td defaults
 
 	// MarkdownTheme configures markdown rendering to share themes with embedder.
 	// Pass colors from your theme to get consistent syntax highlighting.
-	// If nil, uses td's default ANSI 256 color palette.
+	// If nil, uses td's default ANSI 256 color palette. Deprecated: Theme takes
+	// precedence when supplied and will become the sole theming contract.
 	MarkdownTheme *MarkdownThemeConfig
 }
 
@@ -336,6 +346,15 @@ type EmbeddedOptions struct {
 // Model values are copied in Update().
 // The caller must call Close() when done to release resources.
 func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
+	var normalized Theme
+	var err error
+	if !themeIsZero(opts.Theme) {
+		normalized, err = normalizedTheme(opts.Theme)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	resolvedBaseDir := db.ResolveBaseDir(opts.BaseDir)
 
 	// Use shared DB to prevent connection leaks on Model value copies
@@ -354,8 +373,42 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 	m.Embedded = true
 	m.PanelRenderer = opts.PanelRenderer
 	m.ModalRenderer = opts.ModalRenderer
-	m.MarkdownTheme = opts.MarkdownTheme
+	if themeIsZero(opts.Theme) {
+		m.MarkdownTheme = opts.MarkdownTheme
+	} else {
+		m.theme = normalized
+		m.styles = newMonitorStyles(normalized)
+		m.MarkdownTheme = markdownThemeConfig(normalized)
+	}
 	return &m, nil
+}
+
+// SetTheme atomically validates and applies a semantic palette to the monitor.
+// It changes presentation state only: database, polling, navigation, selection,
+// modal, and form state are left untouched. Call it from the host's Bubble Tea
+// goroutine rather than concurrently with Update or View.
+func (m *Model) SetTheme(theme Theme) error {
+	normalized, err := normalizedTheme(theme)
+	if err != nil {
+		return err
+	}
+
+	styles := newMonitorStyles(normalized)
+	markdown := markdownThemeConfig(normalized)
+	m.theme = normalized
+	m.styles = styles
+	m.MarkdownTheme = markdown
+	return nil
+}
+
+func markdownThemeConfig(theme Theme) *MarkdownThemeConfig {
+	if theme.SyntaxTheme == "" && theme.MarkdownTheme == "" {
+		return nil
+	}
+	return &MarkdownThemeConfig{
+		SyntaxTheme:   theme.SyntaxTheme,
+		MarkdownTheme: theme.MarkdownTheme,
+	}
 }
 
 // Close releases resources held by an embedded monitor.

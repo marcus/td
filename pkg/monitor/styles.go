@@ -357,7 +357,10 @@ func renderButtonPair(leftLabel, rightLabel string, leftFocused, rightFocused, l
 
 // highlightRow applies selection highlight to entire row width, preserving text colors
 func highlightRow(line string, width int) string {
-	bgCode := "\x1b[48;5;237m" // Background color 237
+	return highlightRowWithBackground(line, width, "\x1b[48;5;237m")
+}
+
+func highlightRowWithBackground(line string, width int, bgCode string) string {
 	reset := "\x1b[0m"
 
 	// First, truncate if line is too wide (ANSI-aware truncation)

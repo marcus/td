@@ -646,7 +646,7 @@ func (m Model) renderTaskListPanel(height int) string {
 		line := fmt.Sprintf("%s %s", tag, issueStr)
 
 		if isActive && cursor == i {
-			line = highlightRow(line, m.Width-4)
+			line = m.highlightRow(line, m.Width-4)
 		}
 
 		content.WriteString(line)
@@ -1210,11 +1210,11 @@ func (m Model) renderModal() string {
 			taskLine := fmt.Sprintf("%s %s %s %s",
 				formatTypeIcon(task.Type),
 				subtleStyle.Render(task.ID),
-				formatStatus(task.Status),
+				m.formatStatus(task.Status),
 				truncateString(task.Title, contentWidth-29))
 
 			if modal.TaskSectionFocused && i == modal.EpicTasksCursor {
-				taskLine = epicTaskSelectedStyle.Render("> " + formatTypeIcon(task.Type) + " " + task.ID + " " + formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-29))
+				taskLine = epicTaskSelectedStyle.Render("> " + formatTypeIcon(task.Type) + " " + task.ID + " " + m.formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-29))
 			} else {
 				taskLine = prefix + taskLine
 			}
@@ -1270,7 +1270,7 @@ func (m Model) renderModal() string {
 				depLine := fmt.Sprintf("%s %s %s %s",
 					formatTypeIcon(dep.Type),
 					titleStyle.Render(dep.ID),
-					formatStatus(dep.Status),
+					m.formatStatus(dep.Status),
 					truncateString(dep.Title, contentWidth-24))
 				if modal.BlockedBySectionFocused && i == modal.BlockedByCursor {
 					depLine = blockedBySelectedStyle.Render("> " + depLine)
@@ -1309,7 +1309,7 @@ func (m Model) renderModal() string {
 			depLine := fmt.Sprintf("%s %s %s %s",
 				formatTypeIcon(dep.Type),
 				titleStyle.Render(dep.ID),
-				formatStatus(dep.Status),
+				m.formatStatus(dep.Status),
 				truncateString(dep.Title, contentWidth-24))
 			if modal.BlocksSectionFocused && i == modal.BlocksCursor {
 				depLine = blocksSelectedStyle.Render("> " + depLine)
@@ -2494,11 +2494,12 @@ func (m Model) determinePanelState(panel Panel) PanelState {
 
 // wrapPanel wraps content in a panel with title and border
 func (m Model) wrapPanel(title, content string, height int, panel Panel) string {
+	styles := m.renderStyles()
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.PanelRenderer != nil {
 		state := m.determinePanelState(panel)
 		// Render title
-		titleStr := panelTitleStyle.Render(title)
+		titleStr := styles.panelTitle.Render(title)
 		// Calculate content width
 		contentWidth := m.Width - 4 // Account for border and padding
 		// Truncate/pad content to fit
@@ -2525,11 +2526,11 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 	}
 
 	// Default lipgloss rendering
-	style := panelStyle
+	style := styles.panel
 	if m.ActivePanel == panel {
-		style = activePanelStyle
+		style = styles.activePanel
 	} else if m.HoverPanel == panel {
-		style = hoverPanelStyle
+		style = styles.hoverPanel
 	}
 
 	// Override style for divider drag/hover feedback
@@ -2543,14 +2544,14 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 
 	if dividerForPanel >= 0 {
 		if m.DraggingDivider == dividerForPanel {
-			style = dividerActivePanelStyle
+			style = styles.dividerActivePanel
 		} else if m.DividerHover == dividerForPanel && m.DraggingDivider < 0 {
-			style = dividerHoverPanelStyle
+			style = styles.dividerHoverPanel
 		}
 	}
 
 	// Render title
-	titleStr := panelTitleStyle.Render(title)
+	titleStr := styles.panelTitle.Render(title)
 
 	// Calculate content width
 	contentWidth := m.Width - 4 // Account for border and padding

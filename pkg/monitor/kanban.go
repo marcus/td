@@ -675,7 +675,7 @@ func (m Model) renderKanbanCardLine(issue models.Issue, line, width int, selecte
 	case 1:
 		// Issue ID + status badge
 		idStr := timestampStyle.Render(issue.ID)
-		statusStr := formatStatus(issue.Status)
+		statusStr := m.formatStatus(issue.Status)
 		content = idStr + " " + statusStr
 
 	case 2:
