@@ -401,6 +401,7 @@ func (m *Model) SetTheme(theme Theme) error {
 	m.styles = styles
 	m.SearchInput.SetStyles(themedTextInputStyles(normalized))
 	m.MarkdownTheme = markdown
+	m.rethemeDeclarativeModals(normalized)
 	return nil
 }
 

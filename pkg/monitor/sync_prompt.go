@@ -21,7 +21,7 @@ const (
 
 // buildSyncPromptListModal builds the list-phase modal showing remote projects.
 func (m *Model) buildSyncPromptListModal(projects []syncclient.ProjectResponse) *modal.Modal {
-	md := modal.New("SYNC THIS PROJECT?",
+	md := m.newModal("SYNC THIS PROJECT?", ModalTypeSync,
 		modal.WithWidth(55),
 		modal.WithVariant(modal.VariantInfo),
 	)
@@ -65,7 +65,7 @@ func (m *Model) buildSyncPromptListModal(projects []syncclient.ProjectResponse) 
 
 // buildSyncPromptCreateModal builds the create-phase modal with a name input.
 func (m *Model) buildSyncPromptCreateModal() *modal.Modal {
-	md := modal.New("CREATE SYNC PROJECT",
+	md := m.newModal("CREATE SYNC PROJECT", ModalTypeSync,
 		modal.WithWidth(55),
 		modal.WithVariant(modal.VariantInfo),
 		modal.WithPrimaryAction("create_confirm"),

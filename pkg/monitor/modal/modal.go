@@ -15,6 +15,8 @@ type Modal struct {
 	showHints       bool
 	primaryAction   string
 	closeOnBackdrop bool
+	styles          styles
+	chromeRenderer  ChromeRenderer
 
 	// State (managed internally)
 	focusIdx     int      // Current focused element index in focusIDs
@@ -22,6 +24,10 @@ type Modal struct {
 	focusIDs     []string // Ordered list of focusable IDs (built during Render)
 	scrollOffset int      // Content scroll position in lines
 }
+
+// ChromeRenderer lets an embedder own only the outer modal frame. The content
+// passed to it has already been rendered with this modal's instance theme.
+type ChromeRenderer func(content string, width, height int) string
 
 // New creates a new Modal with the given title and options.
 func New(title string, opts ...Option) *Modal {
@@ -31,6 +37,7 @@ func New(title string, opts ...Option) *Modal {
 		width:           DefaultWidth,
 		showHints:       true,
 		closeOnBackdrop: true,
+		styles:          newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -40,8 +47,22 @@ func New(title string, opts ...Option) *Modal {
 
 // AddSection adds a section to the modal. Returns the modal for chaining.
 func (m *Modal) AddSection(s Section) *Modal {
+	applySectionStyles(s, m.styles)
 	m.sections = append(m.sections, s)
 	return m
+}
+
+// SetTheme replaces only presentation state. Focus, hover, scroll and child
+// input values are preserved.
+func (m *Modal) SetTheme(theme Theme) {
+	m.setTheme(theme)
+}
+
+func (m *Modal) setTheme(theme Theme) {
+	m.styles = newStyles(theme)
+	for _, section := range m.sections {
+		applySectionStyles(section, m.styles)
+	}
 }
 
 // Render renders the modal and registers hit regions.

@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -49,6 +50,112 @@ func TestNewWithOptions(t *testing.T) {
 	}
 	if m.closeOnBackdrop {
 		t.Errorf("expected closeOnBackdrop false, got %v", m.closeOnBackdrop)
+	}
+}
+
+func TestDefaultThemePreservesStandaloneStyles(t *testing.T) {
+	m := New("Default")
+	wantBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("212")).
+		Background(lipgloss.Color("235")).
+		Padding(1, 2).
+		Width(DefaultWidth)
+	if got, want := m.modalStyle(DefaultWidth).Render("body"), wantBox.Render("body"); got != want {
+		t.Fatalf("default modal box appearance changed:\n got %q\nwant %q", got, want)
+	}
+	if got, want := m.renderTitleLine("Default"), lipgloss.NewStyle().Bold(true).Render("Default"); got != want {
+		t.Fatalf("default modal title appearance changed: got %q, want %q", got, want)
+	}
+	if got, want := m.styles.body.Render("body"), "body"; got != want {
+		t.Fatalf("default body appearance changed: got %q, want %q", got, want)
+	}
+}
+
+func TestInstanceThemeCoversVariantsAndBuiltInSections(t *testing.T) {
+	theme := Theme{
+		Primary: "#110001", Warning: "#220002", Error: "#330003", Info: "#440004",
+		TextPrimary: "#550005", TextSecondary: "#660006", TextMuted: "#770007",
+		TextSelection: "#880008", OnPrimary: "#990009", OnError: "#aa000a",
+		Surface: "#bb000b", SurfaceRaised: "#cc000c", Selection: "#dd000d",
+		Border: "#ee000e", BorderMuted: "#ff000f",
+	}
+	variants := []struct {
+		name    string
+		variant Variant
+		color   string
+	}{
+		{"default", VariantDefault, theme.Primary},
+		{"warning", VariantWarning, theme.Warning},
+		{"danger", VariantDanger, theme.Error},
+		{"info", VariantInfo, theme.Info},
+	}
+	for _, tt := range variants {
+		t.Run(tt.name, func(t *testing.T) {
+			cursor := 0
+			m := New("Themed", WithTheme(theme), WithVariant(tt.variant)).
+				AddSection(Text("body")).
+				AddSection(List("items", []ListItem{{ID: "one", Label: "selected"}}, &cursor)).
+				AddSection(Buttons(Btn(" Delete ", "delete", BtnDanger())))
+			got := m.Render(80, 24, nil)
+			for name, want := range map[string]string{
+				"variant": lipgloss.NewStyle().Foreground(lipgloss.Color(tt.color)).Render("X"),
+				"body":    m.styles.body.Render("body"),
+				"list":    m.styles.listItemFocused.Render("selected"),
+			} {
+				prefix := strings.Split(want, "X")[0]
+				if name != "variant" {
+					prefix = want
+				}
+				if !strings.Contains(got, prefix) {
+					t.Errorf("render missing themed %s sequence %q: %q", name, prefix, got)
+				}
+			}
+			buttonCore := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(theme.TextSecondary)).
+				Background(lipgloss.Color(theme.SurfaceRaised)).
+				Render(" Delete ")
+			if !strings.Contains(got, buttonCore) {
+				t.Errorf("render missing themed danger button core %q: %q", buttonCore, got)
+			}
+		})
+	}
+}
+
+func TestModalThemesAreIsolatedAndRethemePreservesState(t *testing.T) {
+	input := textinput.New()
+	input.SetValue("draft")
+	first := New("First", WithTheme(Theme{Primary: "#120001", Surface: "#120002"}), WithHints(false)).
+		AddSection(Input("name", &input)).
+		AddSection(Buttons(Btn(" Save ", "save")))
+	first.Render(60, 16, nil)
+	first.SetFocus("save")
+	first.Scroll(4)
+	beforeFocus, beforeScroll := first.FocusedID(), first.ScrollOffset()
+
+	second := New("Second", WithTheme(Theme{Primary: "#210001", Surface: "#210002"}), WithHints(false)).
+		AddSection(Text("body"))
+	firstBefore := first.Render(60, 16, nil)
+	first.Scroll(4)
+	beforeScroll = first.ScrollOffset()
+	secondOutput := second.Render(60, 16, nil)
+	if firstBefore == secondOutput {
+		t.Fatal("two modal instances with different themes rendered identically")
+	}
+
+	first.SetTheme(Theme{Primary: "#310001", Surface: "#310002", TextPrimary: "#310003"})
+	if got := first.InputValue("name"); got != "draft" {
+		t.Fatalf("retheme changed input value: %q", got)
+	}
+	if first.FocusedID() != beforeFocus || first.ScrollOffset() != beforeScroll {
+		t.Fatalf("retheme changed modal state: focus %q->%q scroll %d->%d", beforeFocus, first.FocusedID(), beforeScroll, first.ScrollOffset())
+	}
+	firstAfter := first.Render(60, 16, nil)
+	if firstAfter == firstBefore {
+		t.Fatal("SetTheme did not repaint the existing modal")
+	}
+	if got := second.Render(60, 16, nil); got != secondOutput {
+		t.Fatal("retheming first modal contaminated second modal")
 	}
 }
 

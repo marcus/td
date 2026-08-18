@@ -27,6 +27,22 @@ func WithVariant(v Variant) Option {
 	}
 }
 
+// WithTheme supplies the instance-owned palette used by modal chrome and all
+// built-in sections.
+func WithTheme(theme Theme) Option {
+	return func(m *Modal) {
+		m.setTheme(theme)
+	}
+}
+
+// WithChromeRenderer delegates the outer frame while retaining modal-owned,
+// themed inner content and interaction layout.
+func WithChromeRenderer(renderer ChromeRenderer) Option {
+	return func(m *Modal) {
+		m.chromeRenderer = renderer
+	}
+}
+
 // WithHints enables the keyboard hint line at the bottom.
 func WithHints(show bool) Option {
 	return func(m *Modal) {

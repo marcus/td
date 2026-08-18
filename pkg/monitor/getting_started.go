@@ -16,7 +16,7 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 		fileName = filepath.Base(m.AgentFilePath)
 	}
 
-	md := modal.New("Welcome to td!", modal.WithWidth(60), modal.WithHints(false))
+	md := m.newModal("Welcome to td!", ModalTypeHelp, modal.WithWidth(60), modal.WithHints(false))
 
 	md.AddSection(modal.Text("Task management for AI agents."))
 	md.AddSection(modal.Spacer())

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -397,7 +398,7 @@ func (m *Model) createStatsModal() *modal.Modal {
 		modalWidth = 50
 	}
 
-	md := modal.New("Statistics",
+	md := m.newModal("Statistics", ModalTypeStats,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantDefault), // Use primary color (green)
 		modal.WithHints(false),                  // No hints, we have our own footer
@@ -448,7 +449,7 @@ func (m *Model) createTDQHelpModal() *modal.Modal {
 		modalWidth = 50
 	}
 
-	md := modal.New("TDQ Query Syntax",
+	md := m.newModal("TDQ Query Syntax", ModalTypeHelp,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantInfo), // Cyan border for info
 		modal.WithHints(false),               // No hints, we have our own footer
@@ -458,7 +459,7 @@ func (m *Model) createTDQHelpModal() *modal.Modal {
 	md.AddSection(modal.Custom(
 		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
 			return modal.RenderedSection{
-				Content: m.Keymap.GenerateTDQHelp(),
+				Content: m.renderStyles().title.Render(ansi.Strip(m.Keymap.GenerateTDQHelp())),
 			}
 		},
 		nil, // No update handling needed
@@ -511,7 +512,7 @@ func (m *Model) createHandoffsModal() *modal.Modal {
 		modalWidth = 50
 	}
 
-	md := modal.New("Recent Handoffs",
+	md := m.newModal("Recent Handoffs", ModalTypeHandoffs,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantDefault), // Green variant
 		modal.WithHints(false),                  // No hints, we have our own footer
@@ -611,7 +612,7 @@ func (m *Model) createBoardPickerModal() *modal.Modal {
 		modalWidth = 40
 	}
 
-	md := modal.New(fmt.Sprintf("SELECT BOARD (%d)", len(m.AllBoards)),
+	md := m.newModal(fmt.Sprintf("SELECT BOARD (%d)", len(m.AllBoards)), ModalTypeBoardPicker,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantDefault), // Purple/primary color (212)
 		modal.WithHints(false),                  // No hints, we have our own footer
@@ -717,7 +718,7 @@ func (m *Model) createDeleteConfirmModal() *modal.Modal {
 	}
 	title := action + " " + m.ConfirmIssueID + "?"
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeConfirmation,
 		modal.WithWidth(width),
 		modal.WithVariant(modal.VariantDanger), // Red border for destructive action
 		modal.WithHints(false),                 // We use custom hint text
@@ -805,7 +806,7 @@ func (m *Model) createCloseConfirmModal() *modal.Modal {
 
 	title := fmt.Sprintf("Close %s?", m.CloseConfirmIssueID)
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeConfirmation,
 		modal.WithWidth(width),
 		modal.WithVariant(modal.VariantDanger), // Red border for destructive action
 		modal.WithHints(false),                 // We use custom hint text
@@ -904,7 +905,7 @@ func (m *Model) createSelfReviewConfirmModal() *modal.Modal {
 
 	title := fmt.Sprintf("Approve %s — who reviewed it?", m.SelfReviewConfirmIssueID)
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeConfirmation,
 		modal.WithWidth(width),
 		modal.WithVariant(modal.VariantDanger),
 		modal.WithHints(false),
@@ -998,7 +999,7 @@ func (m *Model) closeRecordReviewModal() {
 func (m *Model) createRecordReviewModal() *modal.Modal {
 	width := 60
 	title := fmt.Sprintf("Record review for %s?", m.RecordReviewIssueID)
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeConfirmation,
 		modal.WithWidth(width),
 		modal.WithHints(false),
 		modal.WithPrimaryAction("confirm"),
@@ -1303,7 +1304,7 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	title := activityDetailTitle(item)
 	variant := activityDetailVariant(item)
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeActivity,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(variant),
 		modal.WithHints(false),
@@ -1314,7 +1315,7 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	if item.SessionID != "" {
 		header += "  session:" + truncateSession(item.SessionID)
 	}
-	md.AddSection(modal.Text(subtleStyle.Render(header)))
+	md.AddSection(modal.Text(m.renderStyles().subtle.Render(header)))
 	md.AddSection(modal.Spacer())
 
 	// Content section adapts based on type
@@ -1419,9 +1420,10 @@ func (m Model) renderActivityDetailContent(contentWidth int) string {
 
 // renderLogDetail renders log entry detail
 func (m Model) renderLogDetail(b *strings.Builder, item *ActivityItem, width int) {
+	styles := m.renderStyles()
 	// Type badge
 	if item.LogType != "" {
-		badge := logTypeBadge(item.LogType)
+		badge := m.logTypeBadge(item.LogType)
 		b.WriteString(badge + "\n\n")
 	}
 
@@ -1431,8 +1433,8 @@ func (m Model) renderLogDetail(b *strings.Builder, item *ActivityItem, width int
 	// Issue link
 	if item.IssueID != "" {
 		b.WriteString("\n\n")
-		b.WriteString(subtleStyle.Render("Issue: "))
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		b.WriteString(styles.subtle.Render("Issue: "))
+		b.WriteString(styles.title.Render(item.IssueID))
 		if item.IssueTitle != "" {
 			b.WriteString(" " + item.IssueTitle)
 		}
@@ -1441,14 +1443,15 @@ func (m Model) renderLogDetail(b *strings.Builder, item *ActivityItem, width int
 
 // renderCommentDetail renders comment detail
 func (m Model) renderCommentDetail(b *strings.Builder, item *ActivityItem, width int) {
+	styles := m.renderStyles()
 	// Full comment text
 	b.WriteString(item.Message)
 
 	// Issue link
 	if item.IssueID != "" {
 		b.WriteString("\n\n")
-		b.WriteString(subtleStyle.Render("Issue: "))
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		b.WriteString(styles.subtle.Render("Issue: "))
+		b.WriteString(styles.title.Render(item.IssueID))
 		if item.IssueTitle != "" {
 			b.WriteString(" " + item.IssueTitle)
 		}
@@ -1457,32 +1460,33 @@ func (m Model) renderCommentDetail(b *strings.Builder, item *ActivityItem, width
 
 // renderActionDetail renders action detail based on entity type
 func (m Model) renderActionDetail(b *strings.Builder, item *ActivityItem, width int) {
+	styles := m.renderStyles()
 	// Action description
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.Message))
+	b.WriteString(styles.title.Render(item.Message))
 	b.WriteString("\n")
 
 	switch item.EntityType {
 	case "issue":
-		renderIssueActionDiff(b, item)
+		m.renderIssueActionDiff(b, item)
 	case "issue_dependencies":
-		renderDependencyDetail(b, item)
+		m.renderDependencyDetail(b, item)
 	case "issue_files":
-		renderFileDetail(b, item)
+		m.renderFileDetail(b, item)
 	case "board":
-		renderBoardDetail(b, item)
+		m.renderBoardDetail(b, item)
 	case "handoff":
-		renderHandoffDetail(b, item)
+		m.renderHandoffDetail(b, item)
 	case "note", "notes":
-		renderNoteDetail(b, item)
+		m.renderNoteDetail(b, item)
 	default:
-		renderGenericActionDetail(b, item)
+		m.renderGenericActionDetail(b, item)
 	}
 
 	// Issue link
 	if item.IssueID != "" {
 		b.WriteString("\n")
-		b.WriteString(subtleStyle.Render("Entity: "))
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(item.IssueID))
+		b.WriteString(styles.subtle.Render("Entity: "))
+		b.WriteString(styles.title.Render(item.IssueID))
 		if item.IssueTitle != "" {
 			b.WriteString(" " + item.IssueTitle)
 		}
@@ -1490,7 +1494,7 @@ func (m Model) renderActionDetail(b *strings.Builder, item *ActivityItem, width 
 }
 
 // renderIssueActionDiff shows before/after for issue state changes
-func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 	if item.PreviousData == "" && item.NewData == "" {
 		return
 	}
@@ -1517,7 +1521,7 @@ func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 		}
 		if prevVal != nextVal && (prevVal != "" || nextVal != "") {
 			if changes == 0 {
-				b.WriteString("\n" + subtleStyle.Render("Changes:") + "\n")
+				b.WriteString("\n" + m.renderStyles().subtle.Render("Changes:") + "\n")
 			}
 			b.WriteString(fmt.Sprintf("  %s: %s → %s\n", field, prevVal, nextVal))
 			changes++
@@ -1526,7 +1530,7 @@ func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 }
 
 // renderDependencyDetail shows dependency relationship info
-func renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	src := item.NewData
 	if src == "" {
@@ -1537,16 +1541,16 @@ func renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
 	}
 	if data != nil {
 		if issueID, ok := data["issue_id"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("Issue: ") + issueID)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Issue: ") + issueID)
 		}
 		if depID, ok := data["depends_on_id"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("Depends on: ") + depID)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Depends on: ") + depID)
 		}
 	}
 }
 
 // renderFileDetail shows file link info
-func renderFileDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderFileDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	src := item.NewData
 	if src == "" {
@@ -1557,32 +1561,32 @@ func renderFileDetail(b *strings.Builder, item *ActivityItem) {
 	}
 	if data != nil {
 		if path, ok := data["file_path"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("File: ") + path)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("File: ") + path)
 		}
 		if role, ok := data["role"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("Role: ") + role)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Role: ") + role)
 		}
 	}
 }
 
 // renderBoardDetail shows board change info
-func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderBoardDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
 		_ = json.Unmarshal([]byte(item.NewData), &data)
 	}
 	if data != nil {
 		if name, ok := data["name"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("Board: ") + name)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Board: ") + name)
 		}
 		if query, ok := data["query"].(string); ok && query != "" {
-			b.WriteString("\n" + subtleStyle.Render("Query: ") + query)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Query: ") + query)
 		}
 	}
 }
 
 // renderHandoffDetail shows handoff done/remaining/decisions/uncertain
-func renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
 		_ = json.Unmarshal([]byte(item.NewData), &data)
@@ -1591,18 +1595,18 @@ func renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
 		return
 	}
 
-	renderHandoffSection(b, data, "done", "Done")
-	renderHandoffSection(b, data, "remaining", "Remaining")
-	renderHandoffSection(b, data, "decisions", "Decisions")
-	renderHandoffSection(b, data, "uncertain", "Uncertain")
+	m.renderHandoffSection(b, data, "done", "Done")
+	m.renderHandoffSection(b, data, "remaining", "Remaining")
+	m.renderHandoffSection(b, data, "decisions", "Decisions")
+	m.renderHandoffSection(b, data, "uncertain", "Uncertain")
 
 	if issueID, ok := data["issue_id"].(string); ok && issueID != "" {
-		b.WriteString("\n" + subtleStyle.Render("Issue: ") + issueID)
+		b.WriteString("\n" + m.renderStyles().subtle.Render("Issue: ") + issueID)
 	}
 }
 
 // renderHandoffSection renders a single handoff list section
-func renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, label string) {
+func (m Model) renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, label string) {
 	raw, ok := data[key]
 	if !ok {
 		return
@@ -1625,14 +1629,14 @@ func renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, 
 		return
 	}
 
-	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render(label+":") + "\n")
+	b.WriteString("\n" + m.renderStyles().title.Render(label+":") + "\n")
 	for _, item := range items {
 		b.WriteString("  • " + item + "\n")
 	}
 }
 
 // renderNoteDetail shows note content
-func renderNoteDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderNoteDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	src := item.NewData
 	if src == "" {
@@ -1643,54 +1647,56 @@ func renderNoteDetail(b *strings.Builder, item *ActivityItem) {
 	}
 	if data != nil {
 		if title, ok := data["title"].(string); ok {
-			b.WriteString("\n" + subtleStyle.Render("Title: ") + title)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Title: ") + title)
 		}
 		if content, ok := data["content"].(string); ok && content != "" {
 			preview := content
 			if len(preview) > 200 {
 				preview = preview[:197] + "..."
 			}
-			b.WriteString("\n" + subtleStyle.Render("Content: ") + preview)
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Content: ") + preview)
 		}
 		if pinned, ok := data["pinned"].(bool); ok && pinned {
-			b.WriteString("\n" + subtleStyle.Render("Pinned: ") + "yes")
+			b.WriteString("\n" + m.renderStyles().subtle.Render("Pinned: ") + "yes")
 		}
 	}
 }
 
 // renderGenericActionDetail shows raw data for unknown action types
-func renderGenericActionDetail(b *strings.Builder, item *ActivityItem) {
+func (m Model) renderGenericActionDetail(b *strings.Builder, item *ActivityItem) {
 	if item.EntityType != "" {
-		b.WriteString("\n" + subtleStyle.Render("Entity type: ") + item.EntityType)
+		b.WriteString("\n" + m.renderStyles().subtle.Render("Entity type: ") + item.EntityType)
 	}
 	if item.NewData != "" && len(item.NewData) < 200 {
-		b.WriteString("\n" + subtleStyle.Render("Data: ") + item.NewData)
+		b.WriteString("\n" + m.renderStyles().subtle.Render("Data: ") + item.NewData)
 	}
 }
 
 // logTypeBadge returns a styled badge for log types
-func logTypeBadge(logType models.LogType) string {
+func (m Model) logTypeBadge(logType models.LogType) string {
+	theme := m.themeOrDefault()
 	style := lipgloss.NewStyle().Padding(0, 1)
+	background, foreground := theme.Border, theme.TextSelection
+	label := strings.ToUpper(string(logType))
 	switch logType {
 	case models.LogTypeProgress:
-		return style.Background(lipgloss.Color("27")).Foreground(lipgloss.Color("255")).Render("PROGRESS")
+		background, foreground, label = theme.Info, theme.OnWarning, "PROGRESS"
 	case models.LogTypeDecision:
-		return style.Background(lipgloss.Color("135")).Foreground(lipgloss.Color("255")).Render("DECISION")
+		background, foreground, label = theme.Secondary, theme.OnPrimary, "DECISION"
 	case models.LogTypeBlocker:
-		return style.Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Render("BLOCKER")
+		background, foreground, label = theme.Error, theme.OnError, "BLOCKER"
 	case models.LogTypeHypothesis:
-		return style.Background(lipgloss.Color("208")).Foreground(lipgloss.Color("255")).Render("HYPOTHESIS")
+		background, foreground, label = theme.Accent, theme.OnWarning, "HYPOTHESIS"
 	case models.LogTypeTried:
-		return style.Background(lipgloss.Color("214")).Foreground(lipgloss.Color("255")).Render("TRIED")
+		background, foreground, label = theme.Warning, theme.OnWarning, "TRIED"
 	case models.LogTypeResult:
-		return style.Background(lipgloss.Color("40")).Foreground(lipgloss.Color("255")).Render("RESULT")
+		background, foreground, label = theme.Success, theme.OnWarning, "RESULT"
 	case models.LogTypeOrchestration:
-		return style.Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Render("ORCHESTRATION")
+		background, foreground, label = theme.Info, theme.OnWarning, "ORCHESTRATION"
 	case models.LogTypeSecurity:
-		return style.Background(lipgloss.Color("160")).Foreground(lipgloss.Color("255")).Render("SECURITY")
-	default:
-		return style.Background(lipgloss.Color("240")).Foreground(lipgloss.Color("255")).Render(strings.ToUpper(string(logType)))
+		background, foreground, label = theme.Error, theme.OnError, "SECURITY"
 	}
+	return style.Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground)).Render(label)
 }
 
 // handleActivityDetailAction handles actions from the activity detail modal

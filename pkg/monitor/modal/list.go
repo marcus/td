@@ -23,6 +23,7 @@ type listSection struct {
 	selectedIdx  *int // Pointer to allow external control
 	maxVisible   int  // Maximum number of visible items
 	scrollOffset int  // Current scroll position
+	styles       styles
 }
 
 // List creates a list section with selectable items.
@@ -33,12 +34,15 @@ func List(id string, items []ListItem, selectedIdx *int, opts ...ListOption) Sec
 		items:       items,
 		selectedIdx: selectedIdx,
 		maxVisible:  5, // Default
+		styles:      newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
 }
+
+func (s *listSection) setStyles(value styles) { s.styles = value }
 
 // WithMaxVisible sets the maximum number of visible items.
 func WithMaxVisible(n int) ListOption {
@@ -51,7 +55,7 @@ func WithMaxVisible(n int) ListOption {
 
 func (s *listSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
 	if len(s.items) == 0 {
-		return RenderedSection{Content: MutedText.Render("(no items)")}
+		return RenderedSection{Content: s.styles.mutedText.Render("(no items)")}
 	}
 
 	// Determine visible range
@@ -89,19 +93,19 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 		isHovered := item.ID == hoverID
 
 		// Determine style - show focused style only when list is focused AND item is selected
-		var style = ListItemNormal
+		var style = s.styles.listItemNormal
 		if isSelected && listIsFocused {
-			style = ListItemFocused
+			style = s.styles.listItemFocused
 		} else if isSelected {
-			style = ListItemSelected // Selected but list not focused
+			style = s.styles.listItemSelected // Selected but list not focused
 		} else if isHovered {
-			style = ListItemSelected
+			style = s.styles.listItemSelected
 		}
 
 		// Render cursor
 		cursor := "  "
 		if isSelected {
-			cursor = ListCursor.Render("> ")
+			cursor = s.styles.listCursor.Render("> ")
 		}
 
 		// Render item
@@ -117,11 +121,11 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 	content := sb.String()
 	hasTopIndicator := s.scrollOffset > 0
 	if hasTopIndicator {
-		content = MutedText.Render("↑ more above") + "\n" + content
+		content = s.styles.mutedText.Render("↑ more above") + "\n" + content
 		totalHeight++
 	}
 	if s.scrollOffset+visibleCount < len(s.items) {
-		content = content + "\n" + MutedText.Render("↓ more below")
+		content = content + "\n" + s.styles.mutedText.Render("↓ more below")
 		totalHeight++
 	}
 

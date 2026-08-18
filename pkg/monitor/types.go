@@ -634,6 +634,11 @@ const (
 	ModalTypeConfirmation
 	ModalTypeStats
 	ModalTypeKanban
+	ModalTypeHelp
+	ModalTypeNotes
+	ModalTypeSync
+	ModalTypeBoardEditor
+	ModalTypeActivity
 )
 
 // PanelRenderer renders content in a bordered panel

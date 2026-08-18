@@ -126,7 +126,7 @@ func (m *Model) createBoardEditorModal() *modal.Modal {
 		variant = modal.VariantInfo
 	}
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeBoardEditor,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(variant),
 		modal.WithHints(false),
@@ -312,7 +312,7 @@ func (m *Model) createBoardEditorDeleteConfirmModal() *modal.Modal {
 		boardName = m.BoardEditorBoard.Name
 	}
 
-	md := modal.New("DELETE BOARD?",
+	md := m.newModal("DELETE BOARD?", ModalTypeConfirmation,
 		modal.WithWidth(50),
 		modal.WithVariant(modal.VariantDanger),
 		modal.WithHints(false),

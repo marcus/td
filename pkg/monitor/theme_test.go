@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/pkg/monitor/modal"
 )
 
 func phase2TestTheme() Theme {
@@ -31,6 +32,11 @@ func stylePrefix(rendered, marker string) string {
 		return rendered[:i]
 	}
 	return rendered
+}
+
+func colorFragment(rendered, marker string) string {
+	prefix := stylePrefix(rendered, marker)
+	return strings.TrimSuffix(strings.TrimPrefix(prefix, "\x1b["), "m")
 }
 
 func TestDefaultThemePreservesStandaloneSteelThread(t *testing.T) {
@@ -530,5 +536,138 @@ func TestPhase2HostilePaletteSelectionsUseReadablePlainTextAndKeepSemanticForegr
 	commentPrefix := stylePrefix(activity.renderStyles().activityBadge["comment"].Render("X"), "X")
 	if !strings.Contains(activityOutput, commentPrefix) {
 		t.Errorf("activity selection lost nested badge foreground %q: %q", commentPrefix, activityOutput)
+	}
+}
+
+func TestPhase3DeclarativeModalConstructionPathsUseModelTheme(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 100, 32
+	theme := phase2TestTheme()
+	if err := m.SetTheme(theme); err != nil {
+		t.Fatal(err)
+	}
+	m.AllBoards = []models.Board{{Name: "Themed board", Query: "status = open"}}
+	m.ConfirmIssueID, m.ConfirmTitle = "td-theme", "Delete themed issue"
+	m.NotesState = &NotesState{}
+	m.BoardEditorMode = "info"
+	m.BoardEditorBoard = &models.Board{Name: "Builtin", IsBuiltin: true}
+
+	cases := []struct {
+		name      string
+		build     func() *modal.Modal
+		wantColor string
+	}{
+		{"default board picker", m.createBoardPickerModal, theme.Primary},
+		{"danger confirmation", m.createDeleteConfirmModal, theme.Error},
+		{"info sync", func() *modal.Modal { return m.buildSyncPromptListModal(nil) }, theme.Info},
+		{"info board editor", m.createBoardEditorModal, theme.Info},
+		{"notes", m.createNotesListModal, theme.Info},
+		{"getting started", m.createGettingStartedModal, theme.Primary},
+		{"help", m.createTDQHelpModal, theme.Info},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.build().Render(m.Width, m.Height, nil)
+			borderPrefix := stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color(tt.wantColor)).Render("X"), "X")
+			bodyPrefix := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(theme.TextPrimary)).Render("X"), "X")
+			if !strings.Contains(got, borderPrefix) {
+				t.Fatalf("modal missing themed variant border/title %q: %q", borderPrefix, got)
+			}
+			if !strings.Contains(got, bodyPrefix) {
+				t.Fatalf("modal missing themed body text %q: %q", bodyPrefix, got)
+			}
+			if legacy := stylePrefix(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render("X"), "X"); strings.Contains(got, legacy) {
+				t.Fatalf("modal leaked legacy primary sequence %q", legacy)
+			}
+		})
+	}
+}
+
+func TestPhase3LiveRethemePreservesOpenDeclarativeModalState(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 80, 24
+	m.CloseConfirmIssueID, m.CloseConfirmTitle = "td-theme", "Retheme me"
+	m.CloseConfirmInput.SetValue("keep this reason")
+	m.CloseConfirmModal = m.createCloseConfirmModal()
+	m.CloseConfirmModal.Render(m.Width, m.Height, nil)
+	m.CloseConfirmModal.SetFocus("confirm")
+	m.CloseConfirmModal.Scroll(3)
+	beforeFocus := m.CloseConfirmModal.FocusedID()
+	beforeScroll := m.CloseConfirmModal.ScrollOffset()
+	before := m.CloseConfirmModal.Render(m.Width, m.Height, nil)
+	m.CloseConfirmModal.Scroll(3)
+	beforeScroll = m.CloseConfirmModal.ScrollOffset()
+
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.CloseConfirmModal.InputValue("reason"); got != "keep this reason" {
+		t.Fatalf("retheme changed open modal input: %q", got)
+	}
+	if m.CloseConfirmModal.FocusedID() != beforeFocus || m.CloseConfirmModal.ScrollOffset() != beforeScroll {
+		t.Fatalf("retheme changed focus/scroll: focus %q->%q scroll %d->%d", beforeFocus, m.CloseConfirmModal.FocusedID(), beforeScroll, m.CloseConfirmModal.ScrollOffset())
+	}
+	if after := m.CloseConfirmModal.Render(m.Width, m.Height, nil); after == before {
+		t.Fatal("open declarative modal did not repaint")
+	}
+}
+
+func TestPhase3LegacyNestedIssueAndHelpUseThemeInsideHostChrome(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 100, 32
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	var calls []ModalType
+	m.ModalRenderer = func(content string, width, height int, modalType ModalType, depth int) string {
+		calls = append(calls, modalType)
+		return "HOST{" + content + "}"
+	}
+	m.ModalStack = []ModalEntry{{
+		IssueID: "td-parent",
+		Issue:   &models.Issue{ID: "td-parent", Title: "Parent", Type: models.TypeEpic, Priority: models.PriorityP1, Status: models.StatusInProgress, CreatedAt: time.Now()},
+	}, {
+		IssueID: "td-child",
+		Issue:   &models.Issue{ID: "td-child", Title: "Child", Type: models.TypeBug, Priority: models.PriorityP0, Status: models.StatusBlocked, CreatedAt: time.Now()},
+	}}
+	issue := m.renderModal()
+	if !strings.HasPrefix(issue, "HOST{") || !strings.Contains(issue, m.renderStyles().modalBreadcrumb.Render(m.ModalBreadcrumb())) {
+		t.Fatalf("nested issue did not retain themed inner content inside host chrome: %q", issue)
+	}
+	if !strings.Contains(issue, m.formatTypeIcon(models.TypeBug)) || !strings.Contains(issue, m.formatIssueDetailStatus(models.StatusBlocked)) {
+		t.Fatalf("nested issue leaked unthemed semantic content: %q", issue)
+	}
+
+	help := m.renderHelp()
+	if !strings.HasPrefix(help, "HOST{") || !strings.Contains(help, m.renderStyles().subtle.Render("/:filter  j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close")) {
+		t.Fatalf("help did not retain themed inner content inside host chrome: %q", help)
+	}
+	if len(calls) != 2 || calls[0] != ModalTypeIssue || calls[1] != ModalTypeHelp {
+		t.Fatalf("unexpected host chrome calls: %#v", calls)
+	}
+}
+
+func TestPhase3DeclarativeModalHostRendererOwnsOuterChromeOnly(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 80, 24
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	var gotType ModalType
+	m.ModalRenderer = func(content string, width, height int, modalType ModalType, depth int) string {
+		gotType = modalType
+		if !strings.Contains(content, m.renderStyles().title.Render("")) && !strings.Contains(content, "SELECT BOARD") {
+			t.Errorf("host did not receive modal-owned inner content: %q", content)
+		}
+		return "HOST-DECLARATIVE{" + content + "}"
+	}
+	m.AllBoards = []models.Board{{Name: "Host board"}}
+	got := m.createBoardPickerModal().Render(m.Width, m.Height, nil)
+	if !strings.HasPrefix(got, "HOST-DECLARATIVE{") || gotType != ModalTypeBoardPicker {
+		t.Fatalf("declarative modal bypassed host outer chrome: type=%v output=%q", gotType, got)
+	}
+	innerPrefix := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(m.theme.TextSelection)).Render("X"), "X")
+	if !strings.Contains(got, innerPrefix) {
+		t.Fatalf("host outer chrome replaced themed inner content: %q", got)
 	}
 }

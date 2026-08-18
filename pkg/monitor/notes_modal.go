@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -161,7 +162,7 @@ func (m *Model) createNotesListModal() *modal.Modal {
 	}
 
 	title := fmt.Sprintf("Notes (%d)", len(ns.Notes))
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeNotes,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantInfo),
 		modal.WithHints(false),
@@ -171,7 +172,7 @@ func (m *Model) createNotesListModal() *modal.Modal {
 	items := make([]modal.ListItem, 0, len(ns.Notes))
 	contentWidth := modalWidth - 6 // border + padding + cursor
 	for i, note := range ns.Notes {
-		label := formatNoteListItem(note, contentWidth)
+		label := m.formatNoteListItem(note, contentWidth)
 		items = append(items, modal.ListItem{
 			ID:    fmt.Sprintf("note-%d", i),
 			Label: label,
@@ -179,7 +180,7 @@ func (m *Model) createNotesListModal() *modal.Modal {
 	}
 
 	if len(items) == 0 {
-		md.AddSection(modal.Text(subtleStyle.Render("No notes yet. Press c to create one.")))
+		md.AddSection(modal.Text("No notes yet. Press c to create one."))
 	} else {
 		maxVisible := (m.Height * 60 / 100) - 6 // Leave room for buttons
 		if maxVisible < 5 {
@@ -214,14 +215,14 @@ func (m *Model) createNoteDetailModal() *modal.Modal {
 		modalWidth = 50
 	}
 
-	md := modal.New(note.Title,
+	md := m.newModal(note.Title, ModalTypeNotes,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantDefault),
 		modal.WithHints(false),
 	)
 
 	// Note metadata
-	meta := formatNoteMeta(note)
+	meta := m.formatNoteMeta(note)
 	md.AddSection(modal.Text(meta))
 	md.AddSection(modal.Spacer())
 
@@ -231,7 +232,7 @@ func (m *Model) createNoteDetailModal() *modal.Modal {
 		content = note.Content
 	}
 	if content == "" {
-		content = subtleStyle.Render("(empty)")
+		content = m.renderStyles().subtle.Render("(empty)")
 	}
 	md.AddSection(modal.Custom(
 		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
@@ -281,7 +282,7 @@ func (m *Model) createNoteEditModal() *modal.Modal {
 		title = "Edit Note"
 	}
 
-	md := modal.New(title,
+	md := m.newModal(title, ModalTypeNotes,
 		modal.WithWidth(modalWidth),
 		modal.WithVariant(modal.VariantDefault),
 		modal.WithHints(false),
@@ -308,7 +309,7 @@ func (m *Model) createNoteEditModal() *modal.Modal {
 
 // createNoteDeleteConfirmModal builds a delete confirmation modal.
 func (m *Model) createNoteDeleteConfirmModal() *modal.Modal {
-	md := modal.New("Delete Note?",
+	md := m.newModal("Delete Note?", ModalTypeConfirmation,
 		modal.WithWidth(50),
 		modal.WithVariant(modal.VariantDanger),
 		modal.WithHints(false),
@@ -609,6 +610,22 @@ func formatNoteListItem(note models.Note, width int) string {
 	return strings.Join(parts, " ")
 }
 
+func (m Model) formatNoteListItem(note models.Note, width int) string {
+	styles := m.renderStyles()
+	var parts []string
+	if note.Pinned {
+		parts = append(parts, styles.title.Render("*"))
+	}
+	titleText := note.Title
+	if note.Archived {
+		titleText = styles.subtle.Render(titleText + " (archived)")
+	} else {
+		titleText = styles.title.Render(titleText)
+	}
+	parts = append(parts, titleText, styles.subtle.Render(formatNoteAge(note.UpdatedAt)))
+	return strings.Join(parts, " ")
+}
+
 func formatNoteMeta(note *models.Note) string {
 	var parts []string
 
@@ -627,6 +644,24 @@ func formatNoteMeta(note *models.Note) string {
 		parts = append(parts, subtleStyle.Render(fmt.Sprintf("Created %s", created)))
 	}
 
+	return strings.Join(parts, "  ")
+}
+
+func (m Model) formatNoteMeta(note *models.Note) string {
+	styles := m.renderStyles()
+	var parts []string
+	if note.Pinned {
+		parts = append(parts, styles.title.Render("Pinned"))
+	}
+	if note.Archived {
+		parts = append(parts, styles.subtle.Render("Archived"))
+	}
+	age := formatNoteAge(note.UpdatedAt)
+	created := formatNoteAge(note.CreatedAt)
+	parts = append(parts, styles.subtle.Render(fmt.Sprintf("Updated %s", age)))
+	if created != age {
+		parts = append(parts, styles.subtle.Render(fmt.Sprintf("Created %s", created)))
+	}
 	return strings.Join(parts, "  ")
 }
 
@@ -675,7 +710,7 @@ func (m Model) renderNotesModal() string {
 		modalWidth = 50
 	}
 
-	content := subtleStyle.Render("Loading notes...")
+	content := m.renderStyles().subtle.Render("Loading notes...")
 	return m.wrapSimpleModal("Notes", content, modalWidth)
 }
 
@@ -689,9 +724,20 @@ func (m Model) wrapSimpleModal(title, content string, width int) string {
 		modalHeight = 30
 	}
 
-	style := modalBorderStyle.Width(width - 2).Height(modalHeight - 2)
-	titleLine := titleStyle.Render(title)
+	theme := m.themeOrDefault()
+	titleLine := m.renderStyles().title.Render(title)
 	body := titleLine + "\n\n" + content
+	if m.ModalRenderer != nil {
+		return m.ModalRenderer("\n"+body+"\n", width+2, modalHeight+2, ModalTypeNotes, 1)
+	}
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(theme.Primary)).
+		Foreground(lipgloss.Color(theme.TextPrimary)).
+		Background(lipgloss.Color(theme.Surface)).
+		Padding(1, 2).
+		Width(width - 2).
+		Height(modalHeight - 2)
 
 	return style.Render(body)
 }

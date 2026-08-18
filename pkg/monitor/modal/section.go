@@ -21,6 +21,16 @@ type Section interface {
 	Update(msg tea.Msg, focusID string) (action string, cmd tea.Cmd)
 }
 
+type styledSection interface {
+	setStyles(styles)
+}
+
+func applySectionStyles(section Section, value styles) {
+	if section, ok := section.(styledSection); ok {
+		section.setStyles(value)
+	}
+}
+
 // RenderedSection is the result of rendering a section.
 type RenderedSection struct {
 	Content    string          // Rendered string content
@@ -40,18 +50,21 @@ type FocusableInfo struct {
 
 // textSection is a static text section.
 type textSection struct {
-	text string
+	text   string
+	styles styles
 }
 
 // Text creates a static text section.
 func Text(s string) Section {
-	return &textSection{text: s}
+	return &textSection{text: s, styles: newStyles(DefaultTheme())}
 }
+
+func (t *textSection) setStyles(value styles) { t.styles = value }
 
 func (t *textSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
 	// Wrap text to content width
 	wrapped := wrapText(t.text, contentWidth)
-	return RenderedSection{Content: wrapped}
+	return RenderedSection{Content: t.styles.body.Render(wrapped)}
 }
 
 func (t *textSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
@@ -84,6 +97,8 @@ type whenSection struct {
 	condition func() bool
 	inner     Section
 }
+
+func (w *whenSection) setStyles(value styles) { applySectionStyles(w.inner, value) }
 
 // When creates a conditional section that only renders when condition() returns true.
 func When(condition func() bool, section Section) Section {
@@ -177,12 +192,15 @@ func BtnPrimary() BtnOption {
 // buttonsSection renders a row of buttons.
 type buttonsSection struct {
 	buttons []ButtonDef
+	styles  styles
 }
 
 // Buttons creates a button row section.
 func Buttons(btns ...ButtonDef) Section {
-	return &buttonsSection{buttons: btns}
+	return &buttonsSection{buttons: btns, styles: newStyles(DefaultTheme())}
 }
+
+func (b *buttonsSection) setStyles(value styles) { b.styles = value }
 
 func (b *buttonsSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
 	if len(b.buttons) == 0 {
@@ -230,21 +248,21 @@ func (b *buttonsSection) resolveStyle(btn ButtonDef, focusID, hoverID string) li
 
 	if btn.IsDanger {
 		if isFocused {
-			return ButtonDangerFocused
+			return b.styles.buttonDangerFocused
 		}
 		if isHovered {
-			return ButtonDangerHover
+			return b.styles.buttonDangerHover
 		}
-		return ButtonDanger
+		return b.styles.buttonDanger
 	}
 
 	if isFocused {
-		return ButtonFocused
+		return b.styles.buttonFocused
 	}
 	if isHovered {
-		return ButtonHover
+		return b.styles.buttonHover
 	}
-	return Button
+	return b.styles.button
 }
 
 func (b *buttonsSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
@@ -271,12 +289,15 @@ type checkboxSection struct {
 	id      string
 	label   string
 	checked *bool
+	styles  styles
 }
 
 // Checkbox creates a checkbox section.
 func Checkbox(id, label string, checked *bool) Section {
-	return &checkboxSection{id: id, label: label, checked: checked}
+	return &checkboxSection{id: id, label: label, checked: checked, styles: newStyles(DefaultTheme())}
 }
+
+func (c *checkboxSection) setStyles(value styles) { c.styles = value }
 
 func (c *checkboxSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
 	box := "[ ]"
@@ -289,11 +310,11 @@ func (c *checkboxSection) Render(contentWidth int, focusID, hoverID string) Rend
 
 	var style lipgloss.Style
 	if isFocused {
-		style = ButtonFocused
+		style = c.styles.buttonFocused
 	} else if isHovered {
-		style = ButtonHover
+		style = c.styles.buttonHover
 	} else {
-		style = Button
+		style = c.styles.button
 	}
 
 	content := style.Render(box + " " + c.label)

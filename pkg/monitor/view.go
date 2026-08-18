@@ -1051,6 +1051,7 @@ func (m Model) renderModal() string {
 	if modal == nil {
 		return ""
 	}
+	styles := m.renderStyles()
 
 	// Calculate modal dimensions (80% of terminal, capped)
 	modalWidth := m.Width * 80 / 100
@@ -1074,21 +1075,21 @@ func (m Model) renderModal() string {
 
 	// Loading state
 	if modal.Loading {
-		content.WriteString(subtleStyle.Render("Loading..."))
+		content.WriteString(styles.subtle.Render("Loading..."))
 		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
 	// Error state
 	if modal.Error != nil {
-		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", modal.Error)))
+		content.WriteString(styles.modalError.Render(fmt.Sprintf("Error: %v", modal.Error)))
 		content.WriteString("\n\n")
-		content.WriteString(subtleStyle.Render("Press esc to close"))
+		content.WriteString(styles.subtle.Render("Press esc to close"))
 		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
 	// No issue loaded
 	if modal.Issue == nil {
-		content.WriteString(subtleStyle.Render("No issue data"))
+		content.WriteString(styles.subtle.Render("No issue data"))
 		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
@@ -1098,22 +1099,22 @@ func (m Model) renderModal() string {
 	var lines []string
 
 	// Status first for quicker scanning in the issue detail modal.
-	lines = append(lines, formatIssueDetailStatus(issue.Status))
-	lines = append(lines, titleStyle.Render(issue.ID)+" "+issue.Title)
+	lines = append(lines, m.formatIssueDetailStatus(issue.Status))
+	lines = append(lines, styles.title.Render(issue.ID)+" "+issue.Title)
 	lines = append(lines, "")
 
 	// Metadata line: type, priority, points, timestamps
 	metadataLine := fmt.Sprintf("%s  %s",
-		formatTypeIcon(issue.Type),
-		formatPriority(issue.Priority))
+		m.formatTypeIcon(issue.Type),
+		m.formatPriority(issue.Priority))
 	if issue.Points > 0 {
 		metadataLine += fmt.Sprintf("  %dpts", issue.Points)
 	}
 	// Add created timestamp in subtle style
-	metadataLine += subtleStyle.Render(fmt.Sprintf("  created %s", formatLocalTime(issue.CreatedAt, "2006-01-02 15:04")))
+	metadataLine += styles.subtle.Render(fmt.Sprintf("  created %s", formatLocalTime(issue.CreatedAt, "2006-01-02 15:04")))
 	// Add closed timestamp if closed
 	if issue.ClosedAt != nil {
-		metadataLine += subtleStyle.Render(fmt.Sprintf("  closed %s", formatLocalTime(*issue.ClosedAt, "2006-01-02 15:04")))
+		metadataLine += styles.subtle.Render(fmt.Sprintf("  closed %s", formatLocalTime(*issue.ClosedAt, "2006-01-02 15:04")))
 	}
 	lines = append(lines, metadataLine)
 
@@ -1122,26 +1123,26 @@ func (m Model) renderModal() string {
 		epicText := "Epic: " + modal.ParentEpic.ID + " " +
 			truncateString(modal.ParentEpic.Title, contentWidth-20)
 		if modal.ParentEpicFocused {
-			lines = append(lines, parentEpicFocusedStyle.Render("> "+epicText)+" [Enter:open]")
+			lines = append(lines, styles.modalParentFocused.Render("> "+epicText)+" [Enter:open]")
 		} else {
-			lines = append(lines, parentEpicStyle.Render("  "+epicText))
+			lines = append(lines, styles.modalParent.Render("  "+epicText))
 		}
 	}
 
 	// Labels
 	if len(issue.Labels) > 0 {
-		labelStr := subtleStyle.Render("Labels: ") + strings.Join(issue.Labels, ", ")
+		labelStr := styles.subtle.Render("Labels: ") + strings.Join(issue.Labels, ", ")
 		lines = append(lines, labelStr)
 	}
 
 	// Implementer/Reviewer
 	if issue.ImplementerSession != "" {
-		lines = append(lines, subtleStyle.Render("Impl: ")+truncateSession(issue.ImplementerSession))
+		lines = append(lines, styles.subtle.Render("Impl: ")+truncateSession(issue.ImplementerSession))
 	}
 	if issue.ReviewerSession != "" {
-		reviewerLine := subtleStyle.Render("Reviewer: ") + truncateSession(issue.ReviewerSession)
+		reviewerLine := styles.subtle.Render("Reviewer: ") + truncateSession(issue.ReviewerSession)
 		if issue.ReviewedAt != nil {
-			reviewerLine += subtleStyle.Render("  at ") + formatLocalTime(*issue.ReviewedAt, "2006-01-02 15:04")
+			reviewerLine += styles.subtle.Render("  at ") + formatLocalTime(*issue.ReviewedAt, "2006-01-02 15:04")
 		}
 		// Freshness: only emit (fresh) when an active (non-superseded)
 		// approval row exists. Relying on ReviewerSession alone is lossy once
@@ -1150,13 +1151,13 @@ func (m Model) renderModal() string {
 		// predicate.
 		if issue.Status == models.StatusInReview && m.DB != nil {
 			if active, _ := m.DB.GetActiveApprovalReview(issue.ID); active != nil {
-				reviewerLine += subtleStyle.Render("  (fresh)")
+				reviewerLine += styles.subtle.Render("  (fresh)")
 			}
 		}
 		lines = append(lines, reviewerLine)
 	}
 	if issue.ClosedBySession != "" && issue.Status == models.StatusClosed {
-		lines = append(lines, subtleStyle.Render("Closed by: ")+truncateSession(issue.ClosedBySession))
+		lines = append(lines, styles.subtle.Render("Closed by: ")+truncateSession(issue.ClosedBySession))
 	}
 	// Recent review history (last 3) from issue_reviews, best-effort DB read.
 	// Guarded on m.DB being non-nil for tests that render without a DB.
@@ -1172,7 +1173,7 @@ func (m Model) renderModal() string {
 		if len(reviews) > 3 {
 			start = len(reviews) - 3
 		}
-		lines = append(lines, subtleStyle.Render("Recent reviews:"))
+		lines = append(lines, styles.subtle.Render("Recent reviews:"))
 		for i := len(reviews) - 1; i >= start; i-- {
 			r := reviews[i]
 			status := ""
@@ -1185,17 +1186,17 @@ func (m Model) renderModal() string {
 
 	// Defer/Due fields
 	if issue.DeferUntil != nil {
-		lines = append(lines, subtleStyle.Render("Deferred: ")+formatDeferUntil(*issue.DeferUntil))
+		lines = append(lines, styles.subtle.Render("Deferred: ")+m.formatDeferUntil(*issue.DeferUntil))
 	}
 	if issue.DueDate != nil {
-		lines = append(lines, subtleStyle.Render("Due: ")+formatDueDate(*issue.DueDate))
+		lines = append(lines, styles.subtle.Render("Due: ")+m.formatDueDate(*issue.DueDate))
 	}
 	if issue.DeferCount > 0 {
 		s := "s"
 		if issue.DeferCount == 1 {
 			s = ""
 		}
-		lines = append(lines, subtleStyle.Render(fmt.Sprintf("Deferred %d time%s", issue.DeferCount, s)))
+		lines = append(lines, styles.subtle.Render(fmt.Sprintf("Deferred %d time%s", issue.DeferCount, s)))
 	}
 
 	lines = append(lines, "")
@@ -1204,22 +1205,22 @@ func (m Model) renderModal() string {
 	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
 		header := fmt.Sprintf("TASKS IN EPIC (%d)", len(modal.EpicTasks))
 		if modal.TaskSectionFocused {
-			header = epicTasksFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:scroll]")
+			header = styles.modalEpicFocused.Render(header + " [j/k:nav Enter:open Tab:scroll]")
 		} else {
-			header = sectionHeader.Render(header + " [Tab:focus]")
+			header = styles.sectionHeader.Render(header + " [Tab:focus]")
 		}
 		lines = append(lines, header)
 
 		for i, task := range modal.EpicTasks {
 			prefix := "  "
 			taskLine := fmt.Sprintf("%s %s %s %s",
-				formatTypeIcon(task.Type),
-				subtleStyle.Render(task.ID),
+				m.formatTypeIcon(task.Type),
+				styles.subtle.Render(task.ID),
 				m.formatStatus(task.Status),
 				truncateString(task.Title, contentWidth-29))
 
 			if modal.TaskSectionFocused && i == modal.EpicTasksCursor {
-				taskLine = epicTaskSelectedStyle.Render("> " + formatTypeIcon(task.Type) + " " + task.ID + " " + m.formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-29))
+				taskLine = styles.modalSelected.Render("> " + m.formatTypeIcon(task.Type) + " " + task.ID + " " + m.formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-29))
 			} else {
 				taskLine = prefix + taskLine
 			}
@@ -1230,7 +1231,7 @@ func (m Model) renderModal() string {
 
 	// Description (use pre-rendered markdown from model)
 	if issue.Description != "" {
-		lines = append(lines, sectionHeader.Render("DESCRIPTION"))
+		lines = append(lines, styles.sectionHeader.Render("DESCRIPTION"))
 		rendered := modal.DescRender
 		if rendered == "" {
 			rendered = issue.Description // fallback if not rendered yet
@@ -1241,7 +1242,7 @@ func (m Model) renderModal() string {
 
 	// Acceptance criteria (use pre-rendered markdown from model)
 	if issue.Acceptance != "" {
-		lines = append(lines, sectionHeader.Render("ACCEPTANCE CRITERIA"))
+		lines = append(lines, styles.sectionHeader.Render("ACCEPTANCE CRITERIA"))
 		rendered := modal.AcceptRender
 		if rendered == "" {
 			rendered = issue.Acceptance // fallback if not rendered yet
@@ -1265,20 +1266,20 @@ func (m Model) renderModal() string {
 		if len(activeBlockers) > 0 {
 			header := fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))
 			if modal.BlockedBySectionFocused {
-				header = blockedBySectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
+				header = styles.modalBlockedFocused.Render(header + " [j/k:nav Enter:open Tab:next]")
 			} else {
-				header = blockedColor.Render(header + " [Tab:focus]")
+				header = styles.modalError.Render(header + " [Tab:focus]")
 			}
 			lines = append(lines, header)
 
 			for i, dep := range activeBlockers {
 				depLine := fmt.Sprintf("%s %s %s %s",
-					formatTypeIcon(dep.Type),
-					titleStyle.Render(dep.ID),
+					m.formatTypeIcon(dep.Type),
+					styles.title.Render(dep.ID),
 					m.formatStatus(dep.Status),
 					truncateString(dep.Title, contentWidth-24))
 				if modal.BlockedBySectionFocused && i == modal.BlockedByCursor {
-					depLine = blockedBySelectedStyle.Render("> " + depLine)
+					depLine = styles.modalSelected.Render("> " + depLine)
 				} else {
 					depLine = "  " + depLine
 				}
@@ -1289,9 +1290,9 @@ func (m Model) renderModal() string {
 
 		// Show resolved dependencies dimmed
 		if len(resolvedDeps) > 0 {
-			lines = append(lines, subtleStyle.Render(fmt.Sprintf("✓ RESOLVED DEPS (%d)", len(resolvedDeps))))
+			lines = append(lines, styles.subtle.Render(fmt.Sprintf("✓ RESOLVED DEPS (%d)", len(resolvedDeps))))
 			for _, dep := range resolvedDeps {
-				depLine := subtleStyle.Render(fmt.Sprintf("  %s %s",
+				depLine := styles.subtle.Render(fmt.Sprintf("  %s %s",
 					dep.ID,
 					truncateString(dep.Title, contentWidth-15)))
 				lines = append(lines, depLine)
@@ -1304,20 +1305,20 @@ func (m Model) renderModal() string {
 	if len(modal.Blocks) > 0 {
 		header := fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))
 		if modal.BlocksSectionFocused {
-			header = blocksSectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
+			header = styles.modalBlocksFocused.Render(header + " [j/k:nav Enter:open Tab:next]")
 		} else {
-			header = sectionHeader.Render(header + " [Tab:focus]")
+			header = styles.sectionHeader.Render(header + " [Tab:focus]")
 		}
 		lines = append(lines, header)
 
 		for i, dep := range modal.Blocks {
 			depLine := fmt.Sprintf("%s %s %s %s",
-				formatTypeIcon(dep.Type),
-				titleStyle.Render(dep.ID),
+				m.formatTypeIcon(dep.Type),
+				styles.title.Render(dep.ID),
 				m.formatStatus(dep.Status),
 				truncateString(dep.Title, contentWidth-24))
 			if modal.BlocksSectionFocused && i == modal.BlocksCursor {
-				depLine = blocksSelectedStyle.Render("> " + depLine)
+				depLine = styles.modalSelected.Render("> " + depLine)
 			} else {
 				depLine = "  " + depLine
 			}
@@ -1328,23 +1329,23 @@ func (m Model) renderModal() string {
 
 	// Latest handoff
 	if modal.Handoff != nil {
-		lines = append(lines, sectionHeader.Render("LATEST HANDOFF"))
-		lines = append(lines, timestampStyle.Render(formatLocalTime(modal.Handoff.Timestamp, "2006-01-02 15:04"))+" "+
-			subtleStyle.Render(truncateSession(modal.Handoff.SessionID)))
+		lines = append(lines, styles.sectionHeader.Render("LATEST HANDOFF"))
+		lines = append(lines, styles.timestamp.Render(formatLocalTime(modal.Handoff.Timestamp, "2006-01-02 15:04"))+" "+
+			styles.subtle.Render(truncateSession(modal.Handoff.SessionID)))
 		if len(modal.Handoff.Done) > 0 {
-			lines = append(lines, readyColor.Render("Done:"))
+			lines = append(lines, styles.modalSuccess.Render("Done:"))
 			for _, item := range modal.Handoff.Done {
 				lines = append(lines, "  • "+item)
 			}
 		}
 		if len(modal.Handoff.Remaining) > 0 {
-			lines = append(lines, reviewColor.Render("Remaining:"))
+			lines = append(lines, styles.category[CategoryReviewable].Render("Remaining:"))
 			for _, item := range modal.Handoff.Remaining {
 				lines = append(lines, "  • "+item)
 			}
 		}
 		if len(modal.Handoff.Uncertain) > 0 {
-			lines = append(lines, blockedColor.Render("Uncertain:"))
+			lines = append(lines, styles.modalError.Render("Uncertain:"))
 			for _, item := range modal.Handoff.Uncertain {
 				lines = append(lines, "  • "+item)
 			}
@@ -1354,18 +1355,18 @@ func (m Model) renderModal() string {
 
 	// Recent logs
 	if len(modal.Logs) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(modal.Logs))))
+		lines = append(lines, styles.sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(modal.Logs))))
 		for _, log := range modal.Logs {
-			lines = append(lines, renderLogLines(log, contentWidth)...)
+			lines = append(lines, m.renderLogLines(log, contentWidth)...)
 		}
 	}
 
 	// Comments
 	if len(modal.Comments) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("COMMENTS (%d)", len(modal.Comments))))
+		lines = append(lines, styles.sectionHeader.Render(fmt.Sprintf("COMMENTS (%d)", len(modal.Comments))))
 		for _, c := range modal.Comments {
-			line := timestampStyle.Render(formatLocalTime(c.CreatedAt, "01-02 15:04")) + " " +
-				subtleStyle.Render(truncateSession(c.SessionID)) + " " +
+			line := styles.timestamp.Render(formatLocalTime(c.CreatedAt, "01-02 15:04")) + " " +
+				styles.subtle.Render(truncateSession(c.SessionID)) + " " +
 				truncateString(c.Text, contentWidth-25)
 			lines = append(lines, line)
 		}
@@ -1398,7 +1399,7 @@ func (m Model) renderModal() string {
 	// Add scroll indicator if needed
 	if totalLines > visibleHeight {
 		content.WriteString("\n")
-		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		scrollInfo := styles.subtle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
 		content.WriteString(scrollInfo)
 	}
 
@@ -1576,6 +1577,7 @@ func (m Model) renderHandoffsModal() string {
 
 // renderHandoffsModalLegacy is the legacy rendering for loading/error/empty states
 func (m Model) renderHandoffsModalLegacy() string {
+	styles := m.renderStyles()
 	// Calculate modal dimensions (80% of terminal, capped)
 	modalWidth := m.Width * 80 / 100
 	if modalWidth > 100 {
@@ -1596,32 +1598,33 @@ func (m Model) renderHandoffsModalLegacy() string {
 
 	// Loading state
 	if m.HandoffsLoading {
-		content.WriteString(subtleStyle.Render("Loading handoffs..."))
+		content.WriteString(styles.subtle.Render("Loading handoffs..."))
 		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	// Error state
 	if m.HandoffsError != nil {
-		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.HandoffsError)))
+		content.WriteString(styles.modalError.Render(fmt.Sprintf("Error: %v", m.HandoffsError)))
 		content.WriteString("\n\n")
-		content.WriteString(subtleStyle.Render("Press esc to close"))
+		content.WriteString(styles.subtle.Render("Press esc to close"))
 		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	// Empty state
 	if len(m.HandoffsData) == 0 {
-		content.WriteString(subtleStyle.Render("No handoffs found"))
+		content.WriteString(styles.subtle.Render("No handoffs found"))
 		return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 	}
 
 	// This should not be reached in practice (declarative modal handles this case)
-	content.WriteString(subtleStyle.Render("Loading..."))
+	content.WriteString(styles.subtle.Render("Loading..."))
 	return m.wrapHandoffsModal(content.String(), modalWidth, modalHeight)
 }
 
 // wrapHandoffsModal wraps content in a modal box with green border
 func (m Model) wrapHandoffsModal(content string, width, height int) string {
-	footer := subtleStyle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
+	styles := m.renderStyles()
+	footer := styles.subtle.Render("↑↓:select  Enter:open issue  Esc:close  r:refresh")
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
@@ -1637,7 +1640,9 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("42")). // Green for handoffs
+		BorderForeground(lipgloss.Color(m.themeOrDefault().Success)).
+		Foreground(lipgloss.Color(m.themeOrDefault().TextPrimary)).
+		Background(lipgloss.Color(m.themeOrDefault().Surface)).
 		Padding(1, 2).
 		Width(width).
 		Height(height)
@@ -1647,6 +1652,7 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 
 // renderBoardPicker renders the board picker modal
 func (m Model) renderBoardPicker() string {
+	styles := m.renderStyles()
 	// Use declarative modal when available
 	if m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil && len(m.AllBoards) > 0 {
 		return m.BoardPickerModal.Render(m.Width, m.Height, m.BoardPickerMouseHandler)
@@ -1672,12 +1678,12 @@ func (m Model) renderBoardPicker() string {
 
 	// Empty state
 	if len(m.AllBoards) == 0 {
-		content.WriteString(subtleStyle.Render("No boards found"))
+		content.WriteString(styles.subtle.Render("No boards found"))
 		content.WriteString("\n\n")
-		content.WriteString(subtleStyle.Render("Create a board with: td board create <name>"))
+		content.WriteString(styles.subtle.Render("Create a board with: td board create <name>"))
 	} else {
 		// Loading state (modal not yet created)
-		content.WriteString(subtleStyle.Render("Loading boards..."))
+		content.WriteString(styles.subtle.Render("Loading boards..."))
 	}
 
 	return m.wrapBoardPickerModal(content.String(), modalWidth, modalHeight)
@@ -1685,7 +1691,7 @@ func (m Model) renderBoardPicker() string {
 
 // wrapBoardPickerModal wraps board picker content in a styled modal
 func (m Model) wrapBoardPickerModal(content string, width, height int) string {
-	footer := subtleStyle.Render("↑↓:select  Enter:open  Esc:close")
+	footer := m.renderStyles().subtle.Render("↑↓:select  Enter:open  Esc:close")
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
@@ -1701,7 +1707,9 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("212")). // Purple
+		BorderForeground(lipgloss.Color(m.themeOrDefault().Primary)).
+		Foreground(lipgloss.Color(m.themeOrDefault().TextPrimary)).
+		Background(lipgloss.Color(m.themeOrDefault().Surface)).
 		Padding(1, 2).
 		Width(width).
 		Height(height)
@@ -1985,33 +1993,35 @@ func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
 // wrapModalWithDepth wraps content in a modal box with depth-aware styling
 func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	depth := m.ModalDepth()
+	styles := m.renderStyles()
+	theme := m.themeOrDefault()
 
 	// Build footer with breadcrumb if depth > 1
 	var footerParts []string
 
 	// Add status message if present (not in embedded mode - sidecar handles toasts)
 	if m.StatusMessage != "" && !m.Embedded {
-		footerParts = append(footerParts, readyColor.Render(m.StatusMessage))
+		footerParts = append(footerParts, styles.modalSuccess.Render(m.StatusMessage))
 	}
 
 	// Add breadcrumb for stacked modals
 	if breadcrumb := m.ModalBreadcrumb(); breadcrumb != "" {
-		footerParts = append(footerParts, breadcrumbStyle.Render(breadcrumb))
+		footerParts = append(footerParts, styles.modalBreadcrumb.Render(breadcrumb))
 	}
 
 	// Add key hints
 	modal := m.CurrentModal()
 	if modal != nil && modal.TaskSectionFocused {
-		footerParts = append(footerParts, subtleStyle.Render("↑↓:navigate  Enter:open  Tab:scroll  Esc:close"))
+		footerParts = append(footerParts, styles.subtle.Render("↑↓:navigate  Enter:open  Tab:scroll  Esc:close"))
 	} else if depth > 1 {
 		// Show Tab hint if this is an epic with tasks
 		if modal != nil && modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
-			footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Tab:tasks  Esc:back  r:refresh"))
+			footerParts = append(footerParts, styles.subtle.Render("↑↓:scroll  Tab:tasks  Esc:back  r:refresh"))
 		} else {
-			footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Esc:back  r:refresh"))
+			footerParts = append(footerParts, styles.subtle.Render("↑↓:scroll  Esc:back  r:refresh"))
 		}
 	} else {
-		footerParts = append(footerParts, subtleStyle.Render(m.Keymap.ModalFooterHelp()))
+		footerParts = append(footerParts, styles.subtle.Render(m.Keymap.ModalFooterHelp()))
 	}
 
 	footer := strings.Join(footerParts, "\n")
@@ -2032,16 +2042,18 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	var borderColor color.Color
 	switch depth {
 	case 1:
-		borderColor = primaryColor // Purple/Magenta (212)
+		borderColor = lipgloss.Color(theme.Primary)
 	case 2:
-		borderColor = lipgloss.Color("45") // Cyan
+		borderColor = lipgloss.Color(theme.Info)
 	default:
-		borderColor = lipgloss.Color("214") // Orange for depth 3+
+		borderColor = lipgloss.Color(theme.Warning)
 	}
 
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
+		Foreground(lipgloss.Color(theme.TextPrimary)).
+		Background(lipgloss.Color(theme.Surface)).
 		Padding(1, 2).
 		Width(width).
 		Height(height)
@@ -2067,7 +2079,9 @@ func (m Model) wrapConfirmationModal(content string, width int) string {
 	// Default lipgloss rendering
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(errorColor).
+		BorderForeground(lipgloss.Color(m.themeOrDefault().Error)).
+		Foreground(lipgloss.Color(m.themeOrDefault().TextPrimary)).
+		Background(lipgloss.Color(m.themeOrDefault().Surface)).
 		Padding(1, 2).
 		Width(width)
 
@@ -2088,6 +2102,7 @@ func (m Model) renderDeleteConfirmation() string {
 // renderDeleteConfirmationLegacy is the legacy rendering for the delete confirmation dialog
 // Kept for backward compatibility and edge cases
 func (m Model) renderDeleteConfirmationLegacy() string {
+	styles := m.renderStyles()
 	width := 40
 	if len(m.ConfirmTitle) > 30 {
 		width = len(m.ConfirmTitle) + 10
@@ -2103,7 +2118,7 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 	if m.ConfirmAction != "delete" {
 		action = m.ConfirmAction
 	}
-	content.WriteString(titleStyle.Render(fmt.Sprintf("%s %s?", action, m.ConfirmIssueID)))
+	content.WriteString(styles.title.Render(fmt.Sprintf("%s %s?", action, m.ConfirmIssueID)))
 	content.WriteString("\n")
 
 	// Issue title (truncated to fit on one line)
@@ -2116,7 +2131,7 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 	if len(title) > maxTitleLen {
 		title = title[:maxTitleLen-3] + "..."
 	}
-	content.WriteString(subtleStyle.Render(fmt.Sprintf("\"%s\"", title)))
+	content.WriteString(styles.subtle.Render(fmt.Sprintf("\"%s\"", title)))
 	content.WriteString("\n\n")
 
 	// Interactive buttons
@@ -2125,8 +2140,8 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 	yesHovered := m.ConfirmButtonHover == 1
 	noHovered := m.ConfirmButtonHover == 2
 
-	yesBtn := renderButton("Yes", yesFocused, yesHovered, true) // Danger button for destructive action
-	noBtn := renderButton("No", noFocused, noHovered, false)
+	yesBtn := m.renderButton("Yes", yesFocused, yesHovered, true)
+	noBtn := m.renderButton("No", noFocused, noHovered, false)
 
 	content.WriteString(yesBtn)
 	content.WriteString("  ")
@@ -2134,7 +2149,7 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 	content.WriteString("\n\n")
 
 	// Shortcut hints
-	content.WriteString(subtleStyle.Render("Tab:switch  Y/N:quick  Esc:cancel"))
+	content.WriteString(styles.subtle.Render("Tab:switch  Y/N:quick  Esc:cancel"))
 
 	return m.wrapConfirmationModal(content.String(), width)
 }
@@ -2163,6 +2178,29 @@ func renderLogLines(log models.Log, contentWidth int) []string {
 		}
 	}
 
+	return lines
+}
+
+func (m Model) renderLogLines(log models.Log, contentWidth int) []string {
+	styles := m.renderStyles()
+	prefix := styles.timestamp.Render(formatLocalTime(log.Timestamp, "01-02 15:04")) + " " +
+		styles.subtle.Render(truncateSession(log.SessionID)) + " "
+	prefixWidth := lipgloss.Width(prefix)
+	messageWidth := contentWidth - prefixWidth
+	if messageWidth < 1 {
+		messageWidth = 1
+	}
+	wapped := cellbuf.Wrap(log.Message, messageWidth, "")
+	messageLines := strings.Split(wapped, "\n")
+	indent := strings.Repeat(" ", prefixWidth)
+	lines := make([]string, 0, len(messageLines))
+	for i, line := range messageLines {
+		if i == 0 {
+			lines = append(lines, prefix+line)
+		} else {
+			lines = append(lines, indent+line)
+		}
+	}
 	return lines
 }
 
@@ -2213,6 +2251,26 @@ func formatDeferUntil(dateStr string) string {
 	}
 }
 
+func (m Model) formatDeferUntil(dateStr string) string {
+	t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+	if err != nil {
+		return dateStr
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	days := calendarDaysBetween(today, t)
+	if days < 0 {
+		return m.renderStyles().modalWarning.Render(t.Format("Jan 2") + " (past)")
+	}
+	if days == 0 {
+		return "today"
+	}
+	if days == 1 {
+		return "tomorrow"
+	}
+	return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
+}
+
 // formatDueDate formats a due_date string for display with urgency styling.
 // dateStr is a civil date (YYYY-MM-DD) interpreted in the local timezone.
 func formatDueDate(dateStr string) string {
@@ -2235,6 +2293,32 @@ func formatDueDate(dateStr string) string {
 		return warningStyle.Render("due TODAY")
 	case days <= 7:
 		return warningStyle.Render(fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days))
+	default:
+		return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
+	}
+}
+
+func (m Model) formatDueDate(dateStr string) string {
+	t, err := time.ParseInLocation("2006-01-02", dateStr, time.Local)
+	if err != nil {
+		return dateStr
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	days := calendarDaysBetween(today, t)
+	styles := m.renderStyles()
+	switch {
+	case days < 0:
+		n := -days
+		suffix := "s"
+		if n == 1 {
+			suffix = ""
+		}
+		return styles.modalError.Render(fmt.Sprintf("OVERDUE by %d day%s", n, suffix))
+	case days == 0:
+		return styles.modalWarning.Render("due TODAY")
+	case days <= 7:
+		return styles.modalWarning.Render(fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days))
 	default:
 		return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
 	}
@@ -2344,6 +2428,8 @@ func (m Model) renderFooter() string {
 
 // renderHelp renders the help modal with scrolling support
 func (m Model) renderHelp() string {
+	styles := m.renderStyles()
+	theme := m.themeOrDefault()
 	// Calculate modal dimensions (80% of terminal, clamped)
 	modalWidth := m.Width * 80 / 100
 	if modalWidth > 80 {
@@ -2402,19 +2488,19 @@ func (m Model) renderHelp() string {
 
 	// Show filter input if filtering
 	if m.HelpFilterMode {
-		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary))
 		content.WriteString(filterStyle.Render("/ " + m.HelpFilter + "█"))
 		content.WriteString("\n")
 	} else if m.HelpFilter != "" {
-		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-		matchInfo := subtleStyle.Render(fmt.Sprintf(" (%d matches)", totalLines))
+		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary))
+		matchInfo := styles.subtle.Render(fmt.Sprintf(" (%d matches)", totalLines))
 		content.WriteString(filterStyle.Render("/ "+m.HelpFilter) + matchInfo)
 		content.WriteString("\n")
 	}
 
 	// Show up indicator if scrolled down
 	if scroll > 0 {
-		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ▲ %d more above\n", scroll)))
+		content.WriteString(styles.subtle.Render(fmt.Sprintf("  ▲ %d more above\n", scroll)))
 		visibleHeight-- // Reduce visible lines for indicator
 	}
 
@@ -2436,29 +2522,35 @@ func (m Model) renderHelp() string {
 	linesBelow := totalLines - endIdx
 	if linesBelow > 0 {
 		content.WriteString("\n")
-		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ▼ %d more below", linesBelow)))
+		content.WriteString(styles.subtle.Render(fmt.Sprintf("  ▼ %d more below", linesBelow)))
 	}
 
 	// Build footer with scroll info
 	var footerParts []string
 	if totalLines > visibleHeight {
-		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		scrollInfo := styles.subtle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
 		footerParts = append(footerParts, scrollInfo)
 	}
 	if m.HelpFilter != "" {
-		footerParts = append(footerParts, subtleStyle.Render("Esc:clear  j/k:scroll  ?:close"))
+		footerParts = append(footerParts, styles.subtle.Render("Esc:clear  j/k:scroll  ?:close"))
 	} else {
-		footerParts = append(footerParts, subtleStyle.Render("/:filter  j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close"))
+		footerParts = append(footerParts, styles.subtle.Render("/:filter  j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close"))
 	}
 	footer := strings.Join(footerParts, "  ")
 
 	// Combine content and footer
 	inner := lipgloss.JoinVertical(lipgloss.Left, content.String(), "", footer)
+	if m.ModalRenderer != nil {
+		paddedInner := "\n" + inner + "\n"
+		return m.ModalRenderer(paddedInner, modalWidth+2, modalHeight+2, ModalTypeHelp, 1)
+	}
 
 	// Style the modal
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("141")). // Purple for help
+		BorderForeground(lipgloss.Color(theme.Secondary)).
+		Foreground(lipgloss.Color(theme.TextPrimary)).
+		Background(lipgloss.Color(theme.Surface)).
 		Padding(1, 2).
 		Width(modalWidth).
 		Height(modalHeight)

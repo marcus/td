@@ -108,18 +108,23 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 	// 4. Build modal content
 	var inner strings.Builder
 	if m.title != "" {
-		inner.WriteString(renderTitleLine(m.title, m.variant))
+		inner.WriteString(m.renderTitleLine(m.title))
 		inner.WriteString("\n\n") // title + blank line separator
 	}
 	inner.WriteString(viewport)
 	if m.showHints {
 		inner.WriteString("\n")
-		inner.WriteString(renderHintLine())
+		inner.WriteString(m.renderHintLine())
 	}
 
 	// 5. Apply modal style
 	styled := m.modalStyle(modalWidth).Render(inner.String())
 	modalH := lipgloss.Height(styled)
+	if m.chromeRenderer != nil {
+		paddedInner := "\n" + inner.String() + "\n"
+		styled = m.chromeRenderer(paddedInner, modalWidth+2, modalH)
+		modalH = lipgloss.Height(styled)
+	}
 	modalX := (screenW - modalWidth) / 2
 	modalY := (screenH - modalH) / 2
 
@@ -163,41 +168,48 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 
 // modalStyle returns the lipgloss style for the modal box based on variant.
 func (m *Modal) modalStyle(width int) lipgloss.Style {
-	borderColor := Primary
+	borderColor := lipgloss.Color(m.styles.theme.Primary)
 	switch m.variant {
 	case VariantDanger:
-		borderColor = Error
+		borderColor = lipgloss.Color(m.styles.theme.Error)
 	case VariantWarning:
-		borderColor = Warning
+		borderColor = lipgloss.Color(m.styles.theme.Warning)
 	case VariantInfo:
-		borderColor = Info
+		borderColor = lipgloss.Color(m.styles.theme.Info)
 	}
 
-	return lipgloss.NewStyle().
+	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
-		Background(BgSecondary).
+		Background(lipgloss.Color(m.styles.theme.Surface)).
 		Padding(1, 2).
 		Width(width)
+	if !m.styles.isDefault {
+		style = style.Foreground(lipgloss.Color(m.styles.theme.TextPrimary))
+	}
+	return style
 }
 
 // renderTitleLine renders the modal title.
-func renderTitleLine(title string, variant Variant) string {
-	titleStyle := ModalTitle
-	switch variant {
+func (m *Modal) renderTitleLine(title string) string {
+	titleStyle := m.styles.modalTitle
+	if !m.styles.isDefault {
+		titleStyle = titleStyle.Foreground(lipgloss.Color(m.styles.theme.Primary))
+	}
+	switch m.variant {
 	case VariantDanger:
-		titleStyle = titleStyle.Foreground(Error)
+		titleStyle = titleStyle.Foreground(lipgloss.Color(m.styles.theme.Error))
 	case VariantWarning:
-		titleStyle = titleStyle.Foreground(Warning)
+		titleStyle = titleStyle.Foreground(lipgloss.Color(m.styles.theme.Warning))
 	case VariantInfo:
-		titleStyle = titleStyle.Foreground(Info)
+		titleStyle = titleStyle.Foreground(lipgloss.Color(m.styles.theme.Info))
 	}
 	return titleStyle.Render(title)
 }
 
 // renderHintLine renders the keyboard hint line.
-func renderHintLine() string {
-	return MutedText.Render("Tab to switch · Enter to confirm · Esc to cancel")
+func (m *Modal) renderHintLine() string {
+	return m.styles.mutedText.Render("Tab to switch · Enter to confirm · Esc to cancel")
 }
 
 // hintLines returns the number of lines the hint takes (0 if hidden, 1 if shown).

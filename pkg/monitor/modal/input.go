@@ -21,6 +21,7 @@ type inputSection struct {
 	model         *textinput.Model
 	submitOnEnter bool
 	submitAction  string // Action ID to return on submit (defaults to modal primaryAction)
+	styles        styles
 }
 
 // Input creates an input section wrapping a textinput.Model.
@@ -29,6 +30,7 @@ func Input(id string, model *textinput.Model, opts ...InputOption) Section {
 		id:            id,
 		model:         model,
 		submitOnEnter: true, // Default to submit on enter
+		styles:        newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -43,11 +45,19 @@ func InputWithLabel(id, label string, model *textinput.Model, opts ...InputOptio
 		label:         label,
 		model:         model,
 		submitOnEnter: true,
+		styles:        newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+func (s *inputSection) setStyles(value styles) {
+	s.styles = value
+	if s.model != nil {
+		s.model.SetStyles(themedTextInputStyles(value.theme))
+	}
 }
 
 // WithSubmitOnEnter enables or disables submit-on-enter behavior.
@@ -72,7 +82,7 @@ func (s *inputSection) Render(contentWidth int, focusID, hoverID string) Rendere
 
 	// Render label if present
 	if s.label != "" {
-		sb.WriteString(Body.Render(s.label))
+		sb.WriteString(s.styles.body.Render(s.label))
 		sb.WriteString("\n")
 		labelLines = 1
 	}
@@ -101,17 +111,17 @@ func (s *inputSection) Render(contentWidth int, focusID, hoverID string) Rendere
 	if isFocused {
 		inputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(Primary).
+			BorderForeground(lipgloss.Color(s.styles.theme.Primary)).
 			Width(inputBoxWidth)
 	} else if s.id == hoverID {
 		inputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(TextMuted).
+			BorderForeground(lipgloss.Color(s.styles.theme.BorderMuted)).
 			Width(inputBoxWidth)
 	} else {
 		inputStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(BorderNormal).
+			BorderForeground(lipgloss.Color(s.styles.theme.Border)).
 			Width(inputBoxWidth)
 	}
 
@@ -177,6 +187,7 @@ type textareaSection struct {
 	label  string
 	model  *textarea.Model
 	height int // Desired height in lines
+	styles styles
 }
 
 // Textarea creates a textarea section wrapping a textarea.Model.
@@ -185,6 +196,7 @@ func Textarea(id string, model *textarea.Model, height int, opts ...TextareaOpti
 		id:     id,
 		model:  model,
 		height: height,
+		styles: newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -199,11 +211,19 @@ func TextareaWithLabel(id, label string, model *textarea.Model, height int, opts
 		label:  label,
 		model:  model,
 		height: height,
+		styles: newStyles(DefaultTheme()),
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
+}
+
+func (s *textareaSection) setStyles(value styles) {
+	s.styles = value
+	if s.model != nil {
+		s.model.SetStyles(themedTextareaStyles(value.theme))
+	}
 }
 
 func (s *textareaSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
@@ -214,7 +234,7 @@ func (s *textareaSection) Render(contentWidth int, focusID, hoverID string) Rend
 
 	// Render label if present
 	if s.label != "" {
-		sb.WriteString(Body.Render(s.label))
+		sb.WriteString(s.styles.body.Render(s.label))
 		sb.WriteString("\n")
 		labelLines = 1
 	}
@@ -244,17 +264,17 @@ func (s *textareaSection) Render(contentWidth int, focusID, hoverID string) Rend
 	if isFocused {
 		areaStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(Primary).
+			BorderForeground(lipgloss.Color(s.styles.theme.Primary)).
 			Width(textareaBoxWidth)
 	} else if s.id == hoverID {
 		areaStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(TextMuted).
+			BorderForeground(lipgloss.Color(s.styles.theme.BorderMuted)).
 			Width(textareaBoxWidth)
 	} else {
 		areaStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(BorderNormal).
+			BorderForeground(lipgloss.Color(s.styles.theme.Border)).
 			Width(textareaBoxWidth)
 	}
 

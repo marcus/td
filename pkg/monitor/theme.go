@@ -166,6 +166,16 @@ type monitorStyles struct {
 	kanbanBox             lipgloss.Style
 	boardEditorHeader     lipgloss.Style
 	errorText             lipgloss.Style
+	modalSuccess          lipgloss.Style
+	modalWarning          lipgloss.Style
+	modalError            lipgloss.Style
+	modalBreadcrumb       lipgloss.Style
+	modalEpicFocused      lipgloss.Style
+	modalSelected         lipgloss.Style
+	modalParent           lipgloss.Style
+	modalParentFocused    lipgloss.Style
+	modalBlockedFocused   lipgloss.Style
+	modalBlocksFocused    lipgloss.Style
 
 	selectionBackground string
 	selectionStyle      string
@@ -296,6 +306,16 @@ func newMonitorStyles(theme Theme) monitorStyles {
 		kanbanBox:             lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(color(theme.BorderActive)).Padding(0, 1),
 		boardEditorHeader:     lipgloss.NewStyle().Bold(true).Foreground(color(theme.Primary)),
 		errorText:             lipgloss.NewStyle().Foreground(color(theme.Error)),
+		modalSuccess:          lipgloss.NewStyle().Foreground(color(theme.Success)),
+		modalWarning:          lipgloss.NewStyle().Foreground(color(theme.Warning)),
+		modalError:            lipgloss.NewStyle().Foreground(color(theme.Error)),
+		modalBreadcrumb:       lipgloss.NewStyle().Foreground(color(theme.TextSubtle)).Italic(true),
+		modalEpicFocused:      lipgloss.NewStyle().Bold(true).Foreground(color(theme.Info)).MarginTop(1),
+		modalSelected:         lipgloss.NewStyle().Background(color(theme.Selection)).Foreground(color(theme.TextSelection)),
+		modalParent:           lipgloss.NewStyle().Foreground(color(theme.Primary)),
+		modalParentFocused:    lipgloss.NewStyle().Background(color(theme.Selection)).Foreground(color(theme.Primary)).Bold(true),
+		modalBlockedFocused:   lipgloss.NewStyle().Bold(true).Foreground(color(theme.Error)).MarginTop(1),
+		modalBlocksFocused:    lipgloss.NewStyle().Bold(true).Foreground(color(theme.Info)).MarginTop(1),
 		selectionBackground:   ansi.NewStyle().BackgroundColor(color(theme.Selection)).String(),
 		selectionStyle:        ansi.NewStyle().ForegroundColor(color(theme.TextSelection)).BackgroundColor(color(theme.Selection)).String(),
 	}
@@ -336,6 +356,18 @@ func (m Model) formatStatus(status models.Status) string {
 	return style.Render(string(status))
 }
 
+func (m Model) formatIssueDetailStatus(status models.Status) string {
+	styles := m.renderStyles()
+	style, ok := styles.status[status]
+	if !ok {
+		return string(status)
+	}
+	if status == models.StatusClosed {
+		style = styles.modalSuccess
+	}
+	return style.Bold(true).Render(string(status))
+}
+
 func (m Model) formatPriority(priority models.Priority) string {
 	style, ok := m.renderStyles().priority[priority]
 	if !ok {
@@ -362,6 +394,29 @@ func (m Model) formatActivityBadge(activityType string) string {
 		return m.renderStyles().subtle.Render("[???]")
 	}
 	return m.renderStyles().activityBadge[activityType].Render(label)
+}
+
+func (m Model) renderButton(label string, focused, hovered, danger bool) string {
+	theme := m.themeOrDefault()
+	foreground := theme.TextSecondary
+	background := theme.SurfaceRaised
+	bold := false
+	if focused {
+		foreground, background, bold = theme.OnPrimary, theme.Primary, true
+	} else if hovered {
+		foreground, background = theme.TextSelection, theme.BorderMuted
+	}
+	if danger && focused {
+		foreground, background = theme.OnError, theme.Error
+	} else if danger && hovered {
+		foreground, background = theme.OnError, theme.Error
+	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(foreground)).
+		Background(lipgloss.Color(background)).
+		Bold(bold).
+		Padding(0, 2).
+		Render(label)
 }
 
 func (m Model) highlightRow(line string, width int) string {
