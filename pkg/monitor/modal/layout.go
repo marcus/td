@@ -5,6 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/marcus/td/pkg/monitor/ansifill"
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
@@ -117,11 +118,14 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 		inner.WriteString(m.renderHintLine())
 	}
 
-	// 5. Apply modal style
-	styled := m.modalStyle(modalWidth).Render(inner.String())
+	// 5. Apply modal style. Fill the surface behind the content first: nested
+	// styles reset, which clears the block background Lip Gloss emits once per
+	// line, leaving the surface splotchy behind styled text.
+	body := ansifill.Lines(inner.String(), ansifill.Code(m.styles.theme.Surface), 0)
+	styled := m.modalStyle(modalWidth).Render(body)
 	modalH := lipgloss.Height(styled)
 	if m.chromeRenderer != nil {
-		hostInner := m.hostInnerStyle(modalWidth - 4).Render(inner.String())
+		hostInner := m.hostInnerStyle(modalWidth - 4).Render(body)
 		styled = m.chromeRenderer(hostInner, modalWidth, modalH)
 		modalH = lipgloss.Height(styled)
 	}

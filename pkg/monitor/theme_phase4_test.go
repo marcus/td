@@ -131,7 +131,7 @@ func TestSetThemeRethemesCapturedNoteLabelsAndMetadata(t *testing.T) {
 		if m.NotesModal != listBefore {
 			t.Fatal("live retheme rebuilt the notes list")
 		}
-		list := m.NotesModal.Render(m.Width, m.Height, nil)
+		list := withoutSurfaceFill(m.themeOrDefault(), m.NotesModal.Render(m.Width, m.Height, nil))
 		wantList := formatNoteListItemWithStyles(note, 66, m.renderStyles())
 		if !strings.Contains(list, wantList) {
 			t.Fatalf("notes list did not rebind label through current theme:\nwant fragment %q\nrender %q", wantList, list)
@@ -151,7 +151,7 @@ func TestSetThemeRethemesCapturedNoteLabelsAndMetadata(t *testing.T) {
 		if m.NotesModal != detailBefore {
 			t.Fatal("live retheme rebuilt the note detail")
 		}
-		detail := m.NotesModal.Render(m.Width, m.Height, nil)
+		detail := withoutSurfaceFill(m.themeOrDefault(), m.NotesModal.Render(m.Width, m.Height, nil))
 		wantMeta := formatNoteMetaWithStyles(&note, m.renderStyles())
 		if !strings.Contains(detail, wantMeta) {
 			t.Fatalf("note detail did not rebind metadata through current theme:\nwant fragment %q\nrender %q", wantMeta, detail)

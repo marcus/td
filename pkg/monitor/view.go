@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/pkg/monitor/ansifill"
 )
 
 // renderView renders the complete TUI view
@@ -1413,7 +1414,7 @@ func (m Model) wrapStatsModal(content string, width, height int) string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedContent := "\n" + content + "\n"
+		paddedContent := m.fillModalSurface("\n"+content+"\n", hostContentWidth(width))
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
 		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeStats, 1)
 	}
@@ -1424,7 +1425,7 @@ func (m Model) wrapStatsModal(content string, width, height int) string {
 		Width(width).
 		Height(height)
 
-	return modalStyle.Render(content)
+	return modalStyle.Render(m.fillModalSurface(content, 0))
 }
 
 // renderStatsModal renders the stats modal using the declarative modal library
@@ -1632,7 +1633,7 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedInner := "\n" + inner + "\n"
+		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
 		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeHandoffs, 1)
 	}
@@ -1647,7 +1648,7 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 		Width(width).
 		Height(height)
 
-	return modalStyle.Render(inner)
+	return modalStyle.Render(m.fillModalSurface(inner, 0))
 }
 
 // renderBoardPicker renders the board picker modal
@@ -1699,7 +1700,7 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedInner := "\n" + inner + "\n"
+		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
 		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeBoardPicker, 1)
 	}
@@ -1714,7 +1715,7 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 		Width(width).
 		Height(height)
 
-	return modalStyle.Render(inner)
+	return modalStyle.Render(m.fillModalSurface(inner, 0))
 }
 
 // renderFormModal renders the form modal using huh form
@@ -1846,7 +1847,7 @@ func (m Model) renderFormModal() string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedInner := "\n" + visibleInner + "\n"
+		paddedInner := m.fillModalSurface("\n"+visibleInner+"\n", hostContentWidth(modalWidth))
 		var renderedHeight int
 		if scrolled {
 			renderedHeight = maxHeight
@@ -1885,7 +1886,7 @@ func (m Model) renderFormModal() string {
 		Width(modalWidth).
 		Height(actualHeight)
 
-	return modalStyle.Render(visibleInner)
+	return modalStyle.Render(m.fillModalSurface(visibleInner, 0))
 }
 
 // renderStatusBarChart renders a horizontal bar chart for status breakdown
@@ -1994,6 +1995,25 @@ func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
 	return m.renderStyles().statsTableLabel.Render("  ") + strings.Join(parts, "  ")
 }
 
+// fillModalSurface paints the modal surface behind every cell of content.
+//
+// Lip Gloss only emits the block background at the start of a line and around
+// padding it adds itself, so a nested style's reset clears it for the rest of
+// the line. Host chrome renderers pad short lines with unstyled spaces of their
+// own. Both leave the surface splotchy behind styled text; re-applying the
+// background after every SGR (and padding to width when the host owns the
+// chrome) keeps it solid. width <= 0 leaves padding to Lip Gloss.
+func (m Model) fillModalSurface(content string, width int) string {
+	return ansifill.Lines(content, ansifill.Code(m.themeOrDefault().Surface), width)
+}
+
+// hostContentWidth converts a modal content width into the interior width a
+// chrome renderer exposes: it receives width+2 and spends one cell per side on
+// the border and one more per side on padding.
+func hostContentWidth(width int) int {
+	return width - 2
+}
+
 // wrapModalWithDepth wraps content in a modal box with depth-aware styling
 func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	depth := m.ModalDepth()
@@ -2036,7 +2056,7 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedInner := "\n" + inner + "\n"
+		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(width))
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
 		return m.ModalRenderer(paddedInner, width+2, height+2, ModalTypeIssue, depth)
 	}
@@ -2062,7 +2082,7 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 		Width(width).
 		Height(height)
 
-	return modalStyle.Render(inner)
+	return modalStyle.Render(m.fillModalSurface(inner, 0))
 }
 
 // wrapConfirmationModal wraps content in a confirmation modal box with standard styling
@@ -2075,7 +2095,7 @@ func (m Model) wrapConfirmationModal(content string, width int) string {
 		// Add vertical padding to match lipgloss Padding(1, 2) behavior.
 		// Custom renderer only handles horizontal padding, so we add blank lines
 		// for top/bottom padding manually.
-		paddedContent := "\n" + content + "\n"
+		paddedContent := m.fillModalSurface("\n"+content+"\n", hostContentWidth(width))
 		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
 		return m.ModalRenderer(paddedContent, width+2, height+2, ModalTypeConfirmation, 1)
 	}
@@ -2089,7 +2109,7 @@ func (m Model) wrapConfirmationModal(content string, width int) string {
 		Padding(1, 2).
 		Width(width)
 
-	return modalStyle.Render(content)
+	return modalStyle.Render(m.fillModalSurface(content, 0))
 }
 
 // renderDeleteConfirmation renders the delete confirmation dialog using the declarative modal library
@@ -2542,7 +2562,7 @@ func (m Model) renderHelp() string {
 	// Combine content and footer
 	inner := lipgloss.JoinVertical(lipgloss.Left, content.String(), "", footer)
 	if m.ModalRenderer != nil {
-		paddedInner := "\n" + inner + "\n"
+		paddedInner := m.fillModalSurface("\n"+inner+"\n", hostContentWidth(modalWidth))
 		return m.ModalRenderer(paddedInner, modalWidth+2, modalHeight+2, ModalTypeHelp, 1)
 	}
 
@@ -2556,7 +2576,7 @@ func (m Model) renderHelp() string {
 		Width(modalWidth).
 		Height(modalHeight)
 
-	return modalStyle.Render(inner)
+	return modalStyle.Render(m.fillModalSurface(inner, 0))
 }
 
 // determinePanelState determines the visual state of a panel for theming

@@ -699,7 +699,7 @@ func (m Model) wrapSimpleModal(title, content string, width int) string {
 	titleLine := m.renderStyles().title.Render(title)
 	body := titleLine + "\n\n" + content
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer("\n"+body+"\n", width+2, modalHeight+2, ModalTypeNotes, 1)
+		return m.ModalRenderer(m.fillModalSurface("\n"+body+"\n", hostContentWidth(width)), width+2, modalHeight+2, ModalTypeNotes, 1)
 	}
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -710,5 +710,5 @@ func (m Model) wrapSimpleModal(title, content string, width int) string {
 		Width(width - 2).
 		Height(modalHeight - 2)
 
-	return style.Render(body)
+	return style.Render(m.fillModalSurface(body, 0))
 }

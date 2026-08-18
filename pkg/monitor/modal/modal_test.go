@@ -7,7 +7,9 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
 	"github.com/charmbracelet/x/ansi"
+	"github.com/marcus/td/pkg/monitor/ansifill"
 
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -98,7 +100,9 @@ func TestInstanceThemeCoversVariantsAndBuiltInSections(t *testing.T) {
 				AddSection(Text("body")).
 				AddSection(List("items", []ListItem{{ID: "one", Label: "selected"}}, &cursor)).
 				AddSection(Buttons(Btn(" Delete ", "delete", BtnDanger())))
-			got := m.Render(80, 24, nil)
+			// The renderer paints the surface behind every cell; strip it so the
+			// themed fragments below can be matched verbatim.
+			got := strings.ReplaceAll(m.Render(80, 24, nil), ansifill.Code(theme.Surface), "")
 			for name, want := range map[string]string{
 				"variant": lipgloss.NewStyle().Foreground(lipgloss.Color(tt.color)).Render("X"),
 				"body":    m.styles.body.Render("body"),

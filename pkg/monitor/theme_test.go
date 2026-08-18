@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/pkg/monitor/ansifill"
 	"github.com/marcus/td/pkg/monitor/modal"
 )
 
@@ -613,6 +614,12 @@ func TestPhase3LiveRethemePreservesOpenDeclarativeModalState(t *testing.T) {
 	}
 }
 
+// withoutSurfaceFill removes the modal surface background that the renderers
+// paint behind every cell, so assertions can match a themed fragment verbatim.
+func withoutSurfaceFill(theme Theme, rendered string) string {
+	return strings.ReplaceAll(rendered, ansifill.Code(theme.Surface), "")
+}
+
 func TestPhase3LegacyNestedIssueAndHelpUseThemeInsideHostChrome(t *testing.T) {
 	m := NewModel(nil, "test", 0, "dev", t.TempDir())
 	m.Width, m.Height = 100, 32
@@ -631,7 +638,7 @@ func TestPhase3LegacyNestedIssueAndHelpUseThemeInsideHostChrome(t *testing.T) {
 		IssueID: "td-child",
 		Issue:   &models.Issue{ID: "td-child", Title: "Child", Type: models.TypeBug, Priority: models.PriorityP0, Status: models.StatusBlocked, CreatedAt: time.Now()},
 	}}
-	issue := m.renderModal()
+	issue := withoutSurfaceFill(m.themeOrDefault(), m.renderModal())
 	if !strings.HasPrefix(issue, "HOST{") || !strings.Contains(issue, m.renderStyles().modalBreadcrumb.Render(m.ModalBreadcrumb())) {
 		t.Fatalf("nested issue did not retain themed inner content inside host chrome: %q", issue)
 	}
@@ -639,7 +646,7 @@ func TestPhase3LegacyNestedIssueAndHelpUseThemeInsideHostChrome(t *testing.T) {
 		t.Fatalf("nested issue leaked unthemed semantic content: %q", issue)
 	}
 
-	help := m.renderHelp()
+	help := withoutSurfaceFill(m.themeOrDefault(), m.renderHelp())
 	if !strings.HasPrefix(help, "HOST{") || !strings.Contains(help, m.renderStyles().subtle.Render("/:filter  j/k:scroll  Ctrl+d/u:½page  G/gg:end/start  ?/Esc:close")) {
 		t.Fatalf("help did not retain themed inner content inside host chrome: %q", help)
 	}
