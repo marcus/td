@@ -192,6 +192,83 @@ func GetRootDir() (string, error) {
 	return strings.TrimSpace(output), nil
 }
 
+// CommitInfo represents a single git commit with structured fields.
+type CommitInfo struct {
+	Hash    string
+	Subject string
+	Body    string
+}
+
+// ListCommitsBetween returns commits between two refs (from exclusive, to inclusive).
+// If from is empty, all commits up to "to" are returned.
+// If to is empty, HEAD is used.
+func ListCommitsBetween(from, to string) ([]CommitInfo, error) {
+	if to == "" {
+		to = "HEAD"
+	}
+
+	revRange := to
+	if from != "" {
+		revRange = from + ".." + to
+	}
+
+	// Use a delimiter unlikely to appear in commit messages
+	const sep = "---commit-sep---"
+	const fieldSep = "---field-sep---"
+	format := fmt.Sprintf("%s%%H%s%%s%s%%b", sep, fieldSep, fieldSep)
+
+	output, err := runGit("log", "--format="+format, revRange)
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, nil
+	}
+
+	chunks := strings.Split(output, sep)
+	var commits []CommitInfo
+	for _, chunk := range chunks {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		fields := strings.SplitN(chunk, fieldSep, 3)
+		if len(fields) < 2 {
+			continue
+		}
+		c := CommitInfo{
+			Hash:    strings.TrimSpace(fields[0]),
+			Subject: strings.TrimSpace(fields[1]),
+		}
+		if len(fields) > 2 {
+			c.Body = strings.TrimSpace(fields[2])
+		}
+		commits = append(commits, c)
+	}
+
+	return commits, nil
+}
+
+// LatestTag returns the most recent reachable tag, or empty string if none.
+func LatestTag() (string, error) {
+	output, err := runGit("describe", "--tags", "--abbrev=0")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
+// PreviousTag returns the tag before the given tag, or empty string if none.
+func PreviousTag(tag string) (string, error) {
+	output, err := runGit("describe", "--tags", "--abbrev=0", tag+"^")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
 func runGit(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	var stdout, stderr bytes.Buffer
