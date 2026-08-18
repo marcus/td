@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/models"
 )
@@ -232,6 +233,77 @@ func TestCustomHuhThemeReplacesEveryInheritedHelpColor(t *testing.T) {
 	)
 	if !strings.Contains(view, "38;2;4;5;6") {
 		t.Fatalf("rendered Huh footer did not receive monitor description color: %q", view)
+	}
+}
+
+func TestHostThemePrecedesHuhSelectFilterInitialization(t *testing.T) {
+	theme := phase4TestTheme()
+	issue := &models.Issue{
+		ID: "td-filter", Title: "Filter theme", Type: models.TypeTask,
+		Priority: models.PriorityP2, Status: models.StatusOpen,
+	}
+	cases := []struct {
+		name, field string
+		form        func() *FormState
+	}{
+		{"type", formKeyType, func() *FormState { return newFormStateWithTheme(FormModeCreate, "", theme) }},
+		{"priority", formKeyPriority, func() *FormState { return newFormStateWithTheme(FormModeCreate, "", theme) }},
+		{"status", formKeyStatus, func() *FormState {
+			fs := newFormStateForEditWithTheme(issue, theme)
+			fs.ShowExtended = true
+			fs.buildForm()
+			return fs
+		}},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := tt.form()
+			openHuhSelectFilter(t, fs, tt.field)
+			view := fs.Form.View()
+			if !strings.Contains(view, "38;2;51;0;3") || !strings.Contains(view, "38;2;228;229;230") {
+				t.Fatalf("%s filter did not use host accent/text colors: %q", tt.field, view)
+			}
+			assertNoANSIColors(t, view, "38;2;241;250;140", "38;2;98;114;164")
+		})
+	}
+}
+
+func TestThemedFormConstructorPreservesStandaloneSelectFilter(t *testing.T) {
+	standalone := NewFormState(FormModeCreate, "")
+	themedDefault := newFormStateWithTheme(FormModeCreate, "", DefaultTheme())
+	openHuhSelectFilter(t, standalone, formKeyType)
+	openHuhSelectFilter(t, themedDefault, formKeyType)
+	if got, want := themedDefault.Form.View(), standalone.Form.View(); got != want {
+		t.Fatalf("host-aware constructor changed standalone select filtering:\n got %q\nwant %q", got, want)
+	}
+}
+
+func openHuhSelectFilter(t *testing.T, fs *FormState, fieldKey string) {
+	t.Helper()
+	_ = fs.Form.Init()
+	switch fieldKey {
+	case formKeyType:
+		_ = fs.Form.NextField()
+	case formKeyPriority:
+		_ = fs.Form.NextField()
+		_ = fs.Form.NextField()
+	case formKeyStatus:
+		_ = fs.Form.NextGroup()
+		_ = fs.Form.NextGroup()
+		_ = fs.Form.NextField()
+		_ = fs.Form.NextField()
+	default:
+		t.Fatalf("unsupported select field %q", fieldKey)
+	}
+	if got := fs.focusedFieldKey(); got != fieldKey {
+		t.Fatalf("focused field = %q, want %q", got, fieldKey)
+	}
+	_, _ = fs.Form.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	_, _ = fs.Form.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	filtering, ok := fs.Form.GetFocusedField().(interface{ GetFiltering() bool })
+	if !ok || !filtering.GetFiltering() {
+		t.Fatalf("%s select did not enter filter mode", fieldKey)
 	}
 }
 

@@ -81,6 +81,10 @@ type FormState struct {
 
 // NewFormState creates a new form state for creating an issue
 func NewFormState(mode FormMode, parentID string) *FormState {
+	return newFormStateWithTheme(mode, parentID, Theme{})
+}
+
+func newFormStateWithTheme(mode FormMode, parentID string, theme Theme) *FormState {
 	state := &FormState{
 		Mode:        mode,
 		ParentID:    parentID,
@@ -90,6 +94,7 @@ func NewFormState(mode FormMode, parentID string) *FormState {
 		Points:      "0",
 		ButtonFocus: formButtonFocusForm,
 		ButtonHover: 0,
+		theme:       theme,
 	}
 	state.buildForm()
 	return state
@@ -97,6 +102,10 @@ func NewFormState(mode FormMode, parentID string) *FormState {
 
 // NewFormStateForEdit creates a form state populated with existing issue data
 func NewFormStateForEdit(issue *models.Issue) *FormState {
+	return newFormStateForEditWithTheme(issue, Theme{})
+}
+
+func newFormStateForEditWithTheme(issue *models.Issue, theme Theme) *FormState {
 	state := &FormState{
 		Mode:        FormModeEdit,
 		IssueID:     issue.ID,
@@ -112,6 +121,7 @@ func NewFormStateForEdit(issue *models.Issue) *FormState {
 		Minor:       issue.Minor,
 		ButtonFocus: formButtonFocusForm,
 		ButtonHover: 0,
+		theme:       theme,
 	}
 	state.buildForm()
 	return state

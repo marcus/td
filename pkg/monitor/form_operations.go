@@ -26,8 +26,7 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 	}
 
 	// Create form state
-	m.FormState = NewFormState(FormModeCreate, parentID)
-	m.FormState.setTheme(m.themeOrDefault())
+	m.FormState = newFormStateWithTheme(FormModeCreate, parentID, m.themeOrDefault())
 	m.FormOpen = true
 	m.FormScrollOffset = 0
 
@@ -62,8 +61,7 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 	}
 
 	// Create form state with issue data
-	m.FormState = NewFormStateForEdit(issue)
-	m.FormState.setTheme(m.themeOrDefault())
+	m.FormState = newFormStateForEditWithTheme(issue, m.themeOrDefault())
 	m.FormOpen = true
 	m.FormScrollOffset = 0
 
