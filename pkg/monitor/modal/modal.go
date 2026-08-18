@@ -25,8 +25,11 @@ type Modal struct {
 	scrollOffset int      // Content scroll position in lines
 }
 
-// ChromeRenderer lets an embedder own only the outer modal frame. The content
-// passed to it has already been rendered with this modal's instance theme.
+// ChromeRenderer lets an embedder own only the outer modal frame. Width and
+// height are the exact outer dimensions, including the host's one-cell border.
+// Content is already themed, sized to width-4, and padded once on each side;
+// renderers such as Sidecar's RenderGradientBorder add their own padding=1 to
+// preserve the modal's two-cell content inset.
 type ChromeRenderer func(content string, width, height int) string
 
 // New creates a new Modal with the given title and options.

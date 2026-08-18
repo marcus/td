@@ -231,11 +231,12 @@ func (m *Model) createNoteDetailModal() *modal.Modal {
 	if content == "" {
 		content = note.Content
 	}
-	if content == "" {
-		content = m.renderStyles().subtle.Render("(empty)")
-	}
-	md.AddSection(modal.Custom(
-		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+	empty := content == ""
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			if empty {
+				return modal.RenderedSection{Content: newMonitorStyles(monitorTheme(theme)).subtle.Render("(empty)")}
+			}
 			return modal.RenderedSection{Content: content}
 		},
 		nil,

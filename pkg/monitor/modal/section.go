@@ -123,12 +123,19 @@ func (w *whenSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
 
 // customSection allows escape-hatch for complex custom content.
 type customSection struct {
-	renderFn func(contentWidth int, focusID, hoverID string) RenderedSection
-	updateFn func(msg tea.Msg, focusID string) (string, tea.Cmd)
+	renderFn       func(contentWidth int, focusID, hoverID string) RenderedSection
+	themedRenderFn func(contentWidth int, focusID, hoverID string, theme Theme) RenderedSection
+	updateFn       func(msg tea.Msg, focusID string) (string, tea.Cmd)
+	styles         styles
 }
 
 // CustomRenderFunc is the signature for custom section render functions.
 type CustomRenderFunc func(contentWidth int, focusID, hoverID string) RenderedSection
+
+// ThemedCustomRenderFunc receives the modal's current instance theme on every
+// render, including after SetTheme. It is the escape hatch for complex content
+// that needs semantic styling without capturing a parent model's stale styles.
+type ThemedCustomRenderFunc func(contentWidth int, focusID, hoverID string, theme Theme) RenderedSection
 
 // CustomUpdateFunc is the signature for custom section update functions.
 type CustomUpdateFunc func(msg tea.Msg, focusID string) (action string, cmd tea.Cmd)
@@ -139,10 +146,26 @@ func Custom(renderFn CustomRenderFunc, updateFn CustomUpdateFunc) Section {
 	return &customSection{
 		renderFn: renderFn,
 		updateFn: updateFn,
+		styles:   newStyles(DefaultTheme()),
 	}
 }
 
+// ThemedCustom creates a custom section whose render callback receives the
+// modal's current instance theme.
+func ThemedCustom(renderFn ThemedCustomRenderFunc, updateFn CustomUpdateFunc) Section {
+	return &customSection{
+		themedRenderFn: renderFn,
+		updateFn:       updateFn,
+		styles:         newStyles(DefaultTheme()),
+	}
+}
+
+func (c *customSection) setStyles(value styles) { c.styles = value }
+
 func (c *customSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
+	if c.themedRenderFn != nil {
+		return c.themedRenderFn(contentWidth, focusID, hoverID, c.styles.theme)
+	}
 	if c.renderFn == nil {
 		return RenderedSection{}
 	}

@@ -162,10 +162,14 @@ func (m *Model) createBoardEditorModal() *modal.Modal {
 		md.AddSection(modal.Spacer())
 
 		// Live query preview section
-		md.AddSection(modal.Custom(
-			func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+		preview := m.BoardEditorPreview
+		queryInput := m.BoardEditorQueryInput
+		md.AddSection(modal.ThemedCustom(
+			func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+				currentTheme := monitorTheme(theme)
+				snapshot := Model{BoardEditorPreview: preview, BoardEditorQueryInput: queryInput, theme: currentTheme, styles: newMonitorStyles(currentTheme)}
 				return modal.RenderedSection{
-					Content: m.renderBoardEditorQueryPreview(contentWidth),
+					Content: snapshot.renderBoardEditorQueryPreview(contentWidth),
 				}
 			},
 			nil,
@@ -173,10 +177,12 @@ func (m *Model) createBoardEditorModal() *modal.Modal {
 		md.AddSection(modal.Spacer())
 
 		// TDQ Quick Reference section
-		md.AddSection(modal.Custom(
-			func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+		md.AddSection(modal.ThemedCustom(
+			func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+				currentTheme := monitorTheme(theme)
+				snapshot := Model{theme: currentTheme, styles: newMonitorStyles(currentTheme)}
 				return modal.RenderedSection{
-					Content: m.renderBoardEditorTDQRef(contentWidth),
+					Content: snapshot.renderBoardEditorTDQRef(contentWidth),
 				}
 			},
 			nil,

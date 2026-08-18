@@ -671,3 +671,155 @@ func TestPhase3DeclarativeModalHostRendererOwnsOuterChromeOnly(t *testing.T) {
 		t.Fatalf("host outer chrome replaced themed inner content: %q", got)
 	}
 }
+
+func TestPhase3MonitorBuilderPreservesStandaloneModalDefaults(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	built := m.newModal("Standalone", ModalTypeHelp, modal.WithWidth(50), modal.WithHints(false)).
+		AddSection(modal.Text("body")).
+		AddSection(modal.Buttons(modal.Btn(" Close ", "close")))
+	direct := modal.New("Standalone", modal.WithWidth(50), modal.WithHints(false)).
+		AddSection(modal.Text("body")).
+		AddSection(modal.Buttons(modal.Btn(" Close ", "close")))
+	if got, want := built.Render(80, 24, nil), direct.Render(80, 24, nil); got != want {
+		t.Fatalf("model-created standalone modal changed legacy defaults:\n got %q\nwant %q", got, want)
+	}
+	if got := built.Render(80, 24, nil); strings.Contains(got, "48;5;237") || !strings.Contains(got, "48;5;235") {
+		t.Fatalf("standalone modal did not preserve legacy Surface 235: %q", got)
+	}
+}
+
+func TestPhase3CustomSectionsRethemeAcrossModelValueCopy(t *testing.T) {
+	dark := phase2TestTheme()
+	light := phase2TestTheme()
+	light.Primary = "#f10001"
+	light.TextPrimary = "#f20002"
+	light.TextMuted = "#f30003"
+	light.Error = "#f40004"
+
+	cases := []struct {
+		name   string
+		open   func(*Model) *modal.Modal
+		marker string
+		color  func(Theme) string
+	}{
+		{
+			name: "stats",
+			open: func(m *Model) *modal.Modal {
+				m.StatsData = &StatsData{ExtendedStats: &models.ExtendedStats{ByStatus: map[models.Status]int{models.StatusOpen: 1}}}
+				m.StatsModal = m.createStatsModal()
+				return m.StatsModal
+			},
+			marker: "STATUS BREAKDOWN",
+			color:  func(theme Theme) string { return theme.TextPrimary },
+		},
+		{
+			name: "tdq help",
+			open: func(m *Model) *modal.Modal {
+				m.TDQHelpModal = m.createTDQHelpModal()
+				return m.TDQHelpModal
+			},
+			marker: "TDQ QUERY LANGUAGE - Search Syntax",
+			color:  func(theme Theme) string { return theme.TextPrimary },
+		},
+		{
+			name: "activity",
+			open: func(m *Model) *modal.Modal {
+				m.ActivityDetailItem = &ActivityItem{Type: "comment", Message: "detail", IssueID: "td-theme"}
+				m.ActivityDetailModal = m.createActivityDetailModal()
+				return m.ActivityDetailModal
+			},
+			marker: "Issue: ",
+			color:  func(theme Theme) string { return theme.TextMuted },
+		},
+		{
+			name: "board editor",
+			open: func(m *Model) *modal.Modal {
+				input := textarea.New()
+				input.SetValue("bad")
+				m.BoardEditorMode = "create"
+				m.BoardEditorQueryInput = &input
+				m.BoardEditorPreview = &boardEditorPreviewData{Error: errors.New("bad query")}
+				m.BoardEditorModal = m.createBoardEditorModal()
+				return m.BoardEditorModal
+			},
+			marker: "Error: bad query",
+			color:  func(theme Theme) string { return theme.Error },
+		},
+		{
+			name: "notes",
+			open: func(m *Model) *modal.Modal {
+				m.NotesState = &NotesState{DetailNote: &models.Note{Title: "Empty"}}
+				m.NotesModal = m.createNoteDetailModal()
+				return m.NotesModal
+			},
+			marker: "(empty)",
+			color:  func(theme Theme) string { return theme.TextMuted },
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			assertStyledMarker := func(output string, theme Theme) bool {
+				idx := strings.Index(output, tt.marker)
+				if idx < 0 {
+					return false
+				}
+				start := max(0, idx-120)
+				fragment := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(tt.color(theme))).Render("X"), "X")
+				return strings.Contains(output[start:idx], fragment)
+			}
+			created := NewModel(nil, "test", 0, "dev", t.TempDir())
+			created.Width, created.Height = 100, 36
+			if err := created.SetTheme(dark); err != nil {
+				t.Fatal(err)
+			}
+			opened := tt.open(&created)
+			before := opened.Render(created.Width, created.Height, nil)
+			if !assertStyledMarker(before, dark) {
+				t.Fatalf("initial custom content missing dark style: %q", before)
+			}
+
+			returned := created // Bubble Tea's Update returns a Model value copy.
+			if err := returned.SetTheme(light); err != nil {
+				t.Fatal(err)
+			}
+			after := opened.Render(returned.Width, returned.Height, nil)
+			if !assertStyledMarker(after, light) {
+				t.Fatalf("custom content retained captured model theme after value-copy retheme: %q", after)
+			}
+			oldFragment := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(tt.color(dark))).Render("X"), "X")
+			idx := strings.Index(after, tt.marker)
+			if idx >= 0 && strings.Contains(after[max(0, idx-120):idx], oldFragment) {
+				t.Fatalf("custom content leaked old theme after value-copy retheme: %q", after)
+			}
+		})
+	}
+}
+
+func TestPhase3StatsModalCreatedByUpdateUsesReturnedModelTheme(t *testing.T) {
+	dark := phase2TestTheme()
+	light := phase2TestTheme()
+	light.TextPrimary = "#f20002"
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 100, 36
+	m.StatsOpen = true
+	if err := m.SetTheme(dark); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := m.Update(StatsDataMsg{Data: &StatsData{
+		ExtendedStats: &models.ExtendedStats{ByStatus: map[models.Status]int{models.StatusOpen: 1}},
+	}})
+	returned, ok := updated.(Model)
+	if !ok || returned.StatsModal == nil {
+		t.Fatalf("StatsDataMsg did not return a model with a declarative modal: %T", updated)
+	}
+	if err := returned.SetTheme(light); err != nil {
+		t.Fatal(err)
+	}
+	got := returned.StatsModal.Render(returned.Width, returned.Height, nil)
+	idx := strings.Index(got, "STATUS BREAKDOWN")
+	fragment := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(light.TextPrimary)).Render("X"), "X")
+	if idx < 0 || !strings.Contains(got[max(0, idx-120):idx], fragment) {
+		t.Fatalf("StatsDataMsg modal retained the pre-Update model theme: %q", got)
+	}
+}

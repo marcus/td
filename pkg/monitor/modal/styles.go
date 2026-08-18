@@ -2,6 +2,7 @@ package modal
 
 import (
 	"image/color"
+	"reflect"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -13,20 +14,31 @@ import (
 // modals can render with different palettes without shared mutable state.
 type Theme struct {
 	Primary       string
+	Secondary     string
+	Accent        string
+	Success       string
 	Warning       string
 	Error         string
 	Info          string
+	ReadyToClose  string
+	PendingReview string
+	PendingOther  string
 	TextPrimary   string
 	TextSecondary string
 	TextMuted     string
+	TextSubtle    string
 	TextSelection string
 	OnPrimary     string
+	OnWarning     string
 	OnError       string
+	Background    string
 	Surface       string
 	SurfaceRaised string
 	Selection     string
 	Border        string
 	BorderMuted   string
+	BorderActive  string
+	Link          string
 }
 
 func themedTextInputStyles(theme Theme) textinput.Styles {
@@ -66,71 +78,44 @@ func themedTextareaStyles(theme Theme) textarea.Styles {
 func DefaultTheme() Theme {
 	return Theme{
 		Primary:       "212",
+		Secondary:     "141",
+		Accent:        "45",
+		Success:       "42",
 		Warning:       "214",
 		Error:         "196",
 		Info:          "45",
+		ReadyToClose:  "78",
+		PendingReview: "183",
+		PendingOther:  "103",
 		TextPrimary:   "255",
 		TextSecondary: "252",
 		TextMuted:     "241",
+		TextSubtle:    "244",
 		TextSelection: "255",
 		OnPrimary:     "255",
+		OnWarning:     "0",
 		OnError:       "255",
+		Background:    "0",
 		Surface:       "235",
 		SurfaceRaised: "238",
 		Selection:     "237",
 		Border:        "240",
 		BorderMuted:   "245",
+		BorderActive:  "212",
+		Link:          "45",
 	}
 }
 
 func normalizeTheme(theme Theme) Theme {
-	defaults := DefaultTheme()
-	if theme.Primary == "" {
-		theme.Primary = defaults.Primary
+	result := DefaultTheme()
+	supplied := reflect.ValueOf(theme)
+	normalized := reflect.ValueOf(&result).Elem()
+	for i := 0; i < supplied.NumField(); i++ {
+		if value := supplied.Field(i).String(); value != "" {
+			normalized.Field(i).SetString(value)
+		}
 	}
-	if theme.Warning == "" {
-		theme.Warning = defaults.Warning
-	}
-	if theme.Error == "" {
-		theme.Error = defaults.Error
-	}
-	if theme.Info == "" {
-		theme.Info = defaults.Info
-	}
-	if theme.TextPrimary == "" {
-		theme.TextPrimary = defaults.TextPrimary
-	}
-	if theme.TextSecondary == "" {
-		theme.TextSecondary = defaults.TextSecondary
-	}
-	if theme.TextMuted == "" {
-		theme.TextMuted = defaults.TextMuted
-	}
-	if theme.TextSelection == "" {
-		theme.TextSelection = defaults.TextSelection
-	}
-	if theme.OnPrimary == "" {
-		theme.OnPrimary = defaults.OnPrimary
-	}
-	if theme.OnError == "" {
-		theme.OnError = defaults.OnError
-	}
-	if theme.Surface == "" {
-		theme.Surface = defaults.Surface
-	}
-	if theme.SurfaceRaised == "" {
-		theme.SurfaceRaised = defaults.SurfaceRaised
-	}
-	if theme.Selection == "" {
-		theme.Selection = defaults.Selection
-	}
-	if theme.Border == "" {
-		theme.Border = defaults.Border
-	}
-	if theme.BorderMuted == "" {
-		theme.BorderMuted = defaults.BorderMuted
-	}
-	return theme
+	return result
 }
 
 type styles struct {

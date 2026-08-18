@@ -10,22 +10,50 @@ func (m Model) themeOrDefault() Theme {
 }
 
 func modalTheme(theme Theme) modal.Theme {
+	if theme == DefaultTheme() {
+		return modal.DefaultTheme()
+	}
 	return modal.Theme{
 		Primary:       theme.Primary,
+		Secondary:     theme.Secondary,
+		Accent:        theme.Accent,
+		Success:       theme.Success,
 		Warning:       theme.Warning,
 		Error:         theme.Error,
 		Info:          theme.Info,
+		ReadyToClose:  theme.ReadyToClose,
+		PendingReview: theme.PendingReview,
+		PendingOther:  theme.PendingOther,
 		TextPrimary:   theme.TextPrimary,
 		TextSecondary: theme.TextSecondary,
 		TextMuted:     theme.TextMuted,
+		TextSubtle:    theme.TextSubtle,
 		TextSelection: theme.TextSelection,
 		OnPrimary:     theme.OnPrimary,
+		OnWarning:     theme.OnWarning,
 		OnError:       theme.OnError,
+		Background:    theme.Background,
 		Surface:       theme.Surface,
 		SurfaceRaised: theme.SurfaceRaised,
 		Selection:     theme.Selection,
 		Border:        theme.Border,
 		BorderMuted:   theme.BorderMuted,
+		BorderActive:  theme.BorderActive,
+		Link:          theme.Link,
+	}
+}
+
+func monitorTheme(theme modal.Theme) Theme {
+	return Theme{
+		Primary: theme.Primary, Secondary: theme.Secondary, Accent: theme.Accent,
+		Success: theme.Success, Warning: theme.Warning, Error: theme.Error, Info: theme.Info,
+		ReadyToClose: theme.ReadyToClose, PendingReview: theme.PendingReview, PendingOther: theme.PendingOther,
+		TextPrimary: theme.TextPrimary, TextSecondary: theme.TextSecondary, TextMuted: theme.TextMuted,
+		TextSubtle: theme.TextSubtle, TextSelection: theme.TextSelection,
+		OnPrimary: theme.OnPrimary, OnWarning: theme.OnWarning, OnError: theme.OnError,
+		Background: theme.Background, Surface: theme.Surface, SurfaceRaised: theme.SurfaceRaised,
+		Selection: theme.Selection, Border: theme.Border, BorderMuted: theme.BorderMuted,
+		BorderActive: theme.BorderActive, Link: theme.Link,
 	}
 }
 

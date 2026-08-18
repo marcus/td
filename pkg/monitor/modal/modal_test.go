@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/marcus/td/pkg/monitor/mouse"
 )
@@ -156,6 +157,97 @@ func TestModalThemesAreIsolatedAndRethemePreservesState(t *testing.T) {
 	}
 	if got := second.Render(60, 16, nil); got != secondOutput {
 		t.Fatal("retheming first modal contaminated second modal")
+	}
+}
+
+func TestHostChromeContractMatchesSidecarGeometryAndHitRegions(t *testing.T) {
+	theme := Theme{Primary: "#110001", TextPrimary: "#220002", Surface: "#330003"}
+	var gotWidth, gotHeight, gotContentWidth, gotContentHeight int
+	renderer := func(content string, width, height int) string {
+		gotWidth, gotHeight = width, height
+		gotContentWidth, gotContentHeight = lipgloss.Width(content), lipgloss.Height(content)
+		// Sidecar-equivalent geometry: outer dimensions include one border cell
+		// and the host adds padding=1 around the supplied content.
+		lines := strings.Split(content, "\n")
+		innerHeight := height - 2
+		contentWidth := width - 4
+		var out strings.Builder
+		out.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+		for i := 0; i < innerHeight; i++ {
+			line := ""
+			if i < len(lines) {
+				line = lines[i]
+			}
+			lineWidth := lipgloss.Width(line)
+			if lineWidth < contentWidth {
+				line += strings.Repeat(" ", contentWidth-lineWidth)
+			}
+			out.WriteString("| " + line + " |")
+			if i < innerHeight-1 {
+				out.WriteByte('\n')
+			}
+		}
+		out.WriteString("\n+" + strings.Repeat("-", width-2) + "+")
+		return out.String()
+	}
+
+	input := textinput.New()
+	m := New("Hosted", WithWidth(50), WithHints(false), WithTheme(theme), WithChromeRenderer(renderer)).
+		AddSection(Custom(func(contentWidth int, focusID, hoverID string) RenderedSection {
+			return RenderedSection{Content: "RAW CUSTOM"}
+		}, nil)).
+		AddSection(Input("name", &input))
+	handler := mouse.NewHandler()
+	got := m.Render(100, 30, handler)
+	if lipgloss.Width(got) != 50 || gotWidth != 50 {
+		t.Fatalf("hosted WithWidth geometry = output %d callback %d, want 50", lipgloss.Width(got), gotWidth)
+	}
+	if lipgloss.Height(got) != gotHeight || gotContentWidth != 46 || gotContentHeight != gotHeight-2 {
+		t.Fatalf("host geometry mismatch: output h=%d callback=%dx%d content=%dx%d", lipgloss.Height(got), gotWidth, gotHeight, gotContentWidth, gotContentHeight)
+	}
+	surfaceFragment := "48;2;51;0;3"
+	if !strings.Contains(got, surfaceFragment) || !strings.Contains(got, "RAW CUSTOM") {
+		t.Fatalf("host lost td-owned Surface/custom content styling: %q", got)
+	}
+	for _, line := range strings.Split(ansi.Strip(got), "\n") {
+		if strings.Contains(line, "RAW CUSTOM") && strings.Index(line, "RAW CUSTOM") != 3 {
+			t.Fatalf("custom content starts at column %d, want 3 (border + host padding + td padding): %q", strings.Index(line, "RAW CUSTOM"), line)
+		}
+	}
+
+	modalX := (100 - 50) / 2
+	var body, field *mouse.Region
+	for _, region := range handler.HitMap.Regions() {
+		switch region.ID {
+		case "modal-body":
+			copy := region
+			body = &copy
+		case "name":
+			copy := region
+			field = &copy
+		}
+	}
+	if body == nil || body.Rect.X != modalX || body.Rect.W != 50 || body.Rect.H != gotHeight {
+		t.Fatalf("modal body region not aligned with host output: %#v", body)
+	}
+	if field == nil || field.Rect.X != modalX+3 || !body.Rect.Contains(field.Rect.X, field.Rect.Y) {
+		t.Fatalf("input region not aligned with content inset/body: body=%#v input=%#v", body, field)
+	}
+	if clicked := handler.HandleClick(field.Rect.X, field.Rect.Y).Region; clicked == nil || clicked.ID != "name" {
+		t.Fatalf("click at rendered input did not hit input region: %#v", clicked)
+	}
+}
+
+func TestThemedCustomReceivesLiveInstanceTheme(t *testing.T) {
+	m := New("Custom", WithTheme(Theme{Primary: "#110001"}), WithHints(false)).
+		AddSection(ThemedCustom(func(contentWidth int, focusID, hoverID string, theme Theme) RenderedSection {
+			return RenderedSection{Content: lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Primary)).Render("custom")}
+		}, nil))
+	before := m.Render(50, 16, nil)
+	m.SetTheme(Theme{Primary: "#220002"})
+	after := m.Render(50, 16, nil)
+	if before == after || !strings.Contains(after, "38;2;34;0;2") || strings.Contains(after, "38;2;17;0;1") {
+		t.Fatalf("themed custom section did not receive live theme:\n before %q\n after %q", before, after)
 	}
 }
 

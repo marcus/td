@@ -405,10 +405,13 @@ func (m *Model) createStatsModal() *modal.Modal {
 	)
 
 	// Use Custom section for the scrollable stats content
-	md.AddSection(modal.Custom(
-		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+	statsData := m.StatsData
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			currentTheme := monitorTheme(theme)
+			snapshot := Model{StatsData: statsData, theme: currentTheme, styles: newMonitorStyles(currentTheme)}
 			return modal.RenderedSection{
-				Content: m.renderStatsContent(contentWidth),
+				Content: snapshot.renderStatsContent(contentWidth),
 			}
 		},
 		nil, // No update handling needed
@@ -456,10 +459,12 @@ func (m *Model) createTDQHelpModal() *modal.Modal {
 	)
 
 	// Use Custom section for the help content
-	md.AddSection(modal.Custom(
-		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+	registry := m.Keymap
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			styles := newMonitorStyles(monitorTheme(theme))
 			return modal.RenderedSection{
-				Content: m.renderStyles().title.Render(ansi.Strip(m.Keymap.GenerateTDQHelp())),
+				Content: styles.title.Render(ansi.Strip(registry.GenerateTDQHelp())),
 			}
 		},
 		nil, // No update handling needed
@@ -1319,10 +1324,13 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	md.AddSection(modal.Spacer())
 
 	// Content section adapts based on type
-	md.AddSection(modal.Custom(
-		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+	itemSnapshot := *item
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			currentTheme := monitorTheme(theme)
+			snapshot := Model{ActivityDetailItem: &itemSnapshot, theme: currentTheme, styles: newMonitorStyles(currentTheme)}
 			return modal.RenderedSection{
-				Content: m.renderActivityDetailContent(contentWidth),
+				Content: snapshot.renderActivityDetailContent(contentWidth),
 			}
 		},
 		nil,

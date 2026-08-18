@@ -121,8 +121,8 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 	styled := m.modalStyle(modalWidth).Render(inner.String())
 	modalH := lipgloss.Height(styled)
 	if m.chromeRenderer != nil {
-		paddedInner := "\n" + inner.String() + "\n"
-		styled = m.chromeRenderer(paddedInner, modalWidth+2, modalH)
+		hostInner := m.hostInnerStyle(modalWidth - 4).Render(inner.String())
+		styled = m.chromeRenderer(hostInner, modalWidth, modalH)
 		modalH = lipgloss.Height(styled)
 	}
 	modalX := (screenW - modalWidth) / 2
@@ -164,6 +164,17 @@ func (m *Modal) buildLayout(screenW, screenH int, handler *mouse.Handler) string
 	}
 
 	return styled
+}
+
+func (m *Modal) hostInnerStyle(width int) lipgloss.Style {
+	style := lipgloss.NewStyle().
+		Background(lipgloss.Color(m.styles.theme.Surface)).
+		Padding(1, 1).
+		Width(width)
+	if !m.styles.isDefault {
+		style = style.Foreground(lipgloss.Color(m.styles.theme.TextPrimary))
+	}
+	return style
 }
 
 // modalStyle returns the lipgloss style for the modal box based on variant.
