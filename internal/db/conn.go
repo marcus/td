@@ -38,10 +38,19 @@ type OpenOptions struct {
 // OpenSQLite opens a SQLite database at path and applies td's standard pragma
 // policy so every caller gets identical behaviour:
 //
-//	PRAGMA journal_mode = WAL
+//	PRAGMA journal_mode = TRUNCATE
 //	PRAGMA busy_timeout = 5000           (overridable via OpenOptions.BusyTimeout)
 //	PRAGMA synchronous  = NORMAL
 //	PRAGMA foreign_keys = ON             (unless OpenOptions.DisableForeignKeys)
+//
+// journal_mode is TRUNCATE, not WAL, on purpose. modernc's WAL shared-memory
+// coordination repeatedly corrupted issues.db ("database disk image is
+// malformed") when a long-lived embedded connection (Sidecar's td monitor)
+// ran concurrently with bursts of short-lived CLI processes — see td-adbf16.
+// The rollback-journal path uses plain POSIX file locks, has no -shm/-wal
+// state to race on, and td's write volumes make the concurrency cost of
+// writers briefly blocking readers irrelevant. Do not switch back to WAL
+// without a multi-process soak test covering that embedded-monitor pattern.
 //
 // The pool is pinned with SetMaxOpenConns(1) unless OpenOptions.MaxOpenConns
 // is set. ReadOnly connections open with mode=ro and skip write-only pragmas.
@@ -90,12 +99,15 @@ func OpenSQLite(path string, opts OpenOptions) (*sql.DB, error) {
 		return conn, nil
 	}
 
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	// Switching an existing WAL database to TRUNCATE checkpoints and removes
+	// any -wal/-shm files; on an already-TRUNCATE database this is a no-op.
+	if _, err := conn.Exec("PRAGMA journal_mode=TRUNCATE"); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("enable WAL mode: %w", err)
+		return nil, fmt.Errorf("set journal mode: %w", err)
 	}
 
-	// synchronous=NORMAL is slightly faster and still safe under WAL.
+	// In rollback-journal mode synchronous=NORMAL risks losing the last
+	// transaction on power failure, never database corruption.
 	if _, err := conn.Exec("PRAGMA synchronous=NORMAL"); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("set synchronous: %w", err)

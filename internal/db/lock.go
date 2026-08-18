@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	lockFileName   = "db.lock"
-	defaultTimeout = 500 * time.Millisecond
+	lockFileName = "db.lock"
+	// Matches the SQLite busy_timeout. Rollback-journal writes (journal
+	// create + fsync per transaction) queue noticeably longer than WAL
+	// writes did, and concurrent agent sessions routinely burst past 500ms.
+	defaultTimeout = 5 * time.Second
 	initialBackoff = 5 * time.Millisecond
 	maxBackoff     = 50 * time.Millisecond
 )
