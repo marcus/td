@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -40,9 +42,29 @@ type SyncStatusReport struct {
 	PendingEvents int64  `json:"pending_events"`
 	LastSyncAt    string `json:"last_sync_at,omitempty"`
 
+	// SkippedEvents counts remote events this peer did not apply, by reason
+	// ("orphaned_parent", "quarantined"). A quarantined event is one that could
+	// never apply; it is skipped so it cannot wedge the stream behind it, and
+	// surfaced here so the skip is never silent. Empty when there are none.
+	SkippedEvents map[string]int `json:"skipped_events,omitempty"`
+	// RecentSkipped lists the newest skipped events so an operator can see what
+	// was dropped without opening the database.
+	RecentSkipped []SkippedEventSummary `json:"recent_skipped,omitempty"`
+
 	// Notes carries non-fatal degradation messages (e.g. DB could not be opened)
 	// so the diagnostic never hard-errors but still surfaces the problem.
 	Notes []string `json:"notes,omitempty"`
+}
+
+// SkippedEventSummary is one skipped remote event as reported by `td sync status`.
+type SkippedEventSummary struct {
+	ServerSeq  int64  `json:"server_seq"`
+	Reason     string `json:"reason"`
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+	ActionType string `json:"action_type"`
+	Error      string `json:"error,omitempty"`
+	SkippedAt  string `json:"skipped_at,omitempty"`
 }
 
 // gatherSyncStatus builds a SyncStatusReport for the project at baseDir. It is
@@ -117,6 +139,32 @@ func gatherSyncStatus(baseDir string) SyncStatusReport {
 		r.PendingEvents = pending
 	}
 
+	// Skipped events are part of the diagnosis: a peer that quarantined an
+	// event kept syncing, so nothing else would tell the operator it happened.
+	if counts, err := database.CountSkippedEvents(); err != nil {
+		r.Notes = append(r.Notes, fmt.Sprintf("count skipped events: %v", err))
+	} else if len(counts) > 0 {
+		r.SkippedEvents = counts
+		if recent, err := database.GetSkippedEvents(10); err != nil {
+			r.Notes = append(r.Notes, fmt.Sprintf("read skipped events: %v", err))
+		} else {
+			for _, s := range recent {
+				sum := SkippedEventSummary{
+					ServerSeq:  s.ServerSeq,
+					Reason:     s.Reason,
+					EntityType: s.EntityType,
+					EntityID:   s.EntityID,
+					ActionType: s.ActionType,
+					Error:      s.Error,
+				}
+				if !s.SkippedAt.IsZero() {
+					sum.SkippedAt = s.SkippedAt.Format(time.RFC3339)
+				}
+				r.RecentSkipped = append(r.RecentSkipped, sum)
+			}
+		}
+	}
+
 	return r
 }
 
@@ -152,6 +200,26 @@ func printSyncStatusText(r SyncStatusReport) {
 		fmt.Printf("Last sync ............. %s\n", r.LastSyncAt)
 	} else {
 		fmt.Printf("Last sync ............. never\n")
+	}
+
+	if len(r.SkippedEvents) > 0 {
+		total := 0
+		for _, n := range r.SkippedEvents {
+			total += n
+		}
+		reasons := make([]string, 0, len(r.SkippedEvents))
+		for reason, n := range r.SkippedEvents {
+			reasons = append(reasons, fmt.Sprintf("%s=%d", reason, n))
+		}
+		sort.Strings(reasons)
+		fmt.Printf("Skipped events ........ %d (%s)\n", total, strings.Join(reasons, ", "))
+		for _, s := range r.RecentSkipped {
+			fmt.Printf("  seq %d  %s  %s %s/%s\n",
+				s.ServerSeq, s.Reason, s.ActionType, s.EntityType, s.EntityID)
+			if s.Error != "" {
+				fmt.Printf("      %s\n", s.Error)
+			}
+		}
 	}
 
 	for _, note := range r.Notes {

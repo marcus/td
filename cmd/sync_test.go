@@ -3,6 +3,7 @@ package cmd
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,7 +139,15 @@ func TestCheckpointSQLiteForReplacementFlushesWAL(t *testing.T) {
 	}
 }
 
-func TestAutoSyncApplyPullBatchRollsBackOnFailedEvent(t *testing.T) {
+// TestAutoSyncApplyPullBatchQuarantinesPermanentFailure pins the td-8fe2bc
+// contract: an event that can never apply must NOT wedge the batch behind it.
+//
+// This test previously asserted the opposite — that any failed event rolled the
+// batch back and preserved the cursor. That was the bug: replaying the batch
+// reproduced the identical failure forever, so the peer stopped converging
+// permanently. Rollback is still correct for TRANSIENT failures, which
+// TestAutoSyncApplyPullBatchRollsBackOnTransientFailure covers.
+func TestAutoSyncApplyPullBatchQuarantinesPermanentFailure(t *testing.T) {
 	database, err := db.Initialize(t.TempDir())
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -152,27 +161,71 @@ func TestAutoSyncApplyPullBatchRollsBackOnFailedEvent(t *testing.T) {
 		return json.RawMessage(`{"schema_version":1,"new_data":` + data + `,"previous_data":{}}`)
 	}
 	events := []tdsync.Event{
-		{ServerSeq: 1, ActionType: "create", EntityType: "issues", EntityID: "td-good01", Payload: wrap(`{"id":"td-good01","title":"must roll back","status":"open","priority":"P2","type":"task"}`)},
+		{ServerSeq: 1, ActionType: "create", EntityType: "issues", EntityID: "td-good01", Payload: wrap(`{"id":"td-good01","title":"before the poison","status":"open","priority":"P2","type":"task"}`)},
 		{ServerSeq: 2, ActionType: "create", EntityType: "not_a_table", EntityID: "bad", Payload: wrap(`{"id":"bad"}`)},
+		{ServerSeq: 3, ActionType: "create", EntityType: "issues", EntityID: "td-good02", Payload: wrap(`{"id":"td-good02","title":"behind the poison","status":"open","priority":"P2","type":"task"}`)},
 	}
 
-	if err := autoSyncApplyPullBatch(database, events, "device", 2, nil); err == nil {
-		t.Fatal("expected failed remote event to abort batch")
+	if err := autoSyncApplyPullBatch(database, events, "device", 3, nil); err != nil {
+		t.Fatalf("permanent failure must not abort the batch: %v", err)
 	}
 
-	var count int
-	if err := database.Conn().QueryRow(`SELECT COUNT(*) FROM issues WHERE id = 'td-good01'`).Scan(&count); err != nil {
-		t.Fatal(err)
+	// Events on both sides of the poison event applied.
+	for _, id := range []string{"td-good01", "td-good02"} {
+		var count int
+		if err := database.Conn().QueryRow(`SELECT COUNT(*) FROM issues WHERE id = ?`, id).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("%s did not apply (count=%d) — stream still blocked by the poison event", id, count)
+		}
 	}
-	if count != 0 {
-		t.Fatalf("successful event was committed despite later failure: count=%d", count)
-	}
+
+	// The cursor moved past it, which is what unblocks the stream.
 	state, err := database.GetSyncState()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.LastPulledServerSeq != 0 {
-		t.Fatalf("sync cursor advanced past failed event: %d", state.LastPulledServerSeq)
+	if state.LastPulledServerSeq != 3 {
+		t.Fatalf("sync cursor did not advance past the unappliable event: %d", state.LastPulledServerSeq)
+	}
+
+	// And the skip is on the record, not silently swallowed.
+	counts, err := database.CountSkippedEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[tdsync.SkipReasonQuarantined] != 1 {
+		t.Fatalf("expected 1 quarantined event, got %v", counts)
+	}
+	skipped, err := database.GetSkippedEvents(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 {
+		t.Fatalf("expected 1 skipped row, got %d", len(skipped))
+	}
+	if skipped[0].ServerSeq != 2 {
+		t.Errorf("wrong server_seq recorded: %d", skipped[0].ServerSeq)
+	}
+	if skipped[0].Error == "" {
+		t.Error("quarantined event recorded without its error")
+	}
+}
+
+// TestAutoSyncApplyPullBatchRollsBackOnTransientFailure keeps the other half of
+// the contract: a transient failure still rolls the batch back and preserves the
+// cursor, so a valid event is never skipped just because the environment
+// hiccupped.
+func TestAutoSyncApplyPullBatchRollsBackOnTransientFailure(t *testing.T) {
+	outcome := tdsync.ResolvePullOutcome(tdsync.ApplyResult{Failed: []tdsync.FailedEvent{
+		{ServerSeq: 2, Error: errors.New("database is locked")},
+	}})
+	if outcome.Abort == nil {
+		t.Fatal("transient failure must abort the batch so the cursor is preserved")
+	}
+	if len(outcome.Record) != 0 {
+		t.Fatalf("transient failure must not be quarantined: %+v", outcome.Record)
 	}
 }
 

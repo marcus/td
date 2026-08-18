@@ -3,6 +3,7 @@ package sync
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -132,7 +133,15 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 		}
 		if err := json.Unmarshal(ev.Payload, &wrapper); err != nil {
 			slog.Warn("apply remote: unmarshal payload", "seq", ev.ServerSeq, "err", err)
-			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
+			result.Failed = append(result.Failed, FailedEvent{
+				ServerSeq:  ev.ServerSeq,
+				DeviceID:   ev.DeviceID,
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				Payload:    ev.Payload,
+				Error:      fmt.Errorf("unmarshal payload: %w", err),
+			})
 			continue
 		}
 		wrapper.NewData = scrubLocalOnlySyncPayload(ev.EntityType, wrapper.NewData)
@@ -153,8 +162,36 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 
 		res, err := applyEventWithPrevious(tx, applyEv, validator, wrapper.PreviousData)
 		if err != nil {
+			// An orphaned create is a deliberate drop, not a failure: its
+			// ON DELETE CASCADE parent is gone, so no peer keeps this row.
+			// See OrphanedParentError for why skipping converges.
+			var orphan *OrphanedParentError
+			if errors.As(err, &orphan) {
+				slog.Info("apply remote: skipped orphaned create",
+					"seq", ev.ServerSeq, "entity", ev.EntityType+"/"+ev.EntityID,
+					"missing_parent", orphan.ParentTable+"/"+orphan.ParentID)
+				result.Skipped = append(result.Skipped, SkippedEvent{
+					ServerSeq:  ev.ServerSeq,
+					DeviceID:   ev.DeviceID,
+					ActionType: ev.ActionType,
+					EntityType: ev.EntityType,
+					EntityID:   ev.EntityID,
+					Reason:     SkipReasonOrphanedParent,
+					Detail:     orphan.Error(),
+					Payload:    ev.Payload,
+				})
+				continue
+			}
 			slog.Warn("apply remote: apply event", "seq", ev.ServerSeq, "err", err)
-			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
+			result.Failed = append(result.Failed, FailedEvent{
+				ServerSeq:  ev.ServerSeq,
+				DeviceID:   ev.DeviceID,
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				Payload:    ev.Payload,
+				Error:      err,
+			})
 			continue
 		}
 		// Self-authored events are never true conflicts: a sync pulls back the

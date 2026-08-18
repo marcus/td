@@ -7,7 +7,7 @@ package db
 // bumping this const means the migration never runs on any existing database —
 // only on fresh ones, which start at 0. TestSchemaVersionMatchesMigrations
 // enforces the invariant.
-const SchemaVersion = 37
+const SchemaVersion = 38
 
 const schema = `
 -- Issues table
@@ -565,5 +565,29 @@ CREATE TABLE IF NOT EXISTS session_state (
 		// Handled by custom Go code in reviews_migration.go (migrateReviewedByColumn)
 		// using a columnExists guard so re-running is safe.
 		SQL: "",
+	},
+	{
+		Version:     38,
+		Description: "Add sync_skipped_events table so an unappliable remote event cannot wedge the stream",
+		// A remote event that can never apply used to roll its whole batch back
+		// with the cursor preserved, so every later pull replayed the same
+		// failure and the peer stopped converging permanently. Skipped events
+		// are now recorded here instead of blocking the stream. server_seq is
+		// the primary key so re-recording the same event is idempotent.
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_skipped_events (
+    server_seq INTEGER PRIMARY KEY,
+    device_id TEXT NOT NULL DEFAULT '',
+    action_type TEXT NOT NULL DEFAULT '',
+    entity_type TEXT NOT NULL DEFAULT '',
+    entity_id TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL,
+    error TEXT NOT NULL DEFAULT '',
+    payload JSON,
+    skipped_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_skipped_time ON sync_skipped_events(skipped_at);
+CREATE INDEX IF NOT EXISTS idx_sync_skipped_reason ON sync_skipped_events(reason);
+`,
 	},
 }

@@ -558,6 +558,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	totalPulled := 0
 	totalApplied := 0
 	totalOverwrites := 0
+	totalSkipped := 0
 	var allConflicts []tdsync.ConflictRecord
 
 	for {
@@ -624,6 +625,16 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 			return err
 		}
 
+		// Record deliberate drops and quarantined events with the same commit
+		// that advances the cursor past them.
+		skipped := resolveApplyOutcome(result)
+		if err := db.RecordSkippedEventsTx(tx, skipped); err != nil {
+			tx.Rollback()
+			output.Error("record skipped events: %v", err)
+			return err
+		}
+		totalSkipped += len(skipped)
+
 		// Update sync_state within the same transaction to avoid race
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
 			tx.Rollback()
@@ -668,6 +679,9 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		fmt.Println("Nothing to pull.")
 	} else {
 		fmt.Printf("Pulled %d events (%d applied).\n", totalPulled, totalApplied)
+		if totalSkipped > 0 {
+			output.Warning("%d remote event(s) skipped and recorded; see `td sync status`", totalSkipped)
+		}
 		if totalOverwrites > 0 {
 			output.Warning("%d local records overwritten by remote changes:", totalOverwrites)
 			maxShow := 10
@@ -683,13 +697,39 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	return nil
 }
 
+// failedRemoteEventsError reports the failures that must abort a pull batch.
+// Thin wrapper over tdsync.ResolvePullOutcome, which owns the rule.
 func failedRemoteEventsError(result tdsync.ApplyResult) error {
-	if len(result.Failed) == 0 {
-		return nil
+	return tdsync.ResolvePullOutcome(result).Abort
+}
+
+// resolveApplyOutcome returns the events to durably record as skipped: the
+// deliberate drops plus any permanently-failed events being quarantined.
+//
+// Quarantining advances the cursor past an event that can never apply, which is
+// what keeps the rest of the stream flowing. Nothing is discarded — every entry
+// lands in sync_skipped_events with its error and server_seq and shows up in
+// `td sync status`.
+func resolveApplyOutcome(result tdsync.ApplyResult) []db.SkippedSyncEvent {
+	outcome := tdsync.ResolvePullOutcome(result)
+	var out []db.SkippedSyncEvent
+	for _, s := range outcome.Record {
+		if s.Reason == tdsync.SkipReasonQuarantined {
+			slog.Warn("sync: quarantined unappliable remote event",
+				"seq", s.ServerSeq, "entity", s.EntityType+"/"+s.EntityID, "err", s.Detail)
+		}
+		out = append(out, db.SkippedSyncEvent{
+			ServerSeq:  s.ServerSeq,
+			DeviceID:   s.DeviceID,
+			ActionType: s.ActionType,
+			EntityType: s.EntityType,
+			EntityID:   s.EntityID,
+			Reason:     s.Reason,
+			Error:      s.Detail,
+			Payload:    string(s.Payload),
+		})
 	}
-	first := result.Failed[0]
-	return fmt.Errorf("%d remote event(s) failed (first: seq=%d: %v); batch rolled back and sync cursor preserved",
-		len(result.Failed), first.ServerSeq, first.Error)
+	return out
 }
 
 // storeConflicts inserts conflict records into the sync_conflicts table.
