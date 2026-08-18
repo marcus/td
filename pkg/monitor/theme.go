@@ -27,6 +27,12 @@ type Theme struct {
 	Error   string
 	Info    string
 
+	// Workflow bucket colors preserve distinctions that do not map cleanly
+	// onto generic status roles.
+	ReadyToClose  string
+	PendingReview string
+	PendingOther  string
+
 	TextPrimary   string
 	TextSecondary string
 	TextMuted     string
@@ -62,6 +68,9 @@ func DefaultTheme() Theme {
 		Warning:       "214",
 		Error:         "196",
 		Info:          "45",
+		ReadyToClose:  "78",
+		PendingReview: "183",
+		PendingOther:  "103",
 		TextPrimary:   "255",
 		TextSecondary: "252",
 		TextMuted:     "241",
@@ -159,6 +168,7 @@ type monitorStyles struct {
 	errorText             lipgloss.Style
 
 	selectionBackground string
+	selectionStyle      string
 }
 
 var activityBadgeLabels = map[string]string{
@@ -238,23 +248,23 @@ func newMonitorStyles(theme Theme) monitorStyles {
 		},
 		category: map[TaskListCategory]lipgloss.Style{
 			CategoryReviewable:    lipgloss.NewStyle().Foreground(color(theme.Secondary)),
-			CategoryReadyToClose:  lipgloss.NewStyle().Foreground(color(theme.Success)),
+			CategoryReadyToClose:  lipgloss.NewStyle().Foreground(color(theme.ReadyToClose)),
 			CategoryNeedsRework:   lipgloss.NewStyle().Foreground(color(theme.Warning)),
 			CategoryInProgress:    lipgloss.NewStyle().Foreground(color(theme.Info)),
 			CategoryReady:         lipgloss.NewStyle().Foreground(color(theme.Success)),
-			CategoryPendingReview: lipgloss.NewStyle().Foreground(color(theme.Secondary)),
-			CategoryPendingOther:  lipgloss.NewStyle().Foreground(color(theme.TextSubtle)),
+			CategoryPendingReview: lipgloss.NewStyle().Foreground(color(theme.PendingReview)),
+			CategoryPendingOther:  lipgloss.NewStyle().Foreground(color(theme.PendingOther)),
 			CategoryBlocked:       lipgloss.NewStyle().Foreground(color(theme.Error)),
 			CategoryClosed:        lipgloss.NewStyle().Foreground(color(theme.TextMuted)),
 		},
 		categoryHeader: map[TaskListCategory]lipgloss.Style{
 			CategoryReviewable:    lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Secondary)).Bold(true),
-			CategoryReadyToClose:  lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Success)).Bold(true),
+			CategoryReadyToClose:  lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.ReadyToClose)).Bold(true),
 			CategoryNeedsRework:   lipgloss.NewStyle().Foreground(color(theme.Warning)),
 			CategoryInProgress:    lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Info)).Bold(true),
 			CategoryReady:         lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Success)).Bold(true),
-			CategoryPendingReview: lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Secondary)).Bold(true),
-			CategoryPendingOther:  lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.TextSubtle)).Bold(true),
+			CategoryPendingReview: lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.PendingReview)).Bold(true),
+			CategoryPendingOther:  lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.PendingOther)).Bold(true),
 			CategoryBlocked:       lipgloss.NewStyle().Foreground(color(theme.OnError)).Background(color(theme.Error)).Bold(true),
 			CategoryClosed:        lipgloss.NewStyle().Foreground(color(theme.TextMuted)),
 		},
@@ -278,7 +288,7 @@ func newMonitorStyles(theme Theme) monitorStyles {
 		reviewAlert:           lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Secondary)).Bold(true),
 		updateAvailable:       lipgloss.NewStyle().Foreground(color(theme.OnWarning)).Background(color(theme.Warning)).Bold(true),
 		activityTableHeader:   lipgloss.NewStyle().Bold(true).Foreground(color(theme.TextPrimary)),
-		activityTableSelected: lipgloss.NewStyle().Background(color(theme.Selection)),
+		activityTableSelected: lipgloss.NewStyle().Foreground(color(theme.TextSelection)).Background(color(theme.Selection)),
 		statsTableLabel:       lipgloss.NewStyle().Foreground(color(theme.TextMuted)),
 		kanbanTitle:           lipgloss.NewStyle().Bold(true).Foreground(color(theme.TextPrimary)),
 		kanbanHint:            lipgloss.NewStyle().Foreground(color(theme.TextSubtle)),
@@ -287,10 +297,15 @@ func newMonitorStyles(theme Theme) monitorStyles {
 		boardEditorHeader:     lipgloss.NewStyle().Bold(true).Foreground(color(theme.Primary)),
 		errorText:             lipgloss.NewStyle().Foreground(color(theme.Error)),
 		selectionBackground:   ansi.NewStyle().BackgroundColor(color(theme.Selection)).String(),
+		selectionStyle:        ansi.NewStyle().ForegroundColor(color(theme.TextSelection)).BackgroundColor(color(theme.Selection)).String(),
 	}
 }
 
-func themedTextInputStyles(styles textinput.Styles, theme Theme) textinput.Styles {
+func themedTextInputStyles(theme Theme) textinput.Styles {
+	styles := textinput.DefaultDarkStyles()
+	if theme == DefaultTheme() {
+		return styles
+	}
 	color := func(value string) color.Color { return lipgloss.Color(value) }
 	styles.Focused.Text = lipgloss.NewStyle().Foreground(color(theme.TextPrimary))
 	styles.Focused.Placeholder = lipgloss.NewStyle().Foreground(color(theme.TextMuted))
@@ -350,5 +365,6 @@ func (m Model) formatActivityBadge(activityType string) string {
 }
 
 func (m Model) highlightRow(line string, width int) string {
-	return highlightRowWithBackground(line, width, m.renderStyles().selectionBackground)
+	styles := m.renderStyles()
+	return highlightRowWithSelection(line, width, styles.selectionStyle, styles.selectionBackground)
 }

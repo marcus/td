@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/lipgloss/v2"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
@@ -16,6 +18,7 @@ func phase2TestTheme() Theme {
 	return Theme{
 		Primary: "#110001", Secondary: "#220002", Accent: "#330003",
 		Success: "#440004", Warning: "#550005", Error: "#660006", Info: "#770007",
+		ReadyToClose: "#440014", PendingReview: "#220012", PendingOther: "#bb001b",
 		TextPrimary: "#880008", TextSecondary: "#990009", TextMuted: "#aa000a", TextSubtle: "#bb000b",
 		TextSelection: "#cc000c", OnPrimary: "#dd000d", OnWarning: "#ee000e", OnError: "#ff000f",
 		Background: "#010101", Surface: "#020202", SurfaceRaised: "#030303", Selection: "#040404",
@@ -65,6 +68,40 @@ func TestDefaultThemePreservesStandaloneSteelThread(t *testing.T) {
 		if got, want := m.formatStatus(status), formatStatus(status); got != want {
 			t.Fatalf("default status %q output changed: got %q, want %q", status, got, want)
 		}
+	}
+}
+
+func TestPhase2DefaultWorkflowBucketsAndSearchPreserveStandaloneAppearance(t *testing.T) {
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	styles := m.renderStyles()
+	wantBucketColors := map[TaskListCategory]string{
+		CategoryReadyToClose:  "78",
+		CategoryPendingReview: "183",
+		CategoryPendingOther:  "103",
+	}
+	for category, color := range wantBucketColors {
+		got := styles.category[category].Render("X")
+		want := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render("X")
+		if got != want {
+			t.Errorf("default %s bucket style changed: got %q, want %q", category, got, want)
+		}
+		got = styles.categoryHeader[category].Render("X")
+		want = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color(color)).Render("X")
+		if got != want {
+			t.Errorf("default %s bucket header changed: got %q, want %q", category, got, want)
+		}
+	}
+	if got, want := m.SearchInput.Styles(), textinput.DefaultDarkStyles(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("default search styles changed:\n got %#v\nwant %#v", got, want)
+	}
+	if err := m.SetTheme(phase2TestTheme()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetTheme(DefaultTheme()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := m.SearchInput.Styles(), textinput.DefaultDarkStyles(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("restoring default theme did not restore default search styles:\n got %#v\nwant %#v", got, want)
 	}
 }
 
@@ -353,7 +390,7 @@ func TestPhase2CoreRenderersUseContrastingModelPalettes(t *testing.T) {
 		t.Fatal("contrasting model palettes rendered identical core monitor output")
 	}
 	for name, want := range map[string]string{
-		"selection":     first.renderStyles().selectionBackground,
+		"selection":     first.renderStyles().selectionStyle,
 		"review":        stylePrefix(first.renderStyles().category[CategoryReviewable].Render("X"), "X"),
 		"search":        stylePrefix(first.renderStyles().searchActive.Render("X"), "X"),
 		"toast":         stylePrefix(first.renderStyles().toast.Render("X"), "X"),
@@ -425,10 +462,73 @@ func TestPhase2SelectionPreservesNestedForegrounds(t *testing.T) {
 	if !strings.Contains(got, foreground[:strings.Index(foreground, "X")]) {
 		t.Fatalf("selection removed nested foreground sequence: %q", got)
 	}
-	if strings.Count(got, m.renderStyles().selectionBackground) < 2 {
-		t.Fatalf("selection background was not restored after nested ANSI: %q", got)
+	if strings.Count(got, m.renderStyles().selectionStyle) < 2 {
+		t.Fatalf("selection foreground/background was not restored after nested ANSI: %q", got)
 	}
 	if strings.Contains(got, "\x1b[48;5;237m") {
 		t.Fatal("selection used legacy ANSI 237 background")
+	}
+	combined := "\x1b[0;38;2;1;2;3m"
+	got = m.highlightRow(combined+"nested\x1b[0m plain", 20)
+	if !strings.Contains(got, combined+m.renderStyles().selectionBackground+"nested") {
+		t.Fatalf("selection overrode a foreground set after a compound reset: %q", got)
+	}
+}
+
+func TestPhase2HostilePaletteSelectionsUseReadablePlainTextAndKeepSemanticForegrounds(t *testing.T) {
+	theme := phase2TestTheme()
+	theme.Selection = "#111111"
+	theme.Background = "#111111" // inherited terminal text would be unreadable here
+	theme.TextPrimary = "#111111"
+	theme.TextSelection = "#fafafa"
+
+	issue := models.Issue{ID: "td-hostile", Title: "plain selected title", Type: models.TypeBug, Priority: models.PriorityP1, Status: models.StatusBlocked}
+	newModel := func() Model {
+		m := NewModel(nil, "test", 0, "dev", t.TempDir())
+		m.Width, m.Height = 100, 30
+		m.ActivePanel = PanelTaskList
+		if err := m.SetTheme(theme); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	assertSelection := func(name, output string, m Model, semantic lipgloss.Style) {
+		t.Helper()
+		if !strings.Contains(output, m.renderStyles().selectionStyle) {
+			t.Errorf("%s selection missing TextSelection foreground: %q", name, output)
+		}
+		semanticPrefix := stylePrefix(semantic.Render("X"), "X")
+		if !strings.Contains(output, semanticPrefix) {
+			t.Errorf("%s selection lost nested semantic foreground %q: %q", name, semanticPrefix, output)
+		}
+	}
+
+	list := newModel()
+	list.TaskList = TaskListData{Blocked: []models.Issue{issue}}
+	list.TaskListRows = BuildSwimlaneRows(list.TaskList)
+	assertSelection("list", list.renderTaskListPanel(9), list, list.renderStyles().typeIcon[models.TypeBug])
+
+	board := newModel()
+	board.TaskListMode = TaskListModeBoard
+	board.BoardMode = BoardMode{
+		Board:  &models.Board{Name: "Hostile"},
+		Issues: []models.BoardIssueView{{Issue: issue, Category: string(CategoryBlocked)}},
+	}
+	assertSelection("board", board.renderTaskListBoardView(9), board, board.renderStyles().priority[models.PriorityP1])
+
+	kanban := newModel()
+	assertSelection("kanban", kanban.renderKanbanCardLine(issue, 0, 36, true), kanban, kanban.renderStyles().typeIcon[models.TypeBug])
+
+	activity := newModel()
+	activity.ActivePanel = PanelActivity
+	activity.Activity = []ActivityItem{{Type: "comment", IssueID: issue.ID, Message: "plain selected message"}}
+	activityOutput := activity.renderActivityPanel(8)
+	selectedPrefix := stylePrefix(activity.renderStyles().activityTableSelected.Render("X"), "X")
+	if !strings.Contains(activityOutput, selectedPrefix) {
+		t.Errorf("activity selection missing TextSelection foreground: want %q in %q", selectedPrefix, activityOutput)
+	}
+	commentPrefix := stylePrefix(activity.renderStyles().activityBadge["comment"].Render("X"), "X")
+	if !strings.Contains(activityOutput, commentPrefix) {
+		t.Errorf("activity selection lost nested badge foreground %q: %q", commentPrefix, activityOutput)
 	}
 }
