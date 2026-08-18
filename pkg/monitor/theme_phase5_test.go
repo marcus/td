@@ -148,3 +148,48 @@ func TestSetThemeInvalidInputReturnsFieldContext(t *testing.T) {
 		t.Fatalf("invalid theme error lacks semantic field context: %v", err)
 	}
 }
+
+func TestSetThemeRethemesRetainedActivityDetailHeader(t *testing.T) {
+	themeA := phase4TestTheme()
+	themeA.TextMuted = "#112233"
+	themeB := phase4TestTheme()
+	themeB.TextMuted = "#A1B2C3"
+
+	m := NewModel(nil, "test", 0, "dev", t.TempDir())
+	m.Width, m.Height = 100, 36
+	if err := m.SetTheme(themeA); err != nil {
+		t.Fatal(err)
+	}
+	m.ActivityDetailItem = &ActivityItem{
+		Type: "comment", Message: "retained activity", Timestamp: time.Date(2026, 8, 17, 12, 34, 56, 0, time.UTC),
+		SessionID: "session-activity-theme",
+	}
+	m.ActivityDetailModal = m.createActivityDetailModal()
+	retained := m.ActivityDetailModal
+	header := formatLocalTime(m.ActivityDetailItem.Timestamp, "2006-01-02 15:04:05") + "  session:" + truncateSession(m.ActivityDetailItem.SessionID)
+	themeAFragment := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(themeA.TextMuted)).Render("X"), "X")
+	themeBFragment := colorFragment(lipgloss.NewStyle().Foreground(lipgloss.Color(themeB.TextMuted)).Render("X"), "X")
+
+	before := retained.Render(m.Width, m.Height, nil)
+	if !strings.Contains(before, header) || !strings.Contains(before, themeAFragment) {
+		t.Fatalf("initial activity header missing theme A: %q", before)
+	}
+	if err := m.SetTheme(themeB); err != nil {
+		t.Fatal(err)
+	}
+	if m.ActivityDetailModal != retained {
+		t.Fatal("SetTheme rebuilt the activity detail modal")
+	}
+	after := retained.Render(m.Width, m.Height, nil)
+	headerAt := strings.Index(after, header)
+	if headerAt < 0 {
+		t.Fatalf("activity header disappeared after retheme: %q", after)
+	}
+	headerPrefix := after[max(0, headerAt-100):headerAt]
+	if !strings.Contains(headerPrefix, themeBFragment) {
+		t.Fatalf("activity header did not adopt theme B %q: %q", themeBFragment, headerPrefix)
+	}
+	if strings.Contains(headerPrefix, themeAFragment) {
+		t.Fatalf("activity header retained theme A %q after retheme: %q", themeAFragment, headerPrefix)
+	}
+}

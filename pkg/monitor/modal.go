@@ -1322,7 +1322,14 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	if item.SessionID != "" {
 		header += "  session:" + truncateSession(item.SessionID)
 	}
-	md.AddSection(modal.Text(m.renderStyles().subtle.Render(header)))
+	headerSnapshot := header
+	md.AddSection(modal.ThemedCustom(
+		func(contentWidth int, focusID, hoverID string, theme modal.Theme) modal.RenderedSection {
+			return modal.RenderedSection{Content: lipgloss.NewStyle().
+				Foreground(lipgloss.Color(theme.TextMuted)).Render(headerSnapshot)}
+		},
+		nil,
+	))
 	md.AddSection(modal.Spacer())
 
 	// Content section adapts based on type
