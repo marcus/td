@@ -282,18 +282,77 @@ func (fs *FormState) huhTheme() huh.Theme {
 	})
 }
 
-// setTheme changes the value observed by the stable Huh theme wrapper. The
-// form and its fields stay intact, preserving values, focus and validation.
+// setTheme rebuilds the Huh fields after changing the retained theme. Most Huh
+// fields resolve the stable theme wrapper lazily, but Select snapshots its
+// private filter text input styles on the first WithTheme call. Rebuilding is
+// the only public, reflection-free way to refresh that snapshot.
+//
+// All durable form state is bound to FormState and therefore survives the
+// rebuild. The focused field/page and current validation error are restored.
+// Huh does not expose a select's filter query, so an active transient filter is
+// deliberately closed while its selected value and field focus are retained.
 func (fs *FormState) setTheme(theme Theme) {
 	if fs == nil {
 		return
 	}
+
+	focusedKey := fs.focusedFieldKey()
+	var focusedErr error
+	if fs.Form != nil {
+		if field := fs.Form.GetFocusedField(); field != nil {
+			focusedErr = field.Error()
+		}
+	}
+
 	fs.theme = theme
 	if fs.Form != nil {
-		// Groups snapshot help styles when WithTheme is called. Fields ignore a
-		// replacement theme, but retain the original lazy wrapper above.
-		fs.Form.WithTheme(fs.huhTheme())
+		fs.buildForm()
+		_ = fs.Form.Init()
+		fs.restoreFocusedField(focusedKey)
+
+		field := fs.Form.GetFocusedField()
+		if field == nil {
+			return
+		}
+		if focusedErr != nil || fs.ButtonFocus != formButtonFocusForm {
+			// Blur re-runs field validation against the retained bound value.
+			_ = field.Blur()
+		}
+		if fs.ButtonFocus == formButtonFocusForm {
+			_ = field.Focus()
+		}
 	}
+}
+
+func (fs *FormState) restoreFocusedField(key string) {
+	group, field, ok := formFieldPosition(key)
+	if !ok || fs.Form == nil {
+		return
+	}
+	for range group {
+		_ = fs.Form.NextGroup()
+	}
+	for range field {
+		_ = fs.Form.NextField()
+	}
+}
+
+func formFieldPosition(key string) (group, field int, ok bool) {
+	positions := map[string][2]int{
+		formKeyTitle:        {0, 0},
+		formKeyType:         {0, 1},
+		formKeyPriority:     {0, 2},
+		formKeyDescription:  {0, 3},
+		formKeyLabels:       {0, 4},
+		formKeyParent:       {1, 0},
+		formKeyPoints:       {1, 1},
+		formKeyAcceptance:   {1, 2},
+		formKeyMinor:        {2, 0},
+		formKeyDependencies: {2, 1},
+		formKeyStatus:       {2, 2},
+	}
+	position, ok := positions[key]
+	return position[0], position[1], ok
 }
 
 // ToggleExtended toggles the extended fields visibility and rebuilds the form

@@ -1,6 +1,8 @@
 package monitor
 
 import (
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +22,7 @@ func phase4TestTheme() Theme {
 	return theme
 }
 
-func TestSetThemeRethemesOpenFormInPlace(t *testing.T) {
+func TestSetThemeRethemesOpenFormWithoutLosingState(t *testing.T) {
 	m := NewModel(nil, "test", 0, "dev", t.TempDir())
 	fs := NewFormState(FormModeCreate, "td-parent")
 	fs.Title = "draft title"
@@ -39,8 +41,8 @@ func TestSetThemeRethemesOpenFormInPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if fs.Form != formBefore {
-		t.Fatal("live retheme rebuilt the Huh form")
+	if fs.Form == formBefore {
+		t.Fatal("live retheme did not rebuild fields with captured third-party styles")
 	}
 	if fs.Title != "draft title" || fs.Description != "draft body" || fs.Parent != "td-parent" {
 		t.Fatalf("live retheme lost bound form values: %#v", fs)
@@ -269,6 +271,162 @@ func TestHostThemePrecedesHuhSelectFilterInitialization(t *testing.T) {
 	}
 }
 
+func TestLiveRethemeRebuildsOpenSelectFiltersAndPreservesFormState(t *testing.T) {
+	themeA := phase4TestTheme()
+	themeB := phase4TestTheme()
+	themeB.Primary = "#010203"
+	themeB.Accent = "#0A0B0C"
+	themeB.TextPrimary = "#0D0E0F"
+	themeB.TextSecondary = "#101112"
+	themeB.TextMuted = "#131415"
+	themeB.TextSubtle = "#161718"
+
+	issue := &models.Issue{
+		ID: "td-live-filter", Title: "Existing draft", Type: models.TypeBug,
+		Priority: models.PriorityP1, Status: models.StatusBlocked,
+	}
+	cases := []struct {
+		name, field string
+		form        func() *FormState
+	}{
+		{"create type", formKeyType, func() *FormState { return newFormStateWithTheme(FormModeCreate, "td-parent", themeA) }},
+		{"create priority", formKeyPriority, func() *FormState { return newFormStateWithTheme(FormModeCreate, "td-parent", themeA) }},
+		{"create points", formKeyPoints, func() *FormState {
+			fs := newFormStateWithTheme(FormModeCreate, "td-parent", themeA)
+			fs.ShowExtended = true
+			fs.buildForm()
+			return fs
+		}},
+		{"edit status", formKeyStatus, func() *FormState {
+			fs := newFormStateForEditWithTheme(issue, themeA)
+			fs.ShowExtended = true
+			fs.buildForm()
+			return fs
+		}},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := tt.form()
+			fs.Title = "stateful draft"
+			fs.Type = string(models.TypeBug)
+			fs.Priority = string(models.PriorityP1)
+			fs.Description = "body in progress"
+			fs.Labels = "theme, form"
+			fs.Status = string(models.StatusBlocked)
+			fs.Parent = "td-parent"
+			fs.Points = "5"
+			fs.Acceptance = "keep this"
+			fs.Minor = true
+			fs.Dependencies = "td-one, td-two"
+			fs.Width = 73
+			fs.ButtonFocus = formButtonFocusForm
+			fs.ButtonHover = 2
+			fs.Autofill = &AutofillState{Active: true, FieldKey: tt.field, Idx: 1, Query: "td"}
+			fs.AutofillEpics = []AutofillItem{{ID: "td-epic", Title: "Epic"}}
+			fs.AutofillAll = []AutofillItem{{ID: "td-one", Title: "One"}}
+
+			openHuhSelectFilter(t, fs, tt.field)
+			beforeView := fs.Form.View()
+			if !strings.Contains(beforeView, "38;2;51;0;3") || !strings.Contains(beforeView, "38;2;228;229;230") {
+				t.Fatalf("test setup did not render theme A filter colors: %q", beforeView)
+			}
+			before := snapshotFormState(fs)
+			formBefore := fs.Form
+
+			m := NewModel(nil, "test", 0, "dev", t.TempDir())
+			if err := m.SetTheme(themeA); err != nil {
+				t.Fatal(err)
+			}
+			m.FormState = fs
+			if err := m.SetTheme(themeB); err != nil {
+				t.Fatal(err)
+			}
+
+			if fs.Form == formBefore {
+				t.Fatal("live retheme retained Huh fields with theme A filter snapshots")
+			}
+			if got := snapshotFormState(fs); !reflect.DeepEqual(got, before) {
+				t.Fatalf("live retheme changed FormState-owned state:\n got %#v\nwant %#v", got, before)
+			}
+			if got := fs.focusedFieldKey(); got != tt.field {
+				t.Fatalf("live retheme focus = %q, want %q", got, tt.field)
+			}
+			filtering := fs.Form.GetFocusedField().(interface{ GetFiltering() bool })
+			if filtering.GetFiltering() {
+				t.Fatal("live retheme retained inaccessible transient filter mode instead of safely resetting it")
+			}
+
+			// The transient query is intentionally reset, but the same select stays
+			// focused and can immediately filter using the new captured palette.
+			_, _ = fs.Form.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+			_, _ = fs.Form.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+			if !filtering.GetFiltering() {
+				t.Fatal("rebuilt select did not re-enter filter mode")
+			}
+			view := fs.Form.View()
+			if !strings.Contains(view, "38;2;10;11;12") || !strings.Contains(view, "38;2;13;14;15") {
+				t.Fatalf("%s filter did not use theme B accent/text colors: %q", tt.field, view)
+			}
+			assertNoANSIColors(t, view,
+				"38;2;209;2;3", "38;2;51;0;3", "38;2;228;229;230", "38;2;161;162;163", // theme A
+				"38;2;68;71;90", "38;2;189;147;249", "38;2;241;250;140", // Dracula
+				"38;2;248;248;242", "38;2;98;114;164",
+			)
+		})
+	}
+}
+
+func TestLiveRethemeRestoresFocusedValidationError(t *testing.T) {
+	fs := newFormStateWithTheme(FormModeCreate, "", phase4TestTheme())
+	_ = fs.Form.Init()
+	_, _ = fs.Form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := fs.Form.GetFocusedField().Error(); !errors.Is(got, errTitleRequired) {
+		t.Fatalf("test setup validation error = %v, want %v", got, errTitleRequired)
+	}
+
+	nextTheme := phase4TestTheme()
+	nextTheme.Accent = "#0A0B0C"
+	formBefore := fs.Form
+	fs.setTheme(nextTheme)
+	if fs.Form == formBefore {
+		t.Fatal("live retheme did not rebuild form")
+	}
+	if got := fs.focusedFieldKey(); got != formKeyTitle {
+		t.Fatalf("live retheme focus = %q, want title", got)
+	}
+	if got := fs.Form.GetFocusedField().Error(); !errors.Is(got, errTitleRequired) {
+		t.Fatalf("live retheme validation error = %v, want %v", got, errTitleRequired)
+	}
+}
+
+func snapshotFormState(fs *FormState) any {
+	return struct {
+		Mode                        FormMode
+		IssueID, ParentID           string
+		Title, Type, Priority       string
+		Description, Labels, Status string
+		ShowExtended, Minor         bool
+		Parent, Points, Acceptance  string
+		Dependencies                string
+		ButtonFocus, ButtonHover    int
+		Width                       int
+		Autofill                    *AutofillState
+		AutofillEpics, AutofillAll  []AutofillItem
+	}{
+		fs.Mode, fs.IssueID, fs.ParentID,
+		fs.Title, fs.Type, fs.Priority,
+		fs.Description, fs.Labels, fs.Status,
+		fs.ShowExtended, fs.Minor,
+		fs.Parent, fs.Points, fs.Acceptance,
+		fs.Dependencies,
+		fs.ButtonFocus, fs.ButtonHover,
+		fs.Width,
+		fs.Autofill,
+		fs.AutofillEpics, fs.AutofillAll,
+	}
+}
+
 func TestThemedFormConstructorPreservesStandaloneSelectFilter(t *testing.T) {
 	standalone := NewFormState(FormModeCreate, "")
 	themedDefault := newFormStateWithTheme(FormModeCreate, "", DefaultTheme())
@@ -287,6 +445,9 @@ func openHuhSelectFilter(t *testing.T, fs *FormState, fieldKey string) {
 		_ = fs.Form.NextField()
 	case formKeyPriority:
 		_ = fs.Form.NextField()
+		_ = fs.Form.NextField()
+	case formKeyPoints:
+		_ = fs.Form.NextGroup()
 		_ = fs.Form.NextField()
 	case formKeyStatus:
 		_ = fs.Form.NextGroup()
