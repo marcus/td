@@ -293,11 +293,22 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	rowIdx := 0
 	linesWritten := 0
 
+	currentWorkIDs := make([]string, 0, len(m.InProgress)+1)
+	if m.FocusedIssue != nil {
+		currentWorkIDs = append(currentWorkIDs, m.FocusedIssue.ID)
+	}
+	for _, issue := range m.InProgress {
+		currentWorkIDs = append(currentWorkIDs, issue.ID)
+	}
+	keyWidth := issueKeyColumnWidth(currentWorkIDs)
+
 	// Focused issue (first row if present)
 	if m.FocusedIssue != nil {
 		if rowIdx >= offset && linesWritten < effectiveMaxLines {
-			line := styles.title.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
-			if isActive && cursor == rowIdx {
+			focusTag := styles.title.Render("FOCUSED")
+			selected := isActive && cursor == rowIdx
+			line := m.formatIssueRow(m.FocusedIssue, selected, keyWidth, m.Width-4, focusTag)
+			if selected {
 				line = m.highlightRow(line, m.Width-4)
 			}
 			content.WriteString(line)
@@ -318,10 +329,13 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 		// Only show header if in visible range
 		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
 			if linesWritten < effectiveMaxLines {
+				// Two blank lines keep the row accounting in input.go's
+				// currentWorkRowAtLine stable (it expects 3 header lines).
+				content.WriteString("\n\n")
+				content.WriteString(m.formatSectionHeaderLine("IN PROGRESS", inProgressVisible,
+					styles.category[CategoryInProgress]))
 				content.WriteString("\n")
-				content.WriteString(styles.sectionHeader.Render("IN PROGRESS:"))
-				content.WriteString("\n")
-				linesWritten += 3 // explicit \n + MarginTop(1) from sectionHeader + header text
+				linesWritten += 3
 			}
 		}
 
@@ -331,8 +345,13 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 				continue
 			}
 			if rowIdx >= offset && linesWritten < effectiveMaxLines {
-				line := "  " + m.formatIssueCompact(&issue)
-				if isActive && cursor == rowIdx {
+				trailing := ""
+				if issue.ImplementerSession != "" {
+					trailing = styles.subtle.Render(truncateSession(issue.ImplementerSession))
+				}
+				selected := isActive && cursor == rowIdx
+				line := m.formatIssueRow(&issue, selected, keyWidth, m.Width-4, trailing)
+				if selected {
 					line = m.highlightRow(line, m.Width-4)
 				}
 				content.WriteString(line)
@@ -615,6 +634,7 @@ func (m Model) renderTaskListPanel(height int) string {
 	// Track current category for section headers
 	var currentCategory TaskListCategory
 	linesWritten := 0
+	keyWidth := m.taskListKeyWidth()
 
 	for i, row := range m.TaskListRows {
 		if linesWritten >= effectiveMaxLines {
@@ -646,12 +666,11 @@ func (m Model) renderTaskListPanel(height int) string {
 			}
 		}
 
-		// Format row with category tag and selection highlight
-		tag := m.formatCategoryTag(row.Category)
-		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("%s %s", tag, issueStr)
+		// Column layout; the section header carries the status, so no tag.
+		selected := isActive && cursor == i
+		line := m.formatIssueRow(&row.Issue, selected, keyWidth, m.Width-4, "")
 
-		if isActive && cursor == i {
+		if selected {
 			line = m.highlightRow(line, m.Width-4)
 		}
 
@@ -751,6 +770,12 @@ func (m Model) renderTaskListBoardView(height int) string {
 	}
 
 	// Render visible issues
+	boardIDs := make([]string, 0, len(m.BoardMode.Issues))
+	for _, biv := range m.BoardMode.Issues {
+		boardIDs = append(boardIDs, biv.Issue.ID)
+	}
+	keyWidth := issueKeyColumnWidth(boardIDs)
+
 	endIdx := offset + effectiveMaxLines
 	if endIdx > totalRows {
 		endIdx = totalRows
@@ -768,34 +793,14 @@ func (m Model) renderTaskListBoardView(height int) string {
 			posIndicator = styles.timestamp.Render("  •") + " "
 		}
 
-		// Status tag, type, ID, priority (matching swimlanes format)
-		tag := m.formatCategoryTag(TaskListCategory(biv.Category))
-		typeStr := m.formatTypeIcon(issue.Type)
-		idStr := styles.subtle.Render(issue.ID)
-		priStr := m.formatPriority(issue.Priority)
-
-		// Title (truncated)
-		title := issue.Title
-		maxTitleLen := contentWidth - 38 // Leave room for indicators + ID
-		if maxTitleLen < 10 {
-			maxTitleLen = 10
-		}
-		if len(title) > maxTitleLen {
-			title = title[:maxTitleLen-3] + "..."
-		}
-
-		// Build line: position + tag + type + id + priority + title
-		line := fmt.Sprintf("%s%s %s %s %s %s",
-			posIndicator,
-			tag,
-			typeStr,
-			idStr,
-			priStr,
-			title,
-		)
+		// Column layout after the position indicator; the board's status
+		// filter is shown in the panel title, so no inline status tag.
+		selected := isActive && i == cursor
+		line := posIndicator + m.formatIssueRow(&issue, selected, keyWidth,
+			contentWidth-lipgloss.Width(posIndicator), "")
 
 		// Highlight if cursor is on this row
-		if isActive && i == cursor {
+		if selected {
 			line = m.highlightRow(line, m.Width-4)
 		}
 
@@ -899,6 +904,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	// Track current category for section headers
 	var currentCategory TaskListCategory
 	linesWritten := 0
+	keyWidth := m.swimlaneKeyWidth()
 
 	for i, row := range m.BoardMode.SwimlaneRows {
 		if linesWritten >= effectiveMaxLines {
@@ -930,12 +936,11 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 			}
 		}
 
-		// Format row with category tag and selection highlight
-		tag := m.formatCategoryTag(row.Category)
-		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("%s %s", tag, issueStr)
+		// Column layout; the swimlane header carries the status.
+		selected := isActive && cursor == i
+		line := m.formatIssueRow(&row.Issue, selected, keyWidth, m.Width-4, "")
 
-		if isActive && cursor == i {
+		if selected {
 			line = m.highlightRow(line, m.Width-4)
 		}
 
@@ -986,11 +991,11 @@ func (m Model) formatSwimlaneCategoryHeader(cat TaskListCategory) string {
 		count = len(m.BoardMode.SwimlaneData.Closed)
 		label = "CLOSED"
 	}
-	style, ok := m.renderStyles().categoryHeader[cat]
+	style, ok := m.renderStyles().category[cat]
 	if !ok {
 		return ""
 	}
-	return style.Render(label) + fmt.Sprintf(" (%d):", count)
+	return m.formatSectionHeaderLine(label, count, style)
 }
 
 // formatCategoryHeader returns the section header for a category
@@ -1026,11 +1031,11 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 		count = len(m.TaskList.Closed)
 		label = "CLOSED"
 	}
-	style, ok := m.renderStyles().categoryHeader[cat]
+	style, ok := m.renderStyles().category[cat]
 	if !ok {
 		return ""
 	}
-	return style.Render(label) + fmt.Sprintf(" (%d):", count)
+	return m.formatSectionHeaderLine(label, count, style)
 }
 
 // formatCategoryTag returns a short tag for inline display
@@ -2714,50 +2719,6 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 	inner := lipgloss.JoinVertical(lipgloss.Left, titleStr, body)
 
 	return style.Width(m.Width - 2).Render(inner)
-}
-
-// formatIssueCompact formats an issue in a compact single-line format
-func (m Model) formatIssueCompact(issue *models.Issue) string {
-	styles := m.renderStyles()
-	parts := []string{
-		m.formatTypeIcon(issue.Type),
-		styles.title.Render(issue.ID),
-		m.formatPriority(issue.Priority),
-		issue.Title,
-	}
-
-	if issue.ImplementerSession != "" {
-		parts = append(parts, styles.subtle.Render(fmt.Sprintf("(%s)", truncateSession(issue.ImplementerSession))))
-	}
-
-	return strings.Join(parts, " ")
-}
-
-// formatIssueShort formats an issue in a short format
-func (m Model) formatIssueShort(issue *models.Issue) string {
-	styles := m.renderStyles()
-	typeIcon := m.formatTypeIcon(issue.Type)
-	idStr := styles.subtle.Render(issue.ID)
-	priorityStr := m.formatPriority(issue.Priority)
-
-	// Calculate available width for title.
-	// Line format (in callers): fmt.Sprintf("%s %s", tag, issueStr)
-	//   where issueStr = fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, title)
-	// Overhead:
-	//   4             = panel border + padding (wrapPanel uses m.Width - 4 for content)
-	//   5             = category tag visual width (all tags are 5 chars: [RDY], [BLK], etc.)
-	//   1             = space between tag and issueStr (outer format "%s %s")
-	//   typeIconWidth = actual width of the type icon character (varies by terminal)
-	//   idWidth       = visual width of styled issue ID
-	//   priorityWidth = visual width of styled priority
-	//   3             = three spaces in issueStr format (after typeIcon, after id, after priority)
-	overhead := 4 + 5 + 1 + lipgloss.Width(typeIcon) + lipgloss.Width(idStr) + lipgloss.Width(priorityStr) + 3
-	titleWidth := m.Width - overhead
-	if titleWidth < 20 {
-		titleWidth = 20 // minimum reasonable width
-	}
-
-	return fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, truncateString(issue.Title, titleWidth))
 }
 
 // truncateString truncates a string to maxLen with ellipsis (ANSI-aware)

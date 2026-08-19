@@ -161,6 +161,8 @@ type monitorStyles struct {
 	help                  lipgloss.Style
 	timestamp             lipgloss.Style
 	sectionHeader         lipgloss.Style
+	sectionRule           lipgloss.Style
+	rowCaret              lipgloss.Style
 	searchActive          lipgloss.Style
 	searchEditing         lipgloss.Style
 	searchBar             lipgloss.Style
@@ -301,6 +303,8 @@ func newMonitorStyles(theme Theme) monitorStyles {
 		help:                  lipgloss.NewStyle().Foreground(color(theme.TextMuted)),
 		timestamp:             lipgloss.NewStyle().Foreground(color(theme.TextSubtle)),
 		sectionHeader:         lipgloss.NewStyle().Bold(true).Foreground(color(theme.TextPrimary)).MarginTop(1),
+		sectionRule:           lipgloss.NewStyle().Foreground(color(theme.Border)),
+		rowCaret:              lipgloss.NewStyle().Bold(true).Foreground(color(theme.Primary)),
 		searchActive:          lipgloss.NewStyle().Foreground(color(theme.Warning)).Bold(true),
 		searchEditing:         lipgloss.NewStyle().Foreground(color(theme.Primary)).Bold(true),
 		searchBar:             lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(color(theme.Border)).Padding(0, 1),
