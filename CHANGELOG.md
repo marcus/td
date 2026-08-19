@@ -4,6 +4,12 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.60.0] - 2026-08-18
+
+### Features
+
+- **The monitor's list, board, and swimlane panes share one row layout.** Rows are built from a single column spec — `<gutter><key> <type> <priority> <title>` — so the issue key and every column after it line up within a pane instead of drifting per view. The gutter is a fixed two columns wide, so selecting a row draws the caret without shifting the rest of the row, and rows sit visually indented beneath their flush-left section headers. The key column sizes itself to the widest key on screen within a 9–16 column band, and the title keeps a minimum width so a long key can never squeeze it away.
+
 ### Bug Fixes
 
 - **One unappliable remote event no longer wedges a peer's sync permanently** (td-8fe2bc). A pull batch containing an event that could never apply rolled back with the sync cursor deliberately preserved, so every later pull refetched the same batch, failed on the same event, and rolled back again — the peer stopped converging for good, and not just for the row involved but for every event behind it in the stream. Two fixes: (1) a per-event failure is now classified, and only a **transient** one (lock contention, disk I/O, timeout) rolls the batch back for retry; a **permanent** one (constraint violation, unknown entity or action type, undecodable payload) is quarantined, so the cursor advances and the rest of the stream flows. Unrecognized errors default to transient, so a peer stalls loudly rather than silently skipping something. (2) A create whose `ON DELETE CASCADE` parent no longer exists is now recognized before the insert and deliberately dropped — cascade means the schema itself says the child must not outlive the parent, so dropping it is what makes peers agree rather than diverge. Nothing is discarded silently: every skipped event is recorded in the new `sync_skipped_events` table with its `server_seq`, payload, and error, and surfaced by `td sync status` (text and `--json`). FK enforcement is unchanged — the parent check runs *before* the insert and only for cascade FKs, so SQLite still rejects everything it did before. The root cause was a peer replaying its **own** events from a cursor suffix, not the cross-peer delete race originally suspected.
