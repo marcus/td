@@ -77,24 +77,7 @@ check-changelog:
 # hasn't started. Skips with a warning if gh can't resolve a GitHub repo here
 # (e.g. no origin, or origin isn't github.com/marcus/td).
 check-ci:
-	@if ! command -v gh >/dev/null 2>&1 || ! gh repo view >/dev/null 2>&1; then \
-		echo "Warning: gh unavailable or origin is not a resolvable GitHub repo; skipping automated Go CI status check" >&2; \
-		exit 0; \
-	fi; \
-	head=$$(git rev-parse origin/main); \
-	runs=$$(gh run list --workflow=go-ci.yml --branch main --limit 20 --json headSha,status,conclusion -q "[.[] | select(.headSha == \"$$head\")]" 2>/dev/null || echo '[]'); \
-	count=$$(echo "$$runs" | jq 'length'); \
-	if [ "$$count" = 0 ]; then \
-		echo "Error: no Go CI run found for $$head yet; wait for it to start" && exit 1; \
-	fi; \
-	status=$$(echo "$$runs" | jq -r '.[0].status'); \
-	conclusion=$$(echo "$$runs" | jq -r '.[0].conclusion'); \
-	if [ "$$status" != completed ]; then \
-		echo "Error: Go CI is still $$status on $$head; wait for it to finish" && exit 1; \
-	fi; \
-	if [ "$$conclusion" != success ]; then \
-		echo "Error: Go CI is $$conclusion on $$head; fix it before releasing" && exit 1; \
-	fi
+	./scripts/check-ci.sh
 
 tag: check-clean check-version check-main
 	@git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null && (echo "Error: tag $(VERSION) already exists" && exit 1) || true

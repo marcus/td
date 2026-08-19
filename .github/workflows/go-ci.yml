@@ -19,6 +19,11 @@ on:
       - "go.sum"
       - "Makefile"
       - ".github/workflows/go-ci.yml"
+  # A release head is normally a docs-only commit — the changelog stamp —
+  # which the path filters above skip. `make check-ci` fails closed when it
+  # finds no run for the commit being released, so without a manual trigger
+  # that commit is permanently unreleasable. The release gate dispatches this.
+  workflow_dispatch:
 
 permissions:
   contents: read
