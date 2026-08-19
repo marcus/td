@@ -4,9 +4,12 @@
 
 SHELL := /bin/sh
 
-# Set VERSION on the command line, e.g.:
+# The version to release. sidecar and tasks both spell this RELEASE_VERSION,
+# and reaching for the wrong name is the kind of friction that turns a routine
+# release into a debugging session, so either spelling works here:
+#   RELEASE_VERSION=v0.2.0 make release
 #   make release VERSION=v0.2.0
-VERSION ?=
+VERSION ?= $(RELEASE_VERSION)
 
 # A helpful dev version string (used by install)
 GIT_DESCRIBE := $(shell git describe --tags --always --dirty 2>/dev/null)
