@@ -29,6 +29,12 @@ var rootFocusStops = [...]struct {
 // VisibleFocusStops returns root panels with non-empty current bounds in
 // visual order. The IDs remain stable when layout geometry changes.
 func (m Model) VisibleFocusStops() []FocusStop {
+	// Compact and error views replace the root panel layout entirely. Bounds
+	// may still describe the previous/full layout after a resize or error, but
+	// they are not visible focus targets in either replacement view.
+	if m.Width < MinWidth || m.Height < MinHeight || m.Err != nil {
+		return nil
+	}
 	stops := make([]FocusStop, 0, len(rootFocusStops))
 	for _, candidate := range rootFocusStops {
 		bounds, ok := m.PanelBounds[candidate.panel]
@@ -61,6 +67,11 @@ func (m *Model) SetFocusStop(id FocusStopID) bool {
 // must receive Tab itself. At the root main and board contexts, an embedding
 // host may compose the monitor's panel stops into its outer focus ring.
 func (m Model) TabOwnsFocus() bool {
+	// These declarative overlays predate dedicated keymap contexts, but each
+	// owns Tab for its controls just like the other modal contexts do.
+	if m.SelfReviewConfirmOpen || m.RecordReviewOpen || m.ActivityDetailOpen {
+		return true
+	}
 	switch m.currentContext() {
 	case keymap.ContextMain, keymap.ContextBoard:
 		return false

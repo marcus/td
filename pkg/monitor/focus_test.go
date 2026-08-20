@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 )
 
 func TestVisibleFocusStopsUseStableOrderAndCurrentBounds(t *testing.T) {
-	m := Model{PanelBounds: map[Panel]Rect{
+	m := Model{Width: 80, Height: 30, PanelBounds: map[Panel]Rect{
 		PanelCurrentWork: {X: 1, Y: 2, W: 80, H: 7},
 		PanelTaskList:    {X: 3, Y: 9, W: 76, H: 0},
 		PanelActivity:    {X: 5, Y: 14, W: 70, H: 6},
@@ -25,6 +26,28 @@ func TestVisibleFocusStopsUseStableOrderAndCurrentBounds(t *testing.T) {
 	m.PanelBounds[PanelTaskList] = Rect{X: 3, Y: 9, W: 76, H: 5}
 	if got := m.VisibleFocusStops(); len(got) != 3 || got[1].ID != FocusStopTaskList || got[1].Bounds != m.PanelBounds[PanelTaskList] {
 		t.Fatalf("VisibleFocusStops() after layout change = %#v", got)
+	}
+}
+
+func TestVisibleFocusStopsHideReplacementViews(t *testing.T) {
+	m := Model{
+		PaneHeights: defaultPaneHeights(),
+		PanelBounds: make(map[Panel]Rect),
+	}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 39, Height: 30})
+	m = updated.(Model)
+	if bounds := m.PanelBounds[PanelCurrentWork]; bounds.W <= 0 || bounds.H <= 0 {
+		t.Fatalf("39x30 resize did not retain the stale-bounds reproduction: %#v", m.PanelBounds)
+	}
+	if got := m.VisibleFocusStops(); len(got) != 0 {
+		t.Fatalf("compact 39x30 view exposed root panel stops: %#v", got)
+	}
+
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+	m = updated.(Model)
+	m.Err = errors.New("database unavailable")
+	if got := m.VisibleFocusStops(); len(got) != 0 {
+		t.Fatalf("error view exposed stale root panel stops: %#v", got)
 	}
 }
 
@@ -69,6 +92,9 @@ func TestTabOwnsFocusOnlyOutsideRootContexts(t *testing.T) {
 		{name: "search", set: func(m *Model) { m.SearchMode = true }, want: true},
 		{name: "help", set: func(m *Model) { m.HelpOpen = true }, want: true},
 		{name: "confirmation", set: func(m *Model) { m.ConfirmOpen = true }, want: true},
+		{name: "self-review confirmation", set: func(m *Model) { m.SelfReviewConfirmOpen = true }, want: true},
+		{name: "record review", set: func(m *Model) { m.RecordReviewOpen = true }, want: true},
+		{name: "activity detail", set: func(m *Model) { m.ActivityDetailOpen = true }, want: true},
 		{name: "kanban", set: func(m *Model) { m.KanbanOpen = true }, want: true},
 	}
 	for _, tt := range tests {
