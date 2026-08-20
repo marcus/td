@@ -4,6 +4,16 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.61.0] - 2026-08-20
+
+### Monitor
+
+- **Embedded hosts can compose the monitor's three root panels into their own focus ring** (td-8b34d8). `pkg/monitor` now exposes stable `current-work`, `task-list`, and `activity` focus stops with their current rendered bounds, reports the current stop, focuses a stop directly while preserving cursor clamping and scroll visibility, and reports when an input or overlay must retain Tab. Standalone Tab and Shift+Tab use the same direct focus path, so embedding does not introduce a second navigation model. Compact and error replacement views expose no stale panel stops, and self-review confirmation, record-review, and activity-detail overlays correctly retain Tab.
+
+### Documentation
+
+- **Agents are prompted to check for Sidecar capabilities before working in td.** The README now points Sidecar-hosted sessions to `sidecar --agents` so they can discover host-provided navigation and presentation tools.
+
 ## [v0.60.0] - 2026-08-18
 
 ### Features
