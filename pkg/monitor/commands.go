@@ -720,15 +720,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Panel navigation (main context)
 	case keymap.CmdNextPanel:
-		m.ActivePanel = (m.ActivePanel + 1) % 3
-		m.clampCursor(m.ActivePanel)
-		m.ensureCursorVisible(m.ActivePanel)
+		m.cycleFocusPanel(1)
 		return m, nil
 
 	case keymap.CmdPrevPanel:
-		m.ActivePanel = (m.ActivePanel + 2) % 3
-		m.clampCursor(m.ActivePanel)
-		m.ensureCursorVisible(m.ActivePanel)
+		m.cycleFocusPanel(-1)
 		return m, nil
 
 	// Cursor movement
