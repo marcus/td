@@ -328,6 +328,13 @@ type ModalEntry struct {
 	DescRender   string
 	AcceptRender string
 
+	// Review data fetched alongside the issue details. View() renders these
+	// from the cache; it must never query the database, because a host
+	// application repaints on every message and each frame would otherwise
+	// pay for SQLite queries with file locks.
+	HasActiveApproval bool                  // True when a non-superseded approval exists (drives the "(fresh)" marker)
+	Reviews           []*models.IssueReview // Recent review history (rendered as "Recent reviews")
+
 	// Epic-specific (when Issue.Type == "epic")
 	EpicTasks          []models.Issue
 	EpicTasksCursor    int
@@ -379,16 +386,18 @@ type RefreshDataMsg struct {
 
 // IssueDetailsMsg carries fetched issue details for the modal
 type IssueDetailsMsg struct {
-	IssueID    string
-	Issue      *models.Issue
-	Handoff    *models.Handoff
-	Logs       []models.Log
-	Comments   []models.Comment
-	BlockedBy  []models.Issue // Dependencies (issues blocking this one)
-	Blocks     []models.Issue // Dependents (issues blocked by this one)
-	EpicTasks  []models.Issue // Child tasks (when issue is an epic)
-	ParentEpic *models.Issue  // Parent epic (when issue.ParentID is set)
-	Error      error
+	IssueID           string
+	Issue             *models.Issue
+	Handoff           *models.Handoff
+	Logs              []models.Log
+	Comments          []models.Comment
+	BlockedBy         []models.Issue // Dependencies (issues blocking this one)
+	Blocks            []models.Issue // Dependents (issues blocked by this one)
+	EpicTasks         []models.Issue // Child tasks (when issue is an epic)
+	ParentEpic        *models.Issue  // Parent epic (when issue.ParentID is set)
+	HasActiveApproval bool           // True when a non-superseded approval exists
+	Reviews           []*models.IssueReview
+	Error             error
 }
 
 // MarkdownRenderedMsg carries pre-rendered markdown for the modal

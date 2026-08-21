@@ -1044,12 +1044,34 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 	return style.Render(label)
 }
 
-// renderModal renders the centered issue details modal
+// renderModal renders the centered issue details modal.
+//
+// Output is memoized: a host that repaints on every message (mouse motion,
+// streaming panes, other plugins' ticks) calls this orders of magnitude more
+// often than the standalone TUI, and rebuilding the modal costs milliseconds
+// plus megabytes of garbage per frame. The fingerprint in modalRenderKeyFor
+// must cover every input buildIssueModalView reads — keep them in sync.
 func (m Model) renderModal() string {
 	modal := m.CurrentModal()
 	if modal == nil {
 		return ""
 	}
+	key := m.modalRenderKeyFor(modal)
+	if m.modalRender != nil && key.equal(m.modalRender.key) {
+		return m.modalRender.out
+	}
+	out := m.buildIssueModalView(modal)
+	if m.modalRender != nil {
+		m.modalRender.key = key
+		m.modalRender.out = out
+	}
+	return out
+}
+
+// buildIssueModalView assembles the issue-detail modal from scratch. Reads no
+// database state: everything it renders was fetched into the ModalEntry by
+// fetchIssueDetails.
+func (m Model) buildIssueModalView(modal *ModalEntry) string {
 	styles := m.renderStyles()
 
 	// Calculate modal dimensions (80% of terminal, capped)
@@ -1146,27 +1168,19 @@ func (m Model) renderModal() string {
 		// Freshness: only emit (fresh) when an active (non-superseded)
 		// approval row exists. Relying on ReviewerSession alone is lossy once
 		// changes_requested reviews (which don't clear ReviewerSession) are
-		// recordable from the TUI. GetActiveApprovalReview is the true
-		// predicate.
-		if issue.Status == models.StatusInReview && m.DB != nil {
-			if active, _ := m.DB.GetActiveApprovalReview(issue.ID); active != nil {
-				reviewerLine += styles.subtle.Render("  (fresh)")
-			}
+		// recordable from the TUI. HasActiveApproval mirrors
+		// GetActiveApprovalReview and is refreshed by fetchIssueDetails.
+		if issue.Status == models.StatusInReview && modal.HasActiveApproval {
+			reviewerLine += styles.subtle.Render("  (fresh)")
 		}
 		lines = append(lines, reviewerLine)
 	}
 	if issue.ClosedBySession != "" && issue.Status == models.StatusClosed {
 		lines = append(lines, styles.subtle.Render("Closed by: ")+truncateSession(issue.ClosedBySession))
 	}
-	// Recent review history (last 3) from issue_reviews, best-effort DB read.
-	// Guarded on m.DB being non-nil for tests that render without a DB.
-	var reviewsList []*models.IssueReview
-	if m.DB != nil {
-		if r, err := m.DB.ListIssueReviews(issue.ID); err == nil {
-			reviewsList = r
-		}
-	}
-	if reviews := reviewsList; len(reviews) > 0 {
+	// Recent review history (last 3) from issue_reviews, fetched with the
+	// issue details so View never queries the database.
+	if reviews := modal.Reviews; len(reviews) > 0 {
 		// Take last 3 in reverse chronological order.
 		start := 0
 		if len(reviews) > 3 {

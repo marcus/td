@@ -255,6 +255,11 @@ type Model struct {
 	theme         Theme
 	styles        monitorStyles
 	themeRevision uint64 // rejects async ANSI rendered for an older palette
+
+	// modalRender memoizes the rendered issue-modal string behind a pointer so
+	// every value copy of the model shares one cache. Nil for models built by
+	// struct literal (tests), which renders without caching.
+	modalRender *modalRenderCache
 }
 
 // NewModel creates a new monitor model
@@ -301,6 +306,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		BaseDir:           baseDir,
 		theme:             theme,
 		styles:            newMonitorStyles(theme),
+		modalRender:       &modalRenderCache{},
 	}
 }
 
@@ -730,6 +736,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.Blocks = msg.Blocks
 			modal.EpicTasks = msg.EpicTasks
 			modal.ParentEpic = msg.ParentEpic
+			modal.HasActiveApproval = msg.HasActiveApproval
+			modal.Reviews = msg.Reviews
 			if isInitialLoad {
 				modal.ParentEpicFocused = false // Only reset focus on initial load
 			}
@@ -1145,6 +1153,14 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 			epicTasks, _ := m.DB.ListIssues(db.ListIssuesOptions{ParentID: issueID})
 			msg.EpicTasks = epicTasks
 		}
+
+		// Review state for the "(fresh)" marker and "Recent reviews" section.
+		// Fetched here rather than in renderModal so a host application that
+		// repaints on every message never pays for database queries per frame.
+		if active, _ := m.DB.GetActiveApprovalReview(issueID); active != nil {
+			msg.HasActiveApproval = true
+		}
+		msg.Reviews, _ = m.DB.ListIssueReviews(issueID)
 
 		return msg
 	}

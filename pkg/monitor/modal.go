@@ -175,6 +175,8 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 	modal.ParentEpicFocused = false
 	modal.DescRender = ""
 	modal.AcceptRender = ""
+	modal.HasActiveApproval = false
+	modal.Reviews = nil
 	modal.NavigationScope = savedScope
 
 	// Update cursor position in source panel (only for non-scoped navigation at depth 1)
