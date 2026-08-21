@@ -4,6 +4,12 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Monitor
+
+- **Empty panes name the next step** (td-70d392, td-219916). Current Work, Board, and Activity Log leave a blank line under the header and indent empty copy to the title. Current Work tells you to start a task with td. Board distinguishes a database with no issues from a filter that matches nothing. Embedded Sidecar adds `Next: Press [3] for Workspaces…` only when there are no tasks yet; standalone `td monitor` never mentions Sidecar tabs.
+- **Getting Started title and subtitle sit together as one heading** (td-1495cc). Install guidance sits above the buttons; `?` / `H` hints sit below.
+- **Note create/update events log as "created note" / "updated note"** (td-545473) instead of "created issue" / "updated issue".
+
 ## [v0.61.0] - 2026-08-20
 
 ### Monitor
