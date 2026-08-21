@@ -16,11 +16,19 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 		fileName = filepath.Base(m.AgentFilePath)
 	}
 
-	md := m.newModal("Welcome to td!", ModalTypeHelp, modal.WithWidth(60), modal.WithHints(false))
+	md := m.newModal("", ModalTypeHelp, modal.WithWidth(60), modal.WithHints(false))
 
-	md.AddSection(modal.Text("Task management for AI agents."))
+	// Centered title and subtitle with no blank line in between
+	md.AddSection(modal.CenteredTitle("Welcome to td!"))
+	md.AddSection(modal.CenteredMuted("Task management for AI agents."))
 	md.AddSection(modal.Spacer())
 
+	// Agent prompt guidance
+	md.AddSection(modal.Text("To use td, just prompt your agent:"))
+	md.AddSection(modal.Text(`"Use td to plan my feature and implement it."`))
+	md.AddSection(modal.Spacer())
+
+	// Guidance install instruction right above the buttons
 	if m.AgentFileTDNeedsUpdate {
 		md.AddSection(modal.Text("Updated td guidance is available for " + fileName))
 	} else if m.AgentFileHasTD {
@@ -30,13 +38,7 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 	}
 	md.AddSection(modal.Spacer())
 
-	md.AddSection(modal.Text("PROMPT: \"Use td to plan my feature and implement it.\""))
-	md.AddSection(modal.Spacer())
-
-	md.AddSection(modal.Text("Press ? for help · H to reopen this modal"))
-	md.AddSection(modal.Spacer())
-
-	// Only show Install button if not already installed
+	// Action buttons
 	if m.AgentFileHasTD && !m.AgentFileTDNeedsUpdate {
 		md.AddSection(modal.Buttons(
 			modal.Btn(" Close ", "close"),
@@ -51,6 +53,10 @@ func (m *Model) createGettingStartedModal() *modal.Modal {
 			modal.Btn(" Close ", "close"),
 		))
 	}
+	md.AddSection(modal.Spacer())
+
+	// Help and reopen hints below the buttons
+	md.AddSection(modal.CenteredMuted("Press ? for help · H to reopen this modal"))
 
 	return md
 }

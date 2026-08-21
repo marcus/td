@@ -231,9 +231,9 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 
 	totalRows := len(m.CurrentWorkRows)
 	if totalRows == 0 {
-		content.WriteString(styles.subtle.Render("No current work"))
-		content.WriteString("\n")
-		return m.wrapPanel("CURRENT WORK", content.String(), height, PanelCurrentWork)
+		return m.wrapPanel("CURRENT WORK",
+			m.emptyStateBody(m.withEmbeddedNextStep([]string{emptyCurrentWorkMsg})),
+			height, PanelCurrentWork)
 	}
 
 	cursor := m.Cursor[PanelCurrentWork]
@@ -437,8 +437,7 @@ func (m Model) renderActivityPanel(height int) string {
 	styles := m.renderStyles()
 	totalRows := len(m.Activity)
 	if totalRows == 0 {
-		content := styles.subtle.Render("No recent activity")
-		return m.wrapPanel("ACTIVITY LOG", content, height, PanelActivity)
+		return m.wrapPanel("ACTIVITY LOG", m.emptyStateBody([]string{emptyActivityMsg}), height, PanelActivity)
 	}
 
 	cursor := m.Cursor[PanelActivity]
@@ -703,10 +702,7 @@ func (m Model) renderTaskListBoardView(height int) string {
 			boardName = m.BoardMode.Board.Name
 		}
 		panelTitle := fmt.Sprintf("BOARD: %s [backlog] (0)", boardName)
-		content.WriteString(styles.subtle.Render("No issues match the board query"))
-		content.WriteString("\n\n")
-		content.WriteString(styles.subtle.Render("Try adjusting the status filter with 'c' or 'F'"))
-		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
+		return m.wrapPanel(panelTitle, m.boardEmptyStateBody(), height, PanelTaskList)
 	}
 
 	cursor := m.BoardMode.Cursor
@@ -840,10 +836,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 			boardName = m.BoardMode.Board.Name
 		}
 		panelTitle := fmt.Sprintf("BOARD: %s [swimlanes]%s (0)", boardName, sortIndicator)
-		content.WriteString(styles.subtle.Render("No issues match the board query"))
-		content.WriteString("\n\n")
-		content.WriteString(styles.subtle.Render("Try adjusting the status filter with 'c' or 'F'"))
-		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
+		return m.wrapPanel(panelTitle, m.boardEmptyStateBody(), height, PanelTaskList)
 	}
 
 	cursor := m.BoardMode.SwimlaneCursor
@@ -2628,6 +2621,79 @@ func (m Model) determinePanelState(panel Panel) PanelState {
 		return PanelStateHover
 	}
 	return PanelStateNormal
+}
+
+const (
+	emptyCurrentWorkMsg   = "Ask an agent to start a task with td and it will show up here."
+	emptyBoardNoTasksMsg  = "No tasks yet. Ask an agent to create tasks with td or run td create."
+	emptyBoardFilteredMsg = "No issues match the board query, try adjusting the status filter."
+	emptyBoardFilterHint  = "Try adjusting the status filter with 'c' or 'F'"
+	emptyActivityMsg      = "No recent activity"
+	embeddedNextStepMsg   = "Next: Press [3] for Workspaces to create a worktree and start an agent shell."
+)
+
+// panelTitleIndent is the visible left pad of a panel title, so empty-state
+// copy lines up with the title letters (the 'C' in CURRENT WORK).
+func (m Model) panelTitleIndent() string {
+	const marker = "T"
+	plain := ansi.Strip(m.renderStyles().panelTitle.Render(marker))
+	n := strings.Index(plain, marker)
+	if n <= 0 {
+		return " "
+	}
+	return strings.Repeat(" ", n)
+}
+
+func (m Model) withEmbeddedNextStep(lines []string) []string {
+	if !m.Embedded || m.HasIssues {
+		return lines
+	}
+	out := make([]string, 0, len(lines)+2)
+	out = append(out, lines...)
+	out = append(out, "", embeddedNextStepMsg)
+	return out
+}
+
+func (m Model) boardEmptyStateBody() string {
+	if m.HasIssues {
+		return m.emptyStateBody([]string{emptyBoardFilteredMsg, "", emptyBoardFilterHint})
+	}
+	return m.emptyStateBody(m.withEmbeddedNextStep([]string{emptyBoardNoTasksMsg}))
+}
+
+// emptyStateBody renders empty-pane copy: a blank line under the header, then
+// each line indented to match the panel title text.
+func (m Model) emptyStateBody(lines []string) string {
+	styles := m.renderStyles()
+	indent := m.panelTitleIndent()
+	indentWidth := lipgloss.Width(indent)
+	contentWidth := m.Width - 4
+	wrapWidth := contentWidth - indentWidth
+	if wrapWidth < 16 {
+		wrapWidth = contentWidth
+		indent = ""
+	}
+
+	var b strings.Builder
+	b.WriteByte('\n')
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if line == "" {
+			continue
+		}
+		wrapped := cellbuf.Wrap(line, wrapWidth, "")
+		for j, part := range strings.Split(wrapped, "\n") {
+			if j > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(indent)
+			b.WriteString(styles.subtle.Render(part))
+		}
+	}
+	b.WriteByte('\n')
+	return b.String()
 }
 
 // wrapPanel wraps content in a panel with title and border

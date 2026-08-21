@@ -36,6 +36,7 @@ type Model struct {
 	TaskList       TaskListData
 	RecentHandoffs []RecentHandoff // Handoffs since monitor started
 	ActiveSessions []string        // Sessions with recent activity
+	HasIssues      bool            // Any non-deleted issue exists (board empty-state copy)
 
 	// UI state
 	ActivePanel         Panel
@@ -702,6 +703,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.TaskList = msg.TaskList
 		m.RecentHandoffs = msg.RecentHandoffs
 		m.ActiveSessions = msg.ActiveSessions
+		m.HasIssues = msg.HasIssues
 		m.LastRefresh = msg.Timestamp
 
 		// Build flattened rows for selection

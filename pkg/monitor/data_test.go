@@ -334,3 +334,74 @@ func TestComputeBoardIssueCategoriesClosedDepUnblocks(t *testing.T) {
 		t.Errorf("dependent with closed blocker: got %q, want %q", issues[0].Category, CategoryReady)
 	}
 }
+
+func TestFormatActionMessageNoteVsIssue(t *testing.T) {
+	tests := []struct {
+		name string
+		act  models.ActionLog
+		want string
+	}{
+		{
+			name: "create issue",
+			act:  models.ActionLog{ActionType: models.ActionCreate, EntityType: "issue", EntityID: "td-abc"},
+			want: "created issue",
+		},
+		{
+			name: "update issue",
+			act:  models.ActionLog{ActionType: models.ActionUpdate, EntityType: "issue", EntityID: "td-abc"},
+			want: "updated issue",
+		},
+		{
+			name: "create note by entity type",
+			act:  models.ActionLog{ActionType: models.ActionCreate, EntityType: "note", EntityID: "nt-abc123"},
+			want: "created note",
+		},
+		{
+			name: "update note by entity type",
+			act:  models.ActionLog{ActionType: models.ActionUpdate, EntityType: "note", EntityID: "nt-abc123"},
+			want: "updated note",
+		},
+		{
+			name: "create note by nt- id",
+			act:  models.ActionLog{ActionType: models.ActionCreate, EntityType: "", EntityID: "nt-ffffff"},
+			want: "created note",
+		},
+		{
+			name: "started work stays generic",
+			act:  models.ActionLog{ActionType: models.ActionStart, EntityType: "issue", EntityID: "td-abc"},
+			want: "started work",
+		},
+		{
+			name: "approve stays generic",
+			act:  models.ActionLog{ActionType: models.ActionApprove, EntityType: "issue", EntityID: "td-abc"},
+			want: "approved",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatActionMessage(tt.act); got != tt.want {
+				t.Fatalf("formatActionMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFetchDataHasIssues(t *testing.T) {
+	baseDir := t.TempDir()
+	database, err := db.Initialize(baseDir)
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer database.Close()
+
+	empty := FetchData(database, "test-session", time.Now(), "", false, SortByPriority)
+	if empty.HasIssues {
+		t.Fatal("empty database reported HasIssues=true")
+	}
+
+	createTestIssue(t, database, "first", models.StatusOpen)
+	withIssue := FetchData(database, "test-session", time.Now(), "", false, SortByPriority)
+	if !withIssue.HasIssues {
+		t.Fatal("database with an issue reported HasIssues=false")
+	}
+}
