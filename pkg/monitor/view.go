@@ -2645,7 +2645,7 @@ func (m Model) panelTitleIndent() string {
 }
 
 func (m Model) withEmbeddedNextStep(lines []string) []string {
-	if !m.Embedded {
+	if !m.Embedded || m.HasIssues {
 		return lines
 	}
 	out := make([]string, 0, len(lines)+2)

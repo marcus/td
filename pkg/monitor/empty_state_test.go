@@ -93,12 +93,22 @@ func TestEmptyStateCurrentWorkCopyAndAlignment(t *testing.T) {
 	}
 
 	m.Embedded = true
+	m.HasIssues = false
 	embedded := m.renderCurrentWorkPanel(12)
 	plain := ansi.Strip(embedded)
 	if !strings.Contains(plain, "Press [3] for Workspaces") {
 		t.Fatalf("embedded empty current work missing next-step, got %q", plain)
 	}
 	assertEmptyStateLayout(t, embedded, "CURRENT WORK", "Ask an agent")
+
+	m.HasIssues = true
+	withTasks := m.renderCurrentWorkPanel(12)
+	if strings.Contains(ansi.Strip(withTasks), "Workspaces") {
+		t.Fatal("embedded empty current work must not pitch Workspaces when tasks already exist")
+	}
+	if !strings.Contains(ansi.Strip(withTasks), "Ask an agent") {
+		t.Fatal("empty current work copy should remain when tasks exist but nothing is in progress")
+	}
 }
 
 func TestEmptyStateActivityCopyAndAlignment(t *testing.T) {
