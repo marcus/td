@@ -373,6 +373,7 @@ type RefreshDataMsg struct {
 	TaskList       TaskListData
 	RecentHandoffs []RecentHandoff
 	ActiveSessions []string
+	HasIssues      bool // any non-deleted issue exists in the project DB
 	Timestamp      time.Time
 }
 

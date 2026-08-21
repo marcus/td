@@ -174,6 +174,10 @@ func FetchDataWithSearchMode(database *db.DB, sessionID string, startedAt time.T
 		}
 	}
 
+	if live, err := database.ListIssues(db.ListIssuesOptions{Limit: 1}); err == nil {
+		msg.HasIssues = len(live) > 0
+	}
+
 	// Get in-progress issues
 	inProgress, _ := database.ListIssues(db.ListIssuesOptions{
 		Status: []models.Status{models.StatusInProgress},
@@ -590,17 +594,32 @@ func fetchRecentHandoffs(database *db.DB, since time.Time) []RecentHandoff {
 	return result
 }
 
+func isNoteAction(action models.ActionLog) bool {
+	et := strings.ToLower(strings.TrimSpace(action.EntityType))
+	if et == "note" || et == "notes" {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(action.EntityID), "nt-")
+}
+
+func actionEntityNoun(action models.ActionLog) string {
+	if isNoteAction(action) {
+		return "note"
+	}
+	return "issue"
+}
+
 // formatActionMessage creates a human-readable message for an action
 func formatActionMessage(action models.ActionLog) string {
 	switch action.ActionType {
 	case models.ActionCreate:
-		return "created issue"
+		return "created " + actionEntityNoun(action)
 	case models.ActionUpdate:
-		return "updated issue"
+		return "updated " + actionEntityNoun(action)
 	case models.ActionDelete:
-		return "deleted issue"
+		return "deleted " + actionEntityNoun(action)
 	case models.ActionRestore:
-		return "restored issue"
+		return "restored " + actionEntityNoun(action)
 	case models.ActionStart:
 		return "started work"
 	case models.ActionReview:
