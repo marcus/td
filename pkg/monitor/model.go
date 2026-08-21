@@ -684,14 +684,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.WindowSizeMsg:
+		// Re-render markdown only when the width it was wrapped at actually
+		// moved. Panel bounds are recomputed either way: a host may set Width
+		// and Height directly and send this message to have them derived, so
+		// an unchanged size still has to reach updatePanelBounds.
+		//
+		// A host that announces its geometry every frame rather than on every
+		// resize (sidecar's pane frame did) makes this the top of a message
+		// loop otherwise: each render asks for a markdown pass, whose result
+		// message drives the next render. Idempotence here is what keeps that
+		// a host bug instead of a runaway monitor (td-fcb03a).
+		prevWidth := m.modalContentWidth()
 		m.Width = msg.Width
 		m.Height = msg.Height
 		m.updatePanelBounds()
-		// Re-render markdown if modal is open (width may have changed)
 		if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
 			if modal.Issue.Description != "" || modal.Issue.Acceptance != "" {
-				width := m.modalContentWidth()
-				return m, m.renderMarkdownAsync(modal.IssueID, modal.Issue.Description, modal.Issue.Acceptance, width)
+				if width := m.modalContentWidth(); width != prevWidth {
+					return m, m.renderMarkdownAsync(modal.IssueID, modal.Issue.Description, modal.Issue.Acceptance, width)
+				}
 			}
 		}
 		return m, nil
