@@ -882,19 +882,21 @@ func TestMouseHandler(t *testing.T) {
 
 func TestGettingStartedModalButtonClick(t *testing.T) {
 	// Simulate the Getting Started modal structure (must fit on 80x24)
-	m := New("Welcome to td!", WithWidth(60), WithHints(false)).
-		AddSection(Text("Task management for AI agents.")).
+	m := New("", WithWidth(60), WithHints(false)).
+		AddSection(CenteredTitle("Welcome to td!")).
+		AddSection(CenteredMuted("Task management for AI agents.")).
+		AddSection(Spacer()).
+		AddSection(Text("To use td, just prompt your agent:")).
+		AddSection(Text(`"Use td to plan my feature and implement it."`)).
 		AddSection(Spacer()).
 		AddSection(Text("Press I to add compact td guidance to AGENTS.md")).
-		AddSection(Spacer()).
-		AddSection(Text("PROMPT: \"Use td to plan my feature and implement it.\"")).
-		AddSection(Spacer()).
-		AddSection(Text("Press ? for help · H to reopen this modal")).
 		AddSection(Spacer()).
 		AddSection(Buttons(
 			Btn(" [I]nstall ", "install"),
 			Btn(" Close ", "close"),
-		))
+		)).
+		AddSection(Spacer()).
+		AddSection(CenteredMuted("Press ? for help · H to reopen this modal"))
 
 	handler := mouse.NewHandler()
 	m.Render(80, 24, handler)

@@ -71,6 +71,83 @@ func (t *textSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
 	return "", nil
 }
 
+// --- Centered Text Section ---
+
+// centeredTextSection is a static centered text section.
+type centeredTextSection struct {
+	text   string
+	styles styles
+}
+
+// CenteredText creates a static centered text section.
+func CenteredText(s string) Section {
+	return &centeredTextSection{text: s, styles: newStyles(DefaultTheme())}
+}
+
+func (c *centeredTextSection) setStyles(value styles) { c.styles = value }
+
+func (c *centeredTextSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
+	wrapped := wrapText(c.text, contentWidth)
+	rendered := c.styles.body.Render(wrapped)
+	return RenderedSection{Content: lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, rendered)}
+}
+
+func (c *centeredTextSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
+	return "", nil
+}
+
+// --- Centered Title Section ---
+
+// centeredTitleSection is a static centered bold title section.
+type centeredTitleSection struct {
+	text   string
+	styles styles
+}
+
+// CenteredTitle creates a centered bold title section styled with theme primary color.
+func CenteredTitle(s string) Section {
+	return &centeredTitleSection{text: s, styles: newStyles(DefaultTheme())}
+}
+
+func (c *centeredTitleSection) setStyles(value styles) { c.styles = value }
+
+func (c *centeredTitleSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
+	titleStyle := c.styles.modalTitle
+	if !c.styles.isDefault {
+		titleStyle = titleStyle.Foreground(lipgloss.Color(c.styles.theme.Primary))
+	}
+	rendered := titleStyle.Render(c.text)
+	return RenderedSection{Content: lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, rendered)}
+}
+
+func (c *centeredTitleSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
+	return "", nil
+}
+
+// --- Centered Muted Section ---
+
+// centeredMutedSection is a static centered muted text section.
+type centeredMutedSection struct {
+	text   string
+	styles styles
+}
+
+// CenteredMuted creates a centered muted text section.
+func CenteredMuted(s string) Section {
+	return &centeredMutedSection{text: s, styles: newStyles(DefaultTheme())}
+}
+
+func (c *centeredMutedSection) setStyles(value styles) { c.styles = value }
+
+func (c *centeredMutedSection) Render(contentWidth int, focusID, hoverID string) RenderedSection {
+	rendered := c.styles.mutedText.Render(c.text)
+	return RenderedSection{Content: lipgloss.PlaceHorizontal(contentWidth, lipgloss.Center, rendered)}
+}
+
+func (c *centeredMutedSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
+	return "", nil
+}
+
 // --- Spacer Section ---
 
 // spacerSection renders a blank line.
