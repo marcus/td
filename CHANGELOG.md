@@ -4,11 +4,18 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.62.0] - 2026-08-21
+
 ### Monitor
 
 - **Empty panes name the next step** (td-70d392, td-219916). Current Work, Board, and Activity Log leave a blank line under the header and indent empty copy to the title. Current Work tells you to start a task with td. Board distinguishes a database with no issues from a filter that matches nothing. Embedded Sidecar adds `Next: Press [3] for Workspaces…` only when there are no tasks yet; standalone `td monitor` never mentions Sidecar tabs.
 - **Getting Started title and subtitle sit together as one heading** (td-1495cc). Install guidance sits above the buttons; `?` / `H` hints sit below.
 - **Note create/update events log as "created note" / "updated note"** (td-545473) instead of "created issue" / "updated issue".
+
+### Bug Fixes
+
+- **The issue modal no longer re-queries the database and rebuilds its layout every frame**, which spiked CPU in embedded hosts while a modal was open.
+- **Modal markdown re-renders only when its wrap width changes** (td-fcb03a) instead of on every render pass.
 
 ## [v0.61.0] - 2026-08-20
 
