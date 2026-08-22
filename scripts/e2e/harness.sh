@@ -107,6 +107,114 @@ td_a() { (cd "$CLIENT_A_DIR" && HOME="$HOME_A" TD_SESSION_ID="$SESSION_ID_A" TD_
 td_b() { (cd "$CLIENT_B_DIR" && HOME="$HOME_B" TD_SESSION_ID="$SESSION_ID_B" TD_FEATURE_SYNC_CLI=1 TD_FEATURE_SYNC_AUTOSYNC=1 "$TD_BIN" "$@"); }
 td_c() { (cd "$CLIENT_C_DIR" && HOME="$HOME_C" TD_SESSION_ID="$SESSION_ID_C" TD_FEATURE_SYNC_CLI=1 TD_FEATURE_SYNC_AUTOSYNC=1 "$TD_BIN" "$@"); }
 
+# ---- Auth: device PKCE login flow ----
+#
+# The legacy /v1/auth/login/start + /auth/verify pair is retired: the server
+# answers it with 410 Gone unless SYNC_LEGACY_DEVICE_AUTH is set. Tests now
+# drive the same device PKCE flow the real `td auth login` uses, mirroring
+# test/e2e/harness.go (authenticate/deviceLogin):
+#
+#   1. Generate a local PKCE verifier + S256 challenge.
+#   2. POST /v1/auth/device/start -> device_code.
+#   3. Read the magic link from the in-memory mailbox via the dev-only
+#      GET /internal/dev/last-email (stands in for the user's inbox).
+#   4. GET the approve URL — what the user's browser does on click.
+#   5. POST /v1/auth/device/poll with device_code + verifier -> api_key.
+#
+# device/start is non-enumerating: it silently suppresses unknown emails, so
+# users must be provisioned first (see _provision_user).
+
+# base64url-encode stdin with padding stripped (RFC 7636 style).
+_b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+# Echo a fresh PKCE verifier: 32 random bytes -> 43-char base64url string.
+_pkce_verifier() { openssl rand 32 | _b64url; }
+
+# Echo the S256 challenge for the verifier in $1.
+_pkce_challenge() { printf '%s' "$1" | openssl dgst -sha256 -binary | _b64url; }
+
+# Create a server-side user. Must run while the server is NOT holding the DB
+# open; `admin create-user` is idempotent, so repeat calls are harmless.
+_provision_user() {
+    local email="$1"
+    "$SYNC_BIN" admin create-user --email "$email" --db "$SERVER_DATA/server.db" >/dev/null \
+        || _fatal "provision user $email failed"
+}
+
+# Run the device PKCE flow and echo "<api_key> <user_id>".
+_device_login() {
+    local email="$1"
+    local verifier challenge start_resp device_code email_json recipient approve_url
+    local poll_resp status api_key user_id i
+
+    verifier=$(_pkce_verifier)
+    challenge=$(_pkce_challenge "$verifier")
+
+    start_resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/device/start" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"code_challenge\":\"$challenge\",\"code_challenge_method\":\"S256\",\"device_name\":\"e2e-harness\"}") \
+        || _fatal "device/start failed for $email"
+    device_code=$(echo "$start_resp" | jq -r '.device_code // empty')
+    [ -n "$device_code" ] || _fatal "device/start returned no device_code for $email: $start_resp"
+
+    # The magic link is only sent for a known user; a suppressed (unknown) email
+    # still returns 200 with a device_code, so an empty/mismatched mailbox here
+    # means provisioning did not take.
+    email_json=$(curl -sf "$SERVER_URL/internal/dev/last-email") \
+        || _fatal "dev last-email unavailable (need SYNC_EMAIL_PROVIDER=memory + SYNC_DEV_EMAIL_INSPECT=1)"
+    recipient=$(echo "$email_json" | jq -r '.to // empty')
+    [ "$recipient" = "$email" ] \
+        || _fatal "last-email recipient '$recipient' != '$email' (user not provisioned?)"
+
+    approve_url=$(echo "$email_json" | jq -r '.text // empty' \
+        | grep -oE 'https?://[^[:space:]]*/auth/device/approve\?token=[^[:space:]]+' | head -1)
+    [ -n "$approve_url" ] || _fatal "no approve link in email body for $email"
+
+    curl -sf "$approve_url" >/dev/null || _fatal "device/approve failed for $email"
+
+    for i in $(seq 1 30); do
+        poll_resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/device/poll" \
+            -H "Content-Type: application/json" \
+            -d "{\"device_code\":\"$device_code\",\"code_verifier\":\"$verifier\"}") \
+            || _fatal "device/poll failed for $email"
+        status=$(echo "$poll_resp" | jq -r '.status // empty')
+        case "$status" in
+            complete)
+                api_key=$(echo "$poll_resp" | jq -r '.api_key // empty')
+                user_id=$(echo "$poll_resp" | jq -r '.user_id // empty')
+                [ -n "$api_key" ] && [ -n "$user_id" ] \
+                    || _fatal "device/poll complete but missing key/user for $email"
+                echo "$api_key $user_id"
+                return 0
+                ;;
+            pending) sleep 0.2 ;;
+            *) _fatal "device/poll unexpected status '$status' for $email: $poll_resp" ;;
+        esac
+    done
+    _fatal "device/poll timed out for $email"
+}
+
+# Authenticate an actor and write auth.json + config.json into its HOME.
+# Usage: _auth <email> <home_dir> [auto_sync] [debounce] [interval]
+_auth() {
+    local email="$1" home_dir="$2"
+    local as="${3:-false}" db="${4:-2s}" iv="${5:-10s}"
+    local creds ak uid did
+
+    creds=$(_device_login "$email")
+    ak=${creds%% *}
+    uid=${creds##* }
+    did=$(openssl rand -hex 16)
+
+    cat > "$home_dir/.config/td/auth.json" <<EOF
+{"api_key":"$ak","user_id":"$uid","email":"$email","server_url":"$SERVER_URL","device_id":"$did"}
+EOF
+    chmod 600 "$home_dir/.config/td/auth.json"
+    cat > "$home_dir/.config/td/config.json" <<EOF
+{"sync":{"url":"$SERVER_URL","enabled":true,"snapshot_threshold":0,"auto":{"enabled":$as,"on_start":false,"debounce":"$db","interval":"$iv","pull":true}}}
+EOF
+}
+
 # ---- Teardown ----
 
 teardown() {
@@ -166,56 +274,29 @@ setup() {
     (cd "$REPO_DIR" && go build -o "$TD_BIN" .)
     (cd "$REPO_DIR" && go build -o "$SYNC_BIN" ./cmd/td-sync)
 
+    # Remember the timing knobs so a late joiner writes a matching config.
+    HARNESS_DEBOUNCE="$debounce"
+    HARNESS_INTERVAL="$interval"
+
+    # Provision users BEFORE the server opens the DB. device/start is
+    # non-enumerating: it only mails (and creates a challenge for) an email that
+    # already maps to a user, so unprovisioned actors would silently never log in.
+    # Carol is provisioned unconditionally so setup_late_joiner can run against a
+    # live server without needing DB access of its own.
+    _step "Provisioning users"
+    _provision_user "alice@test.local"
+    _provision_user "bob@test.local"
+    _provision_user "carol@test.local"
+
     # Start server
-    _step "Starting server (:$PORT)"
-    SYNC_LISTEN_ADDR=":$PORT" \
-    SYNC_SERVER_DB_PATH="$SERVER_DATA/server.db" \
-    SYNC_PROJECT_DATA_DIR="$SERVER_DATA/projects" \
-    SYNC_ALLOW_SIGNUP=true \
-    SYNC_BASE_URL="$SERVER_URL" \
-    SYNC_LOG_FORMAT=text \
-    SYNC_LOG_LEVEL=info \
-      "$SYNC_BIN" > "$WORKDIR/server.log" 2>&1 &
-    SERVER_PID=$!
-
-    for _ in $(seq 1 30); do
-        curl -sf "$SERVER_URL/healthz" > /dev/null 2>&1 && break
-        kill -0 "$SERVER_PID" 2>/dev/null || { cat "$WORKDIR/server.log"; _fatal "Server died"; }
-        sleep 0.2
-    done
-    curl -sf "$SERVER_URL/healthz" > /dev/null || { cat "$WORKDIR/server.log"; _fatal "Server not healthy"; }
-
-    # Auth helper
-    _auth() {
-        local email="$1" home_dir="$2"
-        local resp dc uc ak uid did
-
-        resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/start" \
-            -H "Content-Type: application/json" -d "{\"email\":\"$email\"}")
-        dc=$(echo "$resp" | jq -r '.device_code')
-        uc=$(echo "$resp" | jq -r '.user_code')
-        curl -sf -X POST "$SERVER_URL/auth/verify" -d "user_code=$uc" > /dev/null
-        resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/poll" \
-            -H "Content-Type: application/json" -d "{\"device_code\":\"$dc\"}")
-        ak=$(echo "$resp" | jq -r '.api_key')
-        uid=$(echo "$resp" | jq -r '.user_id')
-        did=$(openssl rand -hex 16)
-
-        cat > "$home_dir/.config/td/auth.json" <<EOF
-{"api_key":"$ak","user_id":"$uid","email":"$email","server_url":"$SERVER_URL","device_id":"$did"}
-EOF
-        chmod 600 "$home_dir/.config/td/auth.json"
-        cat > "$home_dir/.config/td/config.json" <<EOF
-{"sync":{"url":"$SERVER_URL","enabled":true,"snapshot_threshold":0,"auto":{"enabled":$auto_sync,"on_start":false,"debounce":"$debounce","interval":"$interval","pull":true}}}
-EOF
-    }
+    start_server
 
     # Init + auth + link
     _step "Init + auth + link"
     echo "n" | td_a init >/dev/null 2>&1
     echo "n" | td_b init >/dev/null 2>&1
-    _auth "alice@test.local" "$HOME_A"
-    _auth "bob@test.local" "$HOME_B"
+    _auth "alice@test.local" "$HOME_A" "$auto_sync" "$debounce" "$interval"
+    _auth "bob@test.local" "$HOME_B" "$auto_sync" "$debounce" "$interval"
 
     local create_out
     create_out=$(td_a sync-project create "e2e-test" 2>&1)
@@ -229,7 +310,7 @@ EOF
 
     if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
         echo "n" | td_c init >/dev/null 2>&1
-        _auth "carol@test.local" "$HOME_C"
+        _auth "carol@test.local" "$HOME_C" "$auto_sync" "$debounce" "$interval"
         td_a sync-project invite "carol@test.local" writer >/dev/null
         td_c sync-project link "$PROJECT_ID" >/dev/null
     fi
@@ -266,26 +347,10 @@ setup_late_joiner() {
     # Init td in the client directory (must use td_c to set TD_SESSION_ID)
     echo "n" | td_c init >/dev/null 2>&1
 
-    # Authenticate the user (inline version of _auth)
-    local resp dc uc ak uid did
-    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/start" \
-        -H "Content-Type: application/json" -d "{\"email\":\"$email\"}")
-    dc=$(echo "$resp" | jq -r '.device_code')
-    uc=$(echo "$resp" | jq -r '.user_code')
-    curl -sf -X POST "$SERVER_URL/auth/verify" -d "user_code=$uc" > /dev/null
-    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/poll" \
-        -H "Content-Type: application/json" -d "{\"device_code\":\"$dc\"}")
-    ak=$(echo "$resp" | jq -r '.api_key')
-    uid=$(echo "$resp" | jq -r '.user_id')
-    did=$(openssl rand -hex 16)
-
-    cat > "$home_dir/.config/td/auth.json" <<EOF
-{"api_key":"$ak","user_id":"$uid","email":"$email","server_url":"$SERVER_URL","device_id":"$did"}
-EOF
-    chmod 600 "$home_dir/.config/td/auth.json"
-    cat > "$home_dir/.config/td/config.json" <<EOF
-{"sync":{"url":"$SERVER_URL","enabled":true,"snapshot_threshold":0,"auto":{"enabled":false,"on_start":false,"debounce":"2s","interval":"10s","pull":true}}}
-EOF
+    # Authenticate the user. The account was provisioned in setup (before the
+    # server opened the DB), so the device flow can mail it a magic link.
+    # A late joiner deliberately keeps autosync off — it syncs on demand.
+    _auth "$email" "$home_dir" false "${HARNESS_DEBOUNCE:-2s}" "${HARNESS_INTERVAL:-10s}"
 
     # Invite the user to the project (from actor A)
     td_a sync-project invite "$email" writer >/dev/null
@@ -313,22 +378,34 @@ stop_server() {
 
 start_server() {
     _step "Starting server (:$PORT)"
+    # SYNC_EMAIL_PROVIDER=memory + SYNC_DEV_EMAIL_INSPECT=1 are what make the
+    # device PKCE login flow drivable from a script: the magic link lands in an
+    # in-memory mailbox readable via GET /internal/dev/last-email. The rate
+    # limits are lifted because a whole suite authenticates far faster than a
+    # human would, and auth throttling would otherwise surface as a flaky login.
     SYNC_LISTEN_ADDR=":$PORT" \
     SYNC_SERVER_DB_PATH="$SERVER_DATA/server.db" \
     SYNC_PROJECT_DATA_DIR="$SERVER_DATA/projects" \
     SYNC_ALLOW_SIGNUP=true \
     SYNC_BASE_URL="$SERVER_URL" \
+    SYNC_EMAIL_PROVIDER=memory \
+    SYNC_DEV_EMAIL_INSPECT=1 \
+    SYNC_EMAIL_BASE_URL="$SERVER_URL" \
     SYNC_LOG_FORMAT=text \
     SYNC_LOG_LEVEL=info \
+    SYNC_RATE_LIMIT_AUTH=1000 \
+    SYNC_RATE_LIMIT_PUSH=10000 \
+    SYNC_RATE_LIMIT_PULL=10000 \
+    SYNC_RATE_LIMIT_OTHER=10000 \
       "$SYNC_BIN" >> "$WORKDIR/server.log" 2>&1 &
     SERVER_PID=$!
 
     for _ in $(seq 1 30); do
         curl -sf "$SERVER_URL/healthz" > /dev/null 2>&1 && break
-        kill -0 "$SERVER_PID" 2>/dev/null || { cat "$WORKDIR/server.log"; _fatal "Server died on restart"; }
+        kill -0 "$SERVER_PID" 2>/dev/null || { cat "$WORKDIR/server.log"; _fatal "Server died on start"; }
         sleep 0.2
     done
-    curl -sf "$SERVER_URL/healthz" > /dev/null || { cat "$WORKDIR/server.log"; _fatal "Server not healthy after restart"; }
+    curl -sf "$SERVER_URL/healthz" > /dev/null || { cat "$WORKDIR/server.log"; _fatal "Server not healthy"; }
     _ok "Server started (PID: $SERVER_PID)"
 }
 
