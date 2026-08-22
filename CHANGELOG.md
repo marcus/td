@@ -4,6 +4,14 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Dependencies
+
+- **td now builds with Go 1.27** (up from 1.25.8). The main consequence is that `encoding/json/v2` is the default JSON implementation, which td leans on for sync payloads, the serve API, JSONL logs, and SQLite JSON columns; all of those round-trip unchanged, and `GOEXPERIMENT=nojsonv2` remains as an escape hatch. Note that Go 1.26 raised the floor for darwin builds to macOS 13+ — Homebrew users are unaffected in practice.
+
+### Tests
+
+- **The shell e2e sync suite runs again** (td-cb8ba9). All 16 `scripts/e2e` tests had been failing in shared setup since 2026-06-19: `scripts/e2e/harness.sh` still authenticated through `/v1/auth/login/start` + `/auth/verify`, which now answer 410 Gone, so every test died before its first assertion. `curl -sf` under `set -e` made that exit silent — no error, no diagnostic — which is why it read as a broken suite rather than a moved endpoint. The harness now drives the same device PKCE flow as `td auth login` and the two already-migrated harnesses, provisions users up front because `device/start` is non-enumerating, and reports a reason on every failure path. Sync behavior itself was never at fault.
+
 ## [v0.62.0] - 2026-08-21
 
 ### Monitor
