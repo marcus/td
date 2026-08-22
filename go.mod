@@ -1,6 +1,6 @@
 module github.com/marcus/td
 
-go 1.25.8
+go 1.27.0
 
 require (
 	charm.land/bubbles/v2 v2.1.0
@@ -8,6 +8,7 @@ require (
 	charm.land/glamour/v2 v2.0.0
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
+	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/mattn/go-sqlite3 v1.14.33
@@ -23,7 +24,6 @@ require (
 
 require (
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
-	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
