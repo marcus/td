@@ -4,6 +4,8 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.63.0] - 2026-08-22
+
 ### Dependencies
 
 - **td now builds with Go 1.27** (up from 1.25.8). The main consequence is that `encoding/json/v2` is the default JSON implementation, which td leans on for sync payloads, the serve API, JSONL logs, and SQLite JSON columns; all of those round-trip unchanged, and `GOEXPERIMENT=nojsonv2` remains as an escape hatch. Note that Go 1.26 raised the floor for darwin builds to macOS 13+ — Homebrew users are unaffected in practice.
