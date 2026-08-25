@@ -68,6 +68,12 @@ type inFlightCall struct {
 	err    error
 }
 
+// requestIdentity is the credential generation actually used for an HTTP
+// request. A late authorization failure may only expire this generation.
+type requestIdentity struct {
+	fingerprint string
+}
+
 // Syncer owns one project's steady-state sync lifecycle.
 type Syncer struct {
 	baseDir        string
@@ -183,8 +189,14 @@ func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 	return g
 }
 
+func newRequestIdentity(serverURL, apiKey, projectID string) requestIdentity {
+	return requestIdentity{
+		fingerprint: serverURL + "\x00" + apiKey + "\x00" + projectID,
+	}
+}
+
 func (s *Syncer) fingerprint(projectID string) string {
-	return syncconfig.GetServerURL() + "\x00" + syncconfig.GetAPIKey() + "\x00" + projectID
+	return newRequestIdentity(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), projectID).fingerprint
 }
 
 func (s *Syncer) expiredFor(projectID string) bool {
@@ -198,11 +210,21 @@ func (s *Syncer) expiredFor(projectID string) bool {
 	return s.expired == fingerprint
 }
 
-func (s *Syncer) latchExpired(projectID string) {
+// latchExpired records identity only when it is still the active request
+// generation. A late response from an old key/server/project is stale evidence
+// and must not overwrite the current generation's state.
+func (s *Syncer) latchExpired(identity requestIdentity) bool {
+	if s.fingerprint(s.projectID()) != identity.fingerprint {
+		return false
+	}
 	s.stateMu.Lock()
-	s.expired = s.fingerprint(projectID)
+	defer s.stateMu.Unlock()
+	if s.fingerprint(s.projectID()) != identity.fingerprint {
+		return false
+	}
+	s.expired = identity.fingerprint
 	s.expiredEmitted = ""
-	s.stateMu.Unlock()
+	return true
 }
 
 func (s *Syncer) database() (*db.DB, bool, error) {
@@ -276,14 +298,16 @@ func (s *Syncer) once(ctx context.Context) (Result, error) {
 	if err != nil {
 		return result, fmt.Errorf("get device id: %w", err)
 	}
-	client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), deviceID)
+	serverURL, apiKey := syncconfig.GetServerURL(), syncconfig.GetAPIKey()
+	identity := newRequestIdentity(serverURL, apiKey, state.ProjectID)
+	client := syncclient.New(serverURL, apiKey, deviceID)
 	client.HTTP.Timeout = httpTimeout
 	client.HTTP.Transport = &contextTransport{ctx: ctx, base: http.DefaultTransport}
 
 	result.Pushed, err = push(ctx, database, client, state, deviceID, s.baseDir, s.logger)
 	if err != nil {
 		if errors.Is(err, syncclient.ErrUnauthorized) {
-			s.latchExpired(state.ProjectID)
+			s.latchExpired(identity)
 		}
 		result.Pending = countPending(database, s.logger)
 		return result, err
@@ -296,7 +320,7 @@ func (s *Syncer) once(ctx context.Context) (Result, error) {
 		result.Pulled, result.Conflicts, err = pull(database, client, state, deviceID, s.baseDir, s.logger)
 		if err != nil {
 			if errors.Is(err, syncclient.ErrUnauthorized) {
-				s.latchExpired(state.ProjectID)
+				s.latchExpired(identity)
 			}
 			result.Pending = countPending(database, s.logger)
 			return result, err

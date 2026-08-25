@@ -40,8 +40,11 @@ type liveConnection struct {
 	database *db.DB
 	closeDB  bool
 	project  string
+	identity requestIdentity
 	client   *syncclient.Client
 }
+
+var errCredentialGenerationChanged = errors.New("credential generation changed during request")
 
 type fallbackMode int
 
@@ -133,8 +136,9 @@ func (s *Syncer) runConnectedLadder(ctx context.Context, lastEventID *string, on
 			return ctx.Err()
 		}
 		if errors.Is(err, syncclient.ErrUnauthorized) {
-			if project := s.projectID(); project != "" {
-				s.latchExpired(project)
+			if s.Gate().Reason != "credential expired" {
+				s.emit(Status{Rung: RungProbing, Gate: s.Gate(), Error: errCredentialGenerationChanged, Reason: "credentials changed during event request"})
+				continue
 			}
 			s.emitExpired()
 			return nil
@@ -238,6 +242,11 @@ func (s *Syncer) consumeStream(ctx context.Context, lastEventID *string, onChang
 			if timer != nil {
 				timer.Stop()
 			}
+			if errors.Is(err, syncclient.ErrUnauthorized) {
+				if !s.latchExpired(conn.identity) {
+					return errCredentialGenerationChanged
+				}
+			}
 			return err
 		}
 	}
@@ -306,7 +315,10 @@ func (s *Syncer) probe(ctx context.Context, baseline *int64, onChange func()) (f
 	status, err := conn.client.SyncStatusContext(ctx, conn.project)
 	if err != nil {
 		if errors.Is(err, syncclient.ErrUnauthorized) {
-			s.latchExpired(conn.project)
+			if !s.latchExpired(conn.identity) {
+				s.emit(Status{Rung: RungProbing, Gate: s.Gate(), Error: errCredentialGenerationChanged, Reason: "credentials changed during status probe"})
+				return fallbackReconnect, nil
+			}
 			s.emitExpired()
 			return fallbackExpired, nil
 		}
@@ -346,9 +358,12 @@ func (s *Syncer) probe(ctx context.Context, baseline *int64, onChange func()) (f
 func (s *Syncer) syncPass(ctx context.Context, rung Rung, onChange func()) (Result, error) {
 	result, err := s.Once(ctx)
 	gate := s.Gate()
-	if errors.Is(err, syncclient.ErrUnauthorized) || gate.Reason == "credential expired" {
+	if gate.Reason == "credential expired" {
 		s.emit(Status{Rung: RungExpired, Gate: gate, Error: err, Reason: "credential expired"})
 		return result, syncclient.ErrUnauthorized
+	}
+	if errors.Is(err, syncclient.ErrUnauthorized) {
+		err = errCredentialGenerationChanged
 	}
 	s.emit(Status{Rung: rung, Gate: gate, Result: result, Error: err})
 	if err == nil && result.Pulled > 0 && onChange != nil {
@@ -379,9 +394,11 @@ func (s *Syncer) connection(ctx context.Context) (*liveConnection, error) {
 		}
 		return nil, err
 	}
-	client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), deviceID)
+	serverURL, apiKey := syncconfig.GetServerURL(), syncconfig.GetAPIKey()
+	identity := newRequestIdentity(serverURL, apiKey, state.ProjectID)
+	client := syncclient.New(serverURL, apiKey, deviceID)
 	client.HTTP.Timeout = httpTimeout
-	return &liveConnection{database: database, closeDB: closeDB, project: state.ProjectID, client: client}, nil
+	return &liveConnection{database: database, closeDB: closeDB, project: state.ProjectID, identity: identity, client: client}, nil
 }
 
 func (s *Syncer) projectID() string {

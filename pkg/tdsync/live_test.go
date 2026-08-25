@@ -287,3 +287,134 @@ func TestLiveUnauthorizedLatchesExactlyOnceAndStopsRequests(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestOnceLateUnauthorizedDoesNotExpireRotatedCredential(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var requests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/proj/sync/pull", func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") == "Bearer old-key" {
+			close(started)
+			<-release
+			http.Error(w, "expired", http.StatusUnauthorized)
+			return
+		}
+		emptyPull(w)
+	})
+	var statuses []Status
+	var statusMu sync.Mutex
+	syncer, cleanup := liveSyncer(t, mux, &statuses, &statusMu)
+	defer cleanup()
+	t.Setenv("TD_AUTH_KEY", "old-key")
+	errCh := make(chan error, 1)
+	go func() { _, err := syncer.Once(context.Background()); errCh <- err }()
+	<-started
+	t.Setenv("TD_AUTH_KEY", "new-key")
+	close(release)
+	if err := <-errCh; !errors.Is(err, syncclient.ErrUnauthorized) {
+		t.Fatalf("old pass error = %v, want unauthorized", err)
+	}
+	if gate := syncer.Gate(); !gate.Open {
+		t.Fatalf("rotated credential gate = %+v, want open", gate)
+	}
+	if _, err := syncer.Once(context.Background()); err != nil {
+		t.Fatalf("new credential pass: %v", err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("requests = %d, want old failure plus new success", got)
+	}
+}
+
+func TestLiveLateStreamUnauthorizedReconnectsWithRotatedCredential(t *testing.T) {
+	oldStarted := make(chan struct{})
+	releaseOld := make(chan struct{})
+	newConnected := make(chan struct{})
+	var oldOnce, newOnce sync.Once
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/proj/sync/pull", func(w http.ResponseWriter, _ *http.Request) { emptyPull(w) })
+	mux.HandleFunc("/v1/projects/proj/sync/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(syncclient.SyncStatusResponse{})
+	})
+	mux.HandleFunc("/v1/projects/proj/events", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer old-key" {
+			oldOnce.Do(func() { close(oldStarted) })
+			<-releaseOld
+			http.Error(w, "expired", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		newOnce.Do(func() { close(newConnected) })
+		<-r.Context().Done()
+	})
+	var statuses []Status
+	var statusMu sync.Mutex
+	syncer, cleanup := liveSyncer(t, mux, &statuses, &statusMu)
+	defer cleanup()
+	t.Setenv("TD_AUTH_KEY", "old-key")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- syncer.Live(ctx, nil) }()
+	<-oldStarted
+	t.Setenv("TD_AUTH_KEY", "new-key")
+	close(releaseOld)
+	select {
+	case <-newConnected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("live ladder did not reconnect with rotated credential")
+	}
+	if gate := syncer.Gate(); !gate.Open {
+		t.Fatalf("rotated stream credential gate = %+v, want open", gate)
+	}
+	statusMu.Lock()
+	for _, status := range statuses {
+		if status.Rung == RungExpired {
+			statusMu.Unlock()
+			t.Fatal("stale stream 401 emitted expired status")
+		}
+	}
+	statusMu.Unlock()
+	cancel()
+	<-done
+}
+
+func TestProbeLateUnauthorizedDoesNotExpireRotatedCredential(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/proj/sync/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer old-key" {
+			close(started)
+			<-release
+			http.Error(w, "expired", http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(syncclient.SyncStatusResponse{})
+	})
+	var statuses []Status
+	var statusMu sync.Mutex
+	syncer, cleanup := liveSyncer(t, mux, &statuses, &statusMu)
+	defer cleanup()
+	t.Setenv("TD_AUTH_KEY", "old-key")
+	result := make(chan fallbackMode, 1)
+	go func() { mode, _ := syncer.probe(context.Background(), new(int64), nil); result <- mode }()
+	<-started
+	t.Setenv("TD_AUTH_KEY", "new-key")
+	close(release)
+	if mode := <-result; mode != fallbackReconnect {
+		t.Fatalf("probe mode = %v, want reconnect", mode)
+	}
+	if gate := syncer.Gate(); !gate.Open {
+		t.Fatalf("rotated probe credential gate = %+v, want open", gate)
+	}
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	for _, status := range statuses {
+		if status.Rung == RungExpired {
+			t.Fatal("stale status 401 emitted expired status")
+		}
+	}
+}
