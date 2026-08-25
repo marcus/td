@@ -182,6 +182,7 @@ func TestAutosyncGateOpen(t *testing.T) {
 		projectID    string
 		disabled     bool
 		flagEnv      string // value for TD_FEATURE_SYNC_AUTOSYNC; "" = unset
+		autoEnv      string // lower-precedence TD_SYNC_AUTO; "" = unset
 		wantGateOpen bool
 	}{
 		{
@@ -213,6 +214,14 @@ func TestAutosyncGateOpen(t *testing.T) {
 			wantGateOpen: false,
 		},
 		{
+			name:         "explicit feature true overrides legacy auto false",
+			authKey:      "k",
+			projectID:    "proj",
+			flagEnv:      "true",
+			autoEnv:      "false",
+			wantGateOpen: true,
+		},
+		{
 			name:         "sync disabled + flag unset -> closed",
 			authKey:      "k",
 			projectID:    "proj",
@@ -237,6 +246,7 @@ func TestAutosyncGateOpen(t *testing.T) {
 			} else {
 				t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", tc.flagEnv)
 			}
+			t.Setenv("TD_SYNC_AUTO", tc.autoEnv)
 			dir := setupSyncStateDir(t, tc.projectID, tc.disabled)
 
 			if got := autosyncGateOpen(dir); got != tc.wantGateOpen {

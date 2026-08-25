@@ -126,6 +126,22 @@ func TestGatherSyncStatus(t *testing.T) {
 		}
 	})
 
+	t.Run("higher precedence feature enable beats legacy auto disable", func(t *testing.T) {
+		clearSyncEnv(t)
+		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "true")
+		t.Setenv("TD_SYNC_AUTO", "false")
+		t.Setenv("TD_AUTH_KEY", "test-key")
+		dir := setupSyncStateDir(t, "proj-test", false)
+
+		r := gatherSyncStatus(dir)
+		if r.Gate != "ON" {
+			t.Errorf("gate: got %q want ON", r.Gate)
+		}
+		if r.GateSource != "explicit-env" {
+			t.Errorf("gate_source: got %q want explicit-env", r.GateSource)
+		}
+	})
+
 	t.Run("degrades gracefully with no database", func(t *testing.T) {
 		clearSyncEnv(t)
 		t.Setenv("HOME", t.TempDir())

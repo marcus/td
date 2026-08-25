@@ -134,7 +134,11 @@ func (s *Syncer) Gate() Gate {
 func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 	g := Gate{Authenticated: syncconfig.IsAuthenticated(), Source: "derived-per-project"}
 	projectID := ""
-	if override := syncconfig.GetGlobalAutosyncOverride(); override != nil && !*override {
+	// Resolve the global override once. TD_FEATURE_SYNC_AUTOSYNC has higher
+	// precedence than TD_SYNC_AUTO inside this resolver, so a resolved true must
+	// not be contradicted later by re-reading the lower-priority legacy signal.
+	globalOverride := syncconfig.GetGlobalAutosyncOverride()
+	if globalOverride != nil && !*globalOverride {
 		g.KillSwitch = true
 		g.Source = "global-kill-switch"
 	}
@@ -162,7 +166,7 @@ func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 		g.Reason = "not authenticated"
 	case g.Reason != "":
 		// Preserve the explicit-disable reason.
-	case !syncconfig.GetAutoSyncEnabled():
+	case globalOverride == nil && !syncconfig.GetAutoSyncEnabled():
 		g.Reason = "autosync disabled"
 	case s.baseDir == "" && s.db == nil:
 		g.Reason = "no project directory resolved"

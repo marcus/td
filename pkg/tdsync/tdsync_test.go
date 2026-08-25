@@ -53,6 +53,8 @@ func TestGateMatrix(t *testing.T) {
 		projectID      string
 		disabled       bool
 		killSwitch     bool
+		featureEnv     string
+		autoEnv        string
 		explicit       *bool
 		wantOpen       bool
 		wantConfigured bool
@@ -62,6 +64,7 @@ func TestGateMatrix(t *testing.T) {
 		{name: "unlinked", authenticated: true},
 		{name: "project disabled", authenticated: true, projectID: "proj", disabled: true},
 		{name: "global kill-switch", authenticated: true, projectID: "proj", killSwitch: true, wantConfigured: true},
+		{name: "higher precedence feature enable overrides legacy auto disable", authenticated: true, projectID: "proj", featureEnv: "true", autoEnv: "false", wantOpen: true, wantConfigured: true},
 		{name: "explicit project off", authenticated: true, projectID: "proj", explicit: boolPtr(false), wantConfigured: true},
 		{name: "explicit project on", authenticated: true, projectID: "proj", explicit: boolPtr(true), wantOpen: true, wantConfigured: true},
 	}
@@ -73,6 +76,12 @@ func TestGateMatrix(t *testing.T) {
 			}
 			if tc.killSwitch {
 				t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "false")
+			}
+			if tc.featureEnv != "" {
+				t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", tc.featureEnv)
+			}
+			if tc.autoEnv != "" {
+				t.Setenv("TD_SYNC_AUTO", tc.autoEnv)
 			}
 			baseDir, database := gateDB(t, tc.projectID, tc.disabled)
 			defer database.Close()
