@@ -1,8 +1,8 @@
 # Plan: live task updates for every td surface
 
-Status: proposed
+Status: implemented
 Owner repo: `td` (this repo holds the large majority of the work)
-Related: sidecar PR #311 `fix(td): pull hosted changes in embedded monitor` — this plan supersedes it
+Related: closed Sidecar PR #311 `fix(td): pull hosted changes in embedded monitor` — superseded by the td-owned implementation
 Affected surfaces: `td monitor`, Sidecar's embedded monitor (`internal/plugins/tdmonitor`), td-watch, `td` CLI
 
 ## Outcome
@@ -152,16 +152,17 @@ Timer-driven sync at any interval is a latency/cost tradeoff with no good settin
 **3b. Go SSE client in `pkg/tdsync`.**
 
 ```go
-// Live subscribes to the project's server event stream and calls onChange
-// (coalesced) whenever the server reports a change. It reconnects with jittered
-// exponential backoff and resumes with Last-Event-ID. It returns immediately if
-// the gate is closed. Cancel via ctx.
+// Live owns the project's live sync ladder. It subscribes to the server event
+// stream, performs coalesced Once calls, reconnects with jittered exponential
+// backoff, and uses Last-Event-ID as a refresh hint. onChange runs after pulled
+// data changes the local database so the caller can refresh its projection.
+// It returns immediately if the gate is closed. Cancel via ctx.
 func (s *Syncer) Live(ctx context.Context, onChange func()) error
 ```
 
-- `onChange` triggers `Once(ctx)`. Events are coalesced over a short debounce window (~250ms) so a burst of 40 pushed events causes one pull.
+- `Live` owns `Once(ctx)` and coalesces events over a fixed short window (~250ms), so a burst of 40 pushed events causes one pull while retaining one follow-up pass for a change arriving during the in-flight sync.
 - The stream is a *notification*, never a data path. All state still arrives through the existing pull/apply engine, so conflict handling, entity validation, and the notes feature gate are unchanged and untested code paths are not introduced.
-- Reconnect ladder: immediate retry, then jittered exponential backoff to a ceiling (~2 min). Every reconnect performs one `Once` first, so a missed-event window closes on reconnect rather than lingering.
+- Reconnect ladder: immediate retry, then jittered exponential backoff to a ceiling (~2 min). Every reconnect performs one `Once` first, so a missed-event window closes on reconnect rather than lingering. `Last-Event-ID` requests an immediate server refresh; it is not treated as a replay cursor or sequence proof.
 
 **3c. Degradation ladder.** The surface reports which rung it is on via `OnStatus`, and the fallbacks are what makes this safe to ship:
 
@@ -203,36 +204,35 @@ The stated goal is near-real-time updates, and the standing constraint is that n
 
 Sidecar's job is the projection, which is what it should own. td's job is knowing when its data changed, which is what it should own.
 
-## Work sequence
+## Implemented phases and evidence
 
-Each phase is shippable and independently valuable.
+All five phases are implemented and independently reviewed under epic `td-ad905b`:
 
-**Phase 1 — extract `pkg/tdsync`.** Move `autoSyncOnce`, `autoSyncPush`, `autoSyncPull`, `autoSyncApplyPullBatch`, `pushBatchWithRetry`, and the gate predicates out of `package cmd`. `cmd/autosync.go` and `cmd/monitor.go` become thin callers. Collapse the three gate expressions into `Gate()`; `cmd/monitor.go` loses its `features.SyncAutosync` requirement and gains the missing `ProjectID` check. Add the `DB` reuse option.
-*Acceptance:* existing `cmd/autosync*_test.go` suite passes unchanged; a new gate table test covers authenticated × configured × kill-switch × explicit-flag; `td sync status --json` reports from `Gate()`.
+1. `pkg/tdsync` owns the shared gate and steady-state `Once` orchestration, reuses caller-owned database handles, and never bootstraps or replaces a live database. Crossed feature/legacy overrides are covered so the highest-precedence setting wins without bypassing authentication, linkage, project disablement, or the global kill switch.
+2. `pkg/monitor` owns one pointer-backed background runtime across Bubble Tea model copies. It starts after the first-frame boundary, pushes successful monitor mutations promptly, refreshes through Bubble Tea after pulls, retains one follow-up wake, and cancels and waits before releasing the database. Legacy `AutoSyncFunc` remains an explicit override.
+3. Sidecar inherits the zero-configuration monitor behavior with no plugin polling, copied gate, or sync subprocess. Its existing stop, project-switch, stale-build, and database-reopen paths close the model correctly.
+4. A successful non-empty sync push broadcasts one project-scoped SSE refresh after the accepted events are applied; rejected, duplicate-only, failed-apply, and cross-project paths do not emit a false refresh.
+5. `Live` owns SSE, coalescing, gap-closing reconnect passes, status probing, timed fallback, rung reporting, and terminal credential expiry. Body-liveness detection catches buffering proxies. A 401 is bound to the exact server/key/project generation used by the request, so a late failure cannot expire newly rotated credentials.
 
-**Phase 2 — monitor self-wires sync.** Add `EmbeddedOptions.Sync`, run the ticker inside `pkg/monitor`, move `cmd/monitor.go`'s independent goroutine into the library, deprecate the three raw fields, stop the loop in `Close()`.
-*Acceptance:* an embedded monitor over a linked fixture project performs a push+pull without the embedder configuring anything; over an unlinked project it makes zero network calls; a mutation made through the monitor enqueues a push on commit rather than on the next tick, and a rapid series of edits collapses to fewer round trips than edits; `Close()` leaves no goroutine (verified under `-race` with a goroutine-leak check); setting `AutoSyncFunc` still suppresses the built-in loop.
+Verification on td commit `371c28a`:
 
-**Phase 3 — Sidecar adopts.** Bump the td dependency, close PR #311. Optional: surface the `OnStatus` rung in the plugin's chrome.
-*Acceptance:* Sidecar left open on a linked project shows a task created in the browser without any keystroke; a task created in Sidecar's monitor form reaches the server without a separate CLI invocation. Proof run under `scripts/tmux-drive.sh` with both tmux server and state tree isolated (`./scripts/tmux-drive.sh paths` verified first).
+- `make test` passed across all packages, including `cmd`, `internal/api`, `pkg/monitor`, `pkg/tdsync`, and `test/e2e`.
+- Focused lifecycle, live-ladder, gate, auth-rotation, API broadcast, and monitor tests passed under the race detector where concurrency is material.
+- Sidecar commit `c76590bc` built against td `371c28a`; `go test ./internal/plugins/tdmonitor ./internal/app` and `go build ./...` passed.
+- In an isolated Sidecar/tmux/state harness, a browser-equivalent REST create appeared without a keypress in 675 ms, and a Sidecar monitor-form create reached the server without a CLI sync in 757 ms.
 
-**Phase 4 — broadcast on push.** Add the coalesced hub broadcast to `handleSyncPush` after `applyAcceptedEventsToProjectDB`.
-*Acceptance:* an integration test asserts an SSE subscriber receives one event for a multi-event push; td-watch in a browser reflects a `td create` from a CLI without a manual refresh. This phase fixes a live-ness gap for the browser independently of anything Go-side.
+## Sidecar adoption
 
-**Phase 5 — `Live()` and the degradation ladder.** SSE client, coalescing, backoff, `Last-Event-ID` resume, `SyncStatus` probing rung, rung reporting via `OnStatus`. `pkg/monitor` prefers `Live` and falls back automatically.
-*Acceptance:* end-to-end latency from a browser edit to a visible row in both `td monitor` and Sidecar, measured, under 2s on a warm connection; killing the server mid-stream shows reconnect with backoff and no missed events after recovery (assert via a seq gap check); a proxy that buffers the stream degrades to the probing rung rather than hanging; a 401 stops the stream and the ticker, fires `OnStatus` exactly once, and issues no further requests until the gate is re-evaluated.
+No Sidecar plugin code changed. PR #311 never landed, so there was no consumer-side polling code to delete. Local source workspaces inherit the td implementation automatically. Sidecar's published dependency pin should move from td v0.63.0 to the release containing these commits when that td release is published; committing an unpublished or local-only module version would make the Sidecar build unreproducible.
 
-## Changes required in Sidecar
+Optional presentation work remains separate: Sidecar may render the sync rung from `OnStatus` or expose a host-level opt-out. Neither is required for liveness or ownership parity.
 
-After Phase 2, the entire Sidecar diff is a `go.mod` bump plus deleting PR #311's three files. Optionally, later: render the sync rung in the plugin's chrome from `OnStatus`, and expose `plugins.tdMonitor.sync.disabled` in config for a user who wants a Sidecar that never talks to the network. Both are presentation concerns, which is the correct residue for Sidecar to keep.
+## Deferred pressure
 
-## Open questions
+A per-machine sync agent remains deliberately deferred. Multiple open surfaces currently hold independent SSE connections and per-process single-flight syncers against the shared SQLite file. The existing lock timeout, short transactions, and fallback cadence are sufficient for the measured local use case; a local agent should be introduced only if real contention or connection counts justify it.
 
-1. **Per-machine sync agent.** If several surfaces on one machine each hold an SSE connection and each pull into the same SQLite file, is that acceptable, or does it want a single local agent that other surfaces watch via the filesystem? Deferred until measured — the SQLite lock timeout and single-flight bound the damage, and building the agent now would be anticipating pressure rather than responding to it.
-2. **Interval default once live.** With SSE carrying the latency requirement, the timed rung becomes a safety net; `GetAutoSyncInterval`'s 5-minute default is probably right for it, but the probing rung may want its own shorter default.
+The existing configured autosync interval remains the probe/timed safety-net cadence. Live SSE carries the normal latency requirement, and the timed rung periodically retries live capability so a temporary or old-server downgrade is not permanent.
 
-## Disposition of sidecar PR #311
+## Disposition of Sidecar PR #311
 
-Close without merging, and reference this plan. The bug it reports is real and its diagnosis is correct — `NewEmbeddedWithOptions` refreshes only local SQLite while standalone `td monitor` separately wires `AutoSyncFunc`. Phase 1 and Phase 2 fix exactly that, in the repo that owns it, for every embedder, in both directions, without a subprocess, without a second gate implementation, and without a background timer that can replace `issues.db` under a live reader.
-
-If the gap needs closing before Phase 2 lands, the interim measure is Phase 1 plus four lines in Sidecar wiring `AutoSyncFunc` to `tdsync.Syncer.Once` — one owned function called in-process, not a shell-out with a copied gate.
+PR #311 is closed without merge. Its bug report and diagnosis were valid, but the replacement belongs to td and now serves standalone and embedded monitors in both directions without a subprocess, copied gate, second database handle, or background database replacement.
