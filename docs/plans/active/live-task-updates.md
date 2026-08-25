@@ -139,6 +139,7 @@ type SyncOptions struct {
 - `AutoSyncFunc` / `AutoSyncInterval` / `LastAutoSync` stay, deprecated, as an explicit escape hatch. An embedder that sets `AutoSyncFunc` suppresses the built-in loop, so nothing existing breaks.
 - `Model.Close()` stops the loop. Sidecar's project switch already calls `Stop()` → `Close()`, so cancellation on project switch comes free.
 - Pull results that changed local rows trigger the monitor's existing refresh rather than waiting for the next `RefreshInterval` tick.
+- **Monitor-originated writes push immediately.** Every mutation made through the monitor — create, update, start, review, approve, reject, close, reopen, block, log, comment — enqueues a push as soon as its local transaction commits, rather than waiting for the tick or for `autoSyncAfterMutation`'s debounce. A monitor mutation is a deliberate human action at a keyboard, so the latency budget is the one the user is watching; the debounce exists to protect against scripted CLI bursts, which is not this case. The push runs on the sync goroutine (never blocking the Bubble Tea loop), and single-flight in `Once` already collapses a rapid series of edits into as few round trips as the network allows. `Result.Pending` reports anything that did not make it out, so the surface can show a "not yet pushed" state instead of silently lying.
 
 After this layer, the whole of Sidecar's required change is: upgrade the td dependency, and delete PR #311.
 
@@ -170,8 +171,11 @@ func (s *Syncer) Live(ctx context.Context, onChange func()) error
 | Probing | SSE unavailable (proxy strips streams, old server) | poll `syncclient.SyncStatus`; pull only when `last_server_seq` advanced | interval, one cheap request |
 | Timed | `SyncStatus` unavailable | full `Once` on `GetAutoSyncInterval()` — today's behaviour | interval |
 | Off | gate closed | nothing; zero network | — |
+| Expired | server returned 401 | stop; report `Reason: "credential expired"` once | — |
 
 Rung 2 matters on its own: a status probe returning three integers is far cheaper than a pull, so even the non-SSE path stops doing real sync work against an idle project.
+
+**3d. Credential expiry is terminal, not transient.** A Sidecar open for days outlives an API key. A 401 from the stream or from `Once` drops straight to the Expired rung: the SSE loop exits, the ticker stops, and `OnStatus` fires once so the surface can prompt a re-login. It is never retried with backoff — a dead credential does not recover on its own, and reconnecting against it burns the server's auth rate limit and buries the one signal the user needs to act on. `syncclient.ErrUnauthorized` already exists and is already treated as terminal by `pushBatchWithRetry`; this extends the same rule to the stream and the poll. Re-authentication re-opens the gate, and the next `Gate()` evaluation (on the surface's own retry, or on the next project switch or restart) resumes normally.
 
 ## Performance budget
 
@@ -180,7 +184,8 @@ The stated goal is near-real-time updates, and the standing constraint is that n
 - **Startup: no sync work before the first frame.** `Syncer` construction is cheap (reads config, reuses the caller's DB handle). The first `Once` and the SSE dial happen on the background goroutine after the model is built. This preserves Sidecar's `td-9c7bf2` rule that `Init()`/`Start()` stay free of network and filesystem work — and is a rung better than PR #311, which fires a `td` subprocess (process spawn + second DB open + full HTTP round trip) during monitor adoption, on machines where an endpoint security agent taxes every spawn.
 - **Steady state, idle project, live rung:** one idle HTTP connection, a 15s server ping, zero DB work. Compare with PR #311's 1,440 `td` process spawns per day per project.
 - **Steady state, idle project, probing rung:** one small authenticated GET per interval, no transaction, no writes.
-- **On change:** one pull, one transaction, one monitor refresh. Coalesced, so bursts cost one round trip.
+- **On remote change:** one pull, one transaction, one monitor refresh. Coalesced, so bursts cost one round trip.
+- **On local change:** one push per monitor mutation, bounded by single-flight — a burst of edits made faster than the round trip collapses into the next in-flight push rather than queueing one request each. Worst case is one push per human keystroke-completed action, which is the correct cost for an interactive surface.
 - **DB contention:** one long-lived connection per process, reusing the monitor's handle. No second in-process handle (unlike `autoSyncOnce`), no short-lived writer processes racing a long-lived reader (unlike PR #311) — which is the pattern the corruption RCA names. TRUNCATE journal means a writer takes an exclusive lock, so writes stay short and batched, and the pull applies per-batch inside one transaction as `autoSyncApplyPullBatch` already does.
 - **Multiple surfaces on one machine:** N surfaces on the same project means N SSE connections and N pullers against one SQLite file. Contention is bounded by the 5s lock timeout, and single-flight is per-process. If this proves to be real pressure, the answer is a per-machine sync agent — deliberately out of scope here; noted as an open question, not designed for speculatively.
 - **Jitter:** all reconnects and polls are jittered so a fleet of surfaces restarting after a server blip does not arrive in lockstep.
@@ -206,7 +211,7 @@ Each phase is shippable and independently valuable.
 *Acceptance:* existing `cmd/autosync*_test.go` suite passes unchanged; a new gate table test covers authenticated × configured × kill-switch × explicit-flag; `td sync status --json` reports from `Gate()`.
 
 **Phase 2 — monitor self-wires sync.** Add `EmbeddedOptions.Sync`, run the ticker inside `pkg/monitor`, move `cmd/monitor.go`'s independent goroutine into the library, deprecate the three raw fields, stop the loop in `Close()`.
-*Acceptance:* an embedded monitor over a linked fixture project performs a push+pull without the embedder configuring anything; over an unlinked project it makes zero network calls; `Close()` leaves no goroutine (verified under `-race` with a goroutine-leak check); setting `AutoSyncFunc` still suppresses the built-in loop.
+*Acceptance:* an embedded monitor over a linked fixture project performs a push+pull without the embedder configuring anything; over an unlinked project it makes zero network calls; a mutation made through the monitor enqueues a push on commit rather than on the next tick, and a rapid series of edits collapses to fewer round trips than edits; `Close()` leaves no goroutine (verified under `-race` with a goroutine-leak check); setting `AutoSyncFunc` still suppresses the built-in loop.
 
 **Phase 3 — Sidecar adopts.** Bump the td dependency, close PR #311. Optional: surface the `OnStatus` rung in the plugin's chrome.
 *Acceptance:* Sidecar left open on a linked project shows a task created in the browser without any keystroke; a task created in Sidecar's monitor form reaches the server without a separate CLI invocation. Proof run under `scripts/tmux-drive.sh` with both tmux server and state tree isolated (`./scripts/tmux-drive.sh paths` verified first).
@@ -215,7 +220,7 @@ Each phase is shippable and independently valuable.
 *Acceptance:* an integration test asserts an SSE subscriber receives one event for a multi-event push; td-watch in a browser reflects a `td create` from a CLI without a manual refresh. This phase fixes a live-ness gap for the browser independently of anything Go-side.
 
 **Phase 5 — `Live()` and the degradation ladder.** SSE client, coalescing, backoff, `Last-Event-ID` resume, `SyncStatus` probing rung, rung reporting via `OnStatus`. `pkg/monitor` prefers `Live` and falls back automatically.
-*Acceptance:* end-to-end latency from a browser edit to a visible row in both `td monitor` and Sidecar, measured, under 2s on a warm connection; killing the server mid-stream shows reconnect with backoff and no missed events after recovery (assert via a seq gap check); a proxy that buffers the stream degrades to the probing rung rather than hanging.
+*Acceptance:* end-to-end latency from a browser edit to a visible row in both `td monitor` and Sidecar, measured, under 2s on a warm connection; killing the server mid-stream shows reconnect with backoff and no missed events after recovery (assert via a seq gap check); a proxy that buffers the stream degrades to the probing rung rather than hanging; a 401 stops the stream and the ticker, fires `OnStatus` exactly once, and issues no further requests until the gate is re-evaluated.
 
 ## Changes required in Sidecar
 
@@ -224,9 +229,7 @@ After Phase 2, the entire Sidecar diff is a `go.mod` bump plus deleting PR #311'
 ## Open questions
 
 1. **Per-machine sync agent.** If several surfaces on one machine each hold an SSE connection and each pull into the same SQLite file, is that acceptable, or does it want a single local agent that other surfaces watch via the filesystem? Deferred until measured — the SQLite lock timeout and single-flight bound the damage, and building the agent now would be anticipating pressure rather than responding to it.
-2. **Push cadence for monitor-originated writes.** Push immediately after each monitor mutation (lowest latency, most requests) or keep the debounce that `autoSyncAfterMutation` applies to CLI mutations? Leaning toward the existing debounce for consistency, with an immediate push on the specific high-intent actions (approve, close).
-3. **Auth expiry on a long-lived stream.** A Sidecar open for days will outlive an API key's validity. The SSE client needs a defined behaviour on 401 — most likely drop to the Off rung and report it through `OnStatus` so the surface can prompt a re-login, rather than reconnecting in a loop against a dead credential.
-4. **Interval default once live.** With SSE carrying the latency requirement, the timed rung becomes a safety net; `GetAutoSyncInterval`'s 5-minute default is probably right for it, but the probing rung may want its own shorter default.
+2. **Interval default once live.** With SSE carrying the latency requirement, the timed rung becomes a safety net; `GetAutoSyncInterval`'s 5-minute default is probably right for it, but the probing rung may want its own shorter default.
 
 ## Disposition of sidecar PR #311
 
