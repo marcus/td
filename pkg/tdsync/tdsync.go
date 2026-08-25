@@ -36,6 +36,12 @@ type Options struct {
 	BaseDir string
 	DB      *db.DB
 	Logger  *slog.Logger
+	// Interval controls probing and timed fallback cadence. Zero uses td's
+	// configured autosync interval.
+	Interval time.Duration
+	// OnStatus receives ladder transitions and sync outcomes. Callbacks run on
+	// the live-sync goroutine and should return promptly.
+	OnStatus func(Status)
 }
 
 // Gate is the complete steady-state sync decision for a project.
@@ -64,12 +70,32 @@ type inFlightCall struct {
 
 // Syncer owns one project's steady-state sync lifecycle.
 type Syncer struct {
-	baseDir string
-	db      *db.DB
-	logger  *slog.Logger
+	baseDir        string
+	db             *db.DB
+	logger         *slog.Logger
+	interval       time.Duration
+	onStatus       func(Status)
+	onStatusMu     sync.RWMutex
+	wake           chan struct{}
+	coalesceWindow time.Duration
+	streamIdle     time.Duration
+	reconnectBase  time.Duration
+	reconnectCap   time.Duration
+	jitter         func(time.Duration) time.Duration
 
-	mu       sync.Mutex
-	inFlight *inFlightCall
+	mu             sync.Mutex
+	inFlight       *inFlightCall
+	stateMu        sync.Mutex
+	expired        string
+	expiredEmitted string
+}
+
+// SetStatusHandler replaces the ladder observer. It is intended for owners
+// such as pkg/monitor that construct a Syncer and then attach their projection.
+func (s *Syncer) SetStatusHandler(handler func(Status)) {
+	s.onStatusMu.Lock()
+	s.onStatus = handler
+	s.onStatusMu.Unlock()
 }
 
 // New constructs a Syncer without opening a database or doing network work.
@@ -82,7 +108,17 @@ func New(opts Options) (*Syncer, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Syncer{baseDir: baseDir, db: opts.DB, logger: logger}, nil
+	interval := opts.Interval
+	if interval <= 0 {
+		interval = syncconfig.GetAutoSyncInterval()
+	}
+	return &Syncer{
+		baseDir: baseDir, db: opts.DB, logger: logger, interval: interval,
+		onStatus: opts.OnStatus, wake: make(chan struct{}, 1),
+		coalesceWindow: 250 * time.Millisecond, streamIdle: 45 * time.Second,
+		reconnectBase: time.Second, reconnectCap: 2 * time.Minute,
+		jitter: defaultJitter,
+	}, nil
 }
 
 // Gate resolves the one sync gate used by commands and in-process consumers.
@@ -97,6 +133,7 @@ func (s *Syncer) Gate() Gate {
 
 func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 	g := Gate{Authenticated: syncconfig.IsAuthenticated(), Source: "derived-per-project"}
+	projectID := ""
 	if override := syncconfig.GetGlobalAutosyncOverride(); override != nil && !*override {
 		g.KillSwitch = true
 		g.Source = "global-kill-switch"
@@ -112,6 +149,7 @@ func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 		state, err := database.GetSyncState()
 		if err == nil && state != nil && state.ProjectID != "" && !state.SyncDisabled {
 			g.Configured = true
+			projectID = state.ProjectID
 		} else if err != nil && dbErr == nil {
 			dbErr = err
 		}
@@ -132,11 +170,35 @@ func (s *Syncer) gate(database *db.DB, dbErr error) Gate {
 		g.Reason = fmt.Sprintf("database unavailable: %v", dbErr)
 	case !g.Configured:
 		g.Reason = "project is not linked or sync is disabled"
+	case s.expiredFor(projectID):
+		g.Reason = "credential expired"
 	default:
 		g.Open = true
 		g.Reason = "sync enabled"
 	}
 	return g
+}
+
+func (s *Syncer) fingerprint(projectID string) string {
+	return syncconfig.GetServerURL() + "\x00" + syncconfig.GetAPIKey() + "\x00" + projectID
+}
+
+func (s *Syncer) expiredFor(projectID string) bool {
+	fingerprint := s.fingerprint(projectID)
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.expired != "" && s.expired != fingerprint {
+		s.expired = ""
+		s.expiredEmitted = ""
+	}
+	return s.expired == fingerprint
+}
+
+func (s *Syncer) latchExpired(projectID string) {
+	s.stateMu.Lock()
+	s.expired = s.fingerprint(projectID)
+	s.expiredEmitted = ""
+	s.stateMu.Unlock()
 }
 
 func (s *Syncer) database() (*db.DB, bool, error) {
@@ -216,6 +278,9 @@ func (s *Syncer) once(ctx context.Context) (Result, error) {
 
 	result.Pushed, err = push(ctx, database, client, state, deviceID, s.baseDir, s.logger)
 	if err != nil {
+		if errors.Is(err, syncclient.ErrUnauthorized) {
+			s.latchExpired(state.ProjectID)
+		}
 		result.Pending = countPending(database, s.logger)
 		return result, err
 	}
@@ -226,6 +291,9 @@ func (s *Syncer) once(ctx context.Context) (Result, error) {
 		}
 		result.Pulled, result.Conflicts, err = pull(database, client, state, deviceID, s.baseDir, s.logger)
 		if err != nil {
+			if errors.Is(err, syncclient.ErrUnauthorized) {
+				s.latchExpired(state.ProjectID)
+			}
 			result.Pending = countPending(database, s.logger)
 			return result, err
 		}

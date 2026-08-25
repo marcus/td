@@ -21,10 +21,47 @@ func testSyncRuntime(
 	once func(context.Context) (tdsync.Result, error),
 	release func() error,
 ) *syncRuntime {
-	r := newSyncRuntime(nil, SyncOptions{}, release)
-	r.gate = gate
-	r.once = once
-	return r
+	return newSyncRuntime(&testSyncService{gate: gate, once: once, wake: make(chan struct{}, 1)}, SyncOptions{}, release)
+}
+
+type testSyncService struct {
+	gate   func() tdsync.Gate
+	once   func(context.Context) (tdsync.Result, error)
+	wake   chan struct{}
+	status func(tdsync.Status)
+}
+
+func (s *testSyncService) Gate() tdsync.Gate                               { return s.gate() }
+func (s *testSyncService) Once(ctx context.Context) (tdsync.Result, error) { return s.once(ctx) }
+func (s *testSyncService) SetStatusHandler(handler func(tdsync.Status))    { s.status = handler }
+func (s *testSyncService) RequestSync() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+func (s *testSyncService) Live(ctx context.Context, onChange func()) error {
+	for {
+		gate := s.gate()
+		if !gate.Open {
+			if s.status != nil {
+				s.status(tdsync.Status{Rung: tdsync.RungOff, Gate: gate})
+			}
+			return nil
+		}
+		result, err := s.once(ctx)
+		if s.status != nil {
+			s.status(tdsync.Status{Rung: tdsync.RungTimed, Gate: gate, Result: result, Error: err})
+		}
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.wake:
+		}
+	}
 }
 
 func TestSyncRuntimeClosedGateMakesNoSyncCall(t *testing.T) {
@@ -43,6 +80,28 @@ func TestSyncRuntimeClosedGateMakesNoSyncCall(t *testing.T) {
 	}
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("closed gate made %d sync calls, want 0", got)
+	}
+	if err := r.close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
+func TestSyncRuntimeProjectsLadderRungToEmbedder(t *testing.T) {
+	statusCh := make(chan SyncStatus, 1)
+	service := &testSyncService{
+		gate: func() tdsync.Gate { return tdsync.Gate{Open: true} },
+		once: func(context.Context) (tdsync.Result, error) { return tdsync.Result{}, nil },
+		wake: make(chan struct{}, 1),
+	}
+	r := newSyncRuntime(service, SyncOptions{OnStatus: func(status SyncStatus) { statusCh <- status }}, nil)
+	r.start()
+	select {
+	case status := <-statusCh:
+		if status.Rung != tdsync.RungTimed {
+			t.Fatalf("projected rung = %q, want timed", status.Rung)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("embedder did not receive ladder status")
 	}
 	if err := r.close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -171,7 +230,7 @@ func TestPulledSyncResultSchedulesImmediateRefreshAndNextWait(t *testing.T) {
 		func(context.Context) (tdsync.Result, error) { return tdsync.Result{}, nil }, nil,
 	)
 	m := Model{syncRuntime: r}
-	_, cmd := m.Update(monitorSyncResultMsg{result: tdsync.Result{Pulled: 1}})
+	_, cmd := m.Update(monitorSyncResultMsg{result: tdsync.Result{Pulled: 1}, changed: true})
 	batch, ok := cmd().(tea.BatchMsg)
 	if !ok {
 		t.Fatalf("sync result command returned %T, want tea.BatchMsg", cmd())

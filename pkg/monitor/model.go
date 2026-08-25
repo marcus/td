@@ -314,7 +314,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		styles:            newMonitorStyles(theme),
 		modalRender:       &modalRenderCache{},
 	}
-	syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database})
+	syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database, Interval: syncconfig.GetAutoSyncInterval()})
 	m.syncRuntime = newSyncRuntime(syncer, SyncOptions{Interval: syncconfig.GetAutoSyncInterval()}, database.Close)
 	return m
 }
@@ -404,7 +404,7 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 		if opts.Sync.Interval == 0 {
 			opts.Sync.Interval = syncconfig.GetAutoSyncInterval()
 		}
-		syncer, _ := tdsync.New(tdsync.Options{BaseDir: resolvedBaseDir, DB: database, Logger: opts.Sync.Logger})
+		syncer, _ := tdsync.New(tdsync.Options{BaseDir: resolvedBaseDir, DB: database, Logger: opts.Sync.Logger, Interval: opts.Sync.Interval})
 		m.syncRuntime = newSyncRuntime(syncer, opts.Sync, func() error { return releaseSharedDB(resolvedBaseDir) })
 	}
 	m.PanelRenderer = opts.PanelRenderer
@@ -550,7 +550,7 @@ func (m Model) Init() tea.Cmd {
 		m.checkFirstRun(),
 	}
 	if m.AutoSyncFunc == nil {
-		if m.syncRuntime != nil && m.syncRuntime.once != nil {
+		if m.syncRuntime != nil && m.syncRuntime.service != nil {
 			// Defer starting the goroutine until Bubble Tea has rendered the
 			// initial model and delivered this message back through Update.
 			cmds = append(cmds, func() tea.Msg { return startMonitorSyncMsg{} })
@@ -616,7 +616,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if syncMsg, ok := msg.(monitorSyncResultMsg); ok {
 		cmds := []tea.Cmd{m.syncWaitCmd()}
-		if syncMsg.result.Pulled > 0 {
+		if syncMsg.changed {
 			cmds = append(cmds, m.fetchData())
 			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
 				cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
