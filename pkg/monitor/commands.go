@@ -1860,6 +1860,7 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.wakeSync()
 		m.BoardMode.Issues[targetIdx].HasPosition = true
 		m.BoardMode.Issues[targetIdx].Position = targetPos
 		targetIssue = m.BoardMode.Issues[targetIdx] // Refresh local variable
@@ -1879,6 +1880,7 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.wakeSync()
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	} else {
@@ -1893,6 +1895,7 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 		// Log both sides of the swap (positions are exchanged)
 		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
 		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
+		m.wakeSync()
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1962,6 +1965,7 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.wakeSync()
 		targetBIV.HasPosition = true
 		targetBIV.Position = targetPos
 	}
@@ -1980,6 +1984,7 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			m.StatusIsError = true
 			return m, nil
 		}
+		m.wakeSync()
 		// Track the issue we want selected after refresh (positions change sort order)
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	} else {
@@ -1994,6 +1999,7 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		// Log both sides of the swap (positions are exchanged)
 		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
 		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
+		m.wakeSync()
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}
@@ -2064,6 +2070,7 @@ func (m Model) moveIssueToTop() (Model, tea.Cmd) {
 		m.StatusIsError = true
 		return m, nil
 	}
+	m.wakeSync()
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)
@@ -2129,6 +2136,7 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		m.StatusIsError = true
 		return m, nil
 	}
+	m.wakeSync()
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)

@@ -115,6 +115,7 @@ func (m *Model) handleSyncPromptAction(action string) tea.Cmd {
 			if err != nil {
 				return SyncPromptLinkResultMsg{Success: false, ProjectName: project.Name, Error: err}
 			}
+			m.wakeSync()
 			return SyncPromptLinkResultMsg{Success: true, ProjectName: project.Name}
 		}
 
@@ -158,6 +159,7 @@ func (m *Model) handleSyncPromptAction(action string) tea.Cmd {
 			if err := db.SetSyncState(project.ID); err != nil {
 				return SyncPromptCreateResultMsg{Success: false, ProjectName: name, Error: err}
 			}
+			m.wakeSync()
 
 			return SyncPromptCreateResultMsg{Success: true, ProjectName: name}
 		}

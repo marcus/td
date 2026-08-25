@@ -113,6 +113,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				_ = m.DB.AddDependencyLogged(issue.ID, depID, "depends_on", m.SessionID)
 			}
 		}
+		m.wakeSync()
 
 		m.closeForm()
 		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
@@ -227,6 +228,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 				_ = m.DB.RecordSessionAction(existingIssue.ID, m.SessionID, sessionAction)
 			}
 		}
+		m.wakeSync()
 
 		m.closeForm()
 

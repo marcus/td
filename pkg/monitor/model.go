@@ -13,10 +13,12 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/syncclient"
+	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/internal/version"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/modal"
 	"github.com/marcus/td/pkg/monitor/mouse"
+	"github.com/marcus/td/pkg/tdsync"
 )
 
 // Model is the main Bubble Tea model for the monitor TUI
@@ -205,10 +207,14 @@ type Model struct {
 	BoardMode         BoardMode          // Active board mode state
 	BoardStatusPreset StatusFilterPreset // Current status filter preset for cycling
 
-	// Auto-sync callback (set by caller for periodic background sync)
-	AutoSyncFunc     func() // Called periodically to push/pull in background
+	// Deprecated: setting AutoSyncFunc suppresses the built-in monitor sync
+	// runtime and retains the legacy periodic callback behavior.
+	AutoSyncFunc func()
+	// Deprecated: use EmbeddedOptions.Sync.Interval.
 	AutoSyncInterval time.Duration
-	LastAutoSync     time.Time
+	// Deprecated: retained for compatibility with legacy callback users.
+	LastAutoSync time.Time
+	syncRuntime  *syncRuntime
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -280,7 +286,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 
 	theme := DefaultTheme()
 	searchInput.SetStyles(themedTextInputStyles(theme))
-	return Model{
+	m := Model{
 		DB:                database,
 		SessionID:         sessionID,
 		RefreshInterval:   interval,
@@ -308,6 +314,9 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		styles:            newMonitorStyles(theme),
 		modalRender:       &modalRenderCache{},
 	}
+	syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database})
+	m.syncRuntime = newSyncRuntime(syncer, SyncOptions{Interval: syncconfig.GetAutoSyncInterval()}, database.Close)
+	return m
 }
 
 // NewEmbedded creates a monitor model for embedding in external applications.
@@ -331,6 +340,7 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 
 	m := NewModel(database, sess.ID, interval, ver, resolvedBaseDir)
 	m.Embedded = true
+	m.syncRuntime.release = func() error { return releaseSharedDB(resolvedBaseDir) }
 	return &m, nil
 }
 
@@ -350,6 +360,10 @@ type EmbeddedOptions struct {
 	// If nil, uses td's default ANSI 256 color palette. Deprecated: Theme takes
 	// precedence when supplied and will become the sole theming contract.
 	MarkdownTheme *MarkdownThemeConfig
+
+	// Sync controls monitor-owned background sync. Its zero value enables sync
+	// whenever the project gate is open.
+	Sync SyncOptions
 }
 
 // NewEmbeddedWithOptions creates a monitor model with custom options. A
@@ -384,6 +398,15 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 
 	m := NewModel(database, sess.ID, opts.Interval, opts.Version, resolvedBaseDir)
 	m.Embedded = true
+	if opts.Sync.Disabled {
+		m.syncRuntime = newSyncRuntime(nil, opts.Sync, func() error { return releaseSharedDB(resolvedBaseDir) })
+	} else {
+		if opts.Sync.Interval == 0 {
+			opts.Sync.Interval = syncconfig.GetAutoSyncInterval()
+		}
+		syncer, _ := tdsync.New(tdsync.Options{BaseDir: resolvedBaseDir, DB: database, Logger: opts.Sync.Logger})
+		m.syncRuntime = newSyncRuntime(syncer, opts.Sync, func() error { return releaseSharedDB(resolvedBaseDir) })
+	}
 	m.PanelRenderer = opts.PanelRenderer
 	m.ModalRenderer = opts.ModalRenderer
 	if themeIsZero(opts.Theme) {
@@ -453,6 +476,9 @@ func markdownThemeConfig(theme Theme) *MarkdownThemeConfig {
 // For embedded monitors, this releases the reference to the shared database pool.
 // The actual connection is only closed when all references are released.
 func (m *Model) Close() error {
+	if m.syncRuntime != nil {
+		return m.syncRuntime.close()
+	}
 	if m.DB != nil && m.Embedded && m.BaseDir != "" {
 		return releaseSharedDB(m.BaseDir)
 	} else if m.DB != nil {
@@ -523,6 +549,13 @@ func (m Model) Init() tea.Cmd {
 		m.restoreFilterState(),
 		m.checkFirstRun(),
 	}
+	if m.AutoSyncFunc == nil {
+		if m.syncRuntime != nil && m.syncRuntime.once != nil {
+			// Defer starting the goroutine until Bubble Tea has rendered the
+			// initial model and delivered this message back through Update.
+			cmds = append(cmds, func() tea.Msg { return startMonitorSyncMsg{} })
+		}
+	}
 
 	// Start async version check (non-blocking)
 	if m.Version != "" && !version.IsDevelopmentVersion(m.Version) {
@@ -578,6 +611,22 @@ type RestoreFilterMsg struct {
 
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(startMonitorSyncMsg); ok {
+		return m, m.syncWaitCmd()
+	}
+	if syncMsg, ok := msg.(monitorSyncResultMsg); ok {
+		cmds := []tea.Cmd{m.syncWaitCmd()}
+		if syncMsg.result.Pulled > 0 {
+			cmds = append(cmds, m.fetchData())
+			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+				cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+			}
+			if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
+				cmds = append(cmds, modalCmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+	}
 	// Handle TickMsg before any UI-mode interceptions to keep the poll chain
 	// alive. Without this, opening a form (or other overlay that intercepts all
 	// messages) would swallow the TickMsg, preventing scheduleTick() from being

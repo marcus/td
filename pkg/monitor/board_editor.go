@@ -356,6 +356,9 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		if isNew {
 			newBoard, err := m.DB.CreateBoardLogged(name, queryStr, m.SessionID)
+			if err == nil {
+				m.wakeSync()
+			}
 			return BoardEditorSaveResultMsg{Board: newBoard, IsNew: true, Error: err}
 		}
 		// Copy the board struct to avoid mutating a shared pointer from
@@ -364,6 +367,9 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 		boardCopy.Name = name
 		boardCopy.Query = queryStr
 		err := m.DB.UpdateBoardLogged(&boardCopy, m.SessionID)
+		if err == nil {
+			m.wakeSync()
+		}
 		return BoardEditorSaveResultMsg{Board: &boardCopy, IsNew: false, Error: err}
 	}
 }
@@ -377,6 +383,9 @@ func (m Model) executeBoardEditorDelete() (Model, tea.Cmd) {
 
 	return m, func() tea.Msg {
 		err := m.DB.DeleteBoardLogged(boardID, m.SessionID)
+		if err == nil {
+			m.wakeSync()
+		}
 		return BoardEditorDeleteResultMsg{BoardID: boardID, Error: err}
 	}
 }

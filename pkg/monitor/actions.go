@@ -250,6 +250,7 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 
 	// Cascade up to parent epic if all siblings are ready
 	m.DB.CascadeUpParentStatus(issueID, models.StatusInReview, m.SessionID)
+	m.wakeSync()
 
 	// If we're in a modal, refresh instead of closing to keep context
 	if modal := m.CurrentModal(); modal != nil {
@@ -309,6 +310,7 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 		m.closeDeleteConfirmModal()
 		return m, nil
 	}
+	m.wakeSync()
 
 	// Close the delete confirmation modal
 	m.closeDeleteConfirmModal()
@@ -461,6 +463,7 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 
 	// Auto-unblock dependents whose dependencies are now all closed
 	m.DB.CascadeUnblockDependents(issueID, m.SessionID)
+	m.wakeSync()
 
 	// Close the confirmation modal
 	m.closeCloseConfirmModal()
@@ -542,6 +545,7 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 			_ = m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionClosed)
 			m.DB.CascadeUpParentStatus(issue.ID, models.StatusClosed, m.SessionID)
 			m.DB.CascadeUnblockDependents(issue.ID, m.SessionID)
+			m.wakeSync()
 			m.SelectedID[PanelTaskList] = ""
 			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
 				return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
@@ -662,6 +666,7 @@ func (m Model) executeApproveCloseAttributed(issue *models.Issue, selfReview boo
 
 	// Auto-unblock dependents whose dependencies are now all closed
 	m.DB.CascadeUnblockDependents(issue.ID, m.SessionID)
+	m.wakeSync()
 
 	// Clear the saved ID so cursor stays at the same position after refresh
 	// The item will move to Closed, and we want cursor at same index for next item
@@ -749,6 +754,7 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 			return ClearStatusMsg{}
 		})
 	}
+	m.wakeSync()
 
 	m.StatusMessage = "REOPENED " + issueID
 	m.StatusIsError = false
@@ -1063,6 +1069,7 @@ func (m Model) executeRecordReview() (tea.Model, tea.Cmd) {
 	if decision == reviewpolicy.DecisionApproved {
 		m.logReviewSecurityEvent(issueID, eligibility.SelfReview, eligibility.AttributedTo, reason, true)
 	}
+	m.wakeSync()
 
 	m.closeRecordReviewModal()
 	if decision == reviewpolicy.DecisionChangesRequested {

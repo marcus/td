@@ -354,6 +354,9 @@ func (m Model) handleNotesAction(action string) (tea.Model, tea.Cmd) {
 			database := m.DB
 			return m, func() tea.Msg {
 				err := database.DeleteNote(noteID)
+				if err == nil {
+					m.wakeSync()
+				}
 				return NoteDeletedMsg{NoteID: noteID, Error: err}
 			}
 		case "cancel-delete", "cancel":
@@ -529,6 +532,9 @@ func (m Model) saveNote() (tea.Model, tea.Cmd) {
 	if isNew {
 		return m, func() tea.Msg {
 			note, err := database.CreateNote(title, content)
+			if err == nil {
+				m.wakeSync()
+			}
 			return NoteSavedMsg{Note: note, IsNew: true, Error: err}
 		}
 	}
@@ -536,6 +542,9 @@ func (m Model) saveNote() (tea.Model, tea.Cmd) {
 	noteID := ns.EditNoteID
 	return m, func() tea.Msg {
 		note, err := database.UpdateNote(noteID, title, content)
+		if err == nil {
+			m.wakeSync()
+		}
 		return NoteSavedMsg{Note: note, IsNew: false, Error: err}
 	}
 }
@@ -575,6 +584,9 @@ func (m Model) toggleNotePin(note *models.Note) (tea.Model, tea.Cmd) {
 		} else {
 			err = database.PinNote(noteID)
 		}
+		if err == nil {
+			m.wakeSync()
+		}
 		return NotePinToggledMsg{NoteID: noteID, Pinned: !wasPinned, Error: err}
 	}
 }
@@ -589,6 +601,9 @@ func (m Model) toggleNoteArchive(note *models.Note) (tea.Model, tea.Cmd) {
 			err = database.UnarchiveNote(noteID)
 		} else {
 			err = database.ArchiveNote(noteID)
+		}
+		if err == nil {
+			m.wakeSync()
 		}
 		return NoteArchivedMsg{NoteID: noteID, Archived: !wasArchived, Error: err}
 	}
