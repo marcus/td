@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/syncconfig"
 	"github.com/spf13/cobra"
@@ -81,34 +80,17 @@ func gatherSyncStatus(baseDir string) SyncStatusReport {
 		PendingEvents: -1,
 	}
 
-	// Resolve the gate state + source, mirroring autosyncGateOpen's order:
-	//   1. global kill-switch (explicit global false) wins -> KILLED
-	//   2. explicit sync_autosync override decides outright -> ON/OFF
-	//   3. otherwise per-project config decides -> ON/OFF
-	configured := projectSyncConfigured(baseDir)
+	gate := syncGate(baseDir, nil)
 	switch {
-	case globalKillSwitchOff():
+	case gate.KillSwitch:
 		r.Gate = "KILLED"
-		r.GateSource = "global-kill-switch"
+	case gate.Open:
+		r.Gate = "ON"
 	default:
-		if v, source := features.Resolve(baseDir, features.SyncAutosync.Name); source != "default" {
-			if v {
-				r.Gate = "ON"
-			} else {
-				r.Gate = "OFF"
-			}
-			r.GateSource = "explicit-" + source // explicit-env | explicit-config
-		} else {
-			if configured {
-				r.Gate = "ON"
-			} else {
-				r.Gate = "OFF"
-			}
-			r.GateSource = "derived-per-project"
-		}
+		r.Gate = "OFF"
 	}
-
-	r.Configured = configured
+	r.GateSource = gate.Source
+	r.Configured = gate.Configured
 
 	// Read sync_state + pending count directly. This is the one place we touch
 	// the DB; any failure degrades gracefully into a note rather than an error.

@@ -206,11 +206,11 @@ func TestAutosyncGateOpen(t *testing.T) {
 			wantGateOpen: false,
 		},
 		{
-			name:         "unconfigured + explicit true -> open (override wins)",
+			name:         "unconfigured + explicit true -> closed (linkage still required)",
 			authKey:      "k",
 			projectID:    "",
 			flagEnv:      "true",
-			wantGateOpen: true,
+			wantGateOpen: false,
 		},
 		{
 			name:         "sync disabled + flag unset -> closed",

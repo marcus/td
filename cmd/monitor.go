@@ -8,11 +8,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/syncconfig"
 	"github.com/marcus/td/pkg/monitor"
+	"github.com/marcus/td/pkg/tdsync"
 	"github.com/spf13/cobra"
 )
 
@@ -63,16 +63,19 @@ Mouse support:
 
 		model := monitor.NewModel(database, sess.ID, interval, versionStr, baseDir)
 
-		// Enable periodic auto-sync in monitor if authenticated and linked
+		// The monitor is still the cadence owner in Phase 1, but gate policy and
+		// steady-state sync now come from the shared in-process facade.
 		syncInterval := time.Duration(0)
-		if features.IsEnabled(baseDir, features.SyncAutosync.Name) && AutoSyncEnabled() && syncconfig.IsAuthenticated() {
-			syncState, _ := database.GetSyncState()
-			if syncState != nil && !syncState.SyncDisabled {
-				model.AutoSyncFunc = func() { autoSyncOnce() }
-				syncInterval = syncconfig.GetAutoSyncInterval()
-				model.AutoSyncInterval = syncInterval
-				slog.Debug("monitor: autosync configured", "interval", syncInterval)
+		syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database})
+		if gate := syncer.Gate(); gate.Open {
+			model.AutoSyncFunc = func() {
+				if _, err := syncer.Once(context.Background()); err != nil {
+					slog.Debug("monitor: autosync", "err", err)
+				}
 			}
+			syncInterval = syncconfig.GetAutoSyncInterval()
+			model.AutoSyncInterval = syncInterval
+			slog.Debug("monitor: autosync configured", "interval", syncInterval)
 		}
 
 		// Start independent periodic sync goroutine. BubbleTea's tea.Cmd dispatch
@@ -88,7 +91,9 @@ Mouse support:
 					case <-ctx.Done():
 						return
 					case <-ticker.C:
-						autoSyncOnce()
+						if _, err := syncer.Once(ctx); err != nil && ctx.Err() == nil {
+							slog.Debug("monitor: autosync", "err", err)
+						}
 					}
 				}
 			}()

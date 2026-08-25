@@ -40,13 +40,7 @@ func AddFeatureGatedCommand(featureName string, command *cobra.Command) {
 //  3. Otherwise (flag unset / source=default) the per-project sync config
 //     decides — a project that is actually configured for sync autosyncs.
 func autosyncGateOpen(baseDir string) bool {
-	if globalKillSwitchOff() {
-		return false
-	}
-	if v, explicit := features.ResolveExplicit(baseDir, features.SyncAutosync.Name); explicit {
-		return v
-	}
-	return projectSyncConfigured(baseDir)
+	return syncGate(baseDir, nil).Open
 }
 
 func runGatedSyncStartupHook(cmd *cobra.Command) {

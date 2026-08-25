@@ -114,12 +114,12 @@ func TestGatherSyncStatus(t *testing.T) {
 		clearSyncEnv(t)
 		t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "true")
 		t.Setenv("TD_AUTH_KEY", "test-key")
-		// Even an unconfigured project reports ON when explicitly forced on.
+		// Explicit enable clears the override, but cannot manufacture linkage.
 		dir := setupSyncStateDir(t, "", false)
 
 		r := gatherSyncStatus(dir)
-		if r.Gate != "ON" {
-			t.Errorf("gate: got %q want ON", r.Gate)
+		if r.Gate != "OFF" {
+			t.Errorf("gate: got %q want OFF", r.Gate)
 		}
 		if r.GateSource != "explicit-env" {
 			t.Errorf("gate_source: got %q want explicit-env", r.GateSource)
