@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,6 +138,80 @@ func TestBroadcast_CreateIssue(t *testing.T) {
 	// Expect an issue.upserted event within 1s.
 	if !sse.waitForEvent(1*time.Second, EventIssueUpserted) {
 		t.Fatal("no issue.upserted event after create")
+	}
+}
+
+// TestBroadcast_SyncPushBatchRefreshesBrowserReadPath exercises the complete
+// browser-facing journey for CLI-origin changes: a browser subscribes to SSE,
+// a device pushes multiple events in one sync batch, the server emits exactly
+// one refresh notification, and the browser's REST refetch sees the whole
+// applied batch.
+func TestBroadcast_SyncPushBatchRefreshesBrowserReadPath(t *testing.T) {
+	h := newTestHarness(t)
+	h.Server.pingInterval = 50 * time.Millisecond
+	state := h.Build().
+		WithUser("browser-sync@test.com").
+		WithProject("browser-sync", "browser-sync@test.com").
+		Done()
+	pid := state.ProjectID("browser-sync")
+	token := state.UserToken("browser-sync@test.com")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sse := newSSEReader(t, h.BaseURL, pid, token, ctx)
+	defer sse.close()
+	sse.waitForPing(t, 2*time.Second)
+
+	events := []EventInput{
+		makeIssueEvent(t, 1, "iss-sync-broadcast-1", "first pushed issue", "open"),
+		makeIssueEvent(t, 2, "iss-sync-broadcast-2", "second pushed issue", "open"),
+	}
+	pushResp := h.Do("POST", fmt.Sprintf("/v1/projects/%s/sync/push", pid), token, PushRequest{
+		DeviceID:  "dev-sync-broadcast",
+		SessionID: "ses-sync-broadcast",
+		Events:    events,
+	})
+	defer pushResp.Body.Close()
+	if pushResp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(pushResp.Body)
+		t.Fatalf("POST /sync/push: status=%d body=%s", pushResp.StatusCode, raw)
+	}
+	var pushed PushResponse
+	if err := json.NewDecoder(pushResp.Body).Decode(&pushed); err != nil {
+		t.Fatalf("decode push response: %v", err)
+	}
+	if pushed.Accepted != len(events) {
+		t.Fatalf("accepted = %d, want %d", pushed.Accepted, len(events))
+	}
+
+	if !sse.waitForEvent(time.Second, EventRefresh) {
+		t.Fatal("browser subscriber received no refresh after sync push")
+	}
+	if line, ok := sse.waitForLine(200*time.Millisecond, func(line string) bool {
+		return strings.HasPrefix(line, "event: ")
+	}); ok {
+		t.Fatalf("multi-event push emitted more than one subscriber event: %q", line)
+	}
+
+	listResp := h.DoWithHeaders("GET", fmt.Sprintf("/v1/projects/%s/issues", pid),
+		token, nil, map[string]string{HeaderTdWatchSession: "ses-browser-refetch"})
+	var listed struct {
+		Issues []serve.IssueDTO `json:"issues"`
+		Total  int              `json:"total"`
+	}
+	readEnvelope(t, listResp, &listed)
+	if listed.Total != len(events) {
+		t.Fatalf("browser refetch total = %d, want %d", listed.Total, len(events))
+	}
+	gotIDs := make(map[string]bool, len(listed.Issues))
+	for _, issue := range listed.Issues {
+		gotIDs[issue.ID] = true
+	}
+	for _, event := range events {
+		if !gotIDs[event.EntityID] {
+			t.Errorf("browser refetch missing pushed issue %q", event.EntityID)
+		}
 	}
 }
 

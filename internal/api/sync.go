@@ -205,6 +205,11 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to apply events to project state")
 			return
 		}
+
+		// A sync push may contain many heterogeneous changes. Notify live clients
+		// once, after the complete accepted batch is visible through project.db,
+		// so browser consumers can refetch a coherent state.
+		s.broadcastProjectRefresh(projectID)
 	}
 
 	// Update cached event count in server.db

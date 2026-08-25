@@ -40,6 +40,18 @@ func (s *Server) broadcastIssueDelete(projectID, issueID string) {
 	})
 }
 
+// broadcastProjectRefresh tells subscribers to refetch the project's current
+// state. Use this for write paths, such as sync push, that apply a batch of
+// heterogeneous events and cannot describe the resulting change as one issue
+// upsert or delete.
+func (s *Server) broadcastProjectRefresh(projectID string) {
+	s.sseHubs.Broadcast(projectID, ProjectEvent{
+		Type:        EventRefresh,
+		ChangeToken: changeToken(),
+		Timestamp:   time.Now().UTC(),
+	})
+}
+
 // wrapIssueUpsert wraps a serve.HandleXxx function for issue upsert routes
 // (create / patch / transition). It captures the HTTP status written by the
 // inner handler and, on any 2xx success, calls s.broadcastIssueUpsert. The
