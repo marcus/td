@@ -7,57 +7,57 @@ Affected surfaces: `td monitor`, Sidecar's embedded monitor (`internal/plugins/t
 
 ## Outcome
 
-A task created or changed anywhere — the hosted browser UI, another machine's CLI, a teammate's device — appears in every open td surface within a second or two, without any surface polling the sync server on a fixed timer, and without any consumer of td re-implementing td's sync gate.
+A task created or changed anywhere — the hosted browser UI, another machine's CLI, a teammate's device — appears in every open td surface within a second or two on a healthy live connection, without fixed-timer polling on the normal path and without any consumer of td re-implementing td's sync gate. Fixed-interval probes and full syncs remain as degradation fallbacks.
 
-Concretely, when this is done:
+Implemented behavior:
 
 - Sidecar's embedded monitor is live because `pkg/monitor` is live, not because Sidecar wired anything.
-- `td monitor` gets the same liveness from the same code path, replacing its current 5-minute default tick.
-- Local changes made *inside* a monitor (create, approve, close, log) push out as promptly as remote ones come in.
+- `td monitor` gets the same liveness from the same code path instead of depending on a 5-minute full-sync tick.
+- Local syncable changes made *inside* a monitor — issues, reviews, approvals, closes, notes, boards, and positions — enqueue a prompt push after their logical transaction succeeds.
 - The sync gate — authenticated, linked, not disabled, not killed by the global override — is resolved in exactly one place.
 
-## Problem
+## Original defect
 
-The hosted server already fans out live events over SSE (`GET /v1/projects/{id}/events`), and td-watch consumes them (`td-watch/src/lib/stores/sseDriver.ts`). Nothing in the Go tree subscribes. Every td surface written in Go learns about remote changes only by polling, and only when something remembers to poll:
+Before this implementation, the hosted server fanned out live events over SSE (`GET /v1/projects/{id}/events`) and td-watch consumed them (`td-watch/src/lib/stores/sseDriver.ts`), but nothing in the Go tree subscribed. Go surfaces learned about remote changes only when a caller remembered to poll:
 
-- `pkg/monitor` refreshes local SQLite on `RefreshInterval` (Sidecar's default, `pollInterval`) but never contacts the sync server itself. It exposes three raw fields — `AutoSyncFunc`, `AutoSyncInterval`, `LastAutoSync` — and leaves the entire policy to whoever embeds it.
-- `cmd/monitor.go` fills those fields in, plus runs an independent ticker goroutine because "BubbleTea's `tea.Cmd` dispatch can stall under certain terminal/PTY conditions". The interval is `syncconfig.GetAutoSyncInterval()`, default 5 minutes.
-- Sidecar embeds the monitor and fills in nothing, so a Sidecar left open all day never sees a task created in the browser.
+- `pkg/monitor` refreshed local SQLite on `RefreshInterval` but left server sync policy in three raw embedder fields: `AutoSyncFunc`, `AutoSyncInterval`, and `LastAutoSync`.
+- `cmd/monitor.go` supplied those fields and ran a second ticker outside Bubble Tea at `syncconfig.GetAutoSyncInterval()`, default 5 minutes.
+- Sidecar supplied no sync callback, so an open embedded monitor never saw a browser-created task until another process pulled it.
 
-That last gap is real and worth fixing. The question this plan answers is where the fix belongs.
+The ownership defect was the missing in-process td sync facade, not the absence of Sidecar polling.
 
 ## Why this belongs in td, not in Sidecar
 
-Sidecar PR #311 closes the gap from the consumer side: it parses `td --json sync status`, decides for itself whether the gate is open, then shells out to `td sync --pull` on startup and every 60s, with `TD_FEATURE_SYNC_CLI=1` set to get past a feature gate that would otherwise refuse the command. The code is careful — single-flight, context cancellation on project switch, epoch-guarded messages, injectable command for tests. It is the best available implementation of the wrong shape, and four specific things follow from the shape rather than from the care taken:
+Sidecar PR #311 proposed closing the gap from the consumer side: parse `td --json sync status`, decide whether the gate was open, then shell out to `td sync --pull` on startup and every 60s with `TD_FEATURE_SYNC_CLI=1`. The code was careful — single-flight, context cancellation on project switch, epoch-guarded messages, and an injectable command for tests — but four problems followed from that ownership shape:
 
-**1. It reimplements td's gate, and the two copies already disagree.** td has three gate expressions today: `projectSyncConfigured` in `cmd/autosync.go` (configured project autosyncs even with `sync_autosync` unset — td-a4c721), `cmd/monitor.go` (additionally requires `features.SyncAutosync`, and never checks `ProjectID != ""`), and now the PR's JSON parse of `gate`/`configured`/`authenticated`. Three readings of one rule, in two repos. The global kill-switch (`syncconfig.GetGlobalAutosyncOverride`, td-735875) reaches only the copies that ask for it.
+**1. It reimplemented td's gate.** The pre-implementation code already had divergent expressions in `cmd/autosync.go` and `cmd/monitor.go`; the PR would have added a third JSON-derived reading in another repo. The shared `pkg/tdsync.Gate` now replaces those copies.
 
-**2. It pulls but never pushes, and the monitor is a writing surface.** `td sync --pull` is pull-only by construction. The embedded monitor creates issues, approves, closes, and logs through its forms — `mutatingCommands` in `cmd/autosync.go` lists `"monitor": true` precisely because the standalone monitor's `AutoSyncFunc` is `autoSyncOnce`, which pushes *and* pulls. Under the PR, work done in Sidecar's monitor sits unpushed until some unrelated `td` CLI invocation happens to flush it. The gap the PR closes in one direction opens in the other.
+**2. It pulled but never pushed, while the monitor is a writing surface.** `td sync --pull` is pull-only. Under the proposed PR, work done in Sidecar's monitor would have remained unpushed until another td invocation flushed it.
 
-**3. `td sync --pull` can replace `issues.db` underneath a long-lived reader.** `syncCmd`'s `RunE` runs `runBootstrap` — a snapshot download that swaps the database file — whenever `LastPulledServerSeq == 0`, on any invocation that is not `--push`. That is why the PR needs `databaseWasReplaced` and `reopenReplacedDatabase` at all. A background timer that can swap the file out from under Sidecar's long-lived `pkg/monitor` connection is the exact shape flagged in the August 2026 corruption RCA (five `issues.db` corruptions in two days; the mitigation was `journal_mode` WAL → TRUNCATE plus a 5s lock timeout in `internal/db/conn.go`). TRUNCATE journal makes the *writes* safe under contention; it does not make file replacement behind a live handle safe.
+**3. `td sync --pull` could replace `issues.db` underneath a long-lived reader.** The explicit sync command may bootstrap by swapping the database when no server sequence has been pulled. A background subprocess using that command would have required Sidecar's inode-replacement recovery and recreated the unsafe long-lived-reader shape. `pkg/tdsync.Once` never bootstraps or replaces the file.
 
-**4. Setting `TD_FEATURE_SYNC_CLI=1` from outside is a consumer overriding an owner's gate.** If a linked project's embedder is entitled to sync, td should say so through an API, not be talked past by an environment variable in a child process.
+**4. Setting `TD_FEATURE_SYNC_CLI=1` from outside made a consumer override the owner's command gate.** An entitled embedder now calls td's in-process API directly instead.
 
-None of this is a criticism of the PR's execution. It is the standing test from the design principles: *the capability belongs to whoever owns the data.* Sidecar owns none of td's sync state, so a Sidecar-side implementation is duplicated policy by definition. The reason it was written there is that td offers no other door — `autoSyncOnce` is unexported in `package cmd`, so an in-process embedder genuinely cannot reach td's own sync. **That missing door is the actual defect, and it is in td.**
+This follows the ownership test from the design principles: *the capability belongs to whoever owns the data.* Sidecar owns none of td's sync state. `pkg/tdsync` is the missing in-process door, and Sidecar remains a projection.
 
-## What already exists
+## Current implementation inventory
 
-Inventory, so the plan below is understood as wiring rather than invention:
+The implementation is split across these owned seams:
 
 | Piece | Location | State |
 |---|---|---|
 | SSE fan-out endpoint | `internal/api/events_handler.go`, route in `server.go:275` | Done. `RoleReader` auth, 15s pings, `Last-Event-ID` → immediate `refresh` event |
 | Per-project SSE hub | `internal/api/sse_hub.go` | Done. 16 event slots + reserved refresh slot, degrades to `refresh` under backpressure |
 | Broadcast on REST issue writes | `internal/api/broadcast.go`, `project_routes.go` | Done for the browser write path |
-| Broadcast on sync push | — | **Missing.** `handleSyncPush` commits and calls `applyAcceptedEventsToProjectDB` without notifying the hub |
+| Broadcast on sync push | `internal/api/broadcast.go`, `sync.go` | Done. One project refresh after a successful non-empty accepted/apply batch |
 | Browser SSE consumer | `td-watch/src/lib/stores/sseDriver.ts` | Done. Reference for reconnect/visibility behaviour |
-| Go SSE consumer | — | **Missing** |
+| Go SSE consumer | `internal/syncclient`, `pkg/tdsync/live.go` | Done. Streaming parser, body-liveness watchdog, resume hint, reconnect and fallbacks |
 | Pull/apply engine | `internal/sync` (`ApplyRemoteEvents`, `GetPendingEvents`, `MarkEventsSynced`, `ResolvePullOutcome`) | Done and already reused by `internal/api` |
-| Push/pull orchestration, retry, backfill | `cmd/autosync.go`, `cmd/sync.go` | Done but **trapped in `package cmd`**, unexported |
-| Cheap change probe | `syncclient.SyncStatus` → `{event_count, last_server_seq, last_event_time}` | Done, unused by any poller |
-| Embedder hooks | `pkg/monitor` `AutoSyncFunc` / `AutoSyncInterval` / `LastAutoSync` | Present but raw; policy lives in the caller |
+| Push/pull orchestration and gate | `pkg/tdsync` | Done. Importable shared-handle facade; commands are thin callers |
+| Cheap change probe | `syncclient.SyncStatus` → `{event_count, last_server_seq, last_event_time}` | Done and used by the probing rung |
+| Monitor ownership | `pkg/monitor/sync_runtime.go`, `EmbeddedOptions.Sync` | Done. Zero-configuration live default; deprecated raw callback remains an override |
 
-Two facts shape the design: the live channel exists and only needs a Go client, and the sync orchestration exists and only needs to be lifted out of `package cmd`.
+The live channel is a notification path only; all data still moves through the existing event push/pull/apply engine.
 
 ## Design
 
@@ -65,7 +65,7 @@ Three layers, each independently useful. Layer 1 alone already deletes PR #311's
 
 ### Layer 1 — `pkg/tdsync`: one owned, callable sync facade
 
-Move the orchestration out of `package cmd` into an importable package. `package cmd` becomes a caller like everyone else.
+The orchestration lives in an importable package. `package cmd` is a caller like every other surface.
 
 ```go
 package tdsync // pkg/tdsync — named tdsync so importers need no alias against std sync
@@ -109,13 +109,13 @@ type Result struct {
 Settled decisions for this layer:
 
 - **`Once` never bootstraps.** Snapshot bootstrap stays an explicit operation on the `td sync` command path. A background sync must never swap the file a live embedder is reading. This removes the whole `databaseWasReplaced` concern from the steady-state path.
-- **`Once` reuses the caller's `*db.DB` when given one.** `autoSyncOnce` currently calls `db.Open(dir)` for a second handle to a file the monitor already holds. Reusing the monitor's shared pool handle means one long-lived connection per process, which is what the corruption RCA points at as the safe shape.
-- **The three gate expressions collapse into `Gate()`.** `cmd/monitor.go`'s divergence (requiring `features.SyncAutosync`, not checking `ProjectID`) is a bug fixed by deletion, not preserved.
+- **`Once` reuses the caller's `*db.DB` when given one.** The monitor supplies its shared pool handle, avoiding a second connection owned by steady-state sync.
+- **The gate is resolved by `Gate()`.** Authentication, project linkage/disablement, precedence-aware feature settings, the legacy setting, and the global kill switch are evaluated once.
 - **Nothing about the feature gate changes.** `TD_FEATURE_SYNC_CLI` continues to gate the *user-facing CLI commands*. A library caller with an open gate never touches it, because it is not running a command.
 
 ### Layer 2 — `pkg/monitor` syncs itself
 
-The monitor stops asking embedders to supply sync policy and starts owning it, so every embedder is live by construction.
+The monitor owns sync policy, so every embedder is live by construction.
 
 ```go
 type EmbeddedOptions struct {
@@ -135,19 +135,19 @@ type SyncOptions struct {
 }
 ```
 
-- The monitor constructs a `tdsync.Syncer` over its own `*db.DB` handle and runs the ticker on its own goroutine, moving the loop that currently lives in `cmd/monitor.go` — including the comment explaining why it must not depend on `tea.Cmd` dispatch — into the library where every embedder inherits it.
+- The monitor constructs a `tdsync.Syncer` over its own `*db.DB` handle and starts one pointer-owned live supervisor after the first-frame boundary. The supervisor owns SSE, probes, timed fallback, prompt mutation wakes, and cancellation independently of Bubble Tea command dispatch.
 - `AutoSyncFunc` / `AutoSyncInterval` / `LastAutoSync` stay, deprecated, as an explicit escape hatch. An embedder that sets `AutoSyncFunc` suppresses the built-in loop, so nothing existing breaks.
 - `Model.Close()` stops the loop. Sidecar's project switch already calls `Stop()` → `Close()`, so cancellation on project switch comes free.
 - Pull results that changed local rows trigger the monitor's existing refresh rather than waiting for the next `RefreshInterval` tick.
-- **Monitor-originated writes push immediately.** Every mutation made through the monitor — create, update, start, review, approve, reject, close, reopen, block, log, comment — enqueues a push as soon as its local transaction commits, rather than waiting for the tick or for `autoSyncAfterMutation`'s debounce. A monitor mutation is a deliberate human action at a keyboard, so the latency budget is the one the user is watching; the debounce exists to protect against scripted CLI bursts, which is not this case. The push runs on the sync goroutine (never blocking the Bubble Tea loop), and single-flight in `Once` already collapses a rapid series of edits into as few round trips as the network allows. `Result.Pending` reports anything that did not make it out, so the surface can show a "not yet pushed" state instead of silently lying.
+- **Monitor-originated writes push promptly.** Each successful logical issue, review, note, board, position, or link mutation enqueues a sync wake after its transaction and related side effects commit. The push runs on the sync goroutine, and a capacity-one wake retains one follow-up pass without queueing one request per edit. `Result.Pending` reports local events that remain unpushed.
 
-After this layer, the whole of Sidecar's required change is: upgrade the td dependency, and delete PR #311.
+The pre-implementation expectation was a Sidecar dependency bump and deletion of PR #311's files. The PR never landed, so the implemented source adoption required no Sidecar plugin diff; the published module pin moves with the td release.
 
 ### Layer 3 — the live channel
 
 Timer-driven sync at any interval is a latency/cost tradeoff with no good setting: 5 minutes is stale, 60 seconds is 1,440 authenticated round trips per day per open surface, per project. Subscribe instead.
 
-**3a. Server: broadcast on the sync-push path.** `handleSyncPush` commits to `events.db` and calls `applyAcceptedEventsToProjectDB`, then returns without touching the hub. Add a broadcast after that apply. Without it, CLI-origin writes are invisible to *every* live client — including td-watch in the browser, which has the same blind spot today. Emit one coalesced `refresh`-style event per push batch rather than one per issue; the hub's own backpressure design already treats `refresh` as the safe degradation.
+**3a. Server: broadcast on the sync-push path.** After `handleSyncPush` commits accepted events and applies them to the project database, it emits one project-scoped `refresh` event for the batch. The hub's backpressure design also degrades overloaded subscribers to a reserved refresh event.
 
 **3b. Go SSE client in `pkg/tdsync`.**
 
@@ -189,7 +189,7 @@ The stated goal is near-real-time updates, and the standing constraint is that n
 - **On local change:** one push per monitor mutation, bounded by single-flight — a burst of edits made faster than the round trip collapses into the next in-flight push rather than queueing one request each. Worst case is one push per human keystroke-completed action, which is the correct cost for an interactive surface.
 - **DB contention:** one long-lived connection per process, reusing the monitor's handle. No second in-process handle (unlike `autoSyncOnce`), no short-lived writer processes racing a long-lived reader (unlike PR #311) — which is the pattern the corruption RCA names. TRUNCATE journal means a writer takes an exclusive lock, so writes stay short and batched, and the pull applies per-batch inside one transaction as `autoSyncApplyPullBatch` already does.
 - **Multiple surfaces on one machine:** N surfaces on the same project means N SSE connections and N pullers against one SQLite file. Contention is bounded by the 5s lock timeout, and single-flight is per-process. If this proves to be real pressure, the answer is a per-machine sync agent — deliberately out of scope here; noted as an open question, not designed for speculatively.
-- **Jitter:** all reconnects and polls are jittered so a fleet of surfaces restarting after a server blip does not arrive in lockstep.
+- **Jitter:** reconnect backoff is jittered so surfaces recovering from a server blip do not all redial in lockstep. Probe and timed-fallback cadence use the configured fixed interval.
 
 ## Ownership boundaries
 
