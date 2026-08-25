@@ -78,6 +78,8 @@ type Options struct {
     BaseDir string
     DB      *db.DB   // optional: reuse an existing handle instead of opening a second one
     Logger  *slog.Logger
+    Interval time.Duration // 0 = configured autosync interval for fallback cadence
+    OnStatus func(Status)   // optional live-rung and sync-outcome observer
 }
 
 func New(opts Options) (*Syncer, error)
@@ -93,6 +95,7 @@ type Gate struct {
     Configured    bool   // linked, ProjectID != "", not SyncDisabled
     KillSwitch    bool   // global autosync override explicitly false
     Reason        string // human-readable, for status output and UI hints
+    Source        string // winning gate/configuration source
 }
 
 // Once runs one push+pull round trip. It is single-flight, respects the gate,
@@ -156,7 +159,9 @@ Timer-driven sync at any interval is a latency/cost tradeoff with no good settin
 // stream, performs coalesced Once calls, reconnects with jittered exponential
 // backoff, and uses Last-Event-ID as a refresh hint. onChange runs after pulled
 // data changes the local database so the caller can refresh its projection.
-// It returns immediately if the gate is closed. Cancel via ctx.
+// It returns immediately for an ordinary closed gate. Expired credentials keep
+// the supervisor alive with zero network traffic until the credential identity
+// changes, then resume automatically. Cancel via ctx.
 func (s *Syncer) Live(ctx context.Context, onChange func()) error
 ```
 
@@ -176,7 +181,7 @@ func (s *Syncer) Live(ctx context.Context, onChange func()) error
 
 Rung 2 matters on its own: a status probe returning three integers is far cheaper than a pull, so even the non-SSE path stops doing real sync work against an idle project.
 
-**3d. Credential expiry is terminal, not transient.** A Sidecar open for days outlives an API key. A 401 from the stream or from `Once` drops straight to the Expired rung: the SSE loop exits, the ticker stops, and `OnStatus` fires once so the surface can prompt a re-login. It is never retried with backoff — a dead credential does not recover on its own, and reconnecting against it burns the server's auth rate limit and buries the one signal the user needs to act on. `syncclient.ErrUnauthorized` already exists and is already treated as terminal by `pushBatchWithRetry`; this extends the same rule to the stream and the poll. Re-authentication re-opens the gate, and the next `Gate()` evaluation (on the surface's own retry, or on the next project switch or restart) resumes normally.
+**3d. Credential expiry is terminal for that credential generation, not a transient network failure.** A 401 from the stream, probe, or `Once` drops straight to the Expired rung: network timers and the stream stop, and `OnStatus` fires once so the surface can prompt a re-login. It is never retried with backoff. The supervisor remains alive without network traffic and re-evaluates the local gate every second or on a wake; when the server/key/project fingerprint changes, the expired latch clears and live sync resumes automatically. Each 401 is bound to the identity used by its request, so a late old-key response cannot expire a newly rotated key.
 
 ## Performance budget
 
