@@ -418,3 +418,97 @@ func TestProbeLateUnauthorizedDoesNotExpireRotatedCredential(t *testing.T) {
 		}
 	}
 }
+
+// TestLiveResumesAfterGateOpens covers the project that becomes eligible while
+// a monitor is already running: td's in-TUI sync prompt links a project and
+// calls RequestSync, and `td auth login` in another pane opens the gate the
+// same way. A ladder that retired itself on the first closed gate would leave
+// both cases unsynced until the process restarted.
+func TestLiveResumesAfterGateOpens(t *testing.T) {
+	var pulls atomic.Int32
+	streamReady := make(chan struct{})
+	var readyOnce sync.Once
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/projects/proj/sync/push", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(syncclient.PushResponse{})
+	})
+	mux.HandleFunc("/v1/projects/proj/sync/pull", func(w http.ResponseWriter, _ *http.Request) {
+		pulls.Add(1)
+		emptyPull(w)
+	})
+	mux.HandleFunc("/v1/projects/proj/events", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+		readyOnce.Do(func() { close(streamReady) })
+		<-r.Context().Done()
+	})
+
+	clearGateEnv(t)
+	t.Setenv("TD_SYNC_AUTO_PULL", "true")
+	baseDir, database := gateDB(t, "", false) // unlinked: the gate starts closed
+	defer database.Close()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	t.Setenv("TD_SYNC_URL", server.URL)
+
+	var statuses []Status
+	var statusMu sync.Mutex
+	syncer, err := New(Options{
+		BaseDir: baseDir, DB: database, Interval: 20 * time.Millisecond,
+		OnStatus: func(status Status) {
+			statusMu.Lock()
+			statuses = append(statuses, status)
+			statusMu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("new syncer: %v", err)
+	}
+	syncer.coalesceWindow = 30 * time.Millisecond
+	syncer.streamIdle = 100 * time.Millisecond
+	syncer.reconnectBase = 10 * time.Millisecond
+	syncer.reconnectCap = 20 * time.Millisecond
+	syncer.jitter = func(d time.Duration) time.Duration { return d }
+	// A poll this long proves the resume came from RequestSync rather than from
+	// the periodic gate re-check.
+	syncer.gatePoll = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- syncer.Live(ctx, nil) }()
+
+	sawRung := func(want Rung) bool {
+		statusMu.Lock()
+		defer statusMu.Unlock()
+		for _, status := range statuses {
+			if status.Rung == want {
+				return true
+			}
+		}
+		return false
+	}
+	waitFor(t, "closed gate reported off", func() bool { return sawRung(RungOff) })
+	if got := pulls.Load(); got != 0 {
+		t.Fatalf("closed gate issued %d pulls, want none", got)
+	}
+
+	// Link the project exactly as the monitor's sync prompt does.
+	if err := database.SetSyncState("proj"); err != nil {
+		t.Fatalf("link project: %v", err)
+	}
+	syncer.RequestSync()
+
+	waitFor(t, "sync after the gate opened", func() bool { return pulls.Load() > 0 })
+	select {
+	case <-streamReady:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the event stream to connect after the gate opened")
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Live returned %v", err)
+	}
+}

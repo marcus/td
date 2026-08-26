@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -114,7 +115,11 @@ func globalKillSwitchOff() bool {
 }
 
 func syncGate(baseDir string, database *db.DB) tdsync.Gate {
-	syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database})
+	syncer, err := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database})
+	if err != nil {
+		slog.Debug("sync gate: construct syncer", "err", err)
+		return tdsync.Gate{Reason: fmt.Sprintf("sync unavailable: %v", err)}
+	}
 	return syncer.Gate()
 }
 
@@ -227,7 +232,11 @@ func autoSyncOnce() int64 {
 	defer atomic.StoreInt32(&autoSyncInFlight, 0)
 
 	dir := getBaseDir()
-	syncer, _ := tdsync.New(tdsync.Options{BaseDir: dir})
+	syncer, err := tdsync.New(tdsync.Options{BaseDir: dir})
+	if err != nil {
+		slog.Debug("autosync: construct syncer", "err", err)
+		return 0
+	}
 	result, err := syncer.Once(context.Background())
 	if err != nil {
 		slog.Debug("autosync", "err", err)

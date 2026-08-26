@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -314,8 +315,18 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		styles:            newMonitorStyles(theme),
 		modalRender:       &modalRenderCache{},
 	}
-	syncer, _ := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database, Interval: syncconfig.GetAutoSyncInterval()})
-	m.syncRuntime = newSyncRuntime(syncer, SyncOptions{Interval: syncconfig.GetAutoSyncInterval()}, database.Close)
+	syncInterval := syncconfig.GetAutoSyncInterval()
+	syncOpts := SyncOptions{Interval: syncInterval}
+	// A construction failure must leave a monitor that still runs, just without
+	// background sync. Passing a nil *Syncer through the syncService interface
+	// would read as "configured" and panic on the sync goroutine instead.
+	syncer, err := tdsync.New(tdsync.Options{BaseDir: baseDir, DB: database, Interval: syncInterval})
+	if err != nil {
+		slog.Debug("monitor: background sync unavailable", "err", err)
+		m.syncRuntime = newSyncRuntime(nil, syncOpts, database.Close)
+		return m
+	}
+	m.syncRuntime = newSyncRuntime(syncer, syncOpts, database.Close)
 	return m
 }
 
@@ -398,14 +409,20 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 
 	m := NewModel(database, sess.ID, opts.Interval, opts.Version, resolvedBaseDir)
 	m.Embedded = true
+	release := func() error { return releaseSharedDB(resolvedBaseDir) }
 	if opts.Sync.Disabled {
-		m.syncRuntime = newSyncRuntime(nil, opts.Sync, func() error { return releaseSharedDB(resolvedBaseDir) })
+		m.syncRuntime = newSyncRuntime(nil, opts.Sync, release)
 	} else {
 		if opts.Sync.Interval == 0 {
 			opts.Sync.Interval = syncconfig.GetAutoSyncInterval()
 		}
-		syncer, _ := tdsync.New(tdsync.Options{BaseDir: resolvedBaseDir, DB: database, Logger: opts.Sync.Logger, Interval: opts.Sync.Interval})
-		m.syncRuntime = newSyncRuntime(syncer, opts.Sync, func() error { return releaseSharedDB(resolvedBaseDir) })
+		syncer, syncErr := tdsync.New(tdsync.Options{BaseDir: resolvedBaseDir, DB: database, Logger: opts.Sync.Logger, Interval: opts.Sync.Interval})
+		if syncErr != nil {
+			slog.Debug("monitor: background sync unavailable", "err", syncErr)
+			m.syncRuntime = newSyncRuntime(nil, opts.Sync, release)
+		} else {
+			m.syncRuntime = newSyncRuntime(syncer, opts.Sync, release)
+		}
 	}
 	m.PanelRenderer = opts.PanelRenderer
 	m.ModalRenderer = opts.ModalRenderer

@@ -4,6 +4,20 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Sync
+
+- **Task changes now reach every open surface in about a second** (td-6f16ad). td's hosted server has broadcast live events over SSE since td-watch shipped, but nothing in Go subscribed: `td monitor` and any embedder learned about remote work only on a timer, default five minutes. `pkg/tdsync` adds a Go client for that stream, with a degradation ladder behind it — live SSE, then cheap `sync/status` probes that pull only when the server sequence advances, then timed full sync, so a proxy that buffers streams or an older server degrades instead of hanging.
+- **A sync push notifies live clients** (td-26a106). `POST /v1/sync/push` committed events and applied them to project state without telling the SSE hub, so a `td create` on one machine stayed invisible to every live client — including td-watch in a browser — until something else happened to write. The push path now broadcasts one coalesced refresh after the accepted batch is visible through `project.db`.
+- **Sync orchestration is a library, not a command** (td-71f767). Push, pull, retry, and gate resolution moved out of `package cmd` into `pkg/tdsync`, so an in-process embedder can reach td's own sync instead of shelling out to `td sync --pull`. `Syncer.Once` never performs snapshot bootstrap and reuses a database handle the caller already owns, which makes it safe to call underneath a long-lived reader. `td`'s own commands are now callers of the same facade.
+- **One autosync gate instead of three** (td-71f767). `cmd/autosync.go`, `cmd/monitor.go`, and `td sync status` each resolved eligibility slightly differently; `td monitor` in particular required the `sync_autosync` feature flag that td-a4c721 had already made unnecessary for configured projects, and never checked that a project had a project ID. `tdsync.Gate` is now the single decision, and reports its reason and source.
+- **An expired credential stops sync instead of hammering the server** (td-12f70e). A 401 parks the ladder and reports `credential expired` once, rather than reconnecting in a loop against a dead key. Each 401 is bound to the credentials that made the request, so a late response from a rotated-away key cannot expire the new one.
+- **A gate that opens later starts syncing without a restart** (td-6f16ad). Linking a project from the monitor's own sync prompt, or running `td auth login` in another pane, now resumes live sync on the spot. Previously the first closed gate retired the ladder for the life of the process, which made the in-TUI link flow unable to start the thing it had just configured.
+
+### Monitor
+
+- **The monitor owns its own background sync** (td-a0d532). `EmbeddedOptions.Sync` replaces hand-wiring `AutoSyncFunc`, `AutoSyncInterval`, and `LastAutoSync` from the outside; its zero value syncs whenever the project's gate is open, so an embedder is live without configuring anything. The three fields remain, deprecated — setting `AutoSyncFunc` still suppresses the built-in runtime. `Model.Close` stops the sync goroutine.
+- **Work done in the monitor pushes as soon as it commits** (td-a0d532). Creating, starting, approving, closing, logging, or commenting from the monitor no longer waits for the next tick or for a later CLI invocation to flush it.
+
 ## [v0.63.0] - 2026-08-22
 
 ### Dependencies

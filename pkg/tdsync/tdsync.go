@@ -28,6 +28,11 @@ const (
 	pushBudget    = 6 * time.Second
 	pushBackoff   = 250 * time.Millisecond
 	pushBatchSize = 500
+	// gatePollInterval bounds how long a project waits to notice that its gate
+	// opened through a path that cannot call RequestSync — `td auth login` or
+	// `td sync-project link` run in another process. Local-only work, so the
+	// cost is one sync_state read per interval per idle monitor.
+	gatePollInterval = 15 * time.Second
 )
 
 // Options configures one project's Syncer. DB is optional; when present, the
@@ -87,6 +92,7 @@ type Syncer struct {
 	streamIdle     time.Duration
 	reconnectBase  time.Duration
 	reconnectCap   time.Duration
+	gatePoll       time.Duration
 	jitter         func(time.Duration) time.Duration
 
 	mu             sync.Mutex
@@ -123,7 +129,8 @@ func New(opts Options) (*Syncer, error) {
 		onStatus: opts.OnStatus, wake: make(chan struct{}, 1),
 		coalesceWindow: 250 * time.Millisecond, streamIdle: 45 * time.Second,
 		reconnectBase: time.Second, reconnectCap: 2 * time.Minute,
-		jitter: defaultJitter,
+		gatePoll: gatePollInterval,
+		jitter:   defaultJitter,
 	}, nil
 }
 

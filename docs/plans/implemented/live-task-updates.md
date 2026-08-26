@@ -159,9 +159,9 @@ Timer-driven sync at any interval is a latency/cost tradeoff with no good settin
 // stream, performs coalesced Once calls, reconnects with jittered exponential
 // backoff, and uses Last-Event-ID as a refresh hint. onChange runs after pulled
 // data changes the local database so the caller can refresh its projection.
-// It returns immediately for an ordinary closed gate. Expired credentials keep
-// the supervisor alive with zero network traffic until the credential identity
-// changes, then resume automatically. Cancel via ctx.
+// A closed gate — unlinked, unauthenticated, autosync off, or expired
+// credentials — parks the supervisor with zero network traffic until the gate
+// opens, then resumes automatically. Cancel via ctx.
 func (s *Syncer) Live(ctx context.Context, onChange func()) error
 ```
 
@@ -176,12 +176,14 @@ func (s *Syncer) Live(ctx context.Context, onChange func()) error
 | Live | SSE connected | pull on event | ~1s |
 | Probing | SSE unavailable (proxy strips streams, old server) | poll `syncclient.SyncStatus`; pull only when `last_server_seq` advanced | interval, one cheap request |
 | Timed | `SyncStatus` unavailable | full `Once` on `GetAutoSyncInterval()` — today's behaviour | interval |
-| Off | gate closed | nothing; zero network | — |
-| Expired | server returned 401 | stop; report `Reason: "credential expired"` once | — |
+| Off | gate closed | park; re-check the local gate, resume when it opens | — |
+| Expired | server returned 401 | park; report `Reason: "credential expired"` once | — |
 
 Rung 2 matters on its own: a status probe returning three integers is far cheaper than a pull, so even the non-SSE path stops doing real sync work against an idle project.
 
-**3d. Credential expiry is terminal for that credential generation, not a transient network failure.** A 401 from the stream, probe, or `Once` drops straight to the Expired rung: network timers and the stream stop, and `OnStatus` fires once so the surface can prompt a re-login. It is never retried with backoff. The supervisor remains alive without network traffic and re-evaluates the local gate every second or on a wake; when the server/key/project fingerprint changes, the expired latch clears and live sync resumes automatically. Each 401 is bound to the identity used by its request, so a late old-key response cannot expire a newly rotated key.
+**3d. A closed gate is a state, not an end state.** Off and Expired both park the supervisor rather than retiring it, because every input to the gate — authentication, project linking, the autosync flags, credential rotation — changes while a surface is open. td's own in-TUI sync prompt links a project from inside a running monitor, and `td auth login` in another pane is the equally ordinary case; a ladder that returned on the first closed gate would leave both unsynced until the process restarted. Parked means zero network traffic: the gate is local state, so the supervisor waits on a `RequestSync` wake or a `gatePollInterval` (15s) re-check, each costing one indexed `sync_state` read plus config resolution. Paths inside td that open the gate call `RequestSync` and resume immediately instead of waiting for the tick.
+
+**3e. Credential expiry is terminal for that credential generation, not a transient network failure.** A 401 from the stream, probe, or `Once` drops straight to the Expired rung: network timers and the stream stop, and `OnStatus` fires once so the surface can prompt a re-login. It is never retried with backoff. When the server/key/project fingerprint changes, the expired latch clears and the parked supervisor resumes on its next gate evaluation. Each 401 is bound to the identity used by its request, so a late old-key response cannot expire a newly rotated key.
 
 ## Performance budget
 

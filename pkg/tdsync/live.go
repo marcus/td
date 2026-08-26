@@ -77,15 +77,19 @@ func (s *Syncer) Live(ctx context.Context, onChange func()) error {
 	for {
 		gate := s.Gate()
 		if !gate.Open {
+			// A closed gate is a state, not an end state. Authentication, project
+			// linking, and the autosync flags all change while a monitor is open —
+			// td's own in-TUI link prompt is one such path — so wait for the gate
+			// rather than retiring the ladder until the process restarts.
+			rung := RungOff
 			if gate.Reason == "credential expired" {
-				s.emit(Status{Rung: RungExpired, Gate: gate, Reason: gate.Reason})
-				if !s.waitForCredentialChange(ctx) {
-					return ctx.Err()
-				}
-				continue
+				rung = RungExpired
 			}
-			s.emit(Status{Rung: RungOff, Gate: gate, Reason: gate.Reason})
-			return nil
+			s.emit(Status{Rung: rung, Gate: gate, Reason: gate.Reason})
+			if !s.waitForGateOpen(ctx) {
+				return ctx.Err()
+			}
+			continue
 		}
 
 		if err := s.runConnectedLadder(ctx, &lastEventID, onChange); err != nil {
@@ -441,8 +445,17 @@ func (s *Syncer) emitExpired() {
 	s.emit(Status{Rung: RungExpired, Gate: gate, Reason: "credential expired"})
 }
 
-func (s *Syncer) waitForCredentialChange(ctx context.Context) bool {
-	ticker := time.NewTicker(time.Second)
+// waitForGateOpen blocks until this project may sync again, or until ctx is
+// cancelled. It makes no network requests: the gate is local state (credentials,
+// link status, autosync flags), so a wake request or a slow re-check is enough.
+//
+// Most projects are never linked, so this loop is the steady state for the
+// majority of monitors. It costs one gate evaluation per gatePoll tick — a
+// single indexed sync_state read plus config resolution — and RequestSync gives
+// the paths that change the gate from inside td an immediate answer instead of
+// making them wait for the tick.
+func (s *Syncer) waitForGateOpen(ctx context.Context) bool {
+	ticker := time.NewTicker(s.gatePoll)
 	defer ticker.Stop()
 	for {
 		select {

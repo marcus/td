@@ -34,6 +34,12 @@ type monitorSyncResultMsg struct {
 	changed bool
 }
 
+// isNotification reports whether the message only says "pulled data changed",
+// with no sync-pass outcome attached.
+func (m monitorSyncResultMsg) isNotification() bool {
+	return m.result == (tdsync.Result{}) && m.err == nil
+}
+
 type startMonitorSyncMsg struct{}
 
 // syncService is the owned live-sync contract consumed by the monitor. Tests
@@ -118,8 +124,21 @@ func (r *syncRuntime) publish(msg monitorSyncResultMsg) {
 	}
 	select {
 	case old := <-r.results:
-		msg.result.Pulled += old.result.Pulled
 		msg.changed = msg.changed || old.changed
+		if msg.isNotification() {
+			// A bare change notification carries no pass outcome of its own, so
+			// keep the displaced one rather than reporting an empty Result.
+			msg.result, msg.err = old.result, old.err
+			break
+		}
+		// Pushed, Pulled and Conflicts are per-pass counts and accumulate.
+		// Pending is a level, so the newer pass's value stands.
+		msg.result.Pushed += old.result.Pushed
+		msg.result.Pulled += old.result.Pulled
+		msg.result.Conflicts += old.result.Conflicts
+		if msg.err == nil {
+			msg.err = old.err
+		}
 	default:
 	}
 	select {
