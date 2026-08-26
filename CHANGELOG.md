@@ -4,6 +4,8 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.64.0] - 2026-08-25
+
 ### Sync
 
 - **Task changes now reach every open surface in about a second** (td-6f16ad). td's hosted server has broadcast live events over SSE since td-watch shipped, but nothing in Go subscribed: `td monitor` and any embedder learned about remote work only on a timer, default five minutes. `pkg/tdsync` adds a Go client for that stream, with a degradation ladder behind it — live SSE, then cheap `sync/status` probes that pull only when the server sequence advances, then timed full sync, so a proxy that buffers streams or an older server degrades instead of hanging.
