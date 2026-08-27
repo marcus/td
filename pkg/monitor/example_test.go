@@ -23,7 +23,7 @@ func ExampleModel_SetTheme() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer model.Close()
+	defer func() { _ = model.Close() }()
 
 	// When the host previews or applies another palette, call SetTheme from
 	// the host's Bubble Tea Update goroutine. The running model is not rebuilt.

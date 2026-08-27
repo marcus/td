@@ -132,7 +132,7 @@ func (s *Server) handleAdminProjectEvents(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to query events")
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []adminEvent
 	for rows.Next() {

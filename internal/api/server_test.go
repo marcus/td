@@ -26,7 +26,7 @@ func newTestServer(t *testing.T) (*Server, *serverdb.ServerDB) {
 	if err != nil {
 		t.Fatalf("open server db: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 
 	projectDir := filepath.Join(tmpDir, "projects")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -67,7 +67,7 @@ func newTestServerWithConfig(t *testing.T, modCfg func(*Config)) (*Server, *serv
 	if err != nil {
 		t.Fatalf("open server db: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 
 	projectDir := filepath.Join(tmpDir, "projects")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -1279,7 +1279,7 @@ func TestSnapshotValidSQLiteWithTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open snapshot db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify all required tables exist
 	requiredTables := []string{
@@ -1338,7 +1338,7 @@ func TestSnapshotBoardPositionReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open snapshot db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify board_issue_positions were replayed
 	var count int

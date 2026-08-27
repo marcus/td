@@ -386,7 +386,7 @@ func (c *Client) GetSnapshot(projectID string) (*SnapshotResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil // no events to snapshot
@@ -457,7 +457,7 @@ func (c *Client) Events(ctx context.Context, projectID, lastEventID string, idle
 	if err != nil {
 		return fmt.Errorf("event request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if resp.StatusCode == http.StatusUnauthorized {
@@ -620,7 +620,7 @@ func (c *Client) doRequestContext(ctx context.Context, method, path string, body
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

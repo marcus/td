@@ -82,14 +82,14 @@ func TestAgentSessionPersistence(t *testing.T) {
 		t.Fatalf("GetOrCreate (initial): %v", err)
 	}
 	initialID := sess1.ID
-	database.Close()
+	_ = database.Close()
 
 	// Reopen - should load from DB
 	database2, err := db.Open(baseDir)
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer database2.Close()
+	defer func() { _ = database2.Close() }()
 
 	sess2, err := GetOrCreate(database2)
 	if err != nil {

@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 )
@@ -111,10 +110,4 @@ func writeSSEEvent(w http.ResponseWriter, ev ProjectEvent) error {
 		return err
 	}
 	return nil
-}
-
-// logSSEClientCount logs the number of active SSE clients for a project.
-// Kept as a helper for future observability use.
-func logSSEClientCount(log *slog.Logger, hub *SSEHub, projectID string) {
-	log.Debug("sse: clients", "pid", projectID, "count", hub.ClientCount())
 }

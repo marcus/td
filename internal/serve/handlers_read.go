@@ -740,9 +740,10 @@ func resolveSortOptions(sortBy, order string) (string, bool) {
 	}
 
 	// Explicit order overrides default
-	if order == "asc" {
+	switch order {
+	case "asc":
 		desc = false
-	} else if order == "desc" {
+	case "desc":
 		desc = true
 	}
 

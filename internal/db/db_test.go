@@ -15,7 +15,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Check database file exists
 	dbPath := filepath.Join(dir, ".todos", "issues.db")
@@ -30,7 +30,7 @@ func TestCreateAndGetIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Test Issue",
@@ -79,7 +79,7 @@ func TestListIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test issues
 	issues := []struct {
@@ -142,7 +142,7 @@ func TestDeleteAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "To Delete"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -184,7 +184,7 @@ func TestEpicFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create epic
 	epic := &models.Issue{
@@ -271,7 +271,7 @@ func TestEpicFilterNoChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create epic with no children
 	epic := &models.Issue{
@@ -302,7 +302,7 @@ func TestLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -353,7 +353,7 @@ func TestHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -394,7 +394,7 @@ func TestDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues
 	issue1 := &models.Issue{Title: "Issue 1"}
@@ -446,7 +446,7 @@ func TestWorkSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{
@@ -497,7 +497,7 @@ func TestGetLogsByWorkSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{
@@ -579,7 +579,7 @@ func TestActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Run migrations to ensure action_log table exists
 	if _, err := db.RunMigrations(); err != nil {
@@ -675,7 +675,7 @@ func TestActionLogDifferentSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -721,7 +721,7 @@ func TestSearchIssuesRanked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test issues with specific IDs via manual setting after create
 	// Issue 1: ID contains 'grace', title is different
@@ -864,7 +864,7 @@ func TestReviewableByFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionA := "ses_aaaaaa"
 	sessionB := "ses_bbbbbb"
@@ -1088,7 +1088,7 @@ func TestGetRejectedInProgressIssueIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test issues
 	issue1 := &models.Issue{Title: "Issue 1 (rejected, open)", Status: models.StatusOpen}
@@ -1174,7 +1174,7 @@ func TestBoardCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	t.Run("create board with valid query", func(t *testing.T) {
 		board, err := db.CreateBoard("Sprint 1", `sprint = "Sprint 1"`)
@@ -1336,7 +1336,7 @@ func TestBoardLastViewed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	t.Run("no last viewed initially", func(t *testing.T) {
 		board, err := db.GetLastViewedBoard()
@@ -1371,7 +1371,7 @@ func TestBoardPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a board and some issues
 	board, _ := db.CreateBoard("Position Test", "")
@@ -1445,7 +1445,7 @@ func TestGetBoardIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues
 	issue1 := &models.Issue{Title: "Open Issue", Type: models.TypeTask, Priority: models.PriorityP2, Status: models.StatusOpen}
@@ -1485,7 +1485,7 @@ func TestSetIssuePosition_NoShifting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("No Shift Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1529,7 +1529,7 @@ func TestSetIssuePosition_Reposition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Reposition Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1575,7 +1575,7 @@ func TestApplyBoardPositions_Ordering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Ordering Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1636,7 +1636,7 @@ func TestApplyBoardPositions_LegacyNonCanonicalPositionIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Legacy Position IDs", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1689,7 +1689,7 @@ func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Swap Error Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1728,7 +1728,7 @@ func TestComputeInsertPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Insert Position Test", "")
 
@@ -1854,7 +1854,7 @@ func TestRespaceBoardPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	board, _ := db.CreateBoard("Respace Test", "")
 	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -1924,7 +1924,7 @@ func TestCreateIssue_CollisionRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create first issue normally
 	issue1 := &models.Issue{Title: "First Issue"}
@@ -1969,7 +1969,7 @@ func TestCreateIssue_CollisionMaxRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create first issue normally
 	issue1 := &models.Issue{Title: "First Issue"}

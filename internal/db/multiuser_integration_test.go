@@ -15,7 +15,7 @@ func TestMultiUserIssueIndependence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Simulate User A
 	userASession := "ses_user_a"
@@ -73,7 +73,7 @@ func TestIssuesVisibleAcrossUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// User A creates an issue
 	userASession := "ses_creator_a"
@@ -126,7 +126,7 @@ func TestSessionHistoryTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Tracked issue",
@@ -184,7 +184,7 @@ func TestConcurrentUserOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a shared issue
 	shared := &models.Issue{
@@ -259,7 +259,7 @@ func TestReviewableByLogic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionA := "ses_reviewer_a"
 	sessionB := "ses_impl_b"
@@ -359,7 +359,7 @@ func TestMultipleIssuesPerUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	userSession := "ses_prolific_user"
 	issueCount := 5
@@ -431,7 +431,7 @@ func TestSessionInvolvementTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Involvement test",
@@ -480,7 +480,7 @@ func TestMultiUserWorkSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a work session
 	ws := &models.WorkSession{
@@ -549,7 +549,7 @@ func TestReviewerAssignmentAcrossUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create an issue with different implementer and reviewer
 	implSession := "ses_implementer_1"
@@ -617,7 +617,7 @@ func TestLogEntriesPerSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Logged work",
@@ -680,7 +680,7 @@ func TestConcurrentIssueCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	numUsers := 5
 	issuesPerUser := 10
@@ -745,7 +745,7 @@ func TestConcurrentStatusUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a shared issue
 	shared := &models.Issue{
@@ -883,7 +883,7 @@ func TestDataConsistencyAcrossUsers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// Create issue with test data
 			issue := &models.Issue{
@@ -933,7 +933,7 @@ func TestConflictingReviewers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Multi-reviewer test",
@@ -999,7 +999,7 @@ func TestMultiUserWorkFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionCreator := "ses_workflow_creator"
 	sessionImpl := "ses_workflow_impl"
@@ -1085,7 +1085,7 @@ func TestIsolationBetweenUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionA := "ses_isolated_a"
 	sessionB := "ses_isolated_b"
@@ -1152,7 +1152,7 @@ func TestConcurrentLabelModification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create an issue
 	issue := &models.Issue{
@@ -1222,7 +1222,7 @@ func TestSessionHistoryAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{
 		Title:    "History tracking test",
@@ -1280,7 +1280,7 @@ func TestUserPermissionBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Creator creates an issue
 	creatorSession := "ses_perm_creator"
@@ -1341,7 +1341,7 @@ func TestMultiUserIssueListFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issues with different creators and statuses
 	scenarios := []struct {
@@ -1415,7 +1415,7 @@ func TestBlockedIssueAcrossUsers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blockerSession := "ses_blocker_user"
 	blockedSession := "ses_blocked_user"

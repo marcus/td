@@ -204,10 +204,10 @@ func Setup(t *testing.T, cfg Config) *Harness {
 	h.serverCmd.Stderr = logFile
 
 	if err := h.serverCmd.Start(); err != nil {
-		logFile.Close()
+		_ = logFile.Close()
 		t.Fatalf("start server: %v", err)
 	}
-	logFile.Close()
+	_ = logFile.Close()
 
 	// Wait for server health
 	if err := h.waitForHealth(30 * time.Second); err != nil {
@@ -271,7 +271,7 @@ func (h *Harness) Teardown() {
 		_ = h.serverCmd.Wait()
 	}
 	if h.WorkDir != "" {
-		os.RemoveAll(h.WorkDir)
+		_ = os.RemoveAll(h.WorkDir)
 	}
 }
 
@@ -421,10 +421,10 @@ func (h *Harness) StartServer() error {
 	h.serverCmd.Stderr = logFile
 
 	if err := h.serverCmd.Start(); err != nil {
-		logFile.Close()
+		_ = logFile.Close()
 		return fmt.Errorf("start server: %w", err)
 	}
-	logFile.Close()
+	_ = logFile.Close()
 
 	if err := h.waitForHealth(30 * time.Second); err != nil {
 		return fmt.Errorf("server not healthy after restart: %w", err)
@@ -457,7 +457,7 @@ func randomPort() (int, error) {
 		return 0, err
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return port, nil
 }
 
@@ -481,7 +481,7 @@ func (h *Harness) waitForHealth(timeout time.Duration) error {
 
 		resp, err := client.Get(healthURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
 				return nil
 			}
@@ -586,7 +586,7 @@ func (h *Harness) deviceLogin(client *http.Client, email string) (devicePollResu
 		return zero, fmt.Errorf("device/start: %w", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return zero, fmt.Errorf("device/start status %d: %s", resp.StatusCode, body)
 	}
@@ -613,7 +613,7 @@ func (h *Harness) deviceLogin(client *http.Client, email string) (devicePollResu
 		return zero, fmt.Errorf("device/approve: %w", err)
 	}
 	approveBody, _ := io.ReadAll(resp2.Body)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if resp2.StatusCode != 200 {
 		return zero, fmt.Errorf("device/approve status %d: %s", resp2.StatusCode, approveBody)
 	}
@@ -630,7 +630,7 @@ func (h *Harness) deviceLogin(client *http.Client, email string) (devicePollResu
 			return zero, fmt.Errorf("device/poll: %w", err)
 		}
 		body3, _ := io.ReadAll(resp3.Body)
-		resp3.Body.Close()
+		_ = resp3.Body.Close()
 		if resp3.StatusCode != 200 {
 			return zero, fmt.Errorf("device/poll status %d: %s", resp3.StatusCode, body3)
 		}
@@ -665,7 +665,7 @@ func (h *Harness) lastEmailApproveURL(client *http.Client, email string) (string
 		return "", fmt.Errorf("last-email: %w", err)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("last-email status %d: %s", resp.StatusCode, body)
 	}

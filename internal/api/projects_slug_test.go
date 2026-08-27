@@ -17,7 +17,7 @@ func TestProjectResponse_SlugPresent(t *testing.T) {
 		Name:        "My Slug Project",
 		Description: "testing slug field",
 	})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
@@ -47,7 +47,7 @@ func TestGetProject_SlugPresent(t *testing.T) {
 
 	// Owner can GET their own project (they are a member).
 	resp := h.Do("GET", "/v1/projects/"+pid, ownerTok, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -77,7 +77,7 @@ func TestListProjects_SlugPresent(t *testing.T) {
 	h.CreateProject(tok, "List Beta Slug")
 
 	resp := h.Do("GET", "/v1/projects", tok, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -118,7 +118,7 @@ func TestProjectResponse_DuplicateNameSlugSuffix(t *testing.T) {
 	_, tok := h.CreateUser("dup-slug@test.com")
 
 	resp1 := h.Do("POST", "/v1/projects", tok, CreateProjectRequest{Name: "Dup Slug"})
-	defer resp1.Body.Close()
+	defer func() { _ = resp1.Body.Close() }()
 	if resp1.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp1.Body)
 		t.Fatalf("create p1: %d %s", resp1.StatusCode, body)
@@ -129,7 +129,7 @@ func TestProjectResponse_DuplicateNameSlugSuffix(t *testing.T) {
 	}
 
 	resp2 := h.Do("POST", "/v1/projects", tok, CreateProjectRequest{Name: "Dup Slug"})
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp2.Body)
 		t.Fatalf("create p2: %d %s", resp2.StatusCode, body)

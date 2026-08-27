@@ -61,7 +61,7 @@ var syncInitCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil {

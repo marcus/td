@@ -101,7 +101,7 @@ var associationsCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "DIRECTORY\tPROJECT")
+		_, _ = fmt.Fprintln(w, "DIRECTORY\tPROJECT")
 
 		// Sort for stable output
 		keys := make([]string, 0, len(assoc))
@@ -111,7 +111,7 @@ var associationsCmd = &cobra.Command{
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			fmt.Fprintf(w, "%s\t%s\n", k, assoc[k])
+			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, assoc[k])
 		}
 		return w.Flush()
 	},

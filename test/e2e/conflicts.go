@@ -17,13 +17,13 @@ func queryDB(h *Harness, actor, query string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open %s db: %w", actor, err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	rows, err := db.Query(query)
 	if err != nil {
 		return "", fmt.Errorf("query %s: %w", actor, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, _ := rows.Columns()
 	var lines []string

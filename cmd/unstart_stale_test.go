@@ -62,7 +62,7 @@ func execTestSQL(t *testing.T, baseDir, query string, args ...any) {
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Exec(query, args...); err != nil {
 		t.Fatalf("test sql %q: %v", query, err)
 	}

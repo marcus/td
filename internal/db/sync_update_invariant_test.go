@@ -89,7 +89,7 @@ func reconstructIssueFromActionLog(t *testing.T, database *DB, issueID string) (
 	if err != nil {
 		t.Fatalf("query action_log for %s: %v", issueID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var state map[string]any
 	seen := false
@@ -183,7 +183,7 @@ func assertActionLogReconstructsEveryIssue(t *testing.T, database *DB) {
 		}
 		ids = append(ids, id)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate issues: %v", err)
 	}

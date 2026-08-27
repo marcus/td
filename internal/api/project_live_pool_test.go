@@ -30,7 +30,7 @@ func seedEventsDB(t *testing.T, baseDir, projectID string, n int) int64 {
 	if err != nil {
 		t.Fatalf("open events.db: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := tdsync.InitServerEventLog(conn); err != nil {
 		t.Fatalf("init event log: %v", err)

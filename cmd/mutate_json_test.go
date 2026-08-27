@@ -33,7 +33,7 @@ func TestUpdateJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Update json smoke task")
 
@@ -87,7 +87,7 @@ func TestUpdateHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Update human smoke task")
 
@@ -121,7 +121,7 @@ func TestStartJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Start json smoke task")
 
@@ -176,7 +176,7 @@ func TestStartBulkJSONOutputNDJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id1 := newJSONTestIssue(t, database, "Bulk start one task")
 	id2 := newJSONTestIssue(t, database, "Bulk start two task")
@@ -224,7 +224,7 @@ func TestLogJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Log json smoke task")
 
@@ -278,7 +278,7 @@ func TestLogHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Log human smoke task")
 
@@ -308,7 +308,7 @@ func TestHandoffJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Handoff json smoke task")
 
@@ -376,7 +376,7 @@ func TestHandoffHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Handoff human smoke task")
 

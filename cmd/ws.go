@@ -38,7 +38,7 @@ var wsStartCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -100,7 +100,7 @@ var wsTagCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -142,13 +142,13 @@ var wsTagCmd = &cobra.Command{
 				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
-				database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
+				_ = database.UpdateIssueLogged(issue, sess.ID, models.ActionStart)
 
 				// Record session action for bypass prevention
-				database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
+				_ = database.RecordSessionAction(issueID, sess.ID, models.ActionSessionStarted)
 
 				// Log the start
-				database.AddLog(&models.Log{
+				_ = database.AddLog(&models.Log{
 					IssueID:       issueID,
 					SessionID:     sess.ID,
 					WorkSessionID: wsID,
@@ -159,7 +159,7 @@ var wsTagCmd = &cobra.Command{
 				// Capture git state
 				gitState, _ := git.GetState()
 				if gitState != nil {
-					database.AddGitSnapshot(&models.GitSnapshot{
+					_ = database.AddGitSnapshot(&models.GitSnapshot{
 						IssueID:    issueID,
 						Event:      "start",
 						CommitSHA:  gitState.CommitSHA,
@@ -188,7 +188,7 @@ var wsUntagCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -229,7 +229,7 @@ var wsLogCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -269,7 +269,7 @@ var wsLogCmd = &cobra.Command{
 		only, _ := cmd.Flags().GetString("only")
 		if only != "" {
 			// Log to specific issue only
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:       only,
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
@@ -279,7 +279,7 @@ var wsLogCmd = &cobra.Command{
 			fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, only)
 		} else {
 			// Store single log entry with work_session_id, no issue_id
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:       "",
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
@@ -311,7 +311,7 @@ var wsCurrentCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -422,7 +422,7 @@ Flags support values, stdin (-), or file (@path):
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -499,12 +499,12 @@ Flags support values, stdin (-), or file (@path):
 				Uncertain: handoff.Uncertain,
 			}
 
-			database.AddHandoff(issueHandoff)
+			_ = database.AddHandoff(issueHandoff)
 
 			// Capture git state
 			gitState, _ := git.GetState()
 			if gitState != nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				_ = database.AddGitSnapshot(&models.GitSnapshot{
 					IssueID:    issueID,
 					Event:      "handoff",
 					CommitSHA:  gitState.CommitSHA,
@@ -527,7 +527,7 @@ Flags support values, stdin (-), or file (@path):
 				ws.EndSHA = gitState.CommitSHA
 			}
 
-			database.UpdateWorkSession(ws)
+			_ = database.UpdateWorkSession(ws)
 			_ = database.ClearActiveWorkSession(scope)
 		}
 
@@ -578,7 +578,7 @@ var wsEndCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -604,7 +604,7 @@ var wsEndCmd = &cobra.Command{
 		// End session
 		now := time.Now()
 		ws.EndedAt = &now
-		database.UpdateWorkSession(ws)
+		_ = database.UpdateWorkSession(ws)
 		_ = database.ClearActiveWorkSession(scope)
 
 		output.Warning("No handoff recorded for %s", wsID)
@@ -638,7 +638,7 @@ var wsListCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -708,7 +708,7 @@ var wsShowCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		wsID := args[0]
 		ws, err := database.GetWorkSession(wsID)

@@ -16,7 +16,7 @@ func searchScopeFixture(t *testing.T) (*DB, string) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	issue := &models.Issue{
 		Title:       "Unrelated title",

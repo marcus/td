@@ -16,7 +16,7 @@ func setupTestDB(t *testing.T) *db.DB {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 	return database
 }
 
@@ -138,7 +138,7 @@ func TestGetOrCreateWebSessionIDFormat(t *testing.T) {
 	// The hex part should be valid hex
 	hexPart := sess.ID[4:]
 	for _, c := range hexPart {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("session ID contains non-hex char %q in %q", string(c), sess.ID)
 		}
 	}

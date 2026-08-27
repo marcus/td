@@ -33,7 +33,7 @@ func testCreateIssueWithMinor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title: "Minor Task",
@@ -56,7 +56,7 @@ func testMinorTaskAllowsSelfReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sessionID := "ses_creator"
 
@@ -102,7 +102,7 @@ func testNormalTaskBlocksSelfReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sessionID := "ses_implementer"
 
@@ -148,7 +148,7 @@ func testMinorTaskBypass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sessionA := "ses_aaaa"
 	sessionB := "ses_bbbb"
@@ -213,7 +213,7 @@ func testMinorVsNormalWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sessionA := "ses_implementer"
 	sessionB := "ses_reviewer"
@@ -300,7 +300,7 @@ func testMinorTaskPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create a minor issue
 	issue := &models.Issue{
@@ -346,7 +346,7 @@ func testMinorFlagDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue without explicitly setting Minor
 	issue := &models.Issue{
@@ -370,7 +370,7 @@ func testMultipleMinorTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sessionA := "ses_creator"
 

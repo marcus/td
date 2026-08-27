@@ -13,7 +13,7 @@ func TestEpicFilterWithStatusAndNormalizedID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	epic := &models.Issue{
 		Title: "Epic for combined filters",

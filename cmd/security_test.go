@@ -15,14 +15,14 @@ func TestSecurityLogging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
+	defer func() { _ = os.RemoveAll(baseDir) }()
 
 	// Init DB
 	database, err := db.Initialize(baseDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Test LogSecurityEvent and ReadSecurityEvents
 	event := db.SecurityEvent{
@@ -72,17 +72,19 @@ func TestCloseCommandSecurityLogging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
+	defer func() { _ = os.RemoveAll(baseDir) }()
 
 	// Ensure .todos directory exists for session
-	os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755)
+	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Init DB
 	database, err := db.Initialize(baseDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an issue that we "implemented" to trigger self-close check
 	issue := &models.Issue{

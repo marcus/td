@@ -17,7 +17,7 @@ func TestReject_LaterIssueEventFailureDoesNotRejectIssueAndCanRetry(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Reject must be atomic",

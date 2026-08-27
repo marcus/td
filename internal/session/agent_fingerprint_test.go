@@ -78,7 +78,7 @@ func TestGetAgentFingerprintWithExplicitOverride(t *testing.T) {
 
 func TestGetAgentFingerprintWithCursorEnv(t *testing.T) {
 	// Clear explicit override
-	os.Unsetenv("TD_SESSION_ID")
+	_ = os.Unsetenv("TD_SESSION_ID")
 	// Set Cursor agent env var
 	t.Setenv("CURSOR_AGENT", "1")
 
@@ -95,8 +95,8 @@ func TestGetAgentFingerprintWithCursorEnv(t *testing.T) {
 
 func TestGetAgentFingerprintFallback(t *testing.T) {
 	// Clear all agent-related env vars
-	os.Unsetenv("TD_SESSION_ID")
-	os.Unsetenv("CURSOR_AGENT")
+	_ = os.Unsetenv("TD_SESSION_ID")
+	_ = os.Unsetenv("CURSOR_AGENT")
 
 	fp := GetAgentFingerprint()
 
@@ -141,7 +141,7 @@ func TestGetTerminalSessionID(t *testing.T) {
 		"KONSOLE_DBUS_SESSION",
 		"GNOME_TERMINAL_SCREEN",
 	} {
-		os.Unsetenv(env)
+		_ = os.Unsetenv(env)
 	}
 
 	// Should return empty when no terminal vars set
@@ -212,8 +212,8 @@ func TestExplicitIDOverridesAutoDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clear all env vars first
-			os.Unsetenv("TD_SESSION_ID")
-			os.Unsetenv("CURSOR_AGENT")
+			_ = os.Unsetenv("TD_SESSION_ID")
+			_ = os.Unsetenv("CURSOR_AGENT")
 
 			// Set explicit ID
 			t.Setenv("TD_SESSION_ID", tt.sessionID)
@@ -547,8 +547,8 @@ func TestExplicitIDEnvironmentVarPriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Unsetenv("TD_SESSION_ID")
-			os.Unsetenv("CURSOR_AGENT")
+			_ = os.Unsetenv("TD_SESSION_ID")
+			_ = os.Unsetenv("CURSOR_AGENT")
 
 			if tt.sessionID != "" {
 				t.Setenv("TD_SESSION_ID", tt.sessionID)

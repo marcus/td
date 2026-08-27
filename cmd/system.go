@@ -31,7 +31,7 @@ var infoCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -260,7 +260,7 @@ var whoamiCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -324,7 +324,7 @@ var sessionNameCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		newSession, _ := cmd.Flags().GetBool("new")
 
@@ -394,7 +394,7 @@ var sessionListCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sessions, err := session.ListSessions(database)
 		if err != nil {
@@ -487,7 +487,7 @@ var sessionCleanupCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		olderThan, _ := cmd.Flags().GetString("older-than")
 		force, _ := cmd.Flags().GetBool("force")
@@ -632,7 +632,7 @@ var exportCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		format, _ := cmd.Flags().GetString("format")
 		outputPath, _ := cmd.Flags().GetString("output")
@@ -733,7 +733,7 @@ var importCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		filePath := args[0]
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
@@ -1037,7 +1037,7 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID 
 		}
 		if matches := pointsRegex.FindStringSubmatch(line); matches != nil {
 			var pts int
-			fmt.Sscanf(matches[1], "%d", &pts)
+			_, _ = fmt.Sscanf(matches[1], "%d", &pts)
 			currentIssue.Points = pts
 			inDescription = false
 			continue
@@ -1085,7 +1085,7 @@ var upgradeCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		currentVersion, _ := database.GetSchemaVersion()
 		fmt.Printf("Current schema version: %d\n", currentVersion)

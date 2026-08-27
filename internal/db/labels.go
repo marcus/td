@@ -19,7 +19,7 @@ func (db *DB) ListDistinctLabels() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query labels: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	seen := make(map[string]struct{})
 	labels := make([]string, 0)

@@ -243,7 +243,7 @@ func TestTempFileWithMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	// Verify filename has .md extension for syntax highlighting
 	if !contains(tmpFile.Name(), ".md") {
@@ -251,7 +251,7 @@ func TestTempFileWithMarkdown(t *testing.T) {
 			tmpFile.Name())
 	}
 
-	tmpFile.Close()
+	_ = tmpFile.Close()
 }
 
 // TestEditorEnvironmentVariables tests editor selection priority
@@ -292,21 +292,21 @@ func TestEditorEnvironmentVariables(t *testing.T) {
 			origVISUAL := os.Getenv("VISUAL")
 			origEDITOR := os.Getenv("EDITOR")
 			defer func() {
-				os.Setenv("VISUAL", origVISUAL)
-				os.Setenv("EDITOR", origEDITOR)
+				_ = os.Setenv("VISUAL", origVISUAL)
+				_ = os.Setenv("EDITOR", origEDITOR)
 			}()
 
 			// Set test values
 			if tt.visual == "" {
-				os.Unsetenv("VISUAL")
+				_ = os.Unsetenv("VISUAL")
 			} else {
-				os.Setenv("VISUAL", tt.visual)
+				_ = os.Setenv("VISUAL", tt.visual)
 			}
 
 			if tt.editor == "" {
-				os.Unsetenv("EDITOR")
+				_ = os.Unsetenv("EDITOR")
 			} else {
-				os.Setenv("EDITOR", tt.editor)
+				_ = os.Setenv("EDITOR", tt.editor)
 			}
 
 			// Simulate the editor selection logic
@@ -705,8 +705,8 @@ func BenchmarkTempFileCreation(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Failed to create temp file: %v", err)
 		}
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 	}
 }
 
@@ -725,8 +725,8 @@ func BenchmarkTempFileWrite(b *testing.B) {
 			b.Fatalf("Failed to write: %v", err)
 		}
 
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 	}
 }
 
@@ -737,13 +737,13 @@ func TestTempFileReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	// Write content
 	if _, err := tmpFile.WriteString(content); err != nil {
 		t.Fatalf("Failed to write: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Read it back
 	data, err := os.ReadFile(tmpFile.Name())
@@ -764,7 +764,7 @@ func TestTempFileCleanup(t *testing.T) {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Verify file exists
 	if _, err := os.Stat(tmpPath); err != nil {

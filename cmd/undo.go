@@ -37,7 +37,7 @@ Use 'td undo --list' to see recent undoable actions.`,
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Run migrations to ensure action_log table exists
 		if _, err := database.RunMigrations(); err != nil {
@@ -371,7 +371,7 @@ var lastCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Run migrations to ensure action_log table exists
 		if _, err := database.RunMigrations(); err != nil {

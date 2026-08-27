@@ -16,7 +16,7 @@ func TestSharedDB_SingleConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize the database
 	todosDir := filepath.Join(tmpDir, ".todos")
@@ -29,7 +29,7 @@ func TestSharedDB_SingleConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	database.Close()
+	_ = database.Close()
 
 	// Clear the pool before testing
 	clearDBPool()
@@ -95,13 +95,13 @@ func TestSharedDB_DifferentPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir1)
+	defer func() { _ = os.RemoveAll(tmpDir1) }()
 
 	tmpDir2, err := os.MkdirTemp("", "td-dbpool-test2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir2)
+	defer func() { _ = os.RemoveAll(tmpDir2) }()
 
 	// Initialize both databases
 	for _, dir := range []string{tmpDir1, tmpDir2} {
@@ -113,7 +113,7 @@ func TestSharedDB_DifferentPaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		database.Close()
+		_ = database.Close()
 	}
 
 	// Clear the pool before testing
@@ -148,7 +148,7 @@ func TestDebugLog_EnvGated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	todosDir := filepath.Join(tmpDir, ".todos")
 	if err := os.MkdirAll(todosDir, 0755); err != nil {
@@ -158,7 +158,7 @@ func TestDebugLog_EnvGated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	database.Close()
+	_ = database.Close()
 
 	// Redirect debug output to a buffer for assertions.
 	var buf bytes.Buffer

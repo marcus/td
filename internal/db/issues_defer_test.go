@@ -17,7 +17,7 @@ func TestListIssues_ExcludeDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// 1. Normal issue (no defer_until)
 	normal := &models.Issue{Title: "normal issue"}
@@ -67,7 +67,7 @@ func TestListIssues_DeferredOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// 1. Normal issue (no defer_until)
 	normal := &models.Issue{Title: "normal issue"}
@@ -106,7 +106,7 @@ func TestListIssues_OverdueOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// 1. Due in past, status open
 	overdue := &models.Issue{Title: "overdue open", DueDate: strPtr("2020-01-01")}
@@ -151,7 +151,7 @@ func TestListIssues_SurfacingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// 1. defer_until in past, defer_count=2 (surfacing: was deferred, now visible)
 	surfacing := &models.Issue{Title: "surfacing", DeferUntil: strPtr("2020-01-01"), DeferCount: 2}
@@ -190,7 +190,7 @@ func TestListIssues_DueSoonDays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	in10Days := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
@@ -233,7 +233,7 @@ func TestListIssues_DefaultExcludesDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// 1. Normal issue
 	normal := &models.Issue{Title: "normal issue"}

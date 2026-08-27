@@ -12,7 +12,7 @@ func TestListIssues_ExcludeHasOpenDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create task B (the dependency — starts open)
 	taskB := &models.Issue{Title: "task B (dependency)", Status: models.StatusOpen}
@@ -92,7 +92,7 @@ func TestListIssues_ExcludeHasOpenDeps_DeletedDepIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create task B (dependency) and soft-delete it
 	taskB := &models.Issue{Title: "task B (deleted dep)", Status: models.StatusOpen}
@@ -138,7 +138,7 @@ func TestListIssues_ExcludeHasOpenDeps_MultipleDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two dependencies
 	dep1 := &models.Issue{Title: "dep1", Status: models.StatusClosed}
@@ -208,7 +208,7 @@ func TestListIssues_WithoutExcludeHasOpenDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create dependency B (open)
 	taskB := &models.Issue{Title: "task B", Status: models.StatusOpen}

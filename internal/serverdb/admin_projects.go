@@ -110,7 +110,7 @@ func (db *ServerDB) AdminListProjectMembers(projectID string) ([]AdminProjectMem
 	if err != nil {
 		return nil, fmt.Errorf("admin list project members: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []AdminProjectMember
 	for rows.Next() {
@@ -140,7 +140,7 @@ func (db *ServerDB) ListSyncCursorsForProject(projectID string) ([]SyncCursor, e
 	if err != nil {
 		return nil, fmt.Errorf("list sync cursors: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cursors []SyncCursor
 	for rows.Next() {

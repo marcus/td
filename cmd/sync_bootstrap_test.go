@@ -21,7 +21,7 @@ func TestRunBootstrapSkipsWhenPendingEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if err := database.SetSyncState("proj-test"); err != nil {
 		t.Fatalf("set sync state: %v", err)
@@ -114,7 +114,7 @@ func TestRunBootstrapSuccessfulReplacement(t *testing.T) {
 	if replaced == nil {
 		t.Fatal("runBootstrap returned nil replacement DB")
 	}
-	defer replaced.Close()
+	defer func() { _ = replaced.Close() }()
 
 	var marker string
 	if err := replaced.Conn().QueryRow(`SELECT value FROM schema_info WHERE key = 'snapshot-marker'`).Scan(&marker); err != nil {

@@ -46,7 +46,7 @@ func readPromotedEvents(t *testing.T, db *sql.DB) []promotedEventRow {
 	if err != nil {
 		t.Fatalf("query events: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []promotedEventRow
 	for rows.Next() {
 		var r promotedEventRow
@@ -72,7 +72,7 @@ func TestPromote_RoundTrip(t *testing.T) {
 		h.ownerTok, body, map[string]string{HeaderTdWatchSession: "alice"})
 	if resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("POST /issues: status=%d body=%s", resp.StatusCode, respBody)
 	}
 	var created struct {
@@ -229,10 +229,10 @@ func TestPromote_NoMutation_NoOp(t *testing.T) {
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "alice"})
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("GET /issues: status=%d body=%s", resp.StatusCode, respBody)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	eventsPath := filepath.Join(h.dataDir, h.pid, "events.db")
 	if _, err := os.Stat(eventsPath); err == nil {
@@ -289,11 +289,11 @@ func TestPromote_AttachIsolation(t *testing.T) {
 					})
 				if resp.StatusCode != http.StatusCreated {
 					respBody, _ := io.ReadAll(resp.Body)
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					t.Errorf("writer %d round %d: status=%d body=%s", idx, j, resp.StatusCode, respBody)
 					return
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}(w)
 	}

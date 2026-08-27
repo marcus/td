@@ -310,7 +310,7 @@ func evaluateReviewerDelegated(in ReviewerEligibilityInput) ReviewerEligibility 
 // looser predicate. A session that merely created or viewed the issue (no
 // started history) still needs no flag, exactly as in delegated mode.
 func evaluateReviewerTrusted(in ReviewerEligibilityInput) ReviewerEligibility {
-	if !(in.SessionIsImplementer || in.HasImplementationHistory) {
+	if !in.SessionIsImplementer && !in.HasImplementationHistory {
 		// Independent session: eligible reviewer, no acknowledgement needed and
 		// not a self-review. It may still credit a reviewer by name, so echo
 		// any attribution through for the audit record.

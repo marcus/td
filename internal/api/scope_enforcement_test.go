@@ -99,7 +99,7 @@ func TestScopeEnforcement_SyncKeyGETProjects(t *testing.T) {
 	}
 
 	resp := h.Do("GET", "/v1/projects", tok, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on GET /v1/projects with sync key, got %d", resp.StatusCode)
 	}
@@ -122,7 +122,7 @@ func TestScopeEnforcement_ImpersonationKeyGETMemberProject(t *testing.T) {
 	pid := state.ProjectID("member-proj")
 
 	resp := h.Do("GET", fmt.Sprintf("/v1/projects/%s", pid), tok.APIKey, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("case 4: expected 200 for impersonation key on member project, got %d", resp.StatusCode)
 	}
@@ -195,7 +195,7 @@ func TestScopeEnforcement_AdminKeyWithImpersonateHeaderGETProjects(t *testing.T)
 		nil,
 		map[string]string{HeaderTdWatchImpersonate: state.UserID("target@scope7.com")},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("case 7: expected 200 for admin+impersonate header on GET /v1/projects, got %d", resp.StatusCode)
 	}
@@ -234,7 +234,7 @@ func TestScopeEnforcement_AdminKeyNoImpersonateHeaderGETProjects(t *testing.T) {
 		Done()
 
 	resp := h.Do("GET", "/v1/projects", state.AdminToken("admin@scope8.com"), nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// REAL behavior: 200 (IsAdmin short-circuits projectScopeAllowed).
 	// Task text expected 403 insufficient_scope — that expectation is incorrect

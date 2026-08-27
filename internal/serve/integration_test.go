@@ -35,7 +35,7 @@ func setupIntegrationServer(t *testing.T) (baseURL string, database *db.DB, clea
 
 	sess, err := GetOrCreateWebSession(database)
 	if err != nil {
-		database.Close()
+		_ = database.Close()
 		t.Fatalf("GetOrCreateWebSession: %v", err)
 	}
 
@@ -44,7 +44,7 @@ func setupIntegrationServer(t *testing.T) (baseURL string, database *db.DB, clea
 
 	cleanup = func() {
 		ts.Close()
-		database.Close()
+		_ = database.Close()
 	}
 
 	return ts.URL, database, cleanup
@@ -85,7 +85,7 @@ func iDoJSON(t *testing.T, method, url string, body interface{}) *http.Response 
 // and error payload map.
 func iParseEnvelope(t *testing.T, resp *http.Response) (ok bool, data map[string]interface{}, errPayload map[string]interface{}) {
 	t.Helper()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var env map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
@@ -601,7 +601,7 @@ func TestIntegration_ListLabels_ReturnsDistinctSortedCatalog(t *testing.T) {
 	if closeResp.StatusCode != http.StatusOK {
 		t.Fatalf("close issue: status=%d", closeResp.StatusCode)
 	}
-	closeResp.Body.Close()
+	_ = closeResp.Body.Close()
 
 	deletedID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
 		"title":  "Deleted issue label source",
@@ -611,7 +611,7 @@ func TestIntegration_ListLabels_ReturnsDistinctSortedCatalog(t *testing.T) {
 	if deleteResp.StatusCode != http.StatusOK {
 		t.Fatalf("delete issue: status=%d", deleteResp.StatusCode)
 	}
-	deleteResp.Body.Close()
+	_ = deleteResp.Body.Close()
 
 	resp := iDoJSON(t, "GET", baseURL+"/v1/labels", nil)
 	ok, data, _ := iParseEnvelope(t, resp)
@@ -2675,7 +2675,7 @@ func TestIntegration_SSE_Connect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/events: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d, want 200", resp.StatusCode)
@@ -2701,11 +2701,11 @@ func TestIntegration_SSE_ReceivesRefreshOnWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db.Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := GetOrCreateWebSession(database)
 	if err != nil {
-		database.Close()
+		_ = database.Close()
 		t.Fatalf("GetOrCreateWebSession: %v", err)
 	}
 
@@ -2746,7 +2746,7 @@ func TestIntegration_SSE_Ping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db.Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// The ping ticker is hardcoded at 30s inside run(), which is too long
 	// for a test. Instead, verify the hub correctly registers/unregisters clients.

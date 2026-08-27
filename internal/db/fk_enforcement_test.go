@@ -13,7 +13,7 @@ func TestFKEnforcement_InvalidHandoffRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Confirm FK pragma is ON (central opener's default after td-4846e6).
 	var fk int
@@ -43,7 +43,7 @@ func TestFKEnforcement_DeleteChildLeavesParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 
@@ -76,7 +76,7 @@ func TestFKEnforcement_CascadeDeleteHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 
@@ -110,7 +110,7 @@ func TestFKEnforcement_ParentDeleteDoesNotCascade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 

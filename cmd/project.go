@@ -51,7 +51,7 @@ var syncProjectCreateCmd = &cobra.Command{
 		baseDir := getBaseDir()
 		database, err := db.Open(baseDir)
 		if err == nil {
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 			if err := database.SetSyncState(project.ID); err == nil {
 				output.Success("Created and linked to project %s (%s)", project.Name, project.ID)
 				return nil
@@ -84,7 +84,7 @@ var syncProjectLinkCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		projectID := args[0]
 		force, _ := cmd.Flags().GetBool("force")
@@ -144,7 +144,7 @@ var syncProjectUnlinkCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		force, _ := cmd.Flags().GetBool("force")
 
@@ -236,7 +236,7 @@ var syncProjectMembersCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
@@ -280,7 +280,7 @@ var syncProjectInviteCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
@@ -326,7 +326,7 @@ var syncProjectKickCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
@@ -361,7 +361,7 @@ var syncProjectRoleCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil || syncState == nil {
@@ -465,7 +465,7 @@ var syncProjectJoinCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.SetSyncState(selected.ID); err != nil {
 			output.Error("link project: %v", err)

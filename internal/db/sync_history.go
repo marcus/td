@@ -55,7 +55,7 @@ func RecordSyncHistoryTx(tx *sql.Tx, entries []SyncHistoryEntry) error {
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, e := range entries {
 		_, err := stmt.Exec(e.Direction, e.ActionType, e.EntityType, e.EntityID, e.ServerSeq, e.DeviceID, e.Timestamp)
@@ -78,7 +78,7 @@ func (db *DB) GetSyncHistoryTail(limit int) ([]SyncHistoryEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []SyncHistoryEntry
 	for rows.Next() {
@@ -120,7 +120,7 @@ func (db *DB) GetSyncHistory(afterID int64, limit int) ([]SyncHistoryEntry, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []SyncHistoryEntry
 	for rows.Next() {

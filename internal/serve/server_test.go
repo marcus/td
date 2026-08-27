@@ -27,7 +27,7 @@ func TestHealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Health endpoint works even without a DB (change_token defaults to "")
 	// The handler does not panic on nil DB for GetChangeToken because it
@@ -53,7 +53,7 @@ func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should reach the handler, not be rejected by auth.
 	// With nil DB, placeholder returns 501; implemented routes may panic (500).
@@ -71,7 +71,7 @@ func TestAuthMiddleware_TokenConfigured_NoHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/issues: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -101,7 +101,7 @@ func TestAuthMiddleware_TokenConfigured_WrongToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/issues: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -120,7 +120,7 @@ func TestAuthMiddleware_TokenConfigured_CorrectToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PUT /v1/focus: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should pass through auth (not 401) and reach the handler.
 	// With nil DB the handler may return 400/500, but must NOT be 401.
@@ -141,7 +141,7 @@ func TestAuthMiddleware_TokenConfigured_InvalidFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/issues: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -158,7 +158,7 @@ func TestAuthMiddleware_HealthExempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Should reach the handler (not 401), even though token is configured.
 	// With nil DB, it may panic (500) but must NOT be 401.
@@ -183,7 +183,7 @@ func TestCORSMiddleware_NoCORSConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// No CORS headers should be set
 	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "" {
@@ -203,7 +203,7 @@ func TestCORSMiddleware_MatchingOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "http://localhost:3000" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", h, "http://localhost:3000")
@@ -228,7 +228,7 @@ func TestCORSMiddleware_NonMatchingOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want empty for non-matching origin", h)
@@ -247,7 +247,7 @@ func TestCORSMiddleware_WildcardOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "http://anything.com" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", h, "http://anything.com")
@@ -266,7 +266,7 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("status = %d, want %d for preflight", resp.StatusCode, http.StatusNoContent)
@@ -286,7 +286,7 @@ func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if h := resp.Header.Get("Access-Control-Allow-Origin"); h != "" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want empty when no Origin sent", h)
@@ -315,7 +315,7 @@ func TestRecoveryMiddleware_CatchesPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /panic: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
@@ -424,7 +424,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 			t.Errorf("%s %s: %v", r.method, r.path, err)
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Route must be registered (not 404 or 405)
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {

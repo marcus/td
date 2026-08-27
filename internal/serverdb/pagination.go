@@ -112,7 +112,7 @@ func PaginatedQuery[T any](
 	if err != nil {
 		return nil, fmt.Errorf("pagination query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []T
 	var cursorVals []string

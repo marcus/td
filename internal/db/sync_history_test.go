@@ -11,7 +11,7 @@ func TestRecordSyncHistoryTx_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -52,7 +52,7 @@ func TestRecordSyncHistoryTx_EmptySlice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -83,7 +83,7 @@ func TestGetSyncHistoryTail_OrderAndLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -147,7 +147,7 @@ func TestGetSyncHistoryTail_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -168,7 +168,7 @@ func TestGetSyncHistory_AfterID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -234,7 +234,7 @@ func TestGetSyncHistory_WithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -281,7 +281,7 @@ func TestPruneSyncHistory_KeepsNewest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -358,7 +358,7 @@ func TestPruneSyncHistory_NoOpWhenUnderLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)

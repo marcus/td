@@ -85,7 +85,7 @@ func (db *ServerDB) ListMembers(projectID string) ([]*Membership, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list members: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []*Membership
 	for rows.Next() {

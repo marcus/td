@@ -51,7 +51,7 @@ func TestMonitorReopenReleasesClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := newHeldIssue(t, database, "Closed but still held", models.StatusClosed, "ses_holder")
 
@@ -86,7 +86,7 @@ func TestMonitorEditFormStatusOpenReleasesClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := newHeldIssue(t, database, "In progress and held", models.StatusInProgress, "ses_holder")
 

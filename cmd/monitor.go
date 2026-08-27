@@ -57,7 +57,7 @@ Mouse support:
 		}
 
 		model := monitor.NewModel(database, sess.ID, interval, versionStr, baseDir)
-		defer model.Close()
+		defer func() { _ = model.Close() }()
 
 		p := tea.NewProgram(model)
 		if _, err := p.Run(); err != nil {

@@ -101,7 +101,7 @@ func testStore(t *testing.T) *serverdb.ServerDB {
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
-	t.Cleanup(func() { store.Close() })
+	t.Cleanup(func() { _ = store.Close() })
 	return store
 }
 

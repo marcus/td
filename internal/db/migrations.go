@@ -16,7 +16,7 @@ func (db *DB) columnExists(table, column string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (
@@ -638,7 +638,7 @@ func (db *DB) migrateToTextIDsTx(tx *sql.Tx) error {
 
 		cols, err := rows.Columns()
 		if err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return fmt.Errorf("columns %s: %w", m.name, err)
 		}
 		nCols := len(cols)
@@ -651,12 +651,12 @@ func (db *DB) migrateToTextIDsTx(tx *sql.Tx) error {
 				ptrs[i] = &vals[i]
 			}
 			if err := rows.Scan(ptrs...); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return fmt.Errorf("scan %s: %w", m.name, err)
 			}
 			allRows = append(allRows, vals)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		// Track ID mappings for action_log rewriting
 		if m.entityType != "" {
@@ -746,7 +746,7 @@ func (db *DB) tableHasIntegerPKTx(tx *sql.Tx, table string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanForIntegerPK(rows)
 }
@@ -854,12 +854,12 @@ func (db *DB) migrateDeterministicIDs() error {
 			for rows.Next() {
 				var r bipRow
 				if err := rows.Scan(&r.boardID, &r.issueID, &r.position, &r.addedAt); err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return err
 				}
 				bRows = append(bRows, r)
 			}
-			rows.Close()
+			_ = rows.Close()
 
 			for _, r := range bRows {
 				id := BoardIssuePosID(r.boardID, r.issueID)
@@ -916,12 +916,12 @@ func (db *DB) migrateDeterministicIDs() error {
 			for rows.Next() {
 				var r depRow
 				if err := rows.Scan(&r.issueID, &r.dependsOnID, &r.relationType); err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return err
 				}
 				dRows = append(dRows, r)
 			}
-			rows.Close()
+			_ = rows.Close()
 
 			for _, r := range dRows {
 				id := DependencyID(r.issueID, r.dependsOnID, r.relationType)
@@ -957,12 +957,12 @@ func (db *DB) migrateDeterministicIDs() error {
 		for rows.Next() {
 			var r ifRow
 			if err := rows.Scan(&r.oldID, &r.issueID, &r.filePath); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return err
 			}
 			fRows = append(fRows, r)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		// Deduplicate: if two rows hash to same deterministic ID, keep first
 		seen := make(map[string]bool)
@@ -1003,7 +1003,7 @@ func (db *DB) columnExistsTx(tx *sql.Tx, table, column string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cid int
 		var name, ctype string
@@ -1047,12 +1047,12 @@ func (db *DB) migrateFilePathsToRelative() error {
 	for rows.Next() {
 		var r fileRow
 		if err := rows.Scan(&r.id, &r.issueID, &r.filePath); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		fRows = append(fRows, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	for _, r := range fRows {
 		// Skip paths that are already relative
@@ -1117,7 +1117,7 @@ func (db *DB) migrateLegacyActionLogCompositeIDs() error {
 	if err != nil {
 		return fmt.Errorf("read action_log: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (
@@ -1423,12 +1423,12 @@ func (db *DB) migrateWorkSessionIssueIDs() error {
 	for rows.Next() {
 		var r wsiRow
 		if err := rows.Scan(&r.wsID, &r.issueID, &r.taggedAt); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		wRows = append(wRows, r)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	for _, r := range wRows {
 		id := WsiID(r.wsID, r.issueID)
@@ -1567,7 +1567,7 @@ func (db *DB) listTables() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var tables []string
 	for rows.Next() {
 		var name string
@@ -1595,7 +1595,7 @@ func (db *DB) datetimeColumns(table string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var cols []string
 	for rows.Next() {
 		var (
@@ -1641,7 +1641,7 @@ func (db *DB) normalizeTimestampColumn(table, col string) error {
 		var rowid int64
 		var raw string
 		if err := rows.Scan(&rowid, &raw); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		if !LooksLikeGoTimeString(raw) {
@@ -1654,10 +1654,10 @@ func (db *DB) normalizeTimestampColumn(table, col string) error {
 		fixes = append(fixes, fix{rowid: rowid, value: FormatCanonicalTime(t)})
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return err
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	if len(fixes) == 0 {
 		return nil

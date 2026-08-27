@@ -38,7 +38,7 @@ func liveSyncer(t *testing.T, handler http.Handler, statuses *[]Status, statusMu
 	syncer.reconnectBase = 10 * time.Millisecond
 	syncer.reconnectCap = 20 * time.Millisecond
 	syncer.jitter = func(d time.Duration) time.Duration { return d }
-	return syncer, func() { server.Close(); database.Close() }
+	return syncer, func() { server.Close(); _ = database.Close() }
 }
 
 func emptyPull(w http.ResponseWriter) {
@@ -448,7 +448,7 @@ func TestLiveResumesAfterGateOpens(t *testing.T) {
 	clearGateEnv(t)
 	t.Setenv("TD_SYNC_AUTO_PULL", "true")
 	baseDir, database := gateDB(t, "", false) // unlinked: the gate starts closed
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	t.Setenv("TD_SYNC_URL", server.URL)

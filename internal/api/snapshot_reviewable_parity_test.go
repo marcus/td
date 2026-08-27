@@ -83,7 +83,7 @@ func TestSnapshotReviewableParity_TrustedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open snapshot sql.DB: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	snapIssues, err := NewSnapshotQuerySource(sqlDB).ListIssues(opts)
 	if err != nil {

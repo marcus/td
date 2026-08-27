@@ -224,7 +224,7 @@ func (db *DB) ListIssueReviews(issueID string) ([]*models.IssueReview, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reviews []*models.IssueReview
 	for rows.Next() {
@@ -490,7 +490,7 @@ func (db *DB) listIssueReviews(store reviewSyncStore, issueID string) ([]*models
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reviews []*models.IssueReview
 	for rows.Next() {

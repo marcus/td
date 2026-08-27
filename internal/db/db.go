@@ -93,7 +93,7 @@ func Open(baseDir string) (*DB, error) {
 
 	// Run any pending migrations
 	if _, err := db.RunMigrations(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, unavailable(fmt.Errorf("run migrations: %w", err))
 	}
 
@@ -118,7 +118,7 @@ func Initialize(baseDir string) (*DB, error) {
 
 	// Run schema
 	if _, err := conn.Exec(schema); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func Initialize(baseDir string) (*DB, error) {
 
 	// Run migrations
 	if _, err := db.RunMigrations(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 

@@ -198,7 +198,7 @@ func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var notes []models.Note
 	for rows.Next() {

@@ -31,7 +31,7 @@ var resumeCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -59,7 +59,7 @@ var usageCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		compact, _ := cmd.Flags().GetBool("compact")
 		quiet, _ := cmd.Flags().GetBool("quiet")

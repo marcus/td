@@ -196,7 +196,7 @@ func ensureEventsDBSchema(eventsPath string) error {
 	if err != nil {
 		return fmt.Errorf("open events.db: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := tdsync.InitServerEventLog(conn); err != nil {
 		return fmt.Errorf("init events table: %w", err)
 	}

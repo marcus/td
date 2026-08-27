@@ -19,7 +19,7 @@ func newTestServerWithDB(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 	return NewServer(database, tmpDir, "ses_test123", ServeConfig{})
 }
 
@@ -47,7 +47,7 @@ func doJSON(t *testing.T, ts *httptest.Server, method, path string, body interfa
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp, env
 }
 
@@ -107,7 +107,7 @@ func TestHandleSetFocus_DoesNotNotifyForSetOrClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Focus mutation notify test"}
 	if err := database.CreateIssue(issue); err != nil {
@@ -154,7 +154,7 @@ func TestHandleSetFocus_NoLocalRootUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	req := httptest.NewRequest("PUT", "/v1/focus", bytes.NewBufferString(`{"issue_id":null}`))
 	rec := httptest.NewRecorder()
@@ -381,7 +381,7 @@ func TestCreateIssue_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
@@ -675,7 +675,7 @@ func TestUpdateIssue_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)

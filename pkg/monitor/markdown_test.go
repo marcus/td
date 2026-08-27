@@ -379,7 +379,7 @@ func TestColorConstants(t *testing.T) {
 			t.Errorf("color %q should be #RRGGBB format", c)
 		}
 		for _, r := range c[1:] {
-			if !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'F') || (r >= 'a' && r <= 'f')) {
+			if (r < '0' || r > '9') && (r < 'A' || r > 'F') && (r < 'a' || r > 'f') {
 				t.Errorf("color %q should contain only hex characters", c)
 			}
 		}

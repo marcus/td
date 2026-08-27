@@ -113,7 +113,7 @@ func TestApproveRecordOnlyRecordsReviewWithoutClosing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Resolve two distinct session IDs by swapping TD_SESSION_ID.
 	t.Setenv("TD_SESSION_ID", "impl-agent")
@@ -174,7 +174,7 @@ func TestApproveNoArgsClosesReadyToCloseIssueForImplementer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-noargs")
 	implSession := currentSessionID(t, database)
@@ -234,7 +234,7 @@ func TestApproveRecordOnlyWithoutReasonFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -271,7 +271,7 @@ func TestApproveRecordOnlyRejectsMinor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -317,7 +317,7 @@ func TestApproveRecordOnlyUnderStrictModeRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -357,7 +357,7 @@ func TestApproveRecordOnlyUnderTrustedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -417,7 +417,7 @@ func TestApproveRecordOnlyTrusted_ThenImplementerCloses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -468,7 +468,7 @@ func TestApproveRecordOnlyTrusted_ImplementerNeedsSelfReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -524,7 +524,7 @@ func TestApproveRecordOnlyChangesRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -576,7 +576,7 @@ func TestApproveCloseAfterRecordedApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -634,7 +634,7 @@ func TestApproveCloseAfterRecordedApproval_AnySessionWithReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -688,7 +688,7 @@ func TestApproveCloseAfterRecordedApproval_RequiresReasonWhenCloserDiffers(t *te
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Resolve sessions.
 	t.Setenv("TD_SESSION_ID", "impl-agent")
@@ -755,7 +755,7 @@ func TestApproveRecordOnly_StaleAfterDescriptionUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -822,7 +822,7 @@ func TestApproveCloseAfterReview_UndoRestoresState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -886,7 +886,7 @@ func TestApproveRecordOnly_UndoRemovesReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -947,7 +947,7 @@ func TestApproveRecordOnly_DelegatedRepeatReviewerAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1017,7 +1017,7 @@ func TestApproveRecordOnlyUnderBalancedModeRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1053,7 +1053,7 @@ func TestApproveRecordOnlyTrusted_ChangesRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1107,7 +1107,7 @@ func TestApproveExitsNonZeroWhenNamedIssueRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1140,7 +1140,7 @@ func TestApproveIdempotentCloseStillExitsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1169,7 +1169,7 @@ func TestApproveAllExitsZeroWhenNothingReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -1223,7 +1223,7 @@ func TestApproveMixedBatchWithClosedAndRejectedFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)

@@ -14,7 +14,7 @@ func TestMigrationActionLogCompositeIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	insertAction := func(id, entityType, entityID string, newData map[string]any) {
 		payload, err := json.Marshal(newData)

@@ -200,11 +200,11 @@ func (m Model) renderCompact() string {
 
 	// Show just focused issue and counts
 	if m.FocusedIssue != nil {
-		s.WriteString(fmt.Sprintf("Focus: %s\n", m.FocusedIssue.ID))
+		fmt.Fprintf(&s, "Focus: %s\n", m.FocusedIssue.ID)
 	}
 
-	s.WriteString(fmt.Sprintf("In Progress: %d\n", len(m.InProgress)))
-	s.WriteString(fmt.Sprintf("Ready: %d | WIP: %d | Review: %d | Close: %d | Rework: %d | PRev: %d | Other: %d | Blocked: %d\n",
+	fmt.Fprintf(&s, "In Progress: %d\n", len(m.InProgress))
+	fmt.Fprintf(&s, "Ready: %d | WIP: %d | Review: %d | Close: %d | Rework: %d | PRev: %d | Other: %d | Blocked: %d\n",
 		len(m.TaskList.Ready),
 		len(m.TaskList.InProgress),
 		len(m.TaskList.Reviewable),
@@ -212,7 +212,7 @@ func (m Model) renderCompact() string {
 		len(m.TaskList.NeedsRework),
 		len(m.TaskList.PendingReview),
 		len(m.TaskList.PendingOther),
-		len(m.TaskList.Blocked)))
+		len(m.TaskList.Blocked))
 
 	s.WriteString("\nq:quit r:refresh ?:help")
 
@@ -2612,9 +2612,10 @@ func (m Model) renderHelp() string {
 func (m Model) determinePanelState(panel Panel) PanelState {
 	// Check divider states first (more specific)
 	dividerForPanel := -1
-	if panel == PanelCurrentWork {
+	switch panel {
+	case PanelCurrentWork:
 		dividerForPanel = 0
-	} else if panel == PanelTaskList {
+	case PanelTaskList:
 		dividerForPanel = 1
 	}
 
@@ -2754,9 +2755,10 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 	// Override style for divider drag/hover feedback
 	// Divider 0 is bottom of PanelCurrentWork, Divider 1 is bottom of PanelTaskList
 	dividerForPanel := -1
-	if panel == PanelCurrentWork {
+	switch panel {
+	case PanelCurrentWork:
 		dividerForPanel = 0
-	} else if panel == PanelTaskList {
+	case PanelTaskList:
 		dividerForPanel = 1
 	}
 

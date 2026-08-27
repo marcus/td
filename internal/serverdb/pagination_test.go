@@ -90,7 +90,7 @@ func newPaginationTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	_, err = db.Exec(`CREATE TABLE items (
 		id INTEGER PRIMARY KEY,

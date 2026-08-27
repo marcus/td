@@ -18,7 +18,7 @@ func TestEndToEndMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	branch := getCurrentBranch()
 	t.Setenv("TD_SESSION_ID", "migtest-agent")
@@ -108,7 +108,7 @@ func TestMigrationEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("init db: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		t.Setenv("TD_SESSION_ID", "edge-empty")
 
@@ -132,7 +132,7 @@ func TestMigrationEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("init db: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		t.Setenv("TD_SESSION_ID", "edge-malformed")
 
@@ -175,7 +175,7 @@ func TestMigrationEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("init db: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		t.Setenv("TD_SESSION_ID", "edge-multi")
 
@@ -217,7 +217,7 @@ func TestConcurrentMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "concurrent-agent")
 

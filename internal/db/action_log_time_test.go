@@ -28,7 +28,7 @@ func TestActionLogWritesUseCanonicalTimestampFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -64,7 +64,7 @@ func TestActionLogWritesUseCanonicalTimestampFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query action_log timestamps: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	count := 0
 	for rows.Next() {

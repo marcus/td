@@ -118,7 +118,7 @@ func TestIntegration_CORSHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	AssertStatus(t, resp, 200)
 	AssertCORSHeaders(t, resp, "https://admin.example.com")
 
@@ -132,7 +132,7 @@ func TestIntegration_CORSHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	AssertStatus(t, resp2, 200)
 	AssertNoCORSHeaders(t, resp2)
 }

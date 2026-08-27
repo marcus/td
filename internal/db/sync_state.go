@@ -41,7 +41,7 @@ func (db *DB) GetRecentConflicts(limit int, since *time.Time) ([]SyncConflict, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var conflicts []SyncConflict
 	for rows.Next() {

@@ -13,7 +13,7 @@ func TestAddDependencyLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues
 	issue1 := &models.Issue{Title: "dep parent", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -82,7 +82,7 @@ func TestRemoveDependencyLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues and add dependency (unlogged)
 	issue1 := &models.Issue{Title: "rem dep parent", Type: models.TypeTask, Priority: models.PriorityP2}
@@ -148,7 +148,7 @@ func TestLinkFileLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "link file test", Type: models.TypeTask, Priority: models.PriorityP2}
 	if err := database.CreateIssue(issue); err != nil {
@@ -215,7 +215,7 @@ func TestUnlinkFileLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "unlink file test", Type: models.TypeTask, Priority: models.PriorityP2}
 	if err := database.CreateIssue(issue); err != nil {
@@ -278,7 +278,7 @@ func TestUnloggedRelationVariants_NoActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issues for dependency tests
 	issue1 := &models.Issue{Title: "unlog dep 1", Type: models.TypeTask, Priority: models.PriorityP2}

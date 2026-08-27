@@ -116,10 +116,10 @@ func TestSaveAndLoadCache(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Set HOME to temp directory so cachePath returns our test path
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	tests := []struct {
 		name  string
@@ -184,7 +184,7 @@ func TestSaveAndLoadCache(t *testing.T) {
 			}
 
 			// Clean up for next test
-			os.Remove(path)
+			_ = os.Remove(path)
 		})
 	}
 }
@@ -192,9 +192,9 @@ func TestSaveAndLoadCache(t *testing.T) {
 func TestLoadCacheErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	t.Run("load nonexistent cache file", func(t *testing.T) {
 		_, err := LoadCache()
@@ -223,11 +223,11 @@ func TestLoadCacheErrors(t *testing.T) {
 func TestSaveCacheWithMissingDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Set HOME to non-existent path to test directory creation
 	nonExistentHome := filepath.Join(tmpDir, "nonexistent", "nested", "path")
-	os.Setenv("HOME", nonExistentHome)
+	_ = os.Setenv("HOME", nonExistentHome)
 
 	entry := &CacheEntry{
 		LatestVersion:  "v1.0.0",
@@ -282,10 +282,10 @@ func TestCacheEntryJSON(t *testing.T) {
 // TestCachePathEmptyHome tests cachePath behavior with empty HOME directory
 func TestCachePathEmptyHome(t *testing.T) {
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Unset HOME to simulate environment without it
-	os.Setenv("HOME", "")
+	_ = os.Setenv("HOME", "")
 
 	path := cachePath()
 	if path != "" {
@@ -332,10 +332,10 @@ func TestIsCacheValidBoundaryConditions(t *testing.T) {
 func TestSaveCacheCreatesDirs(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
 	// Set HOME to temp directory to control cache location
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	entry := &CacheEntry{
 		LatestVersion:  "v1.0.0",
@@ -366,9 +366,9 @@ func TestSaveCacheCreatesDirs(t *testing.T) {
 func TestLoadCachePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	originalEntry := &CacheEntry{
 		LatestVersion:  "v2.0.0",
@@ -443,9 +443,9 @@ func TestCacheVersionChange(t *testing.T) {
 func TestCacheEntryEdgeCases(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", oldHome)
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
 
-	os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("HOME", tmpDir)
 
 	tests := []struct {
 		name  string
@@ -499,7 +499,7 @@ func TestCacheEntryEdgeCases(t *testing.T) {
 			}
 
 			// Clean up for next test
-			os.Remove(cachePath())
+			_ = os.Remove(cachePath())
 		})
 	}
 }

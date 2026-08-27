@@ -56,7 +56,7 @@ Supports stdin input for multi-line messages or piped input:
 			// database_error for every command at once.
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {

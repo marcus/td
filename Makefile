@@ -1,6 +1,7 @@
 .PHONY: help fmt test test-dev-install install install-local install-worktree \
 	use-homebrew install-status tag release check-clean check-version \
-	check-main check-pushed check-changelog check-ci install-hooks
+	check-main check-pushed check-changelog check-ci install-hooks \
+	lint lint-all lint-linux
 
 SHELL := /bin/sh
 
@@ -18,6 +19,7 @@ help:
 	@printf "%s\n" \
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
+		"  make lint                      # same as GitHub: full codebase, linux, GOWORK=off" \
 		"  make install-hooks             # install git pre-commit hook" \
 		"  make test                      # full tests with release-safe environment" \
 		"  make test-dev-install          # test install switching in a fake prefix" \
@@ -31,6 +33,25 @@ help:
 
 fmt:
 	gofmt -w .
+
+# Must match golangci-lint-action version in .github/workflows/go-ci.yml.
+GOLANGCI_LINT_VERSION ?= v2.13.1
+
+# Same analysis GitHub runs: full codebase, linux, no go.work.
+# --new-from-merge-base misses leftovers whose bodies were not edited
+# (unused functions after their last caller is deleted).
+lint lint-all lint-linux:
+	@got=$$(golangci-lint version 2>/dev/null | sed -n 's/^golangci-lint has version \([0-9.]*\).*/\1/p' | head -1); \
+	want=$(patsubst v%,%,$(GOLANGCI_LINT_VERSION)); \
+	if [ -z "$$got" ]; then \
+		echo "golangci-lint is not installed (need $(GOLANGCI_LINT_VERSION))"; \
+		exit 1; \
+	fi; \
+	if [ "$$got" != "$$want" ]; then \
+		echo "golangci-lint v$$got != GitHub $(GOLANGCI_LINT_VERSION) (.github/workflows/go-ci.yml)"; \
+		exit 1; \
+	fi
+	GOOS=linux GOWORK=off GOTOOLCHAIN=go$(shell GOWORK=off go list -m -f '{{.GoVersion}}') golangci-lint run ./...
 
 test:
 	env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI GOWORK=off go test ./...
@@ -75,10 +96,10 @@ check-pushed:
 check-changelog:
 	@grep -Fq "## [$(VERSION)] - " CHANGELOG.md || (echo "Error: CHANGELOG.md has no $(VERSION) release entry" && exit 1)
 
-# Go CI (currently tests only; lint isn't wired in yet, see go-ci.yml) must be
-# green on the commit being released. Fails closed if red, still running, or
-# hasn't started. Skips with a warning if gh can't resolve a GitHub repo here
-# (e.g. no origin, or origin isn't github.com/marcus/td).
+# Go CI (tests + full-codebase lint) must be green on the commit being released.
+# Fails closed if red, still running, or hasn't started. Skips with a warning
+# if gh can't resolve a GitHub repo here (e.g. no origin, or origin isn't
+# github.com/marcus/td).
 check-ci:
 	./scripts/check-ci.sh
 

@@ -13,7 +13,7 @@ func TestCreateBoardLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	board, err := database.CreateBoardLogged("test board", "status:open", "sess-1")
 	if err != nil {
@@ -75,7 +75,7 @@ func TestUpdateBoardLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board first (unlogged)
 	board, err := database.CreateBoard("original", "")
@@ -139,7 +139,7 @@ func TestDeleteBoardLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board first (unlogged)
 	board, err := database.CreateBoard("to delete", "")
@@ -191,7 +191,7 @@ func TestSetIssuePositionLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board and issue
 	board, err := database.CreateBoard("pos board", "")
@@ -257,7 +257,7 @@ func TestRemoveIssuePositionLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board, issue, and set position (unlogged)
 	board, err := database.CreateBoard("unpos board", "")
@@ -320,7 +320,7 @@ func TestDeleteBoardAtomicWithPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board and add an issue with a position
 	board, err := database.CreateBoard("atomic test", "")
@@ -375,7 +375,7 @@ func TestUnloggedBoardVariants_NoActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// CreateBoard (unlogged)
 	board, err := database.CreateBoard("unlogged board", "")

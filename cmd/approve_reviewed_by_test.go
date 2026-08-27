@@ -14,11 +14,11 @@ import (
 // approveWithAttribution runs approve as the implementer session with the given
 // flags and returns the output plus the resulting active approval row (nil if
 // none was written).
-func approveWithAttribution(t *testing.T, database *db.DB, issueID string, flags map[string]string) (string, error, *models.IssueReview) {
+func approveWithAttribution(t *testing.T, database *db.DB, issueID string, flags map[string]string) (string, *models.IssueReview, error) {
 	t.Helper()
 	out, err := runApproveCmd(t, []string{issueID}, flags)
 	active, _ := database.GetActiveApprovalReview(issueID)
-	return out, err, active
+	return out, active, err
 }
 
 // TestApproveReviewedBy_ImplementerApprovesWithAttribution is the headline case
@@ -39,13 +39,13 @@ func TestApproveReviewedBy_ImplementerApprovesWithAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "code-reviewer sub-agent",
 	})
 	if err != nil {
@@ -92,13 +92,13 @@ func TestApproveReviewedBy_NoReasonRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "reviewer-2",
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ func TestApproveReviewedBy_NoReasonRequired(t *testing.T) {
 	// The contrast: an unattributed self-review still demands a reason,
 	// because nothing else vouches for it.
 	issue2 := newInReviewIssueWithImpl(t, database, implID)
-	out, _, active2 := approveWithAttribution(t, database, issue2.ID, map[string]string{
+	out, active2, _ := approveWithAttribution(t, database, issue2.ID, map[string]string{
 		"self-review": "true",
 	})
 	if !strings.Contains(out, "requires --reason") {
@@ -139,13 +139,13 @@ func TestApproveReviewedBy_MutuallyExclusiveWithSelfReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, runErr, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, runErr := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "sub-agent",
 		"self-review": "true",
 		"reason":      "both flags",
@@ -179,7 +179,7 @@ func TestApproveReviewedBy_RejectsBlankAndOverlong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -197,7 +197,7 @@ func TestApproveReviewedBy_RejectsBlankAndOverlong(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			issue := newInReviewIssueWithImpl(t, database, implID)
-			out, runErr, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+			out, active, runErr := approveWithAttribution(t, database, issue.ID, map[string]string{
 				"reviewed-by": tc.value,
 			})
 			if runErr == nil {
@@ -215,7 +215,7 @@ func TestApproveReviewedBy_RejectsBlankAndOverlong(t *testing.T) {
 	// Exactly at the cap is accepted — the boundary belongs to the valid side.
 	issue := newInReviewIssueWithImpl(t, database, implID)
 	atCap := strings.Repeat("x", reviewpolicy.MaxReviewedByLen)
-	if _, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	if _, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": atCap,
 	}); err != nil {
 		t.Errorf("attribution at exactly the cap should be accepted: %v", err)
@@ -238,13 +238,13 @@ func TestApproveReviewedBy_TrimsSurroundingWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	_, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	_, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "  spaced reviewer  ",
 	})
 	if err != nil {
@@ -271,13 +271,13 @@ func TestApproveReviewedBy_DoesNotGrantInDelegated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, _, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, _ := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "sub-agent that definitely reviewed it",
 	})
 	if active != nil {
@@ -306,14 +306,14 @@ func TestApproveReviewedBy_IndependentSessionMayCredit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
 	t.Setenv("TD_SESSION_ID", "reviewer-agent")
-	out, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "a human on the team",
 	})
 	if err != nil {
@@ -344,13 +344,13 @@ func TestApproveReviewedBy_RecordOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"record-only": "true",
 		"reviewed-by": "code-reviewer sub-agent",
 		"reason":      "reviewed the diff",
@@ -386,13 +386,13 @@ func TestApproveReviewedBy_AttributedApprovalIsNotLoggedAsSecurity(t *testing.T)
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 
 	attributed := newInReviewIssueWithImpl(t, database, implID)
-	if _, err, _ := approveWithAttribution(t, database, attributed.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, attributed.ID, map[string]string{
 		"reviewed-by": "code-reviewer sub-agent",
 	}); err != nil {
 		t.Fatalf("attributed approve: %v", err)
@@ -417,7 +417,7 @@ func TestApproveReviewedBy_AttributedApprovalIsNotLoggedAsSecurity(t *testing.T)
 
 	// The contrast: a genuine self-review still gets the security treatment.
 	selfReviewed := newInReviewIssueWithImpl(t, database, implID)
-	if _, err, _ := approveWithAttribution(t, database, selfReviewed.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, selfReviewed.ID, map[string]string{
 		"self-review": "true",
 		"reason":      "reviewed my own diff",
 	}); err != nil {
@@ -451,13 +451,13 @@ func TestApproveReviewedBy_TeachingMessageLeadsWithAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, _, active := approveWithAttribution(t, database, issue.ID, nil)
+	out, active, _ := approveWithAttribution(t, database, issue.ID, nil)
 	if active != nil {
 		t.Fatal("implementer with no attestation must not approve")
 	}
@@ -484,13 +484,13 @@ func TestApproveReviewedBy_JSONCarriesAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	out, err, _ := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, _, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "code-reviewer sub-agent",
 		"json":        "true",
 	})
@@ -519,7 +519,7 @@ func TestApproveReviewedBy_MinorIssuesAcceptAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -529,7 +529,7 @@ func TestApproveReviewedBy_MinorIssuesAcceptAttribution(t *testing.T) {
 		t.Fatalf("UpdateIssue: %v", err)
 	}
 
-	_, err, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	_, active, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "quick check by reviewer-1",
 	})
 	if err != nil {
@@ -579,13 +579,13 @@ func TestApproveReviewedBy_WritesSecurityEventsEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	if _, err, _ := approveWithAttribution(t, database, issue.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "code-reviewer sub-agent",
 	}); err != nil {
 		t.Fatalf("attributed approve: %v", err)
@@ -625,14 +625,14 @@ func TestApproveReviewedBy_IndependentApprovalWritesNoSecurityEvent(t *testing.T
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
 	t.Setenv("TD_SESSION_ID", "reviewer-agent")
-	if _, err, _ := approveWithAttribution(t, database, issue.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": "a human on the team",
 	}); err != nil {
 		t.Fatalf("independent approve: %v", err)
@@ -658,13 +658,13 @@ func TestApproveReviewedBy_RecordOnlyLogNamesReviewer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
 
-	if _, err, _ := approveWithAttribution(t, database, issue.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"record-only": "true",
 		"reviewed-by": "code-reviewer sub-agent",
 		"reason":      "reviewed the diff",
@@ -703,7 +703,7 @@ func TestApproveReviewedBy_ModeCRejectsAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -764,7 +764,7 @@ func TestApproveReviewedBy_RejectsControlCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -775,7 +775,7 @@ func TestApproveReviewedBy_RejectsControlCharacters(t *testing.T) {
 		"reviewer\x00null",
 	} {
 		issue := newInReviewIssueWithImpl(t, database, implID)
-		out, runErr, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+		out, active, runErr := approveWithAttribution(t, database, issue.ID, map[string]string{
 			"reviewed-by": bad,
 		})
 		if runErr == nil {
@@ -802,7 +802,7 @@ func TestApproveReviewedBy_LengthCapCountsRunes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -810,7 +810,7 @@ func TestApproveReviewedBy_LengthCapCountsRunes(t *testing.T) {
 
 	// 100 three-byte runes: 300 bytes, well under the 120-character cap.
 	name := strings.Repeat("レ", 100)
-	out, runErr, active := approveWithAttribution(t, database, issue.ID, map[string]string{
+	out, active, runErr := approveWithAttribution(t, database, issue.ID, map[string]string{
 		"reviewed-by": name,
 	})
 	if runErr != nil {
@@ -840,14 +840,14 @@ func TestApproveReviewedBy_RecordOnlyIsAudited(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
 
 	// Involved recorder, attributed: audited.
 	attributed := newInReviewIssueWithImpl(t, database, implID)
-	if _, err, _ := approveWithAttribution(t, database, attributed.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, attributed.ID, map[string]string{
 		"record-only": "true",
 		"reviewed-by": "code-reviewer sub-agent",
 		"reason":      "reviewed the diff",
@@ -861,7 +861,7 @@ func TestApproveReviewedBy_RecordOnlyIsAudited(t *testing.T) {
 
 	// Involved recorder, self-review: also audited.
 	selfReviewed := newInReviewIssueWithImpl(t, database, implID)
-	if _, err, _ := approveWithAttribution(t, database, selfReviewed.ID, map[string]string{
+	if _, _, err := approveWithAttribution(t, database, selfReviewed.ID, map[string]string{
 		"record-only": "true",
 		"self-review": "true",
 		"reason":      "reviewed my own diff",
@@ -888,7 +888,7 @@ func TestApproveReviewedBy_IndependentRecordOnlyNotAudited(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)

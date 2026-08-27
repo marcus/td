@@ -294,7 +294,7 @@ func TestEmbeddedOptionsThemePrecedenceAndRendererCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEmbeddedWithOptions: %v", err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	if m.PanelRenderer == nil || m.ModalRenderer == nil {
 		t.Fatal("theme option displaced an existing renderer adapter")
@@ -595,10 +595,9 @@ func TestPhase3LiveRethemePreservesOpenDeclarativeModalState(t *testing.T) {
 	m.CloseConfirmModal.SetFocus("confirm")
 	m.CloseConfirmModal.Scroll(3)
 	beforeFocus := m.CloseConfirmModal.FocusedID()
-	beforeScroll := m.CloseConfirmModal.ScrollOffset()
 	before := m.CloseConfirmModal.Render(m.Width, m.Height, nil)
 	m.CloseConfirmModal.Scroll(3)
-	beforeScroll = m.CloseConfirmModal.ScrollOffset()
+	beforeScroll := m.CloseConfirmModal.ScrollOffset()
 
 	if err := m.SetTheme(phase2TestTheme()); err != nil {
 		t.Fatal(err)

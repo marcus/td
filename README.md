@@ -235,8 +235,17 @@ make test
 # Format code (runs gofmt)
 make fmt
 
-# No linter configured yet — clean gofmt is current quality bar
+# Same analysis GitHub runs: full codebase, linux, GOWORK=off, golangci-lint v2.13.1
+make lint
 ```
+
+### Go Lint Baseline
+
+- Formatting: staged Go files must be `gofmt`-clean (pre-commit hook)
+- Correctness lint: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`
+- Enforcement: CI and `make lint` run the same full-codebase linux analysis
+  (`golangci-lint` v2.13.1, `GOWORK=off`). `--new-from-merge-base` is not the
+  gate; it misses unused leftovers whose function bodies were not edited.
 
 ## Release
 

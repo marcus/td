@@ -37,7 +37,7 @@ func RecordSkippedEventsTx(tx *sql.Tx, events []SkippedSyncEvent) error {
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	for _, e := range events {
@@ -60,7 +60,7 @@ func (db *DB) CountSkippedEvents() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := map[string]int{}
 	for rows.Next() {
@@ -88,7 +88,7 @@ func (db *DB) GetSkippedEvents(limit int) ([]SkippedSyncEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []SkippedSyncEvent
 	for rows.Next() {

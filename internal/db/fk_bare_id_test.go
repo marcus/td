@@ -21,7 +21,7 @@ func TestBareIssueID_FKWritesSucceed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Confirm FK enforcement is on, otherwise this test proves nothing.
 	var fk int

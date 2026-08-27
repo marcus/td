@@ -90,7 +90,7 @@ func (p *ProjectDBPool) Delete(projectID string) error {
 	defer p.mu.Unlock()
 
 	if db, ok := p.dbs[projectID]; ok {
-		db.Close()
+		_ = db.Close()
 		delete(p.dbs, projectID)
 	}
 
@@ -108,7 +108,7 @@ func (p *ProjectDBPool) CloseAll() {
 
 	for id, db := range p.dbs {
 		_, _ = db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
-		db.Close()
+		_ = db.Close()
 		delete(p.dbs, id)
 	}
 }
@@ -121,7 +121,7 @@ func openProjectDB(dbPath string) (*sql.DB, error) {
 	}
 
 	if err := tdsync.InitServerEventLog(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("init event log: %w", err)
 	}
 

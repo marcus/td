@@ -23,15 +23,19 @@ func applyAndGetLabels(t *testing.T, db *sql.DB, id string, rawJSON string) sql.
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 	var labels sql.NullString
-	db.QueryRow("SELECT labels FROM issues WHERE id=?", id).Scan(&labels)
+	if err := db.QueryRow("SELECT labels FROM issues WHERE id=?", id).Scan(&labels); err != nil {
+		t.Fatal(err)
+	}
 	return labels
 }
 
 func TestReproNullLabels_AbsentKey(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	l := applyAndGetLabels(t, db, "td-a1", `{"id":"td-a1","title":"x"}`)
 	t.Logf("ABSENT: valid=%v string=%q", l.Valid, l.String)
 	if !l.Valid {
@@ -40,7 +44,7 @@ func TestReproNullLabels_AbsentKey(t *testing.T) {
 }
 func TestReproNullLabels_ExplicitNull(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	l := applyAndGetLabels(t, db, "td-a2", `{"id":"td-a2","title":"x","labels":null}`)
 	t.Logf("EXPLICIT null: valid=%v string=%q", l.Valid, l.String)
 	if !l.Valid {
@@ -49,7 +53,7 @@ func TestReproNullLabels_ExplicitNull(t *testing.T) {
 }
 func TestReproNullLabels_EmptyArray(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	l := applyAndGetLabels(t, db, "td-a3", `{"id":"td-a3","title":"x","labels":[]}`)
 	t.Logf("EMPTY arr: valid=%v string=%q", l.Valid, l.String)
 	if !l.Valid {
@@ -58,7 +62,7 @@ func TestReproNullLabels_EmptyArray(t *testing.T) {
 }
 func TestReproNullLabels_EmptyString(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	l := applyAndGetLabels(t, db, "td-a4", `{"id":"td-a4","title":"x","labels":""}`)
 	t.Logf("EMPTY string: valid=%v string=%q", l.Valid, l.String)
 	if !l.Valid {
@@ -73,7 +77,7 @@ func TestReproNullLabels_EmptyString(t *testing.T) {
 // that scan into plain string don't crash.
 func TestReproNullLabels_AllTextDefaultsNull(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, _ := db.Begin()
 	payload := `{
     "id":"td-a5","title":"x",
@@ -85,7 +89,9 @@ func TestReproNullLabels_AllTextDefaultsNull(t *testing.T) {
 	if _, err := ApplyEvent(tx, event, func(s string) bool { return s == "issues" }); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	cols := []string{"description", "labels", "parent_id", "acceptance",
 		"implementer_session", "reviewer_session", "creator_session",
@@ -110,7 +116,7 @@ func TestReproNullLabels_AllTextDefaultsNull(t *testing.T) {
 // write NULL and crash readers the same way a create would.
 func TestReproNullLabels_PartialUpdateNull(t *testing.T) {
 	db := setupIssuesTable(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Seed a row with non-empty values.
 	tx1, _ := db.Begin()
@@ -118,7 +124,9 @@ func TestReproNullLabels_PartialUpdateNull(t *testing.T) {
 	if _, err := ApplyEvent(tx1, Event{EntityType: "issues", EntityID: "td-a6", ActionType: "create", Payload: json.RawMessage(seed)}, func(s string) bool { return s == "issues" }); err != nil {
 		t.Fatalf("seed apply: %v", err)
 	}
-	tx1.Commit()
+	if err := tx1.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Partial update that explicitly nulls labels + description.
 	tx2, _ := db.Begin()
@@ -129,7 +137,9 @@ func TestReproNullLabels_PartialUpdateNull(t *testing.T) {
 		t.Fatalf("partial update: %v", err)
 	}
 	_ = res
-	tx2.Commit()
+	if err := tx2.Commit(); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, col := range []string{"labels", "description"} {
 		var v sql.NullString

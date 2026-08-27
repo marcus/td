@@ -41,7 +41,7 @@ Examples:
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Show initial entries
 		var entries []db.SyncHistoryEntry

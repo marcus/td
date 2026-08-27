@@ -36,19 +36,19 @@ func Open(dbPath string) (*ServerDB, error) {
 
 	// Run schema
 	if _, err := conn.Exec(serverSchema); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
 
 	db := &ServerDB{conn: conn, path: dbPath}
 
 	if _, err := db.RunMigrations(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
 	if err := db.BackfillProjectSlugs(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("backfill project slugs: %w", err)
 	}
 

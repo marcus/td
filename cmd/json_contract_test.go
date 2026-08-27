@@ -39,7 +39,7 @@ func TestJSONContractParseableAcrossCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 
@@ -287,7 +287,7 @@ func TestJSONContractErrorEnvelopeShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 
@@ -336,7 +336,7 @@ func TestJSONContractMutationsErrorOnMissingID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 

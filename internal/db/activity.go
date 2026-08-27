@@ -75,7 +75,7 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []models.Log
 	for rows.Next() {
@@ -107,7 +107,7 @@ func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []models.Log
 	for rows.Next() {
@@ -140,7 +140,7 @@ func (db *DB) GetRecentLogsAll(limit int) ([]models.Log, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []models.Log
 	for rows.Next() {
@@ -185,7 +185,7 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []string
 	for rows.Next() {
@@ -312,7 +312,7 @@ func (db *DB) GetHandoffs(issueID string) ([]models.Handoff, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var h models.Handoff
@@ -359,7 +359,7 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var h models.Handoff
@@ -443,7 +443,7 @@ func (db *DB) GetComments(issueID string) ([]models.Comment, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var comments []models.Comment
 	for rows.Next() {
@@ -474,7 +474,7 @@ func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var comments []models.Comment
 	for rows.Next() {
@@ -630,7 +630,7 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var actions []models.ActionLog
 	for rows.Next() {
@@ -670,7 +670,7 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var actions []models.ActionLog
 	for rows.Next() {
@@ -736,7 +736,7 @@ func (db *DB) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]bool)
 	for rows.Next() {

@@ -136,7 +136,7 @@ func (db *ServerDB) ListProjectInvitations(projectID string) ([]*Invitation, err
 	if err != nil {
 		return nil, fmt.Errorf("list project invitations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var invitations []*Invitation
 	for rows.Next() {
@@ -164,7 +164,7 @@ func (db *ServerDB) ListPendingInvitationsForEmail(email string) ([]*Invitation,
 	if err != nil {
 		return nil, fmt.Errorf("list pending invitations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var invitations []*Invitation
 	for rows.Next() {

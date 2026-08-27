@@ -21,7 +21,7 @@ func TestReopenSupersedesActiveApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "closed with leftover approval",

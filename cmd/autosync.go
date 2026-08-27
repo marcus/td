@@ -19,13 +19,6 @@ import (
 
 const (
 	autoSyncHTTPTimeout = 5 * time.Second
-	// autoSyncPushBudget bounds the total wall-clock spent retrying a push so a
-	// sustained outage does not add unbounded tail latency to every mutating
-	// command. Transient blips recover within this window; anything longer is
-	// left for the next command's startup sync (or the monitor tick) to retry.
-	autoSyncPushBudget = 6 * time.Second
-	// autoSyncPushBackoff is the initial retry delay; it doubles each attempt.
-	autoSyncPushBackoff = 250 * time.Millisecond
 	// strandedWarnInterval throttles the "configured but autosync off" warning so
 	// it is noticeable without spamming on every mutating command. The check is a
 	// single COUNT query, but the message would be noise if printed every time.
@@ -177,7 +170,7 @@ func strandedSyncShouldWarn(baseDir string) (bool, int64) {
 		slog.Debug("stranded-warn: open db", "err", err)
 		return false, 0
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	state, err := database.GetSyncState()
 	if err != nil {
@@ -244,15 +237,6 @@ func autoSyncOnce() int64 {
 	return result.Pending
 }
 
-func countPendingForAutoSync(database *db.DB) int64 {
-	pending, err := database.CountPendingEvents()
-	if err != nil {
-		slog.Debug("autosync: count pending", "err", err)
-		return 0
-	}
-	return pending
-}
-
 // autoSyncAfterMutation runs a debounced push+pull after a mutating command.
 func autoSyncAfterMutation() {
 	debounce := syncconfig.GetAutoSyncDebounce()
@@ -308,11 +292,6 @@ func autoSyncOnStartup(cmdName string) {
 	}
 
 	autoSyncOnce()
-}
-
-// autoSyncPull pulls remote events and applies them silently.
-func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
-	return tdsync.Pull(database, client, state, deviceID, database.BaseDir())
 }
 
 // autoSyncApplyPullBatch applies a batch of pulled events inside a single transaction.

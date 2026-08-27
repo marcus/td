@@ -434,10 +434,10 @@ func (s *Server) handleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
 			return "", fmt.Errorf("create temp file: %w", err)
 		}
 		tmpPath := tmpFile.Name()
-		tmpFile.Close()
+		_ = tmpFile.Close()
 
 		if err := buildSnapshot(eventsDB, tmpPath, lastSeq); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return "", fmt.Errorf("build snapshot: %w", err)
 		}
 
@@ -446,7 +446,7 @@ func (s *Server) handleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
 		servePath := tmpPath
 		defer func() {
 			if servePath != tmpPath {
-				os.Remove(tmpPath) // no-op if already renamed away
+				_ = os.Remove(tmpPath) // no-op if already renamed away
 			}
 		}()
 		if err := os.MkdirAll(cacheDir, 0o755); err != nil {
@@ -491,7 +491,7 @@ func serveSnapshotFile(w http.ResponseWriter, r *http.Request, path string, seq 
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to read snapshot")
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -540,7 +540,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	tmpDst := dst + ".tmp"
 	out, err := os.Create(tmpDst)
@@ -549,12 +549,12 @@ func copyFile(src, dst string) error {
 	}
 
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmpDst)
+		_ = out.Close()
+		_ = os.Remove(tmpDst)
 		return err
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(tmpDst)
+		_ = os.Remove(tmpDst)
 		return err
 	}
 	return os.Rename(tmpDst, dst)
@@ -567,14 +567,14 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Initialize with full schema + all migrations
 	tdb, err := tddb.Initialize(tmpDir)
 	if err != nil {
 		return fmt.Errorf("init snapshot schema: %w", err)
 	}
-	tdb.Close()
+	_ = tdb.Close()
 
 	// Re-open the initialized DB for event replay. FK enforcement is kept
 	// OFF here because replay walks the event log in server_seq order and
@@ -588,7 +588,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	if err != nil {
 		return fmt.Errorf("open snapshot db: %w", err)
 	}
-	defer snapDB.Close()
+	defer func() { _ = snapDB.Close() }()
 
 	validator := func(t string) bool { return isValidEntityType(t) }
 	afterSeq := int64(0)
@@ -649,20 +649,20 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	if _, err := snapDB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 		slog.Warn("snapshot WAL checkpoint failed", "err", err)
 	}
-	snapDB.Close() // explicit close before copy; defer will no-op
+	_ = snapDB.Close() // explicit close before copy; defer will no-op
 
 	// Copy final DB to snapshot path
 	src, err := os.Open(tmpDBPath)
 	if err != nil {
 		return fmt.Errorf("open temp db for copy: %w", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	dst, err := os.Create(snapshotPath)
 	if err != nil {
 		return fmt.Errorf("create snapshot file: %w", err)
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	if _, err := io.Copy(dst, src); err != nil {
 		return fmt.Errorf("copy snapshot: %w", err)

@@ -24,7 +24,7 @@ func setupSyncStateDir(t *testing.T, projectID string, disabled bool) string {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if projectID != "" {
 		if err := database.SetSyncState(projectID); err != nil {

@@ -22,7 +22,7 @@ func (db *DB) GetStats() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status string
@@ -38,7 +38,7 @@ func (db *DB) GetStats() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var typ string
@@ -94,7 +94,7 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var category, value string
 		var count int

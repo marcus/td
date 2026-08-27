@@ -18,7 +18,7 @@ func TestGetDescendants_SingleLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create parent
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
@@ -64,7 +64,7 @@ func TestGetDescendants_MultiLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create 3-level hierarchy: grandparent -> parent -> child
 	grandparent := &models.Issue{Title: "Grandparent", Type: models.TypeEpic}
@@ -110,7 +110,7 @@ func TestGetDescendants_DeepHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create 5-level deep hierarchy
 	root := &models.Issue{Title: "Root", Type: models.TypeEpic}
@@ -144,7 +144,7 @@ func TestGetDescendants_CircularReferenceHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create three issues to form a cycle
 	issue1 := &models.Issue{Title: "Issue 1"}
@@ -212,7 +212,7 @@ func TestGetDescendants_NoChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Leaf Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -235,7 +235,7 @@ func TestGetDescendants_ExcludesDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -279,7 +279,7 @@ func TestHasChildren_WithChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -307,7 +307,7 @@ func TestHasChildren_WithoutChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Leaf Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -330,7 +330,7 @@ func TestHasChildren_DeletedChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -363,7 +363,7 @@ func TestHasChildren_NonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	hasChildren, err := db.HasChildren("nonexistent-id")
 	if err != nil {
@@ -385,7 +385,7 @@ func TestGetDirectChildren_ReturnsCorrectChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -455,7 +455,7 @@ func TestGetDirectChildren_ExcludesDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -495,7 +495,7 @@ func TestGetDirectChildren_ExcludesGrandchildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	grandparent := &models.Issue{Title: "Grandparent", Type: models.TypeEpic}
 	if err := db.CreateIssue(grandparent); err != nil {
@@ -532,7 +532,7 @@ func TestGetDirectChildren_NoChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Leaf Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -555,7 +555,7 @@ func TestGetDirectChildren_PreservesLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -595,7 +595,7 @@ func TestGetDescendantIssues_AllStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -630,7 +630,7 @@ func TestGetDescendantIssues_FilteredByStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -669,7 +669,7 @@ func TestGetDescendantIssues_MultipleStatusFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
 	if err := db.CreateIssue(parent); err != nil {
@@ -709,7 +709,7 @@ func TestCascadeUpParentStatus_AllChildrenInReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionID := "ses_test"
 
@@ -757,7 +757,7 @@ func TestCascadeUpParentStatus_NotAllChildrenReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionID := "ses_test"
 
@@ -796,7 +796,7 @@ func TestCascadeUpParentStatus_NonEpicParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionID := "ses_test"
 
@@ -828,7 +828,7 @@ func TestCascadeUpParentStatus_RecursiveCascade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionID := "ses_test"
 
@@ -884,7 +884,7 @@ func TestAddDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -909,7 +909,7 @@ func TestAddDependency_ReplaceExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -932,7 +932,7 @@ func TestRemoveDependency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -957,7 +957,7 @@ func TestGetBlockedBy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker"}
 	blocked1 := &models.Issue{Title: "Blocked 1"}
@@ -993,7 +993,7 @@ func TestGetAllDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -1028,7 +1028,7 @@ func TestGetIssuesWithOpenDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	openIssue := &models.Issue{Title: "Open Issue", Status: models.StatusOpen}
 	closedIssue := &models.Issue{Title: "Closed Issue", Status: models.StatusClosed}
@@ -1065,7 +1065,7 @@ func TestGetIssueStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
@@ -1103,7 +1103,7 @@ func TestGetIssueStatuses_EmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	statuses, err := db.GetIssueStatuses([]string{})
 	if err != nil {
@@ -1121,7 +1121,7 @@ func TestGetIssueStatuses_DeduplicatesIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Issue", Status: models.StatusOpen}
 	_ = db.CreateIssue(issue)
@@ -1143,7 +1143,7 @@ func TestGetBlockersForIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	a := &models.Issue{Title: "A"}
 	b := &models.Issue{Title: "B"}
@@ -1188,7 +1188,7 @@ func TestGetBlockersForIssues_EmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	got, err := db.GetBlockersForIssues(nil)
 	if err != nil {
@@ -1205,7 +1205,7 @@ func TestGetIssueTitlesAndStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	open := &models.Issue{Title: "Open One", Status: models.StatusOpen}
 	closed := &models.Issue{Title: "Closed One", Status: models.StatusClosed}
@@ -1236,7 +1236,7 @@ func TestLinkFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Issue"}
 	_ = db.CreateIssue(issue)
@@ -1267,7 +1267,7 @@ func TestUnlinkFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Issue"}
 	_ = db.CreateIssue(issue)
@@ -1290,7 +1290,7 @@ func TestGetLinkedFiles_SortedByRoleAndPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Issue"}
 	_ = db.CreateIssue(issue)
@@ -1322,7 +1322,7 @@ func TestGetIssueSessionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessionID := "ses_test"
 
@@ -1370,7 +1370,7 @@ func TestOrphanIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue with non-existent parent
 	orphan := &models.Issue{Title: "Orphan", ParentID: "nonexistent-parent-id"}
@@ -1417,7 +1417,7 @@ func TestParentChildIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create parent, then children
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
@@ -1467,7 +1467,7 @@ func TestMultipleDependencyTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -1516,7 +1516,7 @@ func TestCascadeUnblockDependents_SingleDep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
@@ -1551,7 +1551,7 @@ func TestCascadeUnblockDependents_ClearsTheImplementerClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
@@ -1594,7 +1594,7 @@ func TestCascadeUnblockDependents_AllDepsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
 	a2 := &models.Issue{Title: "A2", Status: models.StatusClosed}
@@ -1622,7 +1622,7 @@ func TestCascadeUnblockDependents_PartialResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	a1 := &models.Issue{Title: "A1", Status: models.StatusClosed}
 	a2 := &models.Issue{Title: "A2", Status: models.StatusOpen} // not closed
@@ -1650,7 +1650,7 @@ func TestCascadeUnblockDependents_NonBlockedSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusOpen} // not blocked
@@ -1675,7 +1675,7 @@ func TestCascadeUnblockDependents_InProgressSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusInProgress}
@@ -1700,7 +1700,7 @@ func TestCascadeUnblockDependents_NoDependents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Standalone", Status: models.StatusClosed}
 	_ = db.CreateIssue(issue)
@@ -1721,7 +1721,7 @@ func TestCascadeUnblockDependents_MultipleBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	b1 := &models.Issue{Title: "B1", Status: models.StatusBlocked}
@@ -1755,7 +1755,7 @@ func TestCascadeUnblockDependents_ChainNoTransitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	a := &models.Issue{Title: "A", Status: models.StatusClosed}
 	b := &models.Issue{Title: "B", Status: models.StatusBlocked}
@@ -1789,7 +1789,7 @@ func TestCascadeUnblockDependents_LogsCreated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
@@ -1837,7 +1837,7 @@ func TestCascadeUnblockDependents_UndoData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusClosed}
 	dependent := &models.Issue{Title: "Dependent", Status: models.StatusBlocked}
@@ -1875,7 +1875,7 @@ func TestGetIssueDependencyRelations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{ID: "td-reltest", Title: "Rel test", Status: models.StatusOpen}
 	if err := database.UpsertIssueRaw(issue); err != nil {

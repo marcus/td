@@ -36,7 +36,7 @@ func ExpandFlagValues(values []string, stdinUsed bool) ([]string, bool) {
 				continue
 			}
 			lines := ReadLinesFromReader(file)
-			file.Close()
+			_ = file.Close()
 			result = append(result, lines...)
 		} else {
 			result = append(result, v)

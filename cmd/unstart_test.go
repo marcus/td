@@ -40,5 +40,7 @@ func TestUnstartReasonFlag(t *testing.T) {
 	}
 
 	// Reset
-	unstartCmd.Flags().Set("reason", "")
+	if err := unstartCmd.Flags().Set("reason", ""); err != nil {
+		t.Fatal(err)
+	}
 }

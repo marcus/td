@@ -521,7 +521,7 @@ func TestResolveListIssueFilterID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "list-dot-focus")
 	_, scope, err := getCurrentStateSession(database, dir)
@@ -577,7 +577,7 @@ func TestResolveListIssueFilterIDDotRequiresFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	_, err = resolveListIssueFilterID(database, dir, ".", "epic")
 	if err == nil {
@@ -595,7 +595,7 @@ func TestResolveListIssueFilterIDDotUsesSessionLogHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
@@ -645,7 +645,7 @@ func TestResolveListIssueFilterIDDotUsesCurrentSessionEpic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
@@ -694,7 +694,7 @@ func TestResolveListIssueFilterIDDotUsesCurrentSessionReviewPhaseEpic(t *testing
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
@@ -742,7 +742,7 @@ func TestResolveListIssueFilterIDDotUsesActiveWorkSessionEpic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {

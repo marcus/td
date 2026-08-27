@@ -25,7 +25,7 @@ func TestCloseJSONOutputEmitsClosedIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := session.GetOrCreate(database); err != nil {
 		t.Fatalf("GetOrCreate failed: %v", err)
@@ -113,7 +113,7 @@ func TestCloseHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := session.GetOrCreate(database); err != nil {
 		t.Fatalf("GetOrCreate failed: %v", err)
@@ -158,7 +158,7 @@ func TestCloseJSONErrorOnNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := session.GetOrCreate(database); err != nil {
 		t.Fatalf("GetOrCreate failed: %v", err)
@@ -203,7 +203,7 @@ func TestRejectJSONShapeUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {

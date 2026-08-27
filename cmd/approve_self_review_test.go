@@ -44,7 +44,7 @@ func TestSelfReviewRejectedInNonTrustedModes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			t.Setenv("TD_SESSION_ID", "impl-agent")
 			implID := currentSessionID(t, database)
@@ -78,7 +78,7 @@ func TestSelfReviewRequiresReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -118,7 +118,7 @@ func TestSelfReviewImplementerApprovesAndCloses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -181,7 +181,7 @@ func TestSelfReviewApprove_LaterIssueEventFailureLeavesLifecycleRetryable(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	t.Setenv("TD_SESSION_ID", "impl-atomic-reviewer")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
@@ -228,7 +228,7 @@ func TestRecordOnly_LaterIssueEventFailureLeavesLifecycleRetryable(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	t.Setenv("TD_SESSION_ID", "impl-atomic-recorder")
 	implID := currentSessionID(t, database)
 	issue := newInReviewIssueWithImpl(t, database, implID)
@@ -277,7 +277,7 @@ func TestSelfReviewRejectedWithoutFlagInTrustedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)
@@ -311,7 +311,7 @@ func TestTrustedNonImplementerApprovesWithoutFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "impl-agent")
 	implID := currentSessionID(t, database)

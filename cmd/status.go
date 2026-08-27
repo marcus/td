@@ -30,7 +30,7 @@ Review buckets:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {

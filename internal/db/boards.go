@@ -143,7 +143,7 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var boards []models.Board
 	for rows.Next() {
@@ -440,7 +440,7 @@ func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var positions []BoardIssuePosition
 	for rows.Next() {
@@ -484,12 +484,12 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 		for rows.Next() {
 			var e entry
 			if err := rows.Scan(&e.issueID, &e.oldPosition); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return err
 			}
 			entries = append(entries, e)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		for i, e := range entries {
 			newPos := (i + 1) * PositionGap
@@ -553,7 +553,7 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var positions []BoardIssuePosition
 	for rows.Next() {

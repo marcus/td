@@ -26,7 +26,7 @@ var listCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Handle --filter flag (TDQ query expression)
 		filterQuery, _ := cmd.Flags().GetString("filter")
@@ -390,7 +390,7 @@ func runListShortcut(opts db.ListIssuesOptions) (*listShortcutResult, error) {
 		output.Error("%v", err)
 		return nil, err
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issues, err := database.ListIssues(opts)
 	if err != nil {
@@ -427,7 +427,7 @@ Examples:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -556,7 +556,7 @@ var inReviewCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {

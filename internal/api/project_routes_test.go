@@ -96,7 +96,7 @@ func (h *projectRoutesHarness) do(t *testing.T, method, path, token string, body
 // data field. Fails the test on non-OK envelopes.
 func readEnvelope(t *testing.T, resp *http.Response, out any) {
 	t.Helper()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var env serve.Envelope
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -144,7 +144,7 @@ func TestCreateIssue_RoundTrip(t *testing.T) {
 		h.ownerTok, body, map[string]string{HeaderTdWatchSession: "ses1"})
 	if resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("POST /issues: status=%d body=%s", resp.StatusCode, respBody)
 	}
 	var created struct {
@@ -164,7 +164,7 @@ func TestCreateIssue_RoundTrip(t *testing.T) {
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses1"})
 	if getResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(getResp.Body)
-		getResp.Body.Close()
+		_ = getResp.Body.Close()
 		t.Fatalf("GET /issues/%s: status=%d body=%s", created.Issue.ID, getResp.StatusCode, respBody)
 	}
 	var got struct {
@@ -201,10 +201,10 @@ func TestUpdateIssue(t *testing.T) {
 		h.ownerTok, patchBody, map[string]string{HeaderTdWatchSession: "ses1"})
 	if patchResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(patchResp.Body)
-		patchResp.Body.Close()
+		_ = patchResp.Body.Close()
 		t.Fatalf("PATCH /issues: status=%d body=%s", patchResp.StatusCode, respBody)
 	}
-	patchResp.Body.Close()
+	_ = patchResp.Body.Close()
 
 	// GET reflects the update.
 	getResp := h.do(t, "GET",
@@ -237,7 +237,7 @@ func TestTransition_StartIssue(t *testing.T) {
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses1"})
 	if startResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(startResp.Body)
-		startResp.Body.Close()
+		_ = startResp.Body.Close()
 		t.Fatalf("POST /start: status=%d body=%s", startResp.StatusCode, respBody)
 	}
 	var started struct {
@@ -262,10 +262,10 @@ func TestListIssues_Filters(t *testing.T) {
 			map[string]string{HeaderTdWatchSession: "ses1"})
 		if resp.StatusCode != http.StatusCreated {
 			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			t.Fatalf("seed create %s: status=%d body=%s", prio, resp.StatusCode, respBody)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// List all (no filter): should see 3.
@@ -308,17 +308,17 @@ func TestProjectLabelsCatalog(t *testing.T) {
 			h.ownerTok, body, map[string]string{HeaderTdWatchSession: "ses1"})
 		if resp.StatusCode != http.StatusCreated {
 			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			t.Fatalf("seed create: status=%d body=%s", resp.StatusCode, respBody)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	resp := h.do(t, "GET", fmt.Sprintf("/v1/projects/%s/labels", h.pid),
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses1"})
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("GET /labels: status=%d body=%s", resp.StatusCode, respBody)
 	}
 
@@ -354,7 +354,7 @@ func TestUnauthorized_NoMembership(t *testing.T) {
 	// stranger has no membership and is not admin.
 	resp := h.do(t, "GET", fmt.Sprintf("/v1/projects/%s/issues", h.pid),
 		h.strangTok, nil, map[string]string{HeaderTdWatchSession: "ses1"})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("non-member GET: status=%d body=%s", resp.StatusCode, body)
@@ -364,7 +364,7 @@ func TestUnauthorized_NoMembership(t *testing.T) {
 	createResp := h.do(t, "POST", fmt.Sprintf("/v1/projects/%s/issues", h.pid),
 		h.strangTok, serve.IssueCreateBody{Title: "stranger should not be able to land this"},
 		map[string]string{HeaderTdWatchSession: "ses1"})
-	defer createResp.Body.Close()
+	defer func() { _ = createResp.Body.Close() }()
 	if createResp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(createResp.Body)
 		t.Fatalf("non-member POST: status=%d body=%s", createResp.StatusCode, body)
@@ -415,7 +415,7 @@ func TestImpersonationHeaders(t *testing.T) {
 		})
 	if createResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(createResp.Body)
-		createResp.Body.Close()
+		_ = createResp.Body.Close()
 		t.Fatalf("impersonation POST: status=%d body=%s", createResp.StatusCode, body)
 	}
 	var created struct {
@@ -431,7 +431,7 @@ func TestImpersonationHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query action_log: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	found := false
 	for rows.Next() {

@@ -83,7 +83,7 @@ func clickApprovalLink(t *testing.T, baseURL, token string) {
 	if err != nil {
 		t.Fatalf("approve GET: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("approve GET: status %d", resp.StatusCode)
 	}

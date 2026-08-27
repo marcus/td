@@ -25,12 +25,12 @@ func gateDB(t *testing.T, projectID string, disabled bool) (string, *db.DB) {
 	}
 	if projectID != "" {
 		if err := database.SetSyncState(projectID); err != nil {
-			database.Close()
+			_ = database.Close()
 			t.Fatalf("set sync state: %v", err)
 		}
 		if disabled {
 			if _, err := database.Conn().Exec(`UPDATE sync_state SET sync_disabled = 1`); err != nil {
-				database.Close()
+				_ = database.Close()
 				t.Fatalf("disable sync: %v", err)
 			}
 		}
@@ -84,7 +84,7 @@ func TestGateMatrix(t *testing.T) {
 				t.Setenv("TD_SYNC_AUTO", tc.autoEnv)
 			}
 			baseDir, database := gateDB(t, tc.projectID, tc.disabled)
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 			if tc.explicit != nil {
 				if err := config.SetFeatureFlag(baseDir, features.SyncAutosync.Name, *tc.explicit); err != nil {
 					t.Fatalf("set feature: %v", err)
@@ -107,7 +107,7 @@ func boolPtr(v bool) *bool { return &v }
 func TestGateReusesSharedDB(t *testing.T) {
 	clearGateEnv(t)
 	_, database := gateDB(t, "proj", false)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	syncer, _ := New(Options{BaseDir: filepath.Join(t.TempDir(), "missing"), DB: database})
 	if gate := syncer.Gate(); !gate.Open || !gate.Configured {
 		t.Fatalf("shared DB gate = %+v", gate)
@@ -117,7 +117,7 @@ func TestGateReusesSharedDB(t *testing.T) {
 func TestOnceCollapsesConcurrentCallsAndNeverBootstraps(t *testing.T) {
 	clearGateEnv(t)
 	baseDir, database := gateDB(t, "proj", false)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	t.Setenv("TD_SYNC_AUTO_PULL", "true")
 
 	var pushes, pulls, snapshots int32

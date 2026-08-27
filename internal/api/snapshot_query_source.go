@@ -291,7 +291,7 @@ func (s *SnapshotQuerySource) ListIssues(opts db.ListIssuesOptions) ([]models.Is
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var issues []models.Issue
 	for rows.Next() {
@@ -340,7 +340,7 @@ func (s *SnapshotQuerySource) GetLogs(issueID string, limit int) ([]models.Log, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []models.Log
 	for rows.Next() {
@@ -368,7 +368,7 @@ func (s *SnapshotQuerySource) GetComments(issueID string) ([]models.Comment, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var comments []models.Comment
 	for rows.Next() {
@@ -426,7 +426,7 @@ func (s *SnapshotQuerySource) GetLinkedFiles(issueID string) ([]models.IssueFile
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var files []models.IssueFile
 	for rows.Next() {
@@ -447,7 +447,7 @@ func (s *SnapshotQuerySource) GetDependencies(issueID string) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deps []string
 	for rows.Next() {
@@ -480,7 +480,7 @@ func (s *SnapshotQuerySource) GetRejectedInProgressIssueIDs() (map[string]bool, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]bool)
 	for rows.Next() {
@@ -506,7 +506,7 @@ func (s *SnapshotQuerySource) GetIssuesWithOpenDeps() (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]bool)
 	for rows.Next() {
@@ -543,13 +543,13 @@ func (s *SnapshotQuerySource) getDescendants(parentID string) ([]string, error) 
 		for rows.Next() {
 			var childID string
 			if err := rows.Scan(&childID); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			children = append(children, childID)
 			descendants = append(descendants, childID)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		queue = append(queue, children...)
 	}

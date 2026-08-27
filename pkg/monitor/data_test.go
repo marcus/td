@@ -28,7 +28,7 @@ func TestComputeBoardIssueCategories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create a blocker issue (open)
 	blocker := createTestIssue(t, database, "Blocker issue", models.StatusOpen)
@@ -315,7 +315,7 @@ func TestComputeBoardIssueCategoriesClosedDepUnblocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create a blocker issue (closed)
 	blocker := createTestIssue(t, database, "Blocker issue", models.StatusClosed)
@@ -392,7 +392,7 @@ func TestFetchDataHasIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	empty := FetchData(database, "test-session", time.Now(), "", false, SortByPriority)
 	if empty.HasIssues {

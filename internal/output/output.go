@@ -276,10 +276,10 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	// Header
 	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s: %s", issue.ID, issue.Title)))
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Status: %s\n", FormatStatus(issue.Status)))
-	sb.WriteString(fmt.Sprintf("Type: %s | Priority: %s", issue.Type, issue.Priority))
+	fmt.Fprintf(&sb, "Status: %s\n", FormatStatus(issue.Status))
+	fmt.Fprintf(&sb, "Type: %s | Priority: %s", issue.Type, issue.Priority)
 	if issue.Points > 0 {
-		sb.WriteString(fmt.Sprintf(" | Points: %d", issue.Points))
+		fmt.Fprintf(&sb, " | Points: %d", issue.Points)
 	}
 	if issue.Minor {
 		sb.WriteString(" | Minor")
@@ -287,17 +287,17 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	sb.WriteString("\n")
 
 	if len(issue.Labels) > 0 {
-		sb.WriteString(fmt.Sprintf("Labels: %s\n", strings.Join(issue.Labels, ", ")))
+		fmt.Fprintf(&sb, "Labels: %s\n", strings.Join(issue.Labels, ", "))
 	}
 	if issue.DeferUntil != nil {
-		sb.WriteString(fmt.Sprintf("Deferred until: %s", *issue.DeferUntil))
+		fmt.Fprintf(&sb, "Deferred until: %s", *issue.DeferUntil)
 		if issue.DeferCount > 0 {
-			sb.WriteString(fmt.Sprintf(" (deferred %dx)", issue.DeferCount))
+			fmt.Fprintf(&sb, " (deferred %dx)", issue.DeferCount)
 		}
 		sb.WriteString("\n")
 	}
 	if issue.DueDate != nil {
-		sb.WriteString(fmt.Sprintf("Due: %s\n", *issue.DueDate))
+		fmt.Fprintf(&sb, "Due: %s\n", *issue.DueDate)
 	}
 
 	// Description
@@ -325,30 +325,30 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	// Handoff
 	if handoff != nil {
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("CURRENT HANDOFF (%s, %s):\n", handoff.SessionID, FormatTimeAgo(handoff.Timestamp)))
+		fmt.Fprintf(&sb, "CURRENT HANDOFF (%s, %s):\n", handoff.SessionID, FormatTimeAgo(handoff.Timestamp))
 
 		if len(handoff.Done) > 0 {
 			sb.WriteString("  Done:\n")
 			for _, item := range handoff.Done {
-				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
+				fmt.Fprintf(&sb, "    - %s\n", IndentContinuation(item))
 			}
 		}
 		if len(handoff.Remaining) > 0 {
 			sb.WriteString("  Remaining:\n")
 			for _, item := range handoff.Remaining {
-				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
+				fmt.Fprintf(&sb, "    - %s\n", IndentContinuation(item))
 			}
 		}
 		if len(handoff.Decisions) > 0 {
 			sb.WriteString("  Decisions:\n")
 			for _, item := range handoff.Decisions {
-				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
+				fmt.Fprintf(&sb, "    - %s\n", IndentContinuation(item))
 			}
 		}
 		if len(handoff.Uncertain) > 0 {
 			sb.WriteString("  Uncertain:\n")
 			for _, item := range handoff.Uncertain {
-				sb.WriteString(fmt.Sprintf("    - %s\n", IndentContinuation(item)))
+				fmt.Fprintf(&sb, "    - %s\n", IndentContinuation(item))
 			}
 		}
 	}
@@ -361,10 +361,10 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 			if log.Type != models.LogTypeProgress {
 				typeIndicator = fmt.Sprintf(" [%s]", log.Type)
 			}
-			sb.WriteString(fmt.Sprintf("  [%s]%s %s\n",
+			fmt.Fprintf(&sb, "  [%s]%s %s\n",
 				log.Timestamp.Format("15:04"),
 				typeIndicator,
-				IndentContinuation(log.Message)))
+				IndentContinuation(log.Message))
 		}
 	}
 

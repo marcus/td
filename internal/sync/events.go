@@ -50,7 +50,7 @@ func getDependenciesTx(tx *sql.Tx, issueID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deps []string
 	for rows.Next() {
@@ -121,7 +121,7 @@ func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols := map[string]bool{}
 	for rows.Next() {
 		var cid int
@@ -154,7 +154,7 @@ func getTextEmptyDefaultColumns(tx *sql.Tx, table string) (map[string]bool, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols := map[string]bool{}
 	for rows.Next() {
 		var cid int
@@ -440,7 +440,7 @@ func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.
 		}
 	}
 	// Close before INSERT to release shared lock
-	rows.Close()
+	_ = rows.Close()
 
 	if requireExisting && !overwritten {
 		slog.Debug("upsert skipped (missing row)", "table", entityType, "id", entityID)

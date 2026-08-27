@@ -38,7 +38,7 @@ func newSSEReader(t *testing.T, baseURL, pid, token string, ctx context.Context)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("newSSEReader: expected 200, got %d: %s", resp.StatusCode, body)
 	}
 
@@ -55,7 +55,7 @@ func newSSEReader(t *testing.T, baseURL, pid, token string, ctx context.Context)
 
 // close closes the response body, which causes the reader goroutine to exit.
 func (sr *sseReader) close() {
-	sr.resp.Body.Close()
+	_ = sr.resp.Body.Close()
 }
 
 // waitForLine blocks until a line matching pred is received or deadline elapses.
@@ -130,10 +130,10 @@ func TestBroadcast_CreateIssue(t *testing.T) {
 		map[string]string{HeaderTdWatchSession: "ses-bc1"})
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("POST /issues: status=%d body=%s", resp.StatusCode, raw)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Expect an issue.upserted event within 1s.
 	if !sse.waitForEvent(1*time.Second, EventIssueUpserted) {
@@ -172,7 +172,7 @@ func TestBroadcast_SyncPushBatchRefreshesBrowserReadPath(t *testing.T) {
 		SessionID: "ses-sync-broadcast",
 		Events:    events,
 	})
-	defer pushResp.Body.Close()
+	defer func() { _ = pushResp.Body.Close() }()
 	if pushResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(pushResp.Body)
 		t.Fatalf("POST /sync/push: status=%d body=%s", pushResp.StatusCode, raw)
@@ -245,10 +245,10 @@ func TestBroadcast_PatchIssue(t *testing.T) {
 		map[string]string{HeaderTdWatchSession: "ses-bc2"})
 	if patchResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(patchResp.Body)
-		patchResp.Body.Close()
+		_ = patchResp.Body.Close()
 		t.Fatalf("PATCH /issues: status=%d body=%s", patchResp.StatusCode, raw)
 	}
-	patchResp.Body.Close()
+	_ = patchResp.Body.Close()
 
 	// Expect issue.upserted event containing the issue_id.
 	if !sse.waitForData(1*time.Second, issueID) {
@@ -284,10 +284,10 @@ func TestBroadcast_TransitionIssue(t *testing.T) {
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses-bc3"})
 	if startResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(startResp.Body)
-		startResp.Body.Close()
+		_ = startResp.Body.Close()
 		t.Fatalf("POST /start: status=%d body=%s", startResp.StatusCode, raw)
 	}
-	startResp.Body.Close()
+	_ = startResp.Body.Close()
 
 	// Expect issue.upserted event containing the issue_id.
 	if !sse.waitForData(1*time.Second, issueID) {
@@ -322,10 +322,10 @@ func TestBroadcast_DeleteIssue(t *testing.T) {
 		h.ownerTok, nil, map[string]string{HeaderTdWatchSession: "ses-bc4"})
 	if delResp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(delResp.Body)
-		delResp.Body.Close()
+		_ = delResp.Body.Close()
 		t.Fatalf("DELETE /issues: status=%d body=%s", delResp.StatusCode, raw)
 	}
-	delResp.Body.Close()
+	_ = delResp.Body.Close()
 
 	// Expect issue.deleted event containing the issue_id in data.
 	if !sse.waitForData(1*time.Second, issueID) {
@@ -367,10 +367,10 @@ func TestBroadcast_NoEventOnError(t *testing.T) {
 	}
 	if badResp.StatusCode != http.StatusBadRequest {
 		raw, _ := io.ReadAll(badResp.Body)
-		badResp.Body.Close()
+		_ = badResp.Body.Close()
 		t.Fatalf("expected 400, got %d: %s", badResp.StatusCode, raw)
 	}
-	badResp.Body.Close()
+	_ = badResp.Body.Close()
 
 	// Give the SSE stream a window to receive any spurious event.
 	// We only expect pings; an issue event would be a bug.

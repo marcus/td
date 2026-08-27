@@ -14,7 +14,7 @@ func TestStartSingleIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -47,7 +47,7 @@ func TestStartMultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issues := []*models.Issue{
 		{Title: "Issue 1", Status: models.StatusOpen},
@@ -56,14 +56,18 @@ func TestStartMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Start all issues
 	for _, issue := range issues {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		if err := database.UpdateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Verify all started
@@ -82,13 +86,15 @@ func TestStartBlockedIssueWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Without force, blocked issues should remain blocked
 	// In the actual command this would skip, here we test the state check
@@ -107,20 +113,24 @@ func TestStartBlockedIssueWithForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Blocked Issue",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// With force, even blocked issues can be started
 	force := true
 	if issue.Status == models.StatusBlocked && force {
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = "ses_test"
-		database.UpdateIssue(issue)
+		if err := database.UpdateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -136,18 +146,22 @@ func TestStartSetsImplementerSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	sessionID := "ses_abc123"
 	issue.Status = models.StatusInProgress
 	issue.ImplementerSession = sessionID
-	database.UpdateIssue(issue)
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.ImplementerSession != sessionID {
@@ -162,7 +176,7 @@ func TestStartFromDifferentStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	testCases := []struct {
 		name          string
@@ -181,11 +195,15 @@ func TestStartFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			if err := database.CreateIssue(issue); err != nil {
+				t.Fatal(err)
+			}
 
 			if tc.canStart || tc.initialStatus != models.StatusBlocked {
 				issue.Status = models.StatusInProgress
-				database.UpdateIssue(issue)
+				if err := database.UpdateIssue(issue); err != nil {
+					t.Fatal(err)
+				}
 
 				retrieved, _ := database.GetIssue(issue.ID)
 				if retrieved.Status != models.StatusInProgress {
@@ -203,7 +221,7 @@ func TestStartNonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	_, err = database.GetIssue("td-nonexistent")
 	if err == nil {
@@ -218,10 +236,12 @@ func TestStartRecordsGitSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Record a git snapshot
 	snapshot := &models.GitSnapshot{
@@ -258,14 +278,16 @@ func TestStartLogsAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
 	}
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	sessionID := "ses_test123"
 
@@ -302,10 +324,12 @@ func TestStartAddsProgressLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add progress log as start command would
 	log := &models.Log{
@@ -338,10 +362,12 @@ func TestStartWithReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	reason := "Picking up from previous session"
 	log := &models.Log{
@@ -350,7 +376,9 @@ func TestStartWithReason(t *testing.T) {
 		Message:   reason,
 		Type:      models.LogTypeProgress,
 	}
-	database.AddLog(log)
+	if err := database.AddLog(log); err != nil {
+		t.Fatal(err)
+	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
 	if len(logs) != 1 || logs[0].Message != reason {
@@ -365,10 +393,12 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	validIssue := &models.Issue{Title: "Valid", Status: models.StatusOpen}
-	database.CreateIssue(validIssue)
+	if err := database.CreateIssue(validIssue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Try to get a non-existent issue
 	_, err = database.GetIssue("td-invalid")
@@ -378,7 +408,9 @@ func TestStartMixedValidAndInvalid(t *testing.T) {
 
 	// Valid issue can still be started
 	validIssue.Status = models.StatusInProgress
-	database.UpdateIssue(validIssue)
+	if err := database.UpdateIssue(validIssue); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(validIssue.ID)
 	if retrieved.Status != models.StatusInProgress {

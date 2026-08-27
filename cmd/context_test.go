@@ -19,7 +19,7 @@ func TestResumeRunESetsScopedFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Issue to resume",
@@ -66,13 +66,15 @@ func TestResumeWithInProgressIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "In Progress Work",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := config.SetFocus(dir, issue.ID); err != nil {
 		t.Fatalf("SetFocus failed: %v", err)
@@ -100,7 +102,7 @@ func TestResumePreservesIssueState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Test Issue",
@@ -140,30 +142,42 @@ func TestResumeMultipleIssuesSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{Title: "First Issue", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Second Issue", Status: models.StatusInProgress}
 	issue3 := &models.Issue{Title: "Third Issue", Status: models.StatusInReview}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
 	// Resume each in sequence
-	config.SetFocus(dir, issue1.ID)
+	if err := config.SetFocus(dir, issue1.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused1, _ := config.GetFocus(dir)
 	if focused1 != issue1.ID {
 		t.Error("Focus should be issue1")
 	}
 
-	config.SetFocus(dir, issue2.ID)
+	if err := config.SetFocus(dir, issue2.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused2, _ := config.GetFocus(dir)
 	if focused2 != issue2.ID {
 		t.Error("Focus should be issue2")
 	}
 
-	config.SetFocus(dir, issue3.ID)
+	if err := config.SetFocus(dir, issue3.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused3, _ := config.GetFocus(dir)
 	if focused3 != issue3.ID {
 		t.Error("Focus should be issue3")
@@ -177,7 +191,7 @@ func TestResumeAllowsContextInformation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Complex Feature",
@@ -188,10 +202,14 @@ func TestResumeAllowsContextInformation(t *testing.T) {
 		Points:      21,
 		Labels:      []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Resume and retrieve context
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.ID != issue.ID {
@@ -212,15 +230,19 @@ func TestResumeWithBlockedIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Blocked Work",
 		Status: models.StatusBlocked,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.Status != models.StatusBlocked {
@@ -235,16 +257,20 @@ func TestResumeWithClosedIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Completed Work",
 		Status: models.StatusClosed,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Can still resume closed issue for context
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
@@ -263,7 +289,7 @@ func TestResumeNonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	err = resumeCmd.RunE(resumeCmd, []string{"td-nonexistent"})
 	if err == nil {
@@ -290,13 +316,15 @@ func TestResumeWithLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Issue with History",
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add some logs
 	for i := 0; i < 3; i++ {
@@ -306,11 +334,15 @@ func TestResumeWithLogs(t *testing.T) {
 			Message:   "Progress update",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Resume and verify logs are accessible
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
 	if len(logs) != 3 {
@@ -325,23 +357,29 @@ func TestResumePreservesParentChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title: "Parent Epic",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	child := &models.Issue{
 		Title:    "Child Task",
 		ParentID: parent.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	// Resume child
-	config.SetFocus(dir, child.ID)
+	if err := config.SetFocus(dir, child.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify relationship preserved
 	retrieved, _ := database.GetIssue(child.ID)
@@ -357,13 +395,17 @@ func TestResumePreserveDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	prerequisite := &models.Issue{Title: "Prerequisite"}
 	dependent := &models.Issue{Title: "Dependent"}
 
-	database.CreateIssue(prerequisite)
-	database.CreateIssue(dependent)
+	if err := database.CreateIssue(prerequisite); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(dependent); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add dependency
 	if err := database.AddDependency(dependent.ID, prerequisite.ID, "depends_on"); err != nil {
@@ -371,7 +413,9 @@ func TestResumePreserveDependencies(t *testing.T) {
 	}
 
 	// Resume dependent
-	config.SetFocus(dir, dependent.ID)
+	if err := config.SetFocus(dir, dependent.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify dependency preserved
 	deps, _ := database.GetDependencies(dependent.ID)

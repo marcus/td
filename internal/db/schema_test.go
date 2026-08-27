@@ -20,7 +20,7 @@ func TestSchemaVersion_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	v, err := database.GetSchemaVersion()
 	if err != nil {
@@ -39,7 +39,7 @@ func TestMigration31_IssueColumns_Present(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	for _, col := range []string{"reviewed_at", "review_requested_by_session", "closed_by_session"} {
 		exists, err := database.columnExists("issues", col)
@@ -60,7 +60,7 @@ func TestMigration31_IssueReviewsTable_Shape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	exists, err := database.tableExists("issue_reviews")
 	if err != nil {
@@ -91,7 +91,7 @@ func TestMigration34_WorktreeIdentityColumns_Present(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	for _, table := range []string{"sessions", "work_sessions"} {
 		for _, col := range []string{"worktree_id", "worktree_root", "repo_root"} {
@@ -112,7 +112,7 @@ func TestMigration35_SessionStateTableShapeAndIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := database.conn.Exec(`DROP TABLE session_state`); err != nil {
 		t.Fatalf("drop session_state: %v", err)
@@ -170,7 +170,7 @@ func assertSessionStateTableShape(t *testing.T, database *DB) {
 	if err != nil {
 		t.Fatalf("PRAGMA table_info(session_state): %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	columns := map[string]columnInfo{}
 	for rows.Next() {
@@ -228,7 +228,7 @@ func TestMigration31_ClosedBySessionBackfill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Simulate a schema-30-era row: reviewer_session set, closed status,
 	// closed_by_session still empty, reviewed_at NULL. We rewind the schema
@@ -321,7 +321,7 @@ func TestMigrationsAppliedToExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Rewind to the second-highest migration version, simulating a database
 	// created by the previous release.

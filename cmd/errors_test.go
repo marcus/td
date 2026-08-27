@@ -17,7 +17,7 @@ func TestErrorsCommandBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log some errors
 	if err := db.LogAgentError(baseDir, []string{"create", "task"}, "permission denied", "ses_1"); err != nil {
@@ -54,7 +54,7 @@ func TestErrorsCommandClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log an error
 	if err := db.LogAgentError(baseDir, []string{"test"}, "error", "ses_1"); err != nil {
@@ -93,7 +93,7 @@ func TestErrorsCommandCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	tests := []struct {
 		name    string
@@ -124,7 +124,7 @@ func TestErrorsCommandCount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to initialize database: %v", err)
 			}
-			defer testDb.Close()
+			defer func() { _ = testDb.Close() }()
 
 			// Log errors
 			for i := 0; i < tt.numErrs; i++ {
@@ -153,7 +153,7 @@ func TestErrorsCommandSessionFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log errors with different sessions
 	if err := db.LogAgentError(baseDir, []string{"cmd1"}, "error1", "ses_1"); err != nil {
@@ -191,7 +191,7 @@ func TestErrorsCommandLimitFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log multiple errors
 	for i := 0; i < 5; i++ {
@@ -381,7 +381,7 @@ func TestErrorsCommandJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log an error with special characters
 	if err := db.LogAgentError(baseDir, []string{`cmd`, `arg"quoted"`}, `error "msg" with\nnewline`, "ses_1"); err != nil {
@@ -433,7 +433,7 @@ func TestErrorsCommandReadFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log errors
 	if err := db.LogAgentError(baseDir, []string{"cmd1"}, "error1", "ses_1"); err != nil {
@@ -469,7 +469,7 @@ func TestErrorsCommandArgsPreservation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	testCases := []struct {
 		name string
@@ -500,7 +500,7 @@ func TestErrorsCommandArgsPreservation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to initialize database: %v", err)
 			}
-			defer testDb.Close()
+			defer func() { _ = testDb.Close() }()
 
 			if err := db.LogAgentError(testDir, tc.args, "error", "ses_1"); err != nil {
 				t.Fatalf("LogAgentError failed: %v", err)
@@ -536,7 +536,7 @@ func TestErrorsCommandEmptyLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Test reading when no errors exist
 	errors, err := db.ReadAgentErrors(baseDir)
@@ -567,7 +567,7 @@ func TestErrorsCommandTimestampOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log multiple errors
 	errorCount := 3
@@ -607,7 +607,7 @@ func TestErrorsCommandFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	tests := []struct {
 		name      string
@@ -653,7 +653,7 @@ func TestErrorsCommandFiltering(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to initialize database: %v", err)
 			}
-			defer testDb.Close()
+			defer func() { _ = testDb.Close() }()
 
 			// Log test errors
 			if err := db.LogAgentError(testDir, []string{"cmd1"}, "error1", "ses_1"); err != nil {
@@ -719,7 +719,7 @@ func TestErrorLoggerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Log diverse errors
 	testErrors := []struct {

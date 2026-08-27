@@ -321,7 +321,8 @@ func TestAdminSyncCursors(t *testing.T) {
 	// Check distance_from_head
 	sawDev1, sawB := false, false
 	for _, c := range resp.Data {
-		if c.ClientID == "dev1" {
+		switch c.ClientID {
+		case "dev1":
 			sawDev1 = true
 			if c.DistanceFromHead != 0 {
 				t.Fatalf("dev1: expected distance 0, got %d", c.DistanceFromHead)
@@ -332,7 +333,7 @@ func TestAdminSyncCursors(t *testing.T) {
 			if c.LastSyncAt == nil {
 				t.Fatalf("dev1: expected last_sync_at to be populated after push")
 			}
-		} else if c.ClientID == "client-B" {
+		case "client-B":
 			sawB = true
 			if c.DistanceFromHead != 2 {
 				t.Fatalf("client-B: expected distance 2, got %d", c.DistanceFromHead)

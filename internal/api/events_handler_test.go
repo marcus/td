@@ -88,7 +88,7 @@ func TestSSE_HeadersOn200(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -122,7 +122,7 @@ func TestSSE_PingReceived(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	_, found := readSSELine(t, resp, 2*time.Second, func(line string) bool {
 		return line == ": ping"
@@ -140,7 +140,7 @@ func TestSSE_MissingAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)
@@ -162,7 +162,7 @@ func TestSSE_WrongProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d", resp.StatusCode)
@@ -189,7 +189,7 @@ func TestSSE_LastEventIDTriggersRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// The very first non-empty line after headers should be the event type.
 	_, found := readSSELine(t, resp, 3*time.Second, func(line string) bool {
@@ -218,7 +218,7 @@ func TestSSE_ContextCancelExitsHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Ensure connection is up by waiting for first ping.
 	done := make(chan struct{})

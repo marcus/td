@@ -154,7 +154,7 @@ func GetEventsSince(tx *sql.Tx, afterSeq int64, limit int, excludeDevice string)
 	if err != nil {
 		return result, fmt.Errorf("query events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var ev Event

@@ -30,7 +30,7 @@ Comments are not searched; use 'td query "comment.text ~ ..."' for those.`,
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		query := args[0]
 

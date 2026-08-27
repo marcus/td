@@ -39,7 +39,7 @@ func TestSeedSyncStatusParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open bob: %v", err)
 	}
-	defer bobDB.Close()
+	defer func() { _ = bobDB.Close() }()
 
 	// Clear sync_state and reset action_log (matches e2e-sync-test.sh seed cleanup)
 	for _, q := range []string{
@@ -92,7 +92,7 @@ func TestSeedSyncStatusParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open alice: %v", err)
 	}
-	defer aliceDB.Close()
+	defer func() { _ = aliceDB.Close() }()
 
 	// Copy schema from bob to alice
 	schema := extractSchema(t, bobDB)
@@ -189,7 +189,7 @@ func getStatusCounts(t *testing.T, db *sql.DB) map[string]int {
 	if err != nil {
 		t.Fatalf("query status counts: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	counts := make(map[string]int)
 	for rows.Next() {
@@ -208,7 +208,7 @@ func getIssueIDsByStatus(t *testing.T, db *sql.DB) map[string][]string {
 	if err != nil {
 		t.Fatalf("query issues: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string][]string)
 	for rows.Next() {
@@ -231,7 +231,7 @@ func extractSchema(t *testing.T, db *sql.DB) []string {
 	if err != nil {
 		t.Fatalf("query schema: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var statements []string
 	for rows.Next() {

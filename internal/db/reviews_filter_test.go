@@ -17,7 +17,7 @@ func TestReadyToCloseByFilter_DelegatedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Fixture: issue A — in_review, active approval, caller is requester.
 	a := &models.Issue{Title: "A: ready to close (requester)", Type: models.TypeTask, Status: models.StatusOpen}
@@ -97,7 +97,7 @@ func TestReadyToCloseByFilter_StrictIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Seed: in_review issue with an active approval + caller as requester
 	// (would match in delegated mode, must NOT match in strict).
@@ -127,7 +127,7 @@ func TestReviewableByFilter_DelegatedIgnoresNonImplementationHistory(t *testing.
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:              "Delegated reviewer can review again",
@@ -193,7 +193,7 @@ func TestReviewableByFilter_TrustedIncludesSelfImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Self-implemented in_review issue: the session IS the implementer and has
 	// started/unstarted history — delegated would exclude it, trusted must not.
@@ -277,7 +277,7 @@ func TestReadyToCloseByFilter_TrustedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// in_review issue with active approval — ready to close in trusted mode.
 	a := &models.Issue{Title: "trusted: approved", Type: models.TypeTask, Status: models.StatusOpen}

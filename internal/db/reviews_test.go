@@ -35,13 +35,6 @@ func installFailReviewActionTrigger(t *testing.T, database *DB) {
 	}
 }
 
-func dropFailReviewActionTrigger(t *testing.T, database *DB) {
-	t.Helper()
-	if _, err := database.conn.Exec(`DROP TRIGGER IF EXISTS fail_issue_review_action`); err != nil {
-		t.Fatalf("drop action_log failure trigger: %v", err)
-	}
-}
-
 func installFailIssueActionTrigger(t *testing.T, database *DB, action models.ActionType) {
 	t.Helper()
 	if _, err := database.conn.Exec(fmt.Sprintf(`
@@ -61,7 +54,7 @@ func TestCreateIssueReviewAndUpdateIssueLogged_LaterIssueEventFailureRollsBackLi
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	const issueID = "td-rvatomic-lifecycle"
 	seedIssueForReviewTests(t, database, issueID)
 	issue, err := database.GetIssue(issueID)
@@ -107,7 +100,7 @@ func TestIssueReviewLoggedMutations_RollBackWhenEventInsertFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 		seedIssueForReviewTests(t, database, "td-rvatomic-create")
 		installFailReviewActionTrigger(t, database)
 
@@ -133,7 +126,7 @@ func TestIssueReviewLoggedMutations_RollBackWhenEventInsertFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 		seedIssueForReviewTests(t, database, "td-rvatomic-supersede")
 		reviewID, err := database.CreateIssueReview(NewReview{
 			IssueID:         "td-rvatomic-supersede",
@@ -160,7 +153,7 @@ func TestIssueReviewLoggedMutations_RollBackWhenEventInsertFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 		seedIssueForReviewTests(t, database, "td-rvatomic-delete")
 		reviewID, err := database.CreateIssueReview(NewReview{
 			IssueID:         "td-rvatomic-delete",
@@ -187,7 +180,7 @@ func TestIssueReviewLoggedMutations_RollBackWhenEventInsertFails(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 		seedIssueForReviewTests(t, database, "td-rvatomic-reactivate")
 		reviewID, err := database.CreateIssueReview(NewReview{
 			IssueID:         "td-rvatomic-reactivate",
@@ -221,7 +214,7 @@ func TestUpdateIssueLogged_ReviewEventFailureLeavesIssueAndReviewUnchanged(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	seedIssueForReviewTests(t, database, "td-rvatomic-transition")
 	reviewID, err := database.CreateIssueReview(NewReview{
 		IssueID:         "td-rvatomic-transition",
@@ -263,7 +256,7 @@ func TestCreateIssueReview_ReturnsIDAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvtest1")
 
@@ -306,7 +299,7 @@ func TestGetActiveApprovalReview_ReturnsNilWhenNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvempty")
 
@@ -325,7 +318,7 @@ func TestGetActiveApprovalReview_IgnoresChangesRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvcr")
 
@@ -347,7 +340,7 @@ func TestGetActiveApprovalReview_ReturnsLatestApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvactive")
 
@@ -382,7 +375,7 @@ func TestListIssueReviews_ChronologicalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvhist")
 
@@ -415,7 +408,7 @@ func TestSupersedeActiveReviews_MarksActive_LeavesSupersededAlone(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-rvsup")
 
@@ -480,7 +473,7 @@ func seedInReviewWithApproval(t *testing.T, id string) *DB {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	now := time.Now()
 	_, err = database.conn.Exec(`
@@ -542,8 +535,8 @@ func TestUnlinkFileLogged_SupersedesActiveApproval(t *testing.T) {
 	// Refresh the approval because the direct LinkFile write does not run
 	// through the logged path (it is only used by sync receivers today).
 	// Re-seed the approval so we start from a clean "approved" state.
-	if err := database.conn.QueryRow(`UPDATE issue_reviews SET superseded_at = NULL WHERE issue_id = ?`, "td-invlf2").Scan(); err != nil && err.Error() != "sql: no rows in result set" {
-		// UPDATE returns no rows either way; ignore.
+	if _, err := database.conn.Exec(`UPDATE issue_reviews SET superseded_at = NULL WHERE issue_id = ?`, "td-invlf2"); err != nil {
+		t.Fatalf("clear superseded_at: %v", err)
 	}
 	// Reset reviewer stamp because LinkFile does not touch it.
 	if _, err := database.conn.Exec(`UPDATE issues SET reviewer_session = 'ses-reviewer', reviewed_at = ? WHERE id = ?`, time.Now(), "td-invlf2"); err != nil {
@@ -620,7 +613,7 @@ func TestSupersedeApprovalIfLinked_NoOpWhenNoActiveApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Seed an in_review issue WITHOUT any reviews.
 	now := time.Now()

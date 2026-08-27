@@ -34,17 +34,6 @@ func newTestCloudflareSender(t *testing.T, srv *httptest.Server, cfg email.Email
 // cfSuccessBody is a minimal Cloudflare success envelope.
 const cfSuccessBody = `{"success":true,"errors":[],"messages":[],"result":{}}`
 
-// cfErrorBody returns a Cloudflare error envelope with the given message.
-func cfErrorBody(code int, msg string) string {
-	return `{"success":false,"errors":[{"code":` + strings.ReplaceAll(
-		strings.ReplaceAll(
-			`{"code":CODE,"message":"MSG"}`,
-			"CODE", strings.TrimSpace(string(rune('0'+code))),
-		),
-		"MSG", msg,
-	) + `],"messages":[],"result":null}`
-}
-
 // buildCFErrorBody builds a proper Cloudflare error envelope JSON.
 func buildCFErrorBody(code int, msg string) string {
 	type cfErr struct {

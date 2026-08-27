@@ -96,7 +96,7 @@ func TestIntegration_Reviews_MissingSummary(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestIntegration_Reviews_InvalidDecision(t *testing.T) {
@@ -112,7 +112,7 @@ func TestIntegration_Reviews_InvalidDecision(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestIntegration_Reviews_StrictMode_Conflict(t *testing.T) {
@@ -130,7 +130,7 @@ func TestIntegration_Reviews_StrictMode_Conflict(t *testing.T) {
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status=%d, want 409", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // TestIntegration_Reviews_MinorRejected asserts that minor issues cannot
@@ -166,7 +166,7 @@ func TestIntegration_Reviews_MinorRejected(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Also cover the case the previous bug exposed: open minor issue. Before
 	// the fix, `status != in_review && !minor` short-circuited to skip the
@@ -188,7 +188,7 @@ func TestIntegration_Reviews_MinorRejected(t *testing.T) {
 	if resp2.StatusCode != http.StatusBadRequest {
 		t.Fatalf("open minor status=%d, want 400", resp2.StatusCode)
 	}
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 }
 
 func TestIntegration_Reviews_IneligibleReviewer(t *testing.T) {
@@ -210,7 +210,7 @@ func TestIntegration_Reviews_IneligibleReviewer(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("status=%d, want 403", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestIntegration_Approve_CloseAfterReview(t *testing.T) {
@@ -247,7 +247,7 @@ func TestIntegration_Approve_CloseAfterReview(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d, want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -286,7 +286,7 @@ func TestIntegration_Approve_CloseAfterReview_RequiresReason(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
@@ -307,7 +307,7 @@ func TestIntegration_Reject_SupersedesActiveApproval(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("reject status=%d, want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	active, _ := database.GetActiveApprovalReview(issueID)
 	if active != nil {
@@ -336,7 +336,7 @@ func TestIntegration_Reopen_SupersedesActiveApproval(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("reopen status=%d, want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	active, _ := database.GetActiveApprovalReview(issueID)
 	if active != nil {
@@ -373,7 +373,7 @@ func TestIntegration_Reject_LaterIssueEventFailureLeavesLifecycleRetryable(t *te
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("reject status=%d, want 500", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	unchanged, err := database.GetIssue(issueID)
 	if err != nil {
@@ -391,7 +391,7 @@ func TestIntegration_Reject_LaterIssueEventFailureLeavesLifecycleRetryable(t *te
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("retry reject status=%d, want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // TestIntegration_Reviews_UndoPayload verifies the action_log row written for
@@ -411,7 +411,7 @@ func TestIntegration_Reviews_UndoPayload(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status=%d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// The inserted review row must be findable.
 	reviews, err := database.ListIssueReviews(issueID)
@@ -486,7 +486,7 @@ func TestIntegration_RecordReview_LaterIssueEventFailureLeavesHistoryRetryable(t
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("record review status=%d, want 500", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	reviews, err := database.ListIssueReviews(issueID)
 	if err != nil {
@@ -509,7 +509,7 @@ func TestIntegration_RecordReview_LaterIssueEventFailureLeavesHistoryRetryable(t
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("retry record review status=%d, want 201", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
@@ -525,7 +525,7 @@ func TestIntegration_Approve_DirectReviewerClose(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("approve status=%d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -557,7 +557,7 @@ func TestIntegration_Approve_LaterIssueEventFailureDoesNotCloseAndCanRetry(t *te
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("approve status=%d, want 500", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	unchanged, err := database.GetIssue(issueID)
 	if err != nil {
@@ -575,7 +575,7 @@ func TestIntegration_Approve_LaterIssueEventFailureDoesNotCloseAndCanRetry(t *te
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("retry approve status=%d, want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // setTrustedMode flips review_policy_mode=trusted in the project config.
@@ -641,7 +641,7 @@ func TestIntegration_Approve_TrustedSelfReview_RequiresReason(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d want 400 (self_review without reason)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	issue, _ := database.GetIssue(issueID)
 	if issue.Status != models.StatusInReview {
@@ -666,7 +666,7 @@ func TestIntegration_Approve_TrustedSelfReview_Allowed(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d want 200 (self_review+reason)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -710,7 +710,7 @@ func TestIntegration_Approve_TrustedNonImplementer_NoSelfReview(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d want 200 (non-implementer approve)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -741,7 +741,7 @@ func TestIntegration_Reviews_TrustedMode_Allowed(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status=%d, want 201", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusInReview {
@@ -773,7 +773,7 @@ func TestIntegration_Reviews_TrustedMode_ImplementerNeedsAck(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("status=%d, want 403 without self_review ack", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if active, _ := database.GetActiveApprovalReview(issueID); active != nil {
 		t.Fatal("expected no review row for an unacknowledged self-review")
 	}
@@ -786,7 +786,7 @@ func TestIntegration_Reviews_TrustedMode_ImplementerNeedsAck(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status=%d, want 201 with self_review ack", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	active, _ := database.GetActiveApprovalReview(issueID)
 	if active == nil {
@@ -828,7 +828,7 @@ func TestIntegration_Approve_CloseAfterReview_TrustedMode(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d, want 200 (implementer closing on an independent approval)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -871,7 +871,7 @@ func TestIntegration_Approve_ReviewedBy_ImplementerApproves(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d want 200 (attributed approve, no reason required)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	final, _ := database.GetIssue(issueID)
 	if final.Status != models.StatusClosed {
@@ -914,7 +914,7 @@ func TestIntegration_Approve_ReviewedBy_Validation(t *testing.T) {
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("status=%d want 400", resp.StatusCode)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
 				t.Errorf("status=%v want in_review (nothing should have happened)", final.Status)
@@ -941,7 +941,7 @@ func TestIntegration_Approve_ReviewedBy_DoesNotGrantInDelegated(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("status=%d want 403", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
 		t.Errorf("status=%v want in_review", final.Status)
@@ -1021,7 +1021,7 @@ func TestIntegration_Approve_ReviewedBy_ModeCRejects(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status=%d want 400 (attribution is meaningless when closing on an existing approval)", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if final, _ := database.GetIssue(issueID); final.Status != models.StatusInReview {
 		t.Errorf("status=%v want in_review (the close should not have proceeded)", final.Status)
@@ -1038,7 +1038,7 @@ func TestIntegration_Approve_ReviewedBy_ModeCRejects(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if final, _ := database.GetIssue(issueID); final.Status != models.StatusClosed {
 		t.Errorf("status=%v want closed", final.Status)
 	}
@@ -1143,7 +1143,7 @@ func TestIntegration_Approve_AuditParityWithCLI(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d want 200", resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		audit := readAudit(t, database.BaseDir())
 		if !strings.Contains(audit, "attributed_review") || !strings.Contains(audit, "code-reviewer sub-agent") {
@@ -1164,7 +1164,7 @@ func TestIntegration_Approve_AuditParityWithCLI(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d want 200", resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if audit := readAudit(t, database.BaseDir()); audit != "" {
 			t.Errorf("an independent session's approval must not be audited: %s", audit)
@@ -1184,7 +1184,7 @@ func TestIntegration_Approve_AuditParityWithCLI(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d want 200", resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if audit := readAudit(t, database.BaseDir()); !strings.Contains(audit, "self_review") {
 			t.Errorf("expected a self_review audit entry, got: %s", audit)
@@ -1212,7 +1212,7 @@ func TestIntegration_Reviews_RecordOnlyAuditAndLog(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("status=%d want 201", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// The audit file must record that an involved session wrote the row —
 	// otherwise record-only followed by a Mode C close leaves no trace.
@@ -1256,7 +1256,7 @@ func TestIntegration_Approve_LogNamesReviewer(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d want 200", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	logs, _ := database.GetLogs(issueID, 0)
 	var named bool

@@ -103,7 +103,7 @@ func gatherSyncStatus(baseDir string) SyncStatusReport {
 		r.Notes = append(r.Notes, fmt.Sprintf("database unavailable: %v", err))
 		return r
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	state, err := database.GetSyncState()
 	if err != nil {

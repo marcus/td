@@ -55,7 +55,7 @@ func (db *DB) migrateEnableFKEnforcement() error {
 		// FK=ON by default after this migration, so future opens will be
 		// correct regardless.
 		if prevFK == 1 {
-			db.conn.Exec("PRAGMA foreign_keys=ON")
+			_, _ = db.conn.Exec("PRAGMA foreign_keys=ON")
 		}
 	}()
 
@@ -63,7 +63,7 @@ func (db *DB) migrateEnableFKEnforcement() error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// ------- Step 1: clean orphans -------
 	var (
@@ -187,7 +187,7 @@ func (db *DB) migrateEnableFKEnforcement() error {
 	for rows.Next() {
 		violations++
 	}
-	rows.Close()
+	_ = rows.Close()
 	if violations > 0 {
 		return fmt.Errorf("foreign_key_check found %d violations after cleanup; aborting migration", violations)
 	}
@@ -467,7 +467,7 @@ func columnExistsTx(tx *sql.Tx, table, column string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cid int
 		var name, ctype string

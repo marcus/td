@@ -53,7 +53,7 @@ func TestCloseConfirmKeyPathPersistsTypedReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Close target", Type: models.TypeTask, Status: models.StatusInProgress}
 	if err := database.CreateIssue(issue); err != nil {
@@ -109,7 +109,7 @@ func TestRecordReviewKeyPathPersistsTypedSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Review target", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -151,7 +151,7 @@ func TestCloseConfirmCtrlVPastePersistsReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Paste close", Type: models.TypeTask, Status: models.StatusInProgress}
 	if err := database.CreateIssue(issue); err != nil {
@@ -186,7 +186,7 @@ func TestRecordReviewCtrlVPastePersistsSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Paste review", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -219,7 +219,7 @@ func TestSelfReviewCtrlVPastePersistsReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Paste self-review", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -275,7 +275,7 @@ func TestRecordReviewTypingCStaysInSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Literal c", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -372,7 +372,7 @@ func TestRecordReviewSubmitRejectsPolicyModeFlip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	issue := &models.Issue{Title: "Mode flip", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatalf("create issue: %v", err)
@@ -398,7 +398,7 @@ func TestRecordReviewSubmitRejectsStatusChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	issue := &models.Issue{Title: "Status change", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatalf("create issue: %v", err)
@@ -425,7 +425,7 @@ func TestRecordReviewSubmitPreservesConcurrentActiveApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	issue := &models.Issue{Title: "Concurrent approval", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
 		t.Fatalf("create issue: %v", err)
@@ -495,7 +495,7 @@ func TestMonitorApprovalSecurityEvents(t *testing.T) {
 			if err != nil {
 				t.Fatalf("db init: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			issue := &models.Issue{Title: tt.name, Type: models.TypeTask, Status: models.StatusInReview}
 			if err := database.CreateIssue(issue); err != nil {
@@ -533,7 +533,7 @@ func TestRecordReviewSecurityEventUsesRecordOnlyShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Attributed record-only", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {

@@ -44,10 +44,10 @@ func createIssueViaAPI(t *testing.T, h *projectRoutesHarness, pid, title string)
 		map[string]string{HeaderTdWatchSession: "ses-integ"})
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("POST /issues status=%d body=%s", resp.StatusCode, raw)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // ---- TestSSE_TwoClientFanout -------------------------------------------------
@@ -156,7 +156,7 @@ func TestSSE_LastEventID_RefreshThenNormalEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)

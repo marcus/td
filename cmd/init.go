@@ -35,7 +35,7 @@ var initCmd = &cobra.Command{
 			output.Error("failed to initialize database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		todosPath := filepath.Join(baseDir, ".todos")
 		fmt.Printf("INITIALIZED %s\n", todosPath)
@@ -77,14 +77,14 @@ func addToGitignore(path string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Add newline if file doesn't end with one
 	if len(contentStr) > 0 && !strings.HasSuffix(contentStr, "\n") {
-		f.WriteString("\n")
+		_, _ = f.WriteString("\n")
 	}
 
-	f.WriteString(".todos/\n")
+	_, _ = f.WriteString(".todos/\n")
 	fmt.Println("Added .todos/ to .gitignore")
 }
 

@@ -447,7 +447,7 @@ func TestDescribeStaleTransitionUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Closed elsewhere",
@@ -482,7 +482,7 @@ func TestDescribeStaleTransitionUpdateIncludesRecentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Reopened elsewhere",
@@ -531,7 +531,7 @@ func TestDescribeStaleTransitionUpdatePrefersNewestWorkflowContext(t *testing.T)
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Newest transition wins",

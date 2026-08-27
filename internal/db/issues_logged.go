@@ -501,18 +501,6 @@ func (db *DB) UpdateIssueLoggedWithReviewMeta(
 	})
 }
 
-// updateIssueAndLogFromPreviousWithReviewMeta mirrors
-// updateIssueAndLogFromPrevious but serializes a ReviewUndoPayload into the
-// action_log NewData column. Caller MUST already hold the write lock.
-func (db *DB) updateIssueAndLogFromPreviousWithReviewMeta(
-	issue, prev *models.Issue, sessionID string, actionType models.ActionType,
-	createdReviewID, priorActiveReviewID string,
-) error {
-	return db.updateIssueAndLogFromPreviousWithReviewMetaStore(
-		db.conn, issue, prev, sessionID, actionType, createdReviewID, priorActiveReviewID,
-	)
-}
-
 func (db *DB) updateIssueAndLogFromPreviousWithReviewMetaStore(
 	store reviewSyncStore, issue, prev *models.Issue, sessionID string, actionType models.ActionType,
 	createdReviewID, priorActiveReviewID string,

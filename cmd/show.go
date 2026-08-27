@@ -35,7 +35,7 @@ Examples:
 		if err != nil {
 			return reportFailure(isJSON, output.ErrCodeDatabaseError, err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// If no args, try to show current work or provide helpful suggestions
 		if len(args) == 0 {

@@ -62,6 +62,6 @@ func replaceStdinWithFile(t *testing.T, content string) {
 	os.Stdin = file
 	t.Cleanup(func() {
 		os.Stdin = oldStdin
-		file.Close()
+		_ = file.Close()
 	})
 }

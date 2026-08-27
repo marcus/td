@@ -191,7 +191,7 @@ func (db *DB) GetWorkSessionIssues(wsID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {
@@ -222,7 +222,7 @@ func (db *DB) ListWorkSessions(limit int) ([]models.WorkSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []models.WorkSession
 	for rows.Next() {

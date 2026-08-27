@@ -15,7 +15,7 @@ func TestMigration37_ReviewedByColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	has, err := database.columnExists("issue_reviews", "reviewed_by")
 	if err != nil {
@@ -46,7 +46,7 @@ func TestMigration37_ReviewedByColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PRAGMA table_info: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cid, notnull, pk int
 		var name, ctype string
@@ -105,7 +105,7 @@ func TestMigration37_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	for i := 0; i < 2; i++ {
 		if err := database.migrateReviewedByColumn(); err != nil {
@@ -124,7 +124,7 @@ func TestCreateIssueReview_ReviewedByRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	cases := []struct {
 		name           string
@@ -211,7 +211,7 @@ func TestReviewedBy_PreExistingRowsUnaffected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-preexist")
 

@@ -99,7 +99,8 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	issue := m.FormState.ToIssue()
 	deps := m.FormState.GetDependencies()
 
-	if m.FormState.Mode == FormModeCreate {
+	switch m.FormState.Mode {
+	case FormModeCreate:
 		// Create new issue with all fields
 		issue.Status = models.StatusOpen
 		if err := m.DB.CreateIssueLogged(issue, m.SessionID); err != nil {
@@ -121,7 +122,7 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		}
 		return m, m.fetchData()
 
-	} else if m.FormState.Mode == FormModeEdit {
+	case FormModeEdit:
 		// Update existing issue
 		existingIssue, err := m.DB.GetIssue(m.FormState.IssueID)
 		if err != nil || existingIssue == nil {
@@ -280,15 +281,15 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 	// Write current description content to temp file
 	content := m.FormState.Description
 	if _, err := tmpFile.WriteString(content); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		m.StatusMessage = "Failed to write temp file: " + err.Error()
 		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}
 		})
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	tmpPath := tmpFile.Name()
 
@@ -299,7 +300,7 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
 		// Read content from temp file
 		data, readErr := os.ReadFile(tmpPath)
-		os.Remove(tmpPath) // Clean up temp file
+		_ = os.Remove(tmpPath) // Clean up temp file
 
 		if err != nil {
 			return EditorFinishedMsg{

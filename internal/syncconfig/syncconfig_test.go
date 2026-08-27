@@ -10,7 +10,7 @@ import (
 
 func TestSnapshotThresholdDefault(t *testing.T) {
 	// Clear any env var that might be set
-	os.Unsetenv("TD_SYNC_SNAPSHOT_THRESHOLD")
+	_ = os.Unsetenv("TD_SYNC_SNAPSHOT_THRESHOLD")
 
 	threshold := GetSnapshotThreshold()
 	if threshold != 100 {

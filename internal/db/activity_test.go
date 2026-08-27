@@ -17,7 +17,7 @@ func TestAddLog_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -50,7 +50,7 @@ func TestAddLog_WithWorkSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{
@@ -90,7 +90,7 @@ func TestAddLog_AllLogTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -135,7 +135,7 @@ func TestGetLogs_BasicRetrieval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -170,7 +170,7 @@ func TestGetLogs_ChronologicalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -211,7 +211,7 @@ func TestGetLogs_WithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -256,7 +256,7 @@ func TestGetLogs_IncludesWorkSessionLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{
@@ -316,7 +316,7 @@ func TestGetLogs_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -339,7 +339,7 @@ func TestGetLogs_NonExistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Get logs for non-existent issue - should return empty, not error
 	logs, err := db.GetLogs("td-nonexistent", 0)
@@ -357,7 +357,7 @@ func TestGetLogsByWorkSession_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{
@@ -402,7 +402,7 @@ func TestGetLogsByWorkSession_MultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ws := &models.WorkSession{
 		Name:      "Multi-Issue Session",
@@ -467,7 +467,7 @@ func TestGetLogsByWorkSession_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ws := &models.WorkSession{
 		Name:      "Empty Session",
@@ -492,7 +492,7 @@ func TestGetLogsByWorkSession_NonExistentSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logs, err := db.GetLogsByWorkSession("ws-nonexistent")
 	if err != nil {
@@ -509,7 +509,7 @@ func TestGetLogsByWorkSession_ChronologicalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	ws := &models.WorkSession{
 		Name:      "Ordered Session",
@@ -558,7 +558,7 @@ func TestGetRecentLogsAll_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -609,7 +609,7 @@ func TestGetRecentLogsAll_WithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -643,7 +643,7 @@ func TestGetActiveSessions_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -680,7 +680,7 @@ func TestGetActiveSessions_ExcludesOldActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -719,7 +719,7 @@ func TestAddHandoff_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -754,7 +754,7 @@ func TestAddHandoff_CreatesActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -806,7 +806,7 @@ func TestAddHandoff_EmptyArrays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -848,7 +848,7 @@ func TestGetLatestHandoff_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -897,7 +897,7 @@ func TestGetLatestHandoff_MultipleHandoffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -943,7 +943,7 @@ func TestGetLatestHandoff_NoHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -966,7 +966,7 @@ func TestGetLatestHandoff_NonExistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	retrieved, err := db.GetLatestHandoff("td-nonexistent")
 	if err != nil {
@@ -983,7 +983,7 @@ func TestDeleteHandoff_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1020,7 +1020,7 @@ func TestGetRecentHandoffs_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -1058,7 +1058,7 @@ func TestGetRecentHandoffs_WithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1094,7 +1094,7 @@ func TestGetRecentHandoffs_ExcludesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1132,7 +1132,7 @@ func TestAddComment_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1164,7 +1164,7 @@ func TestGetComments_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1198,7 +1198,7 @@ func TestGetComments_ChronologicalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1236,7 +1236,7 @@ func TestGetComments_EmptyResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1258,7 +1258,7 @@ func TestGetRecentCommentsAll_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
@@ -1298,7 +1298,7 @@ func TestLogAction_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1332,7 +1332,7 @@ func TestGetLastAction_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1367,7 +1367,7 @@ func TestGetLastAction_ExcludesUndone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1418,7 +1418,7 @@ func TestGetLastAction_ExcludesIssueReviewSyncEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	const sessionID = "ses-reviewer"
 	issueAction := &models.ActionLog{
@@ -1454,7 +1454,7 @@ func TestGetLastAction_NoActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1475,7 +1475,7 @@ func TestMarkActionUndone_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1515,7 +1515,7 @@ func TestGetRecentActions_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1551,7 +1551,7 @@ func TestGetRecentActions_WithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1585,7 +1585,7 @@ func TestGetRecentActions_SessionIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1630,7 +1630,7 @@ func TestGetRecentActionsAll_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if _, err := db.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -1661,7 +1661,7 @@ func TestAddGitSnapshot_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1695,7 +1695,7 @@ func TestGetStartSnapshot_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1734,7 +1734,7 @@ func TestGetStartSnapshot_ReturnsLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1763,7 +1763,7 @@ func TestGetStartSnapshot_NoSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -1785,7 +1785,7 @@ func TestGetStartSnapshot_IgnoresHandoffEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {

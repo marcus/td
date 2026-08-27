@@ -224,7 +224,7 @@ func (p *ProjectLivePool) openOrBootstrap(projectID string) (*tddb.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mktemp init dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tdb, err := tddb.Initialize(tmpDir)
 	if err != nil {
@@ -316,7 +316,7 @@ func (p *ProjectLivePool) replayEvents(projectID string, projectDB *tddb.DB) err
 	if err != nil {
 		return fmt.Errorf("open events.db: %w", err)
 	}
-	defer eventsDB.Close()
+	defer func() { _ = eventsDB.Close() }()
 
 	validator := func(t string) bool { return isValidEntityType(t) }
 	const batchSize = 1000

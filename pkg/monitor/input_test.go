@@ -1035,9 +1035,10 @@ func TestConfirmDialogButtonNavigation(t *testing.T) {
 			}
 
 			// Simulate tab navigation
-			if tt.key == "tab" {
+			switch tt.key {
+			case "tab":
 				m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
-			} else if tt.key == "shift+tab" {
+			case "shift+tab":
 				m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2 // Same as tab for 2 buttons
 			}
 
@@ -1111,9 +1112,10 @@ func TestCloseConfirmDialogButtonNavigation(t *testing.T) {
 			}
 
 			// Simulate tab navigation
-			if tt.key == "tab" {
+			switch tt.key {
+			case "tab":
 				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 1) % 3
-			} else if tt.key == "shift+tab" {
+			case "shift+tab":
 				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 2) % 3
 			}
 

@@ -38,7 +38,7 @@ func seedEventsDBHead(t *testing.T, dataDir, projectID string, head int64) {
 		if err := tdsync.InitServerEventLog(conn); err != nil {
 			t.Fatalf("init events table: %v", err)
 		}
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 
@@ -50,7 +50,7 @@ func seedEventsDBHead(t *testing.T, dataDir, projectID string, head int64) {
 	if err != nil {
 		t.Fatalf("open events.db: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := tdsync.InitServerEventLog(conn); err != nil {
 		t.Fatalf("init events table: %v", err)
 	}

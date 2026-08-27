@@ -55,7 +55,7 @@ func TestCLIFocusIsScopedBySessionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := &models.Issue{Title: "Session A focus", Status: models.StatusOpen}
 	issueB := &models.Issue{Title: "Session B focus", Status: models.StatusOpen}
@@ -117,7 +117,7 @@ func TestCLIActiveWorkSessionIsScopedBySessionState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setTestContext(t, "ctx-ws-a")
 	if err := wsStartCmd.RunE(wsStartCmd, []string{"session-a"}); err != nil {
@@ -175,7 +175,7 @@ func TestCLILegacyFocusFallbackReadOnlyAndClearWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Legacy focused issue", Status: models.StatusInProgress}
 	if err := database.CreateIssue(issue); err != nil {

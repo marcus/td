@@ -16,7 +16,7 @@ func TestImportJSON_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize source DB: %v", err)
 	}
-	defer srcDB.Close()
+	defer func() { _ = srcDB.Close() }()
 
 	closedAt := time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC)
 	deferUntil := "2026-04-01"
@@ -123,7 +123,7 @@ func TestImportJSON_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize dest DB: %v", err)
 	}
-	defer dstDB.Close()
+	defer func() { _ = dstDB.Close() }()
 
 	imported, err := importJSON(dstDB, exportData, false, false)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestImportJSON_ForceOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an existing issue with open status
 	existing := &models.Issue{
@@ -273,7 +273,7 @@ func TestImportJSON_DryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	items := []exportedItem{{
 		Issue: models.Issue{
@@ -306,7 +306,7 @@ func TestImportJSON_SkipsEmptyID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	items := []exportedItem{{
 		Issue: models.Issue{
@@ -332,7 +332,7 @@ func TestImportJSON_SkipsEmptyTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	items := []exportedItem{{
 		Issue: models.Issue{
@@ -358,7 +358,7 @@ func TestImportJSON_DryRunExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create existing issue
 	existing := &models.Issue{
@@ -403,7 +403,7 @@ func TestImportJSON_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Completely invalid JSON
 	_, err = importJSON(database, []byte("not json"), false, false)
@@ -535,7 +535,7 @@ func TestImportJSON_DeletedAtRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	deletedAt := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 	items := []exportedItem{{
@@ -578,7 +578,7 @@ func TestImportJSON_ForceOverwriteCleansAssociatedData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an issue with a log
 	issue := &models.Issue{
@@ -652,7 +652,7 @@ func TestImportJSON_MultipleHandoffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	items := []exportedItem{{
 		Issue: models.Issue{
@@ -707,7 +707,7 @@ func TestImportJSON_OldHandoffFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Old export format: "handoff" singular with a single object
 	oldFormatJSON := `[{
@@ -762,7 +762,7 @@ func TestImportJSON_DanglingParentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Import an issue whose parent doesn't exist in the DB or import set
 	items := []exportedItem{{
@@ -803,7 +803,7 @@ func TestImportJSON_ValidParentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Import parent and child together — no warning expected
 	items := []exportedItem{
@@ -843,7 +843,7 @@ func TestImportMarkdown_Status(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	md := `## Task One
 - Status: in_progress
@@ -895,7 +895,7 @@ func TestImportJSON_OldDependencyFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Old export format: dependencies as []string
 	oldFormatJSON := `[{
@@ -937,7 +937,7 @@ func TestImportJSON_DependencyRelationTypePreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	items := []exportedItem{{
 		Issue: models.Issue{

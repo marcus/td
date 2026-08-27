@@ -52,7 +52,7 @@ func pushIssues(t *testing.T, h *TestHarness, token, projectID, deviceID, sessio
 		SessionID: sessionID,
 		Events:    events,
 	})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("push: expected 200, got %d", resp.StatusCode)
 	}
@@ -77,7 +77,7 @@ func queryIssueIDs(t *testing.T, h *TestHarness, projectID string) []string {
 	if err != nil {
 		t.Fatalf("query issues: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string
@@ -306,7 +306,7 @@ func TestPush_ApplyError_DoesNotAdvanceCursor(t *testing.T) {
 		SessionID: "ses-A",
 		Events:    bad,
 	})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected 500 when apply fails, got %d", resp.StatusCode)
 	}

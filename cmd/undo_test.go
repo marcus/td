@@ -98,7 +98,7 @@ func TestUndoIssueCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an issue
 	issue := &models.Issue{
@@ -142,7 +142,7 @@ func TestUndoIssueDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create and delete an issue
 	issue := &models.Issue{
@@ -182,7 +182,7 @@ func TestUndoIssueApproval_EmitsReviewDeleteForSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	const sessionID = "ses-reviewer"
 	issue := &models.Issue{
@@ -258,7 +258,7 @@ func TestUndoIssueApproval_ReviewEventFailureIsRetryable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	const sessionID = "ses-reviewer"
 	issue := &models.Issue{Title: "Approved issue", Status: models.StatusClosed}
@@ -392,7 +392,7 @@ func TestUndoIssueDeleteCreatesActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create and delete an issue using logged methods (as real code does)
 	issue := &models.Issue{
@@ -462,7 +462,7 @@ func TestUndoIssueUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue
 	issue := &models.Issue{
@@ -510,7 +510,7 @@ func TestUndoIssueStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue in open state
 	issue := &models.Issue{
@@ -555,13 +555,17 @@ func TestUndoDependencyAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add dependency
 	if err := database.AddDependency(issue1.ID, issue2.ID, "depends_on"); err != nil {
@@ -605,13 +609,17 @@ func TestUndoDependencyRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create action log for remove dependency (dependency was removed)
 	depInfo := struct {
@@ -650,11 +658,13 @@ func TestUndoFileLinkAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Link a file
 	if err := database.LinkFile(issue.ID, "test.go", models.FileRoleImplementation, "abc123"); err != nil {
@@ -702,11 +712,13 @@ func TestUndoFileLinkRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create action log for unlink
 	linkInfo := struct {
@@ -749,11 +761,13 @@ func TestPerformUndoDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an issue for testing
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name       string
@@ -792,10 +806,12 @@ func TestUndoUpdateWithoutPreviousData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	action := &models.ActionLog{
 		SessionID:    "ses_test",
@@ -818,10 +834,12 @@ func TestUndoWithInvalidPreviousData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	action := &models.ActionLog{
 		SessionID:    "ses_test",
@@ -844,7 +862,7 @@ func TestUndoBoardUnposition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board and issue
 	board, err := database.CreateBoard("test-board", "status:open")
@@ -900,7 +918,7 @@ func TestUndoBoardSetPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create board and issue
 	board, err := database.CreateBoard("test-board", "status:open")

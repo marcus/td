@@ -41,7 +41,7 @@ func TestTrustedSelfReviewApproveOpensConfirmModal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	const session = "ses-self"
 
@@ -121,7 +121,7 @@ func TestTrustedNonImplementerApproveSkipsSelfReviewPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Issue implemented by someone else; the approver is a fresh, independent
 	// session with no implementation history.
@@ -182,7 +182,7 @@ func TestSelfReviewModal_TypedAttributionReachesTheReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Attribution target", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -254,7 +254,7 @@ func TestSelfReviewModal_SelfReviewRequiresAndPersistsReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Self-review target", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {

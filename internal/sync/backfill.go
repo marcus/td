@@ -116,7 +116,7 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("query issues for stale backfill: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, err := rows.Columns()
 	if err != nil {
@@ -129,7 +129,7 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	const staleThreshold = time.Second
 	count := 0
@@ -292,7 +292,7 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 	if err != nil {
 		return 0, fmt.Errorf("query orphans: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, err := rows.Columns()
 	if err != nil {
@@ -306,7 +306,7 @@ func backfillTable(tx *sql.Tx, st syncableTable, sessionID string) (int, error) 
 	if err != nil {
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	count := 0
 	for rows.Next() {
@@ -428,7 +428,7 @@ func anyEventSetsStatus(tx *sql.Tx, entityID, status string) bool {
 	if err != nil {
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var newData, prevData sql.NullString
@@ -461,7 +461,7 @@ func checkCreateEventStatus(tx *sql.Tx, entityID, pattern, status string) bool {
 	if err != nil {
 		return false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var newData sql.NullString

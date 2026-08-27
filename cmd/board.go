@@ -32,7 +32,7 @@ var boardListCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		boards, err := database.ListBoards()
 		if err != nil {
@@ -89,7 +89,7 @@ var boardCreateCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		queryStr, _ := cmd.Flags().GetString("query")
 
@@ -123,7 +123,7 @@ var boardDeleteCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		board, err := database.ResolveBoardRef(ref)
 		if err != nil {
@@ -160,7 +160,7 @@ var boardShowCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		board, err := database.ResolveBoardRef(ref)
 		if err != nil {
@@ -287,7 +287,7 @@ var boardEditCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		board, err := database.ResolveBoardRef(ref)
 		if err != nil {
@@ -347,7 +347,7 @@ var boardMoveCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		board, err := database.ResolveBoardRef(boardRef)
 		if err != nil {
@@ -409,7 +409,7 @@ var boardUnpositionCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		board, err := database.ResolveBoardRef(boardRef)
 		if err != nil {

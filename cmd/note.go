@@ -55,7 +55,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		note, err := database.CreateNote(title, content)
 		if err != nil {
@@ -94,7 +94,7 @@ Examples:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		opts := db.ListNotesOptions{}
 		opts.Limit, _ = cmd.Flags().GetInt("limit")
@@ -193,7 +193,7 @@ Examples:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		var note *models.Note
 		if includeDeleted, _ := cmd.Flags().GetBool("include-deleted"); includeDeleted {
@@ -250,7 +250,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		note, err := database.GetNote(args[0])
 		if err != nil {
@@ -313,7 +313,7 @@ var noteDeleteCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.DeleteNote(args[0]); err != nil {
 			emitErr("%v", err)
@@ -348,7 +348,7 @@ var noteRestoreCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		note, err := database.RestoreNote(args[0])
 		if err != nil {
@@ -378,7 +378,7 @@ var notePinCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.PinNote(args[0]); err != nil {
 			output.Error("%v", err)
@@ -400,7 +400,7 @@ var noteUnpinCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.UnpinNote(args[0]); err != nil {
 			output.Error("%v", err)
@@ -422,7 +422,7 @@ var noteArchiveCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.ArchiveNote(args[0]); err != nil {
 			output.Error("%v", err)
@@ -444,7 +444,7 @@ var noteUnarchiveCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := database.UnarchiveNote(args[0]); err != nil {
 			output.Error("%v", err)
@@ -468,15 +468,15 @@ func openEditorForContent(initial string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if initial != "" {
 		if _, err := tmpFile.WriteString(initial); err != nil {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			return "", fmt.Errorf("write temp file: %w", err)
 		}
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Split editor command in case it includes args (e.g. "code --wait")
 	parts := strings.Fields(editor)

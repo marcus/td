@@ -24,7 +24,7 @@ func computeFileSHA(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -114,7 +114,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -237,7 +237,7 @@ Examples:
 
 			if info.IsDir() {
 				if recursive {
-					filepath.Walk(match, func(path string, info os.FileInfo, err error) error {
+					_ = filepath.Walk(match, func(path string, info os.FileInfo, err error) error {
 						if err != nil {
 							return nil
 						}
@@ -333,7 +333,7 @@ var unlinkCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -396,7 +396,7 @@ var filesCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		issueID := args[0]
 

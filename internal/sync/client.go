@@ -49,7 +49,7 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query pending events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []Event
 	for rows.Next() {
@@ -293,7 +293,7 @@ func GetPendingEventsPreserveSession(tx *sql.Tx, deviceID string) ([]Event, erro
 	if err != nil {
 		return nil, fmt.Errorf("query pending events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []Event
 	for rows.Next() {

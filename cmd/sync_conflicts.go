@@ -26,7 +26,7 @@ var syncConflictsCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		var since *time.Time
 		if sinceStr != "" {

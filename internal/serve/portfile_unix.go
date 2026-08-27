@@ -37,7 +37,7 @@ func acquireFileLockTimeout(f *os.File, timeout time.Duration) error {
 // releaseFileLock releases the exclusive flock.
 func releaseFileLock(f *os.File) {
 	if f != nil {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	}
 }
 

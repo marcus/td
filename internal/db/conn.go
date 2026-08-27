@@ -90,7 +90,7 @@ func OpenSQLite(path string, opts OpenOptions) (*sql.DB, error) {
 	}
 	busyMs := int(busy / time.Millisecond)
 	if _, err := conn.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d", busyMs)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 
@@ -102,20 +102,20 @@ func OpenSQLite(path string, opts OpenOptions) (*sql.DB, error) {
 	// Switching an existing WAL database to TRUNCATE checkpoints and removes
 	// any -wal/-shm files; on an already-TRUNCATE database this is a no-op.
 	if _, err := conn.Exec("PRAGMA journal_mode=TRUNCATE"); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("set journal mode: %w", err)
 	}
 
 	// In rollback-journal mode synchronous=NORMAL risks losing the last
 	// transaction on power failure, never database corruption.
 	if _, err := conn.Exec("PRAGMA synchronous=NORMAL"); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("set synchronous: %w", err)
 	}
 
 	if !opts.DisableForeignKeys {
 		if _, err := conn.Exec("PRAGMA foreign_keys=ON"); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("enable foreign keys: %w", err)
 		}
 	}

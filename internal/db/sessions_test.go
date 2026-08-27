@@ -12,7 +12,7 @@ func setupSessionTestDB(t *testing.T) *DB {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 	return database
 }
 

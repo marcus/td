@@ -468,10 +468,11 @@ func (e *Evaluator) parseRelativeOffset(s string) string {
 
 	sign := 1
 	start := 0
-	if s[0] == '-' {
+	switch s[0] {
+	case '-':
 		sign = -1
 		start = 1
-	} else if s[0] == '+' {
+	case '+':
 		start = 1
 	}
 

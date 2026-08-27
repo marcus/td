@@ -222,7 +222,7 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var issues []models.Issue
 	for rows.Next() {
@@ -313,7 +313,7 @@ func (db *DB) GetIssueTitles(ids []string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	titles := make(map[string]string)
 	for rows.Next() {
@@ -818,7 +818,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var issues []models.Issue
 	for rows.Next() {

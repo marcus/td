@@ -121,7 +121,7 @@ func (db *DB) ListAllSessions() ([]SessionRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []SessionRow
 	for rows.Next() {
@@ -298,10 +298,10 @@ func (db *DB) MigrateFileSystemSessions(baseDir string) error {
 		// Only clean up filesystem if all inserts succeeded
 		if !insertFailed {
 			if sessErr == nil {
-				os.RemoveAll(sessionsPath)
+				_ = os.RemoveAll(sessionsPath)
 			}
 			if legErr == nil {
-				os.Remove(legacyPath)
+				_ = os.Remove(legacyPath)
 			}
 		}
 

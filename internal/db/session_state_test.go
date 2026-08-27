@@ -16,7 +16,7 @@ func setupSessionStateTestDB(t *testing.T) (*DB, string) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 	return database, dir
 }
 

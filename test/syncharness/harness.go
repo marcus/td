@@ -200,7 +200,7 @@ func NewHarness(t *testing.T, numClients int, projectID string) *Harness {
 		t.Fatalf("init server event log: %v", err)
 	}
 	h.ProjectDBs[projectID] = serverDB
-	t.Cleanup(func() { serverDB.Close() })
+	t.Cleanup(func() { _ = serverDB.Close() })
 
 	// Create clients
 	for i := 0; i < numClients; i++ {
@@ -222,7 +222,7 @@ func NewHarness(t *testing.T, numClients int, projectID string) *Harness {
 		if err := initClientSchema(db); err != nil {
 			t.Fatalf("create schema client %s: %v", clientID, err)
 		}
-		t.Cleanup(func() { db.Close() })
+		t.Cleanup(func() { _ = db.Close() })
 
 		h.Clients[clientID] = &SimulatedClient{
 			DeviceID:  deviceID,
@@ -445,7 +445,7 @@ func readEntityFiltered(tx *sql.Tx, entityType, entityID string, filterSoftDelet
 	if err != nil {
 		return nil
 	}
-	defer row.Close()
+	defer func() { _ = row.Close() }()
 
 	if !row.Next() {
 		return nil
@@ -689,9 +689,9 @@ func (h *Harness) Diff(clientA, clientB string) string {
 		rowsA := dumpTable(cA.DB, table)
 		rowsB := dumpTable(cB.DB, table)
 		if rowsA != rowsB {
-			sb.WriteString(fmt.Sprintf("=== %s ===\n", table))
-			sb.WriteString(fmt.Sprintf("--- %s ---\n%s\n", clientA, rowsA))
-			sb.WriteString(fmt.Sprintf("--- %s ---\n%s\n", clientB, rowsB))
+			fmt.Fprintf(&sb, "=== %s ===\n", table)
+			fmt.Fprintf(&sb, "--- %s ---\n%s\n", clientA, rowsA)
+			fmt.Fprintf(&sb, "--- %s ---\n%s\n", clientB, rowsB)
 		}
 	}
 	if sb.Len() == 0 {
@@ -739,7 +739,7 @@ func dumpTable(db *sql.DB, table string) string {
 	if err != nil {
 		return fmt.Sprintf("ERROR: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, err := rows.Columns()
 	if err != nil {
@@ -754,7 +754,7 @@ func dumpTable(db *sql.DB, table string) string {
 			ptrs[i] = &vals[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			sb.WriteString(fmt.Sprintf("SCAN ERROR: %v\n", err))
+			fmt.Fprintf(&sb, "SCAN ERROR: %v\n", err)
 			continue
 		}
 

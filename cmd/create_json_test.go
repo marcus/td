@@ -39,19 +39,11 @@ func setJSONFlag(t *testing.T, on bool) {
 //
 // Diagnostics (output.Error, output.Warning) go to STDERR, so this returns
 // only the command's result. A test asserting on an "ERROR:" or "Warning:"
-// line must use captureOutput or captureStderr instead.
+// line must use captureOutput instead.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	stdout, _ := captureStdoutStderr(t, fn)
 	return stdout
-}
-
-// captureStderr returns only what fn wrote to os.Stderr — the stream that
-// carries output.Error and output.Warning.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	_, stderr := captureStdoutStderr(t, fn)
-	return stderr
 }
 
 // captureOutput returns both streams concatenated. Use it where a test
@@ -112,7 +104,7 @@ func TestCreateJSONOutputEmitsFullIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 
@@ -176,7 +168,7 @@ func TestCreateHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, false)
 
@@ -207,7 +199,7 @@ func TestEpicCreateJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 

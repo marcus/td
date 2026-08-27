@@ -57,7 +57,7 @@ func WritePortFile(baseDir string, info *PortInfo) error {
 	if err != nil {
 		return fmt.Errorf("open port lock file: %w", err)
 	}
-	defer lockFile.Close()
+	defer func() { _ = lockFile.Close() }()
 
 	// Acquire exclusive lock (blocking with a timeout via retry)
 	if err := acquireFileLockTimeout(lockFile, 5*time.Second); err != nil {
@@ -132,7 +132,7 @@ func IsServerHealthy(port int) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }
 

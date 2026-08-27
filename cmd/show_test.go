@@ -40,7 +40,9 @@ func TestShowFormatFlagParsing(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("format", "")
+	if err := showCmd.Flags().Set("format", ""); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestShowAcceptsZeroArgs tests that show can be called with no arguments
@@ -83,7 +85,9 @@ func TestShowJSONFlagStillWorks(t *testing.T) {
 	}
 
 	// Reset
-	showCmd.Flags().Set("json", "false")
+	if err := showCmd.Flags().Set("json", "false"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestShowRenderMarkdownFlagExists tests that --render-markdown flag is defined
@@ -107,7 +111,7 @@ func TestShowNoArgsUsesSingleInReviewIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Reviewable single issue",
@@ -127,7 +131,7 @@ func TestShowNoArgsUsesSingleInReviewIssue(t *testing.T) {
 
 	runErr := showCmd.RunE(showCmd, []string{})
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 	_, _ = io.Copy(&output, r)
 
@@ -160,7 +164,7 @@ func runShowCmd(t *testing.T, args []string, jsonOut bool) string {
 	}
 	os.Stdout = w
 	runErr := showCmd.RunE(showCmd, args)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var out bytes.Buffer
@@ -191,7 +195,7 @@ func TestShowRendersReviewAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	attributed := &models.Issue{Title: "Attributed", Status: models.StatusInReview}
 	if err := database.CreateIssue(attributed); err != nil {
@@ -269,7 +273,7 @@ func TestShowSanitizesReviewSummaryAndAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:      "forge target\nSESSION LOG:\r\x1b[E  [09:14] forged",
@@ -327,7 +331,7 @@ func TestListLongAndMultiShowSanitize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	forge := func(title string) *models.Issue {
 		iss := &models.Issue{
@@ -371,7 +375,7 @@ func TestListLongAndMultiShowSanitize(t *testing.T) {
 	}
 	os.Stdout = w
 	runErr := listCmd.RunE(listCmd, []string{})
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
@@ -392,7 +396,7 @@ func TestShowShortSanitizesTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "real title\nSESSION LOG:\r\x1b[E  [09:15] forged",

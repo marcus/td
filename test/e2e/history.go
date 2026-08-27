@@ -154,33 +154,33 @@ func (h *OperationHistory) WriteReport(w io.Writer) {
 	s := h.Summary()
 	records := h.Records()
 
-	fmt.Fprintf(w, "=== Operation History Report ===\n")
-	fmt.Fprintf(w, "Total operations: %d\n", s.TotalOps)
-	fmt.Fprintf(w, "Unique issues:    %d\n", s.UniqueIssues)
-	fmt.Fprintf(w, "Total duration:   %s\n", s.TotalDuration)
-	fmt.Fprintf(w, "Avg duration:     %s\n", s.AvgDuration)
-	fmt.Fprintf(w, "Max duration:     %s\n\n", s.MaxDuration)
+	_, _ = fmt.Fprintf(w, "=== Operation History Report ===\n")
+	_, _ = fmt.Fprintf(w, "Total operations: %d\n", s.TotalOps)
+	_, _ = fmt.Fprintf(w, "Unique issues:    %d\n", s.UniqueIssues)
+	_, _ = fmt.Fprintf(w, "Total duration:   %s\n", s.TotalDuration)
+	_, _ = fmt.Fprintf(w, "Avg duration:     %s\n", s.AvgDuration)
+	_, _ = fmt.Fprintf(w, "Max duration:     %s\n\n", s.MaxDuration)
 
 	// Results breakdown
-	fmt.Fprintf(w, "--- Results ---\n")
+	_, _ = fmt.Fprintf(w, "--- Results ---\n")
 	for _, result := range sortedKeys(s.ByResult) {
-		fmt.Fprintf(w, "  %-20s %d\n", result, s.ByResult[result])
+		_, _ = fmt.Fprintf(w, "  %-20s %d\n", result, s.ByResult[result])
 	}
 
 	// Actions breakdown
-	fmt.Fprintf(w, "\n--- Actions ---\n")
+	_, _ = fmt.Fprintf(w, "\n--- Actions ---\n")
 	for _, action := range sortedKeys(s.ByAction) {
-		fmt.Fprintf(w, "  %-20s %d\n", action, s.ByAction[action])
+		_, _ = fmt.Fprintf(w, "  %-20s %d\n", action, s.ByAction[action])
 	}
 
 	// Actors breakdown
-	fmt.Fprintf(w, "\n--- Actors ---\n")
+	_, _ = fmt.Fprintf(w, "\n--- Actors ---\n")
 	for _, actor := range sortedKeys(s.ByActor) {
-		fmt.Fprintf(w, "  %-20s %d\n", actor, s.ByActor[actor])
+		_, _ = fmt.Fprintf(w, "  %-20s %d\n", actor, s.ByActor[actor])
 	}
 
 	// Recent operations (last 20)
-	fmt.Fprintf(w, "\n--- Recent Operations (last 20) ---\n")
+	_, _ = fmt.Fprintf(w, "\n--- Recent Operations (last 20) ---\n")
 	start := 0
 	if len(records) > 20 {
 		start = len(records) - 20
@@ -190,7 +190,7 @@ func (h *OperationHistory) WriteReport(w io.Writer) {
 		if r.Error != "" {
 			errSuffix = " err=" + r.Error
 		}
-		fmt.Fprintf(w, "  #%-4d %-8s %-10s %-12s %-8s %s%s\n",
+		_, _ = fmt.Fprintf(w, "  #%-4d %-8s %-10s %-12s %-8s %s%s\n",
 			r.Seq, r.Actor, r.Action, r.TargetID, r.Result, r.Duration, errSuffix)
 	}
 }

@@ -32,10 +32,6 @@ var typeIcons = map[models.Type]string{
 // ansiPattern matches ANSI escape sequences
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func highlightRowWithBackground(line string, width int, bgCode string) string {
-	return highlightRowWithSelection(line, width, bgCode, bgCode)
-}
-
 func highlightRowWithSelection(line string, width int, selectionCode, bgCode string) string {
 	reset := "\x1b[0m"
 

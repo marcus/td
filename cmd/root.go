@@ -74,7 +74,7 @@ var errSilentExit = errors.New("td: silent exit")
 
 func Execute() {
 	if f := initLogFile(); f != nil {
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 	}
 
 	cmdStartTime = time.Now()
@@ -192,11 +192,11 @@ func logAgentError(args []string, errMsg string) {
 		if sess, err := session.Get(database); err == nil {
 			sessionID = sess.ID
 		}
-		database.Close()
+		_ = database.Close()
 	}
 
 	// Log the error (silently fails if project not initialized)
-	db.LogAgentError(dir, args, errMsg, sessionID)
+	_ = db.LogAgentError(dir, args, errMsg, sessionID)
 }
 
 // handleUnknownFlagError checks if error is an unknown flag and suggests alternatives
@@ -469,7 +469,7 @@ func buildCommandEvent(cmd *cobra.Command, err error) db.CommandUsageEvent {
 			if sess, err := session.Get(database); err == nil {
 				event.SessionID = sess.ID
 			}
-			database.Close()
+			_ = database.Close()
 		}
 	}
 

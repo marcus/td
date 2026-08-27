@@ -240,7 +240,7 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 	if preview.Count < 0 {
 		sb.WriteString("Matches: 5+ issue(s)")
 	} else {
-		sb.WriteString(fmt.Sprintf("Matches: %d issue(s)", preview.Count))
+		fmt.Fprintf(&sb, "Matches: %d issue(s)", preview.Count)
 	}
 	if len(preview.Titles) > 0 {
 		for _, t := range preview.Titles {
@@ -254,7 +254,7 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 		if preview.Count < 0 {
 			sb.WriteString("\n  " + styles.subtle.Render("... and more"))
 		} else if preview.Count > len(preview.Titles) {
-			sb.WriteString(fmt.Sprintf("\n  "+styles.subtle.Render("... and %d more"), preview.Count-len(preview.Titles)))
+			fmt.Fprintf(&sb, "\n  "+styles.subtle.Render("... and %d more"), preview.Count-len(preview.Titles))
 		}
 	}
 

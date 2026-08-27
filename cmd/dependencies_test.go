@@ -16,16 +16,22 @@ func TestWouldCreateCycleSimple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add issue2 depends on issue1
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Check if adding issue1 depends on issue2 would create cycle
 	if !dependency.WouldCreateCycle(database, issue1.ID, issue2.ID) {
@@ -40,18 +46,28 @@ func TestWouldCreateCycleTransitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create chain: issue3 -> issue2 -> issue1
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	database.AddDependency(issue3.ID, issue2.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(issue3.ID, issue2.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// issue1 -> issue3 would create cycle: issue1 -> issue3 -> issue2 -> issue1
 	if !dependency.WouldCreateCycle(database, issue1.ID, issue3.ID) {
@@ -71,18 +87,26 @@ func TestWouldCreateCycleNoCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create independent issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
 	// issue2 depends on issue1 (no cycle yet)
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// issue3 -> issue1 should be fine (no cycle)
 	if dependency.WouldCreateCycle(database, issue3.ID, issue1.ID) {
@@ -102,10 +126,12 @@ func TestGetTransitiveBlockedEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Standalone Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	blocked := dependency.GetTransitiveBlocked(database, issue.ID, make(map[string]bool))
 	if len(blocked) != 0 {
@@ -120,19 +146,29 @@ func TestGetTransitiveBlockedDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create blocker and blockee
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusOpen}
 	blocked1 := &models.Issue{Title: "Blocked 1", Status: models.StatusOpen}
 	blocked2 := &models.Issue{Title: "Blocked 2", Status: models.StatusOpen}
-	database.CreateIssue(blocker)
-	database.CreateIssue(blocked1)
-	database.CreateIssue(blocked2)
+	if err := database.CreateIssue(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(blocked1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(blocked2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Both blocked1 and blocked2 depend on blocker
-	database.AddDependency(blocked1.ID, blocker.ID, "depends_on")
-	database.AddDependency(blocked2.ID, blocker.ID, "depends_on")
+	if err := database.AddDependency(blocked1.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(blocked2.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	allBlocked := dependency.GetTransitiveBlocked(database, blocker.ID, make(map[string]bool))
 	if len(allBlocked) != 2 {
@@ -147,21 +183,35 @@ func TestGetTransitiveBlockedChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create chain: issue4 -> issue3 -> issue2 -> issue1
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusOpen}
 	issue4 := &models.Issue{Title: "Issue 4", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
-	database.CreateIssue(issue4)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue4); err != nil {
+		t.Fatal(err)
+	}
 
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	database.AddDependency(issue3.ID, issue2.ID, "depends_on")
-	database.AddDependency(issue4.ID, issue3.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(issue3.ID, issue2.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(issue4.ID, issue3.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// issue1 transitively blocks 3 issues
 	allBlocked := dependency.GetTransitiveBlocked(database, issue1.ID, make(map[string]bool))
@@ -183,7 +233,7 @@ func TestGetTransitiveBlockedDiamond(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Diamond pattern:
 	//     top
@@ -195,15 +245,31 @@ func TestGetTransitiveBlockedDiamond(t *testing.T) {
 	mid1 := &models.Issue{Title: "Mid1", Status: models.StatusOpen}
 	mid2 := &models.Issue{Title: "Mid2", Status: models.StatusOpen}
 	bottom := &models.Issue{Title: "Bottom", Status: models.StatusOpen}
-	database.CreateIssue(top)
-	database.CreateIssue(mid1)
-	database.CreateIssue(mid2)
-	database.CreateIssue(bottom)
+	if err := database.CreateIssue(top); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(mid1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(mid2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(bottom); err != nil {
+		t.Fatal(err)
+	}
 
-	database.AddDependency(mid1.ID, top.ID, "depends_on")
-	database.AddDependency(mid2.ID, top.ID, "depends_on")
-	database.AddDependency(bottom.ID, mid1.ID, "depends_on")
-	database.AddDependency(bottom.ID, mid2.ID, "depends_on")
+	if err := database.AddDependency(mid1.ID, top.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(mid2.ID, top.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(bottom.ID, mid1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(bottom.ID, mid2.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// getTransitiveBlocked returns all paths, so bottom appears twice (via mid1 and mid2)
 	// This is how it counts total blocking relationships, not unique issues
@@ -221,10 +287,12 @@ func TestSelfReferenceDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Self Loop", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Direct self-reference via WouldCreateCycle
 	if !dependency.WouldCreateCycle(database, issue.ID, issue.ID) {
@@ -239,7 +307,7 @@ func TestBuildCriticalPathSequenceEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueMap := make(map[string]*models.Issue)
 	blockCounts := make(map[string]int)
@@ -257,10 +325,12 @@ func TestBuildCriticalPathSequenceSingle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Single", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	issueMap := map[string]*models.Issue{issue.ID: issue}
 	blockCounts := make(map[string]int)
@@ -278,18 +348,28 @@ func TestBuildCriticalPathSequenceChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Chain: issue3 -> issue2 -> issue1
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
-	database.AddDependency(issue2.ID, issue1.ID, "depends_on")
-	database.AddDependency(issue3.ID, issue2.ID, "depends_on")
+	if err := database.AddDependency(issue2.ID, issue1.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddDependency(issue3.ID, issue2.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	issueMap := map[string]*models.Issue{
 		issue1.ID: issue1,
@@ -319,12 +399,16 @@ func TestBuildCriticalPathSkipsClosedIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	openIssue := &models.Issue{Title: "Open", Status: models.StatusOpen}
 	closedIssue := &models.Issue{Title: "Closed", Status: models.StatusClosed}
-	database.CreateIssue(openIssue)
-	database.CreateIssue(closedIssue)
+	if err := database.CreateIssue(openIssue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(closedIssue); err != nil {
+		t.Fatal(err)
+	}
 
 	issueMap := map[string]*models.Issue{
 		openIssue.ID:   openIssue,
@@ -363,7 +447,9 @@ func TestDepAddDependsOnFlag(t *testing.T) {
 	}
 
 	// Reset
-	depAddCmd.Flags().Set("depends-on", "")
+	if err := depAddCmd.Flags().Set("depends-on", ""); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestAddDependencySingle tests adding a single dependency
@@ -373,13 +459,17 @@ func TestAddDependencySingle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two issues
 	issue1 := &models.Issue{Title: "Setup Database", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Implement API", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add dependency: issue2 depends on issue1
 	err = addDependency(database, issue2.ID, issue1.ID, "ses_test")
@@ -429,11 +519,13 @@ func TestAddDependencyMultiple(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			// Create main issue and dependency issues
 			mainIssue := &models.Issue{Title: "Integrations", Status: models.StatusOpen}
-			database.CreateIssue(mainIssue)
+			if err := database.CreateIssue(mainIssue); err != nil {
+				t.Fatal(err)
+			}
 
 			depIssueIDs := make([]string, tt.numDeps)
 			for i := 0; i < tt.numDeps; i++ {
@@ -441,7 +533,9 @@ func TestAddDependencyMultiple(t *testing.T) {
 					Title:  fmt.Sprintf("Dependency %d", i+1),
 					Status: models.StatusOpen,
 				}
-				database.CreateIssue(issue)
+				if err := database.CreateIssue(issue); err != nil {
+					t.Fatal(err)
+				}
 				depIssueIDs[i] = issue.ID
 			}
 
@@ -490,7 +584,9 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			name: "simple cycle",
 			setupChain: func(database *db.DB, issues []*models.Issue) {
 				// issue1 -> issue2
-				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
+				if err := database.AddDependency(issues[1].ID, issues[0].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			cycleFrom:   0, // Try to add: issue1 depends on issue2
 			cycleTo:     1,
@@ -501,8 +597,12 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			name: "transitive cycle",
 			setupChain: func(database *db.DB, issues []*models.Issue) {
 				// issue2 -> issue1, issue3 -> issue2
-				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
-				database.AddDependency(issues[2].ID, issues[1].ID, "depends_on")
+				if err := database.AddDependency(issues[1].ID, issues[0].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues[2].ID, issues[1].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			cycleFrom:   0, // Try to add: issue1 depends on issue3
 			cycleTo:     2,
@@ -523,7 +623,9 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			name: "no cycle valid dep",
 			setupChain: func(database *db.DB, issues []*models.Issue) {
 				// issue2 -> issue1
-				database.AddDependency(issues[1].ID, issues[0].ID, "depends_on")
+				if err := database.AddDependency(issues[1].ID, issues[0].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			cycleFrom:   2, // Try to add: issue3 depends on issue1 (valid)
 			cycleTo:     0,
@@ -539,7 +641,7 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			// Create 4 issues
 			issues := make([]*models.Issue, 4)
@@ -548,7 +650,9 @@ func TestAddDependencyCircularDetection(t *testing.T) {
 					Title:  fmt.Sprintf("Issue %d", i+1),
 					Status: models.StatusOpen,
 				}
-				database.CreateIssue(issues[i])
+				if err := database.CreateIssue(issues[i]); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			// Setup the dependency chain
@@ -576,7 +680,9 @@ func TestAddDependencyValidation(t *testing.T) {
 			name: "issue not found source",
 			setup: func(database *db.DB) (string, string) {
 				issue := &models.Issue{Title: "Exists", Status: models.StatusOpen}
-				database.CreateIssue(issue)
+				if err := database.CreateIssue(issue); err != nil {
+					t.Fatal(err)
+				}
 				return "nonexistent", issue.ID
 			},
 			wantError:   true,
@@ -586,7 +692,9 @@ func TestAddDependencyValidation(t *testing.T) {
 			name: "issue not found target",
 			setup: func(database *db.DB) (string, string) {
 				issue := &models.Issue{Title: "Exists", Status: models.StatusOpen}
-				database.CreateIssue(issue)
+				if err := database.CreateIssue(issue); err != nil {
+					t.Fatal(err)
+				}
 				return issue.ID, "nonexistent"
 			},
 			wantError:   true,
@@ -597,10 +705,16 @@ func TestAddDependencyValidation(t *testing.T) {
 			setup: func(database *db.DB) (string, string) {
 				issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 				issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-				database.CreateIssue(issue1)
-				database.CreateIssue(issue2)
+				if err := database.CreateIssue(issue1); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.CreateIssue(issue2); err != nil {
+					t.Fatal(err)
+				}
 				// Add dependency first time
-				addDependency(database, issue1.ID, issue2.ID, "ses_test")
+				if err := addDependency(database, issue1.ID, issue2.ID, "ses_test"); err != nil {
+					t.Fatal(err)
+				}
 				return issue1.ID, issue2.ID
 			},
 			wantError:   false, // addDependency returns nil for duplicates (with warning)
@@ -611,8 +725,12 @@ func TestAddDependencyValidation(t *testing.T) {
 			setup: func(database *db.DB) (string, string) {
 				issue1 := &models.Issue{Title: "Backend", Status: models.StatusOpen}
 				issue2 := &models.Issue{Title: "Database", Status: models.StatusOpen}
-				database.CreateIssue(issue1)
-				database.CreateIssue(issue2)
+				if err := database.CreateIssue(issue1); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.CreateIssue(issue2); err != nil {
+					t.Fatal(err)
+				}
 				return issue1.ID, issue2.ID
 			},
 			wantError:   false,
@@ -623,8 +741,12 @@ func TestAddDependencyValidation(t *testing.T) {
 			setup: func(database *db.DB) (string, string) {
 				issue1 := &models.Issue{Title: "Resolved API", Status: models.StatusClosed}
 				issue2 := &models.Issue{Title: "New Feature", Status: models.StatusOpen}
-				database.CreateIssue(issue1)
-				database.CreateIssue(issue2)
+				if err := database.CreateIssue(issue1); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.CreateIssue(issue2); err != nil {
+					t.Fatal(err)
+				}
 				return issue2.ID, issue1.ID
 			},
 			wantError:   false,
@@ -635,8 +757,12 @@ func TestAddDependencyValidation(t *testing.T) {
 			setup: func(database *db.DB) (string, string) {
 				issue1 := &models.Issue{Title: "In Progress", Status: models.StatusInProgress}
 				issue2 := &models.Issue{Title: "Blocked", Status: models.StatusBlocked}
-				database.CreateIssue(issue1)
-				database.CreateIssue(issue2)
+				if err := database.CreateIssue(issue1); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.CreateIssue(issue2); err != nil {
+					t.Fatal(err)
+				}
 				return issue2.ID, issue1.ID
 			},
 			wantError:   false,
@@ -651,7 +777,7 @@ func TestAddDependencyValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			issueID, depID := tt.setup(database)
 			err = addDependency(database, issueID, depID, "ses_test")
@@ -674,22 +800,32 @@ func TestAddDependencyPersistence(t *testing.T) {
 	issue1 := &models.Issue{Title: "Step 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Step 2", Status: models.StatusOpen}
 	issue3 := &models.Issue{Title: "Step 3", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add dependencies
-	addDependency(database, issue2.ID, issue1.ID, "ses_test")
-	addDependency(database, issue3.ID, issue2.ID, "ses_test")
+	if err := addDependency(database, issue2.ID, issue1.ID, "ses_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := addDependency(database, issue3.ID, issue2.ID, "ses_test"); err != nil {
+		t.Fatal(err)
+	}
 
-	database.Close()
+	_ = database.Close()
 
 	// Reopen database and verify dependencies persist
 	database, err = db.Open(dir)
 	if err != nil {
 		t.Fatalf("Failed to reopen database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Check issue2 depends on issue1
 	deps2, _ := database.GetDependencies(issue2.ID)
@@ -716,10 +852,18 @@ func TestAddDependencyComplexGraph(t *testing.T) {
 			name: "diamond pattern",
 			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
 				// A -> B, A -> C, B -> D, C -> D
-				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["D"].ID, issues["B"].ID, "depends_on")
-				database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on")
+				if err := database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["D"].ID, issues["B"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
 				// D should have 2 dependencies
@@ -740,10 +884,18 @@ func TestAddDependencyComplexGraph(t *testing.T) {
 			name: "multi-level chain",
 			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
 				// A -> B -> C -> D -> E
-				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["C"].ID, issues["B"].ID, "depends_on")
-				database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on")
-				database.AddDependency(issues["E"].ID, issues["D"].ID, "depends_on")
+				if err := database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["C"].ID, issues["B"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["D"].ID, issues["C"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["E"].ID, issues["D"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
 				// Each should have exactly 1 direct dependency
@@ -765,11 +917,21 @@ func TestAddDependencyComplexGraph(t *testing.T) {
 			name: "fan-out pattern",
 			buildGraph: func(database *db.DB, issues map[string]*models.Issue) {
 				// A blocks B, C, D, E, F
-				database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["D"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["E"].ID, issues["A"].ID, "depends_on")
-				database.AddDependency(issues["F"].ID, issues["A"].ID, "depends_on")
+				if err := database.AddDependency(issues["B"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["C"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["D"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["E"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
+				if err := database.AddDependency(issues["F"].ID, issues["A"].ID, "depends_on"); err != nil {
+					t.Fatal(err)
+				}
 			},
 			checkFunc: func(t *testing.T, database *db.DB, issues map[string]*models.Issue) {
 				// Each of B-F should have exactly 1 dependency on A
@@ -796,7 +958,7 @@ func TestAddDependencyComplexGraph(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			// Create 6 issues labeled A-F
 			issues := make(map[string]*models.Issue)
@@ -805,7 +967,9 @@ func TestAddDependencyComplexGraph(t *testing.T) {
 					Title:  fmt.Sprintf("Issue %s", label),
 					Status: models.StatusOpen,
 				}
-				database.CreateIssue(issue)
+				if err := database.CreateIssue(issue); err != nil {
+					t.Fatal(err)
+				}
 				issues[label] = issue
 			}
 

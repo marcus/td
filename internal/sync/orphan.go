@@ -85,7 +85,7 @@ func tableForeignKeys(tx *sql.Tx, table string) ([]foreignKeyRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type entry struct {
 		ref     foreignKeyRef
@@ -170,10 +170,10 @@ func checkParentsPresent(tx *sql.Tx, entityType string, fields map[string]any) e
 
 		var exists int
 		q := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = ? LIMIT 1", ref.ParentTable, ref.ParentCol)
-		switch err := tx.QueryRow(q, parentID).Scan(&exists); {
-		case err == nil:
+		switch err := tx.QueryRow(q, parentID).Scan(&exists); err {
+		case nil:
 			continue
-		case err == sql.ErrNoRows:
+		case sql.ErrNoRows:
 			return &OrphanedParentError{
 				EntityType:  entityType,
 				EntityID:    stringField(fields, "id"),

@@ -99,7 +99,7 @@ func countSnapshotEntities(path string) (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	counts := make(map[string]int)
 	tables := []string{"issues", "logs", "comments", "handoffs", "boards", "board_issue_positions", "work_sessions", "sessions", "notes"}
@@ -249,7 +249,7 @@ func (s *Server) handleAdminSnapshotQuery(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "failed to open snapshot")
 		return
 	}
-	defer snapDB.Close()
+	defer func() { _ = snapDB.Close() }()
 
 	// Create query source and execute TDQ
 	src := NewSnapshotQuerySource(snapDB)
@@ -308,8 +308,8 @@ func (s *Server) buildAndCacheSnapshot(projectID string, eventsDB *sql.DB, headS
 		return "", 0, fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := buildSnapshot(eventsDB, tmpPath, headSeq); err != nil {
 		return "", 0, fmt.Errorf("build: %w", err)
@@ -325,7 +325,7 @@ func (s *Server) buildAndCacheSnapshot(projectID string, eventsDB *sql.DB, headS
 		return "", 0, fmt.Errorf("copy: %w", err)
 	}
 	if err := os.Rename(tmpCachePath, cachePath); err != nil {
-		os.Remove(tmpCachePath)
+		_ = os.Remove(tmpCachePath)
 		return "", 0, fmt.Errorf("rename: %w", err)
 	}
 

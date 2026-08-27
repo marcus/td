@@ -57,7 +57,7 @@ var epicListCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		showAll, _ := cmd.Flags().GetBool("all")
 
@@ -130,7 +130,7 @@ func init() {
 	epicCreateCmd.Flags().StringArray("blocks", nil, "Issues this blocks (repeatable, comma-separated)")
 	// Hidden type flag - set programmatically to "epic"
 	epicCreateCmd.Flags().StringP("type", "t", "", "")
-	epicCreateCmd.Flags().MarkHidden("type")
+	_ = epicCreateCmd.Flags().MarkHidden("type")
 
 	// epicListCmd flags
 	epicListCmd.Flags().BoolP("all", "a", false, "Show all epics including closed")

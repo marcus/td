@@ -17,7 +17,7 @@ func TestMigration_SelfReviewColumnExistsWithDefaultZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	has, err := database.columnExists("issue_reviews", "self_review")
 	if err != nil {
@@ -50,7 +50,7 @@ func TestCreateIssueReview_SelfReviewRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	seedIssueForReviewTests(t, database, "td-srtrue")
 	if _, err := database.CreateIssueReview(NewReview{IssueID: "td-srtrue", ReviewerSession: "ses-impl", Decision: "approved", Summary: "self-reviewed", RequestedBySession: "ses-impl", SelfReview: true}); err != nil {
@@ -109,13 +109,13 @@ func TestMigration_SelfReviewIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize (1): %v", err)
 	}
-	d1.Close()
+	_ = d1.Close()
 
 	d2, err := Initialize(dir)
 	if err != nil {
 		t.Fatalf("Initialize (2, re-open): %v", err)
 	}
-	defer d2.Close()
+	defer func() { _ = d2.Close() }()
 
 	has, err := d2.columnExists("issue_reviews", "self_review")
 	if err != nil {

@@ -20,7 +20,7 @@ func seedPendingEvents(t *testing.T, baseDir string, n int) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 	tx, err := conn.Begin()
@@ -48,7 +48,7 @@ func seedPendingEvents(t *testing.T, baseDir string, n int) {
 			t.Fatalf("insert action_log %d: %v", i, err)
 		}
 	}
-	stmt.Close()
+	_ = stmt.Close()
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("commit: %v", err)
 	}

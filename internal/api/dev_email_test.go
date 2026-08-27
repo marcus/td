@@ -47,7 +47,7 @@ func TestDevLastEmail_FlagOff404(t *testing.T) {
 	_ = ms.SendLoginLink(context.Background(), email.LoginEmail{To: "a@b.c", Text: "link"})
 
 	resp := getLastEmail(t, ts.URL)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("flag off: got status %d, want 404", resp.StatusCode)
 	}
@@ -62,7 +62,7 @@ func TestDevLastEmail_NonMemoryProvider404(t *testing.T) {
 		t.Fatal("log provider should not be a MemorySender")
 	}
 	resp := getLastEmail(t, ts.URL)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("non-memory provider: got status %d, want 404", resp.StatusCode)
 	}
@@ -76,7 +76,7 @@ func TestDevLastEmail_NoEmailsYet404(t *testing.T) {
 		t.Fatal("expected memory sender")
 	}
 	resp := getLastEmail(t, ts.URL)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("no emails: got status %d, want 404", resp.StatusCode)
 	}
@@ -99,7 +99,7 @@ func TestDevLastEmail_ReturnsLastEmail(t *testing.T) {
 	})
 
 	resp := getLastEmail(t, ts.URL)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("got status %d, want 200", resp.StatusCode)
 	}
@@ -140,7 +140,7 @@ func TestDevLastEmail_ReflectsMostRecent(t *testing.T) {
 	resp1 := getLastEmail(t, ts.URL)
 	var got1 devLastEmailResponse
 	_ = json.NewDecoder(resp1.Body).Decode(&got1)
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 	if got1.To != "one@x.com" {
 		t.Fatalf("first read: got %q", got1.To)
 	}
@@ -149,7 +149,7 @@ func TestDevLastEmail_ReflectsMostRecent(t *testing.T) {
 	resp2 := getLastEmail(t, ts.URL)
 	var got2 devLastEmailResponse
 	_ = json.NewDecoder(resp2.Body).Decode(&got2)
-	resp2.Body.Close()
+	_ = resp2.Body.Close()
 	if got2.To != "two@x.com" {
 		t.Fatalf("second read: got %q, want two@x.com", got2.To)
 	}

@@ -27,16 +27,27 @@ else
   echo "– (no .go files staged)"
 fi
 
-# --- go vet ---
-printf "  %-20s" "go vet"
-VET_OUT=$(go vet ./... 2>&1)
-if [[ $? -eq 0 ]]; then
-  echo "✓"
-  PASS=$((PASS+1))
+# --- linter (same analysis as GitHub: make lint) ---
+if command -v golangci-lint >/dev/null 2>&1; then
+  printf "  %-20s" "golangci-lint"
+  if LINT_OUT=$(make lint 2>&1); then
+    echo "✓"
+    PASS=$((PASS+1))
+  else
+    echo "✗ FAILED"
+    echo "$LINT_OUT" | sed 's/^/    /'
+    FAIL=$((FAIL+1))
+  fi
 else
-  echo "✗ FAILED"
-  echo "$VET_OUT" | sed 's/^/    /'
-  FAIL=$((FAIL+1))
+  printf "  %-20s" "go vet"
+  if VET_OUT=$(go vet ./... 2>&1); then
+    echo "✓"
+    PASS=$((PASS+1))
+  else
+    echo "✗ FAILED"
+    echo "$VET_OUT" | sed 's/^/    /'
+    FAIL=$((FAIL+1))
+  fi
 fi
 
 # --- go build ---

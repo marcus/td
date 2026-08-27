@@ -72,7 +72,7 @@ Or use flags with values, stdin (-), or file (@path):
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -236,7 +236,7 @@ Or use flags with values, stdin (-), or file (@path):
 					}
 
 					// Add log entry for visibility
-					database.AddLog(&models.Log{
+					_ = database.AddLog(&models.Log{
 						IssueID:   child.ID,
 						SessionID: sess.ID,
 						Message:   fmt.Sprintf("Cascaded handoff from %s", issueID),

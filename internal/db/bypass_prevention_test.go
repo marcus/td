@@ -13,7 +13,7 @@ func TestRecordSessionAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a test issue
 	issue := &models.Issue{
@@ -56,7 +56,7 @@ func TestRecordSessionActionNormalizesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a test issue
 	issue := &models.Issue{Title: "Test Issue"}
@@ -89,7 +89,7 @@ func TestWasSessionInvolved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a test issue
 	issue := &models.Issue{Title: "Test Issue"}
@@ -137,7 +137,7 @@ func TestWasSessionInvolvedNormalizesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a test issue and record action
 	issue := &models.Issue{Title: "Test Issue"}
@@ -166,7 +166,7 @@ func TestWasSessionImplementationInvolved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -223,7 +223,7 @@ func TestHasImplementationHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {
@@ -268,7 +268,7 @@ func TestGetSessionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create a test issue
 	issue := &models.Issue{Title: "Test Issue"}
@@ -325,7 +325,7 @@ func TestUnstartBypassPrevention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue
 	issue := &models.Issue{
@@ -363,7 +363,7 @@ func TestMultipleSessionsTracked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue"}
@@ -407,7 +407,7 @@ func TestCreatorSessionSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue with CreatorSession
 	issue := &models.Issue{
@@ -436,7 +436,7 @@ func TestEmptyHistoryForNewIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue without recording any actions
 	issue := &models.Issue{Title: "Test Issue"}
@@ -472,7 +472,7 @@ func TestBypassScenario_CreateClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Session A creates issue
 	issue := &models.Issue{
@@ -506,7 +506,7 @@ func TestBypassScenario_CreateCloseWithOtherImplementer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Session A creates issue
 	issue := &models.Issue{
@@ -549,7 +549,7 @@ func TestBypassScenario_UnstartRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue
 	issue := &models.Issue{
@@ -599,7 +599,7 @@ func TestBypassScenario_UnrelatedSessionCanApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create issue
 	issue := &models.Issue{
@@ -641,7 +641,7 @@ func TestMinorTaskSelfApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create minor issue
 	issue := &models.Issue{
@@ -732,7 +732,7 @@ func TestIntegration_SkipReviewNotAllowed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// Create issue in initial status
 			issue := &models.Issue{
@@ -772,7 +772,7 @@ func TestIntegration_ReviewWorkflowEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_implementer"
@@ -847,7 +847,7 @@ func TestIntegration_ImplementerCannotApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	implSess := "ses_implementer"
 
@@ -916,7 +916,7 @@ func TestIntegration_HandoffValidatesWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			issue := &models.Issue{
 				Title:  tt.name,
@@ -964,7 +964,7 @@ func TestIntegration_CreatorCannotImplementAndApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 
@@ -1009,7 +1009,7 @@ func TestIntegration_DifferentSessionCanApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_impl"
@@ -1053,7 +1053,7 @@ func TestIntegration_UnstartDoesNotBypass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sessA := "ses_A"
 	sessB := "ses_B"
@@ -1116,7 +1116,7 @@ func TestIntegration_BypassAttemptErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	tests := []struct {
 		name                  string
@@ -1195,7 +1195,7 @@ func TestCommand_CreatorAsImplementerCannotClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 
@@ -1236,7 +1236,7 @@ func TestCommand_UninvolvedSessionCanClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_impl"
@@ -1466,7 +1466,7 @@ func TestCommand_CreatorOnlyCannotApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_impl"
@@ -1506,7 +1506,7 @@ func TestCommand_ImplementerOnlyCannotApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_impl"
@@ -1585,7 +1585,7 @@ func TestCommand_StatusValidationBeforeApprove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			creatorSess := "ses_creator"
 			implSess := "ses_impl"
@@ -1636,7 +1636,7 @@ func TestCommand_CreatorCannotCloseIfOtherImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	creatorSess := "ses_creator"
 	implSess := "ses_impl"
@@ -1673,7 +1673,7 @@ func TestCommand_MinorTaskBypassesAllChecks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sess := "ses_solo"
 
@@ -1754,7 +1754,7 @@ func TestCommand_PreviousInvolvementPreventsApprove(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Initialize failed: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			sess := "ses_test"
 

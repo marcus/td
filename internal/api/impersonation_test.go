@@ -17,7 +17,7 @@ func issueImpersonationToken(t *testing.T, h *TestHarness, adminToken, targetUse
 	t.Helper()
 	var out impersonationTokenResponse
 	resp := h.Do("POST", fmt.Sprintf("/v1/admin/users/%s/impersonation-token", targetUserID), adminToken, struct{}{})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("issue impersonation token: expected 200, got %d", resp.StatusCode)
 	}
@@ -151,7 +151,7 @@ func TestIssueImpersonationToken_SelfWhenAdmin(t *testing.T) {
 		state.AdminToken("admin@test.com"),
 		struct{}{},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for admin viewing as self, got %d", resp.StatusCode)
 	}
@@ -226,14 +226,14 @@ func TestImpersonationKey_AllowsProjectGet(t *testing.T) {
 
 	pid := state.ProjectID("proj1")
 	resp := h.Do("GET", fmt.Sprintf("/v1/projects/%s", pid), tok.APIKey, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on GET project, got %d", resp.StatusCode)
 	}
 
 	// /v1/projects (list) is also allowed.
 	resp2 := h.Do("GET", "/v1/projects", tok.APIKey, nil)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on GET /v1/projects, got %d", resp2.StatusCode)
 	}
@@ -277,7 +277,7 @@ func TestAdminImpersonationHeader_ListsTargetProjects(t *testing.T) {
 		nil,
 		map[string]string{HeaderTdWatchImpersonate: state.UserID("target@test.com")},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
@@ -309,7 +309,7 @@ func TestAdminImpersonationHeader_CreatesProjectForTargetUser(t *testing.T) {
 		CreateProjectRequest{Name: "impersonated create"},
 		map[string]string{HeaderTdWatchImpersonate: state.UserID("target@test.com")},
 	)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
@@ -397,7 +397,7 @@ func TestImpersonationKey_SlidingTTL(t *testing.T) {
 
 	// Successful GET on a /v1/projects/* path bumps the TTL.
 	resp := h.Do("GET", fmt.Sprintf("/v1/projects/%s", state.ProjectID("proj1")), tok.APIKey, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}

@@ -163,9 +163,10 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.FormState.ButtonFocus = focus
 				m.FormState.ButtonHover = 0
 				// Auto-scroll: buttons at bottom need scroll down; returning to fields scrolls to focused field
-				if focus == formButtonFocusSubmit || focus == formButtonFocusCancel {
+				switch focus {
+				case formButtonFocusSubmit, formButtonFocusCancel:
 					m.FormScrollOffset = m.formScrollToBottom()
-				} else if focus == formButtonFocusForm {
+				case formButtonFocusForm:
 					m.FormScrollOffset = m.formScrollForFocusedField()
 				}
 				return m, nil

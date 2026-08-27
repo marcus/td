@@ -73,7 +73,7 @@ func runDoctor() {
 	database, err := db.Open(baseDir)
 	dbOK := err == nil
 	if dbOK {
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 		if err := database.QuickCheck(); err != nil {
 			dbOK = false
 			fmt.Printf("Local database ......... FAIL (%v)\n", err)

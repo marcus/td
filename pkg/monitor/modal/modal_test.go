@@ -136,13 +136,13 @@ func TestModalThemesAreIsolatedAndRethemePreservesState(t *testing.T) {
 	first.Render(60, 16, nil)
 	first.SetFocus("save")
 	first.Scroll(4)
-	beforeFocus, beforeScroll := first.FocusedID(), first.ScrollOffset()
+	beforeFocus := first.FocusedID()
 
 	second := New("Second", WithTheme(Theme{Primary: "#210001", Surface: "#210002"}), WithHints(false)).
 		AddSection(Text("body"))
 	firstBefore := first.Render(60, 16, nil)
 	first.Scroll(4)
-	beforeScroll = first.ScrollOffset()
+	beforeScroll := first.ScrollOffset()
 	secondOutput := second.Render(60, 16, nil)
 	if firstBefore == secondOutput {
 		t.Fatal("two modal instances with different themes rendered identically")

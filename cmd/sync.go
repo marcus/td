@@ -79,7 +79,7 @@ var syncCmd = &cobra.Command{
 			output.Error("open database: %v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		syncState, err := database.GetSyncState()
 		if err != nil {
@@ -231,13 +231,13 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		return nil, fmt.Errorf("stage snapshot: %w", err)
 	}
 	stagedPath := staged.Name()
-	defer os.Remove(stagedPath)
+	defer func() { _ = os.Remove(stagedPath) }()
 	if _, err := staged.Write(snapshot.Data); err != nil {
-		staged.Close()
+		_ = staged.Close()
 		return nil, fmt.Errorf("stage snapshot: %w", err)
 	}
 	if err := staged.Sync(); err != nil {
-		staged.Close()
+		_ = staged.Close()
 		return nil, fmt.Errorf("flush staged snapshot: %w", err)
 	}
 	if err := staged.Close(); err != nil {
@@ -323,7 +323,7 @@ func validateSQLiteFile(path string) error {
 		return err
 	}
 	database := db.NewWithConn(conn, filepath.Dir(path))
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	return database.QuickCheck()
 }
 
@@ -385,13 +385,13 @@ func copyFile(src, dst string) error {
 		}
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err = io.Copy(out, in); err != nil {
 		return err
@@ -431,7 +431,7 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		output.Error("begin tx: %v", err)
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	events, err := tdsync.GetPendingEvents(tx, deviceID, sess.ID)
 	if err != nil {
@@ -608,19 +608,19 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 
 		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, state.LastSyncAt)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			output.Error("apply events: %v", err)
 			return err
 		}
 		if err := failedRemoteEventsError(result); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			output.Error("apply events: %v", err)
 			return err
 		}
 
 		// Store conflict records
 		if err := storeConflicts(tx, result.Conflicts); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			output.Error("store conflicts: %v", err)
 			return err
 		}
@@ -629,7 +629,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		// that advances the cursor past them.
 		skipped := resolveApplyOutcome(result)
 		if err := db.RecordSkippedEventsTx(tx, skipped); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			output.Error("record skipped events: %v", err)
 			return err
 		}
@@ -637,7 +637,7 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 
 		// Update sync_state within the same transaction to avoid race
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			output.Error("update sync state: %v", err)
 			return err
 		}
@@ -742,7 +742,7 @@ func storeConflicts(tx *sql.Tx, conflicts []tdsync.ConflictRecord) error {
 	if err != nil {
 		return fmt.Errorf("prepare conflict insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, c := range conflicts {
 		localJSON := "null"

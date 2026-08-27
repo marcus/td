@@ -332,13 +332,6 @@ func classifyInReviewForData(database *db.DB, issue *models.Issue, sessionID str
 	return categorizeInReviewIssue(issue, sessionID, mode, hasImpl, wasAny, hasActiveApproval)
 }
 
-// fetchTaskList retrieves categorized issues for the task list panel, using
-// the resolved policy mode for the database's baseDir. Kept for tests that
-// exercise the default resolution path.
-func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode string, includeClosed bool, sortMode SortMode) TaskListData {
-	return fetchTaskListWithMode(database, sessionID, searchQuery, searchMode, includeClosed, sortMode, resolveMonitorPolicyMode(database.BaseDir()))
-}
-
 // fetchTaskListWithMode is the mode-aware variant. It is called from
 // FetchDataWithSearchMode and is safe to call directly from tests that want
 // to pin the policy mode.

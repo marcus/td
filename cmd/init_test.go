@@ -18,7 +18,7 @@ func TestInitCreatesTodosDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Check that .todos directory exists
 	todosPath := filepath.Join(dir, ".todos")
@@ -35,7 +35,7 @@ func TestInitCreatesSQLiteDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Check that database file exists
 	dbPath := filepath.Join(dir, ".todos", "issues.db")
@@ -53,14 +53,14 @@ func TestInitIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First Initialize failed: %v", err)
 	}
-	database1.Close()
+	_ = database1.Close()
 
 	// Second init (should not fail)
 	database2, err := db.Initialize(dir)
 	if err != nil {
 		t.Fatalf("Second Initialize failed: %v", err)
 	}
-	defer database2.Close()
+	defer func() { _ = database2.Close() }()
 
 	// Check both succeeded
 	todosPath := filepath.Join(dir, ".todos")
@@ -84,7 +84,7 @@ func TestInitWithExistingStructure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize with existing .todos failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Verify it worked
 	if _, err := os.Stat(todosPath); err != nil {
@@ -100,7 +100,7 @@ func TestInitSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Verify database is usable by creating an issue
 	issue := &models.Issue{Title: "Test Setup"}
@@ -117,7 +117,7 @@ func TestInitPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	todosPath := filepath.Join(dir, ".todos")
 	info, err := os.Stat(todosPath)

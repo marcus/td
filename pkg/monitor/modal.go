@@ -1541,7 +1541,7 @@ func (m Model) renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 			if changes == 0 {
 				b.WriteString("\n" + m.renderStyles().subtle.Render("Changes:") + "\n")
 			}
-			b.WriteString(fmt.Sprintf("  %s: %s → %s\n", field, prevVal, nextVal))
+			fmt.Fprintf(b, "  %s: %s → %s\n", field, prevVal, nextVal)
 			changes++
 		}
 	}

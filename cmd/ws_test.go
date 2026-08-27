@@ -15,7 +15,7 @@ func TestWsStartCreatesSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	ws := &models.WorkSession{
 		Name:      "feature-auth",
@@ -52,12 +52,16 @@ func TestWsStartWithActiveSessionErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "first-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Check active session is set
 	activeWS, err := config.GetActiveWorkSession(dir)
@@ -79,15 +83,21 @@ func TestWsStopEndsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create active session
 	ws := &models.WorkSession{Name: "active-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// End session
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify session is no longer active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -103,7 +113,7 @@ func TestWsStopWithNoActiveSessionErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// No active session
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -119,16 +129,22 @@ func TestWsTagAddsIssueToSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "tagging-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag issue to work session
 	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
@@ -155,11 +171,13 @@ func TestWsTagMultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "multi-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create issues
 	issues := []*models.Issue{
@@ -169,8 +187,12 @@ func TestWsTagMultipleIssues(t *testing.T) {
 	}
 
 	for _, issue := range issues {
-		database.CreateIssue(issue)
-		database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Verify all issues are tagged
@@ -187,7 +209,7 @@ func TestWsTagNoActiveSessionErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// No active session should be set initially
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -203,11 +225,13 @@ func TestWsTagInvalidIssueErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "invalid-tag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Try to get non-existent issue
 	_, err = database.GetIssue("td-nonexistent")
@@ -223,16 +247,22 @@ func TestWsUntagRemovesIssueFromSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "untag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify issue is tagged
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -259,22 +289,34 @@ func TestWsUntagPartialRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "partial-untag-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create and tag issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Untag only issue1
-	database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session")
+	if err := database.UntagIssueFromWorkSession(ws.ID, issue1.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify only issue2 remains
 	issueIDs, _ := database.GetWorkSessionIssues(ws.ID)
@@ -293,16 +335,22 @@ func TestWsLogAddsLogEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "log-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create and tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add log to work session (log attached to work session, not specific issue)
 	log := &models.Log{
@@ -336,11 +384,13 @@ func TestWsLogWithDifferentTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "typed-log-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
 		logType models.LogType
@@ -394,19 +444,29 @@ func TestWsHandoffCreatesHandoffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "handoff-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create and tag issues
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusInProgress}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
-	database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create handoffs for each issue
 	handoff1 := &models.Handoff{
@@ -463,12 +523,16 @@ func TestWsHandoffEndsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "ending-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify session is active
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -477,7 +541,9 @@ func TestWsHandoffEndsSession(t *testing.T) {
 	}
 
 	// Clear active session (simulates handoff ending session)
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify session is ended
 	activeWS, _ = config.GetActiveWorkSession(dir)
@@ -493,17 +559,25 @@ func TestWsCurrentShowsActiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "current-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Get current session
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -545,13 +619,15 @@ func TestWsListShowsSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create multiple work sessions
 	sessions := []string{"session-1", "session-2", "session-3"}
 	for _, name := range sessions {
 		ws := &models.WorkSession{Name: name, SessionID: "ses_test"}
-		database.CreateWorkSession(ws)
+		if err := database.CreateWorkSession(ws); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// List work sessions
@@ -572,7 +648,7 @@ func TestWsListEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// No sessions
 	listed, err := database.ListWorkSessions(20)
@@ -592,12 +668,14 @@ func TestWsListWithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create 10 sessions
 	for i := 0; i < 10; i++ {
 		ws := &models.WorkSession{Name: "session", SessionID: "ses_test"}
-		database.CreateWorkSession(ws)
+		if err := database.CreateWorkSession(ws); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// List with limit 5
@@ -618,15 +696,21 @@ func TestWsEndWithoutHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create and set active session
 	ws := &models.WorkSession{Name: "no-handoff-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
-	config.SetActiveWorkSession(dir, ws.ID)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetActiveWorkSession(dir, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// End without handoff
-	config.ClearActiveWorkSession(dir)
+	if err := config.ClearActiveWorkSession(dir); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify session ended
 	activeWS, _ := config.GetActiveWorkSession(dir)
@@ -642,23 +726,31 @@ func TestWsTagAutoStartsOpenIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "auto-start-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create open issue
 	issue := &models.Issue{Title: "Open Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag issue (simulating auto-start behavior)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate starting the issue
 	issue.Status = models.StatusInProgress
 	issue.ImplementerSession = "ses_test"
-	database.UpdateIssue(issue)
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify issue is started
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -674,18 +766,24 @@ func TestWsTagNoStartFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "no-start-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create open issue
 	issue := &models.Issue{Title: "Open Issue", Status: models.StatusOpen}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag issue without starting (simulating --no-start)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Issue should remain open (with --no-start)
 	retrieved, _ := database.GetIssue(issue.ID)
@@ -701,16 +799,22 @@ func TestWsShowDisplaysPastSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "past-session", SessionID: "ses_test", StartSHA: "abc123"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag issue
 	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
-	database.CreateIssue(issue)
-	database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session")
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Get session details
 	retrieved, err := database.GetWorkSession(ws.ID)
@@ -739,7 +843,7 @@ func TestWsShowInvalidSessionErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Try to get non-existent session
 	_, err = database.GetWorkSession("ws_nonexistent")
@@ -755,11 +859,13 @@ func TestWsHandoffAutoPopulatesFromLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "auto-populate-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add various log types
 	logs := []models.Log{
@@ -770,7 +876,9 @@ func TestWsHandoffAutoPopulatesFromLogs(t *testing.T) {
 	}
 
 	for _, log := range logs {
-		database.AddLog(&log)
+		if err := database.AddLog(&log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Get logs for session
@@ -803,11 +911,13 @@ func TestWsUpdateSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create work session
 	ws := &models.WorkSession{Name: "update-session", SessionID: "ses_test"}
-	database.CreateWorkSession(ws)
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatal(err)
+	}
 
 	// Update session with end SHA
 	ws.EndSHA = "def456"

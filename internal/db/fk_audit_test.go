@@ -12,7 +12,7 @@ func TestAuditForeignKeys_CleanDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	results, err := AuditForeignKeys(database.Conn())
 	if err != nil {
@@ -38,7 +38,7 @@ func TestAuditForeignKeys_DetectsOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 
@@ -47,7 +47,7 @@ func TestAuditForeignKeys_DetectsOrphans(t *testing.T) {
 	if _, err := conn.Exec("PRAGMA foreign_keys=OFF"); err != nil {
 		t.Fatalf("disable foreign_keys: %v", err)
 	}
-	defer conn.Exec("PRAGMA foreign_keys=ON")
+	defer func() { _, _ = conn.Exec("PRAGMA foreign_keys=ON") }()
 
 	// Seed direct INSERTs that bypass model layer so we can intentionally
 	// create orphans.
@@ -121,7 +121,7 @@ func TestAuditForeignKeys_IgnoresEmptyFKValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	conn := database.Conn()
 

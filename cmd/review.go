@@ -266,7 +266,7 @@ Supports bulk operations:
 		if err != nil {
 			return reportFailure(jsonOutput, output.ErrCodeDatabaseError, err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -652,7 +652,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 			}
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -971,7 +971,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					if eligibility.AttributedTo != "" {
 						auditReason = "attributed_review by " + eligibility.AttributedTo + ": " + reason
 					}
-					db.LogSecurityEvent(baseDir, db.SecurityEvent{
+					_ = db.LogSecurityEvent(baseDir, db.SecurityEvent{
 						IssueID:   issueID,
 						SessionID: sess.ID,
 						AgentType: sess.AgentType,
@@ -1267,7 +1267,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 					logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION, reviewed by %s: %s)", agentInfo, eligibility.AttributedTo, reason)
 				}
 				logType = models.LogTypeSecurity
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				_ = db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,
@@ -1297,7 +1297,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				// and must not land here, or the file fills with noise and
 				// stops being useful for the case it exists to surface.
 				if eligibility.SelfReview {
-					db.LogSecurityEvent(baseDir, db.SecurityEvent{
+					_ = db.LogSecurityEvent(baseDir, db.SecurityEvent{
 						IssueID:   issueID,
 						SessionID: sess.ID,
 						AgentType: sess.AgentType,
@@ -1316,7 +1316,7 @@ To surface issues reviewed by a sub-agent that you can close, use
 				}
 				logMsg = fmt.Sprintf("[%s] Approved (SELF-REVIEW: %s)", agentInfo, reason)
 				logType = models.LogTypeSecurity
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				_ = db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,
@@ -1440,7 +1440,7 @@ Supports bulk operations:
 		if err != nil {
 			return reportFailure(jsonOutput, output.ErrCodeDatabaseError, err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -1536,7 +1536,7 @@ Supports bulk operations:
 				if reason != "" {
 					result["reason"] = reason
 				}
-				output.JSON(result)
+				_ = output.JSON(result)
 			} else {
 				fmt.Printf("REJECTED %s → open\n", issueID)
 			}
@@ -1603,7 +1603,7 @@ Examples:
 			if err == nil {
 				focusedID, err = database.GetFocus(scope)
 			}
-			database.Close()
+			_ = database.Close()
 			if err != nil || focusedID == "" {
 				if isJSON {
 					output.JSONError(output.ErrCodeInvalidInput, "no issue specified and no focused issue")
@@ -1621,7 +1621,7 @@ Examples:
 		if err != nil {
 			return reportFailure(isJSON, output.ErrCodeDatabaseError, err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -1786,7 +1786,7 @@ Examples:
 				logType = models.LogTypeSecurity
 
 				// Also log to the separate security audit file
-				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+				_ = db.LogSecurityEvent(baseDir, db.SecurityEvent{
 					IssueID:   issueID,
 					SessionID: sess.ID,
 					AgentType: sess.AgentType,

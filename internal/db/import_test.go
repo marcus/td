@@ -13,7 +13,7 @@ func TestUpsertIssueRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	deferUntil := "2026-04-01"
 	dueDate := "2026-05-01"
@@ -137,7 +137,7 @@ func TestUpsertIssueRaw_OverwritesExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	original := &models.Issue{
 		ID:     "td-bbbbbb",
@@ -177,7 +177,7 @@ func TestInsertLogRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an issue first (logs reference issues)
 	issue := &models.Issue{ID: "td-cccccc", Title: "Log test", Status: models.StatusOpen}
@@ -241,7 +241,7 @@ func TestInsertHandoffRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{ID: "td-dddddd", Title: "Handoff test", Status: models.StatusOpen}
 	if err := database.UpsertIssueRaw(issue); err != nil {
@@ -306,7 +306,7 @@ func TestInsertIssueFileRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{ID: "td-eeeeee", Title: "File test", Status: models.StatusOpen}
 	if err := database.UpsertIssueRaw(issue); err != nil {
@@ -370,7 +370,7 @@ func TestGetHandoffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{ID: "td-ffffff", Title: "Handoffs test", Status: models.StatusOpen}
 	if err := database.UpsertIssueRaw(issue); err != nil {
@@ -429,7 +429,7 @@ func TestReplaceIssueRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue with associated data
 	issue := &models.Issue{
@@ -535,7 +535,7 @@ func TestUpsertIssueRaw_NormalizesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// ID without prefix should be normalized
 	issue := &models.Issue{
@@ -565,7 +565,7 @@ func TestReplaceIssueRaw_NormalizesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create with normalized ID first
 	issue := &models.Issue{ID: "td-bbbbbb", Title: "Original", Status: models.StatusOpen}
@@ -593,7 +593,7 @@ func TestImportItemRaw_Atomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		ID:     "td-atomic1",
@@ -665,7 +665,7 @@ func TestImportItemRaw_ReplaceIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create initial issue with data
 	issue := &models.Issue{ID: "td-replace2", Title: "Original", Status: models.StatusOpen, Type: models.TypeTask}
@@ -719,7 +719,7 @@ func TestImportItemRaw_NormalizesID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{ID: "cccccc", Title: "Normalize test", Status: models.StatusOpen, Type: models.TypeTask}
 	if err := database.ImportItemRaw(issue, nil, nil, nil, nil, false); err != nil {

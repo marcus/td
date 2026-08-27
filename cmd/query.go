@@ -158,7 +158,7 @@ BOARDS:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, _ := session.GetOrCreate(database)
 		sessionID := ""

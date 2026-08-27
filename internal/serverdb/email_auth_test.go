@@ -29,8 +29,11 @@ func TestCreateAndConsume(t *testing.T) {
 	if len(secret) != 64 {
 		t.Errorf("expected 64-char secret, got %d", len(secret))
 	}
-	if !strings.HasPrefix(selector, "") {
-		// hex chars only
+	for _, c := range selector {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			t.Errorf("selector contains non-hex char %q in %q", string(c), selector)
+			break
+		}
 	}
 
 	// Verify that only the hash is stored, not the plaintext secret.

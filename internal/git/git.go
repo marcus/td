@@ -116,9 +116,10 @@ func parseStatOutput(output string) []FileChange {
 
 		// Count + and -
 		for _, c := range stats {
-			if c == '+' {
+			switch c {
+			case '+':
 				change.Additions++
-			} else if c == '-' {
+			case '-':
 				change.Deletions++
 			}
 		}

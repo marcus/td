@@ -17,7 +17,7 @@ func TestMain(m *testing.M) {
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
 		if isFeatureEnvKey(key) {
-			os.Unsetenv(key)
+			_ = os.Unsetenv(key)
 		}
 	}
 	os.Exit(m.Run())

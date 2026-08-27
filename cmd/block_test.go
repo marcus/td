@@ -14,7 +14,7 @@ func TestBlockSingleIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -43,7 +43,7 @@ func TestBlockMultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issues := []*models.Issue{
 		{Title: "Issue 1", Status: models.StatusOpen},
@@ -81,7 +81,7 @@ func TestBlockFromDifferentStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	testCases := []struct {
 		name             string
@@ -127,7 +127,7 @@ func TestBlockLogsAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -181,7 +181,7 @@ func TestBlockWithReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -230,7 +230,7 @@ func TestBlockNonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	_, err = database.GetIssue("td-nonexistent")
 	if err == nil {
@@ -245,7 +245,7 @@ func TestBlockAlreadyBlockedIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Already Blocked",
@@ -274,7 +274,7 @@ func TestBlockWithDependentIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create blocker and dependent
 	blocker := &models.Issue{Title: "Blocker", Status: models.StatusOpen}
@@ -323,7 +323,7 @@ func TestBlockMixedStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	testCases := []struct {
 		status models.Status
@@ -363,7 +363,7 @@ func TestBlockUpdatesTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",

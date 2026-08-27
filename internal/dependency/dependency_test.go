@@ -21,20 +21,20 @@ func setupTestDB(t *testing.T) (*db.DB, func()) {
 	// Create .todos directory
 	todosDir := filepath.Join(tmpDir, ".todos")
 	if err := os.MkdirAll(todosDir, 0755); err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("failed to create .todos dir: %v", err)
 	}
 
 	// Initialize database
 	database, err := db.Initialize(tmpDir)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("failed to initialize db: %v", err)
 	}
 
 	cleanup := func() {
-		database.Close()
-		os.RemoveAll(tmpDir)
+		_ = database.Close()
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return database, cleanup

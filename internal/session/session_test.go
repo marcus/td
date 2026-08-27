@@ -17,7 +17,7 @@ func setupTestDB(t *testing.T) *db.DB {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 	return database
 }
 
@@ -134,7 +134,7 @@ func TestEmptyContextIDPreservesBehavior(t *testing.T) {
 	database := setupTestDB(t)
 
 	t.Setenv("TD_SESSION_ID", "interactive-agent")
-	os.Unsetenv("TD_CONTEXT_ID") // ensure empty match context
+	_ = os.Unsetenv("TD_CONTEXT_ID") // ensure empty match context
 
 	s1, err := GetOrCreate(database)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestMigrateLegacySessionCleanupOldFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "agent-1")
 
@@ -325,7 +325,7 @@ func TestMigrateBranchSessionCleanupOldFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	t.Setenv("TD_SESSION_ID", "agent-1")
 
@@ -418,7 +418,7 @@ func TestMigrationStatePreservation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("init db: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			t.Setenv("TD_SESSION_ID", "agent-preserve-test")
 
@@ -460,14 +460,14 @@ func TestSessionPersistsThroughDBReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
-	database.Close()
+	_ = database.Close()
 
 	// Reopen and verify
 	database2, err := db.Open(baseDir)
 	if err != nil {
 		t.Fatalf("reopen db: %v", err)
 	}
-	defer database2.Close()
+	defer func() { _ = database2.Close() }()
 
 	sess2, err := GetOrCreate(database2)
 	if err != nil {
@@ -551,7 +551,7 @@ func TestEdgeCasesSessionMigration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("init db: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			t.Setenv("TD_SESSION_ID", "agent-edge-case")
 

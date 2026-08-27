@@ -119,7 +119,7 @@ func (db *ServerDB) GetPendingExpiredAuthRequests() ([]AuthRequest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get pending expired auth requests: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []AuthRequest
 	for rows.Next() {

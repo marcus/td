@@ -54,7 +54,7 @@ Examples:
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -204,7 +204,7 @@ Examples:
 				logMsg = reason
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
@@ -213,7 +213,7 @@ Examples:
 
 			// Record git snapshot
 			if gitErr == nil {
-				database.AddGitSnapshot(&models.GitSnapshot{
+				_ = database.AddGitSnapshot(&models.GitSnapshot{
 					IssueID:    issueID,
 					Event:      "start",
 					CommitSHA:  gitState.CommitSHA,

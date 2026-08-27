@@ -13,7 +13,7 @@ func (db *DB) QuickCheck() error {
 	if err != nil {
 		return fmt.Errorf("run SQLite quick_check: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var problems []string
 	for rows.Next() {

@@ -14,7 +14,7 @@ func TestCreateIssueLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Logged create test",
@@ -80,7 +80,7 @@ func TestUpdateIssueLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue first (unlogged)
 	issue := &models.Issue{
@@ -159,7 +159,7 @@ func TestUpdateIssueLoggedIfStatusDetectsStaleTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Concurrent review target",
@@ -229,7 +229,7 @@ func TestUpdateIssueLoggedRejectsConcurrentWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Original title",
@@ -298,7 +298,7 @@ func TestUpdateIssueLoggedAllowsUnloadedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Original title",
@@ -344,7 +344,7 @@ func TestUpdateIssueLoggedUnconditionalBypassesStaleGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Before update",
@@ -391,7 +391,7 @@ func TestDeleteIssueLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "To be deleted",
@@ -452,7 +452,7 @@ func TestUpdateIssueLogged_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		ID:    "td-nonexistent",
@@ -470,7 +470,7 @@ func TestDeleteIssueLogged_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	err = database.DeleteIssueLogged("td-nonexistent", "sess-5")
 	if err == nil {
@@ -484,7 +484,7 @@ func TestUnloggedVariants_NoActionLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue with unlogged variant
 	issue := &models.Issue{
@@ -562,7 +562,7 @@ func TestUpdateIssueLogged_ReopenSupersedesActiveApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "approved then reopened",

@@ -142,7 +142,7 @@ func TestApproveIssueDirectReviewerClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Seed an in_review issue implemented by someone else.
 	issue := &models.Issue{
@@ -204,7 +204,7 @@ func TestRecordReviewChangesRequestedToggle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// executeRecordReview itself doesn't gate on mode (the modal-open path
 	// does), but turn on delegated mode anyway so any future tightening stays
@@ -274,7 +274,7 @@ func TestRecordReviewLaterIssueEventFailureLeavesMonitorStateRetryable(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Atomic record review", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -335,7 +335,7 @@ func TestApproveCloseLaterIssueEventFailureDoesNotCloseAndCanRetry(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Atomic approve", Type: models.TypeTask, Status: models.StatusInReview}
 	if err := database.CreateIssue(issue); err != nil {
@@ -386,7 +386,7 @@ func TestApproveIssueParentCascadeStampsClosedBy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	epic := &models.Issue{Title: "Epic", Type: models.TypeEpic, Status: models.StatusInReview}
 	if err := database.CreateIssue(epic); err != nil {
@@ -536,7 +536,7 @@ func TestReviewableFilterAgreesWithMonitorCategories(t *testing.T) {
 			if err != nil {
 				t.Fatalf("db init: %v", err)
 			}
-			defer database.Close()
+			defer func() { _ = database.Close() }()
 
 			const me = "ses-me"
 

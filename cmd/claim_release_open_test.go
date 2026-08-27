@@ -23,7 +23,7 @@ func TestUpdateStatusOpenReleasesClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Claimed work to unstart via update", Type: models.TypeTask}
 	if err := database.CreateIssue(issue); err != nil {

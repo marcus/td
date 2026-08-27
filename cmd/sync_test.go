@@ -87,7 +87,7 @@ func TestRequireSQLiteSidecarsAbsentDetectsOtherOpenConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer second.Close()
+	defer func() { _ = second.Close() }()
 
 	if err := checkpointSQLiteForReplacement(first); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestCheckpointSQLiteForReplacementFlushesWAL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	if _, err := database.Conn().Exec(`INSERT INTO schema_info (key, value) VALUES ('checkpoint-test', 'written')`); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestCheckpointSQLiteForReplacementFlushesWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var value string
 	if err := conn.QueryRow(`SELECT value FROM schema_info WHERE key = 'checkpoint-test'`).Scan(&value); err != nil {
 		t.Fatalf("standalone main file lacks checkpointed row: %v", err)
@@ -152,7 +152,7 @@ func TestAutoSyncApplyPullBatchQuarantinesPermanentFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 	if err := database.SetSyncState("project-test"); err != nil {
 		t.Fatalf("SetSyncState: %v", err)
 	}

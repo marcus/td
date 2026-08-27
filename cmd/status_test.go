@@ -13,7 +13,7 @@ func TestStatusCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test issues
 	issue1 := &models.Issue{
@@ -77,7 +77,7 @@ func TestStatusWithEmptyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	scope := db.SessionStateScope{SessionID: "ses_test"}
 

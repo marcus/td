@@ -98,11 +98,13 @@ func TestPrintSyncEntry(t *testing.T) {
 
 			printSyncEntry(tt.entry)
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			if _, err := io.Copy(&buf, r); err != nil {
+				t.Fatal(err)
+			}
 			output := buf.String()
 
 			for _, s := range tt.contains {

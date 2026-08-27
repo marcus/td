@@ -138,7 +138,7 @@ func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var projects []*Project
 	for rows.Next() {
@@ -235,7 +235,7 @@ func (db *ServerDB) BackfillProjectSlugs() error {
 	if err != nil {
 		return fmt.Errorf("backfill slugs: query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type projectRow struct {
 		id   string

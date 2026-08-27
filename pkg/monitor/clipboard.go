@@ -57,16 +57,16 @@ func formatIssueAsMarkdown(issue *models.Issue) string {
 	var sb strings.Builder
 
 	// Title with ID
-	sb.WriteString(fmt.Sprintf("# %s\n", issue.Title))
-	sb.WriteString(fmt.Sprintf("**ID:** `%s`\n", issue.ID))
+	fmt.Fprintf(&sb, "# %s\n", issue.Title)
+	fmt.Fprintf(&sb, "**ID:** `%s`\n", issue.ID)
 
 	// Metadata
-	sb.WriteString(fmt.Sprintf("**Type:** %s | **Priority:** %s | **Status:** %s\n",
-		issue.Type, issue.Priority, issue.Status))
+	fmt.Fprintf(&sb, "**Type:** %s | **Priority:** %s | **Status:** %s\n",
+		issue.Type, issue.Priority, issue.Status)
 
 	// Parent epic if set
 	if issue.ParentID != "" {
-		sb.WriteString(fmt.Sprintf("**Parent:** `%s`\n", issue.ParentID))
+		fmt.Fprintf(&sb, "**Parent:** `%s`\n", issue.ParentID)
 	}
 
 	// Description
@@ -91,9 +91,9 @@ func formatEpicAsMarkdown(epic *models.Issue, children []models.Issue) string {
 	var sb strings.Builder
 
 	// Epic header
-	sb.WriteString(fmt.Sprintf("# Epic: %s\n", epic.Title))
-	sb.WriteString(fmt.Sprintf("**ID:** `%s`\n", epic.ID))
-	sb.WriteString(fmt.Sprintf("**Priority:** %s | **Status:** %s\n", epic.Priority, epic.Status))
+	fmt.Fprintf(&sb, "# Epic: %s\n", epic.Title)
+	fmt.Fprintf(&sb, "**ID:** `%s`\n", epic.ID)
+	fmt.Fprintf(&sb, "**Priority:** %s | **Status:** %s\n", epic.Priority, epic.Status)
 
 	// Epic description
 	if epic.Description != "" {
@@ -117,10 +117,10 @@ func formatEpicAsMarkdown(epic *models.Issue, children []models.Issue) string {
 				sb.WriteString("\n---\n\n")
 			}
 			statusIcon := statusIcon(child.Status)
-			sb.WriteString(fmt.Sprintf("### %s %s\n", statusIcon, child.Title))
-			sb.WriteString(fmt.Sprintf("**ID:** `%s`\n", child.ID))
-			sb.WriteString(fmt.Sprintf("**Type:** %s | **Priority:** %s | **Status:** %s\n",
-				child.Type, child.Priority, child.Status))
+			fmt.Fprintf(&sb, "### %s %s\n", statusIcon, child.Title)
+			fmt.Fprintf(&sb, "**ID:** `%s`\n", child.ID)
+			fmt.Fprintf(&sb, "**Type:** %s | **Priority:** %s | **Status:** %s\n",
+				child.Type, child.Priority, child.Status)
 
 			if child.Description != "" {
 				sb.WriteString("\n#### Description\n\n")

@@ -14,7 +14,7 @@ func TestWritesAreCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// time.Now() carries a monotonic reading; the buggy writer would emit
 	// "... -0700 PDT m=+...". Bind it the normal way.
@@ -54,7 +54,7 @@ func TestMigrateNormalizeTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Insert a session row with corrupted (Go String()) timestamps, bypassing
 	// the normal write path by writing the raw text directly.
@@ -140,7 +140,7 @@ func TestSessionLookupToleratesCorruptTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Deliberately unparseable last_activity.
 	if _, err := database.conn.Exec(`INSERT INTO sessions

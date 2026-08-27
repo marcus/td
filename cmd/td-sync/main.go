@@ -51,7 +51,7 @@ func main() {
 		slog.Error("open server db", "err", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	srv, err := api.NewServer(cfg, store)
 	if err != nil {

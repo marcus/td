@@ -76,7 +76,7 @@ func runAdminCreateUser(args []string) {
 	}
 
 	store := openDB(*dbPath)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	existing, err := store.GetUserByEmail(*email)
 	if err != nil {
@@ -110,7 +110,7 @@ func runAdminGrant(args []string) {
 	}
 
 	store := openDB(*dbPath)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	if err := store.SetUserAdmin(*email, true); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -133,7 +133,7 @@ func runAdminRevoke(args []string) {
 	}
 
 	store := openDB(*dbPath)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Check if this would remove the last admin
 	count, err := store.CountAdmins()
@@ -185,7 +185,7 @@ func runAdminCreateKey(args []string) {
 	}
 
 	store := openDB(*dbPath)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Look up user
 	user, err := store.GetUserByEmail(*email)
@@ -244,7 +244,7 @@ func runAdminRevokeKey(args []string) {
 	}
 
 	store := openDB(*dbPath)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Look up user to confirm the email exists before attempting revocation.
 	user, err := store.GetUserByEmail(*email)

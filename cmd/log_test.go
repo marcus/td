@@ -14,7 +14,7 @@ func TestLogSingleMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -52,10 +52,12 @@ func TestLogMultipleMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	messages := []string{
 		"Initial exploration",
@@ -71,7 +73,9 @@ func TestLogMultipleMessages(t *testing.T) {
 			Message:   msg,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
@@ -99,10 +103,12 @@ func TestLogWithDifferentTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
 		name    string
@@ -154,10 +160,12 @@ func TestLogRetrievalLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add 10 logs
 	for i := 0; i < 10; i++ {
@@ -167,7 +175,9 @@ func TestLogRetrievalLimit(t *testing.T) {
 			Message:   "Message " + string(rune(i)),
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Test different limits
@@ -196,13 +206,17 @@ func TestLogForMultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add logs to issue 1
 	for i := 0; i < 3; i++ {
@@ -212,7 +226,9 @@ func TestLogForMultipleIssues(t *testing.T) {
 			Message:   "Issue 1 log",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Add logs to issue 2
@@ -223,7 +239,9 @@ func TestLogForMultipleIssues(t *testing.T) {
 			Message:   "Issue 2 log",
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	logs1, _ := database.GetLogs(issue1.ID, 10)
@@ -256,10 +274,12 @@ func TestLogWithMultipleSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	sessions := []string{"ses_aaa", "ses_bbb", "ses_ccc"}
 
@@ -270,7 +290,9 @@ func TestLogWithMultipleSessions(t *testing.T) {
 			Message:   "Log from " + session,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)
@@ -297,10 +319,12 @@ func TestLogWithWorkSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	workSessionID := "ws_12345"
 	log := &models.Log{
@@ -331,10 +355,12 @@ func TestLogEmptyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	log := &models.Log{
 		IssueID:   issue.ID,
@@ -357,10 +383,12 @@ func TestLogLongMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create a long message
 	longMessage := ""
@@ -395,7 +423,7 @@ func TestLogNonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	log := &models.Log{
 		IssueID:   "td-nonexistent",
@@ -418,10 +446,12 @@ func TestLogRetrieval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add logs in specific order
 	messages := []string{"First", "Second", "Third"}
@@ -432,7 +462,9 @@ func TestLogRetrieval(t *testing.T) {
 			Message:   msg,
 			Type:      models.LogTypeProgress,
 		}
-		database.AddLog(log)
+		if err := database.AddLog(log); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	logs, _ := database.GetLogs(issue.ID, 10)

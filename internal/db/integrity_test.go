@@ -7,7 +7,7 @@ func TestQuickCheckHealthyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if err := database.QuickCheck(); err != nil {
 		t.Fatalf("QuickCheck: %v", err)

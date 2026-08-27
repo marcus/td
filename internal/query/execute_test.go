@@ -35,7 +35,7 @@ func createTestIssue(t *testing.T, database *db.DB, id, title string, status mod
 
 func TestExecute(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test issues
 	createTestIssue(t, database, "td-001", "Fix auth bug", models.StatusOpen, models.TypeBug, models.PriorityP1)
@@ -117,7 +117,7 @@ func TestExecute(t *testing.T) {
 
 func TestExecuteWithLimit(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create several test issues
 	for i := 0; i < 10; i++ {
@@ -135,7 +135,7 @@ func TestExecuteWithLimit(t *testing.T) {
 
 func TestExecuteWithMaxResults(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test issues
 	for i := 0; i < 5; i++ {
@@ -155,7 +155,7 @@ func TestExecuteWithMaxResults(t *testing.T) {
 
 func TestExecuteParentChild(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create parent issue
 	parent := &models.Issue{
@@ -206,7 +206,7 @@ func TestExecuteParentChild(t *testing.T) {
 
 func TestExecuteDescendantOf(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create a hierarchy: epic -> task -> subtask
 	epic := &models.Issue{Title: "Epic", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
@@ -257,7 +257,7 @@ func TestExecuteDescendantOf(t *testing.T) {
 
 func TestExecuteEpicByID(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an epic
 	epic := &models.Issue{
@@ -376,7 +376,7 @@ func TestExecuteEpicByID(t *testing.T) {
 
 func TestExecuteEpicLabels(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create an epic with labels
 	epic := &models.Issue{
@@ -492,7 +492,7 @@ func TestExecuteEpicLabels(t *testing.T) {
 
 func TestExecuteIsReadyAndHasOpenDeps(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create standalone issue (no dependencies) - should be ready
 	standalone := &models.Issue{
@@ -618,7 +618,7 @@ func TestExecuteIsReadyAndHasOpenDeps(t *testing.T) {
 
 func TestExecuteWithLogs(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test issue
 	issue := createTestIssue(t, database, "", "Bug fix", models.StatusOpen, models.TypeBug, models.PriorityP1)
@@ -652,7 +652,7 @@ func TestExecuteWithLogs(t *testing.T) {
 
 func TestQuickSearch(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := createTestIssue(t, database, "", "Fix authentication bug", models.StatusOpen, models.TypeBug, models.PriorityP1)
 	createTestIssue(t, database, "", "Add login feature", models.StatusOpen, models.TypeFeature, models.PriorityP2)
@@ -691,7 +691,7 @@ func TestQuickSearch(t *testing.T) {
 
 func TestReworkFunction(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create test issues
 	issue1 := createTestIssue(t, database, "td-rework1", "Rejected no resubmit (open)", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -756,7 +756,7 @@ func TestReworkFunction(t *testing.T) {
 
 func TestExecuteEpicOR(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two epics with children
 	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
@@ -852,7 +852,7 @@ func TestExecuteEpicOR(t *testing.T) {
 
 func TestExecuteDescendantOfOR(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// hierarchy: epicX -> taskX1 -> subtaskX1; epicY -> taskY1
 	epicX := &models.Issue{Title: "Epic X", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
@@ -924,7 +924,7 @@ func TestExecuteDescendantOfOR(t *testing.T) {
 
 func TestExecuteLogBooleanCombinations(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -996,7 +996,7 @@ func TestExecuteLogBooleanCombinations(t *testing.T) {
 
 func TestExecuteCommentCrossEntity(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -1063,7 +1063,7 @@ func TestExecuteCommentCrossEntity(t *testing.T) {
 
 func TestExecuteHandoffCrossEntity(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -1129,7 +1129,7 @@ func TestExecuteHandoffCrossEntity(t *testing.T) {
 
 func TestExecuteFileCrossEntity(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -1200,7 +1200,7 @@ func TestExecuteFileCrossEntity(t *testing.T) {
 
 func TestExecuteMixedCrossEntityOR(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueA := createTestIssue(t, database, "", "Issue A", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	issueB := createTestIssue(t, database, "", "Issue B", models.StatusOpen, models.TypeTask, models.PriorityP2)
@@ -1231,7 +1231,7 @@ func TestExecuteMixedCrossEntityOR(t *testing.T) {
 
 func TestExecuteMixedCrossEntityEpicAndDescendant(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
 	if err := database.CreateIssue(epicA); err != nil {
@@ -1273,7 +1273,7 @@ func TestExecuteMixedCrossEntityEpicAndDescendant(t *testing.T) {
 
 func TestExecuteComplexNested(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	epicA := &models.Issue{Title: "Epic A", Status: models.StatusOpen, Type: models.TypeEpic, Priority: models.PriorityP1}
 	if err := database.CreateIssue(epicA); err != nil {
@@ -1350,7 +1350,7 @@ func TestExecuteComplexNested(t *testing.T) {
 
 func TestExecuteBlocksOR(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	targetX := createTestIssue(t, database, "", "Target X", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	targetY := createTestIssue(t, database, "", "Target Y", models.StatusOpen, models.TypeTask, models.PriorityP1)
@@ -1397,7 +1397,7 @@ func TestExecuteBlocksOR(t *testing.T) {
 
 func TestExecuteIsReadyOR(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	blocker := createTestIssue(t, database, "", "Blocker", models.StatusOpen, models.TypeTask, models.PriorityP1)
 	blocked := createTestIssue(t, database, "", "Blocked", models.StatusOpen, models.TypeTask, models.PriorityP2)

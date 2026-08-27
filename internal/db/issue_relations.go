@@ -38,13 +38,13 @@ func (db *DB) getDescendants(parentID string) ([]string, error) {
 		for rows.Next() {
 			var childID string
 			if err := rows.Scan(&childID); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			children = append(children, childID)
 			descendants = append(descendants, childID)
 		}
-		rows.Close()
+		_ = rows.Close()
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
@@ -77,7 +77,7 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var children []*models.Issue
 	for rows.Next() {
@@ -387,7 +387,7 @@ func (db *DB) GetIssueDependencyRelations(issueID string) ([]models.IssueDepende
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deps []models.IssueDependency
 	for rows.Next() {
@@ -408,7 +408,7 @@ func (db *DB) GetDependencies(issueID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deps []string
 	for rows.Next() {
@@ -432,7 +432,7 @@ func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var blocked []string
 	for rows.Next() {
@@ -456,7 +456,7 @@ func (db *DB) GetAllDependencies() (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	deps := make(map[string][]string)
 	for rows.Next() {
@@ -502,7 +502,7 @@ func (db *DB) GetIssuesWithOpenDeps() (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]bool)
 	for rows.Next() {
@@ -547,7 +547,7 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	statuses := make(map[string]models.Status)
 	for rows.Next() {
@@ -600,7 +600,7 @@ func (db *DB) GetBlockersForIssues(issueIDs []string) (map[string][]string, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var issueID, dependsOnID string
@@ -653,7 +653,7 @@ func (db *DB) GetIssueTitlesAndStatuses(ids []string) (map[string]IssueTitleStat
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var id, title string
@@ -706,7 +706,7 @@ func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var files []models.IssueFile
 	for rows.Next() {
@@ -780,7 +780,7 @@ func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var history []models.IssueSessionHistory
 	for rows.Next() {
@@ -805,7 +805,7 @@ func (db *DB) GetIssueSessionLog(sessionID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

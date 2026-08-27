@@ -274,7 +274,7 @@ func (db *DB) LatestIssueActivity(issueIDs []string) (map[string]time.Time, erro
 			var id string
 			var ts sql.NullString
 			if err := rows.Scan(&id, &ts); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return nil, err
 			}
 			if !ts.Valid {
@@ -285,7 +285,7 @@ func (db *DB) LatestIssueActivity(issueIDs []string) (map[string]time.Time, erro
 			}
 		}
 		err = rows.Err()
-		rows.Close()
+		_ = rows.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -346,7 +346,7 @@ func (db *DB) SessionsHoldingClaims() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	held := make(map[string]int)
 	for rows.Next() {

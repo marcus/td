@@ -54,7 +54,7 @@ func debugLog(op string, path string, refsAfter int) {
 	if ok {
 		caller = fmt.Sprintf("%s:%d", file, line)
 	}
-	fmt.Fprintf(debugWriter, "[dbpool] op=%s path=%s refs=%d caller=%s\n", op, path, refsAfter, caller)
+	_, _ = fmt.Fprintf(debugWriter, "[dbpool] op=%s path=%s refs=%d caller=%s\n", op, path, refsAfter, caller)
 }
 
 // getSharedDB returns a shared database connection for the given base directory.
@@ -128,7 +128,7 @@ func clearDBPool() {
 	defer dbPool.mu.Unlock()
 
 	for path, entry := range dbPool.conns {
-		entry.db.Close()
+		_ = entry.db.Close()
 		delete(dbPool.conns, path)
 	}
 }

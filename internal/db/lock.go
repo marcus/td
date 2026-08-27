@@ -70,7 +70,7 @@ func (l *writeLocker) acquire(timeout time.Duration) error {
 		// Check timeout
 		if time.Now().After(deadline) {
 			holder := l.readHolder()
-			l.lockFile.Close()
+			_ = l.lockFile.Close()
 			l.lockFile = nil
 			return fmt.Errorf("write lock timeout after %v\n  holder: %s\n  try again or check if holder process is stuck", timeout, holder)
 		}
@@ -98,7 +98,7 @@ func (l *writeLocker) release() error {
 	// Release lock (platform-specific)
 	l.unlock()
 
-	l.lockFile.Close()
+	_ = l.lockFile.Close()
 	l.lockFile = nil
 
 	return nil
@@ -111,7 +111,7 @@ func (l *writeLocker) writeHolder() {
 	}
 	_ = l.lockFile.Truncate(0)
 	_, _ = l.lockFile.Seek(0, 0)
-	fmt.Fprintf(l.lockFile, "pid:%d\ntime:%s\n", os.Getpid(), time.Now().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(l.lockFile, "pid:%d\ntime:%s\n", os.Getpid(), time.Now().Format(time.RFC3339))
 	_ = l.lockFile.Sync()
 }
 

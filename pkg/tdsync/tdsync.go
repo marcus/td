@@ -139,7 +139,7 @@ func New(opts Options) (*Syncer, error) {
 func (s *Syncer) Gate() Gate {
 	database, closeDB, err := s.database()
 	if closeDB && database != nil {
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 	}
 	return s.gate(database, err)
 }
@@ -282,7 +282,7 @@ func (s *Syncer) once(ctx context.Context) (Result, error) {
 		return result, err
 	}
 	if closeDB {
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 	}
 	gate := s.gate(database, nil)
 	if !gate.Open {
@@ -592,7 +592,7 @@ func storeConflicts(tx *sql.Tx, conflicts []syncengine.ConflictRecord) error {
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 	for _, conflict := range conflicts {
 		local, remote := "null", "null"
 		if conflict.LocalData != nil {

@@ -26,7 +26,7 @@ var blockedByCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		issueID := args[0]
 		issue, err := database.GetIssue(issueID)
@@ -146,7 +146,7 @@ var dependsOnCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		issueID := args[0]
 		issue, err := database.GetIssue(issueID)
@@ -215,7 +215,7 @@ var criticalPathCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		limit, _ := cmd.Flags().GetInt("limit")
 		if limit == 0 {
@@ -454,7 +454,7 @@ Examples:
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		blocking, _ := cmd.Flags().GetBool("blocking")
 		jsonOutput := jsonMode(cmd)
@@ -504,7 +504,7 @@ var depAddCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -559,7 +559,7 @@ var depRmCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {

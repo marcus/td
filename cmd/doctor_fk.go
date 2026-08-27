@@ -22,7 +22,7 @@ var doctorFkCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open db: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		results, err := db.AuditForeignKeys(database.Conn())
 		if err != nil {
@@ -30,14 +30,14 @@ var doctorFkCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "RELATION\tORPHANS")
+		_, _ = fmt.Fprintln(tw, "RELATION\tORPHANS")
 		var total int
 		for _, r := range results {
-			fmt.Fprintf(tw, "%s\t%d\n", r.Relation, r.Count)
+			_, _ = fmt.Fprintf(tw, "%s\t%d\n", r.Relation, r.Count)
 			total += r.Count
 		}
-		fmt.Fprintf(tw, "---\t\n")
-		fmt.Fprintf(tw, "total\t%d\n", total)
+		_, _ = fmt.Fprintf(tw, "---\t\n")
+		_, _ = fmt.Fprintf(tw, "total\t%d\n", total)
 		return tw.Flush()
 	},
 }

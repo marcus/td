@@ -24,7 +24,7 @@ var dueCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -49,7 +49,7 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date cleared",
@@ -75,7 +75,7 @@ var dueCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Due date set: " + dateStr,

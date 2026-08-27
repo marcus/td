@@ -44,7 +44,7 @@ func TestRejectOpenIssueIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:              "Already reopened review target",

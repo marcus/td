@@ -148,7 +148,7 @@ func readMaxSeq(parentCtx context.Context, path, query string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cancel := context.WithTimeout(parentCtx, lagQueryTimeout)
 	defer cancel()

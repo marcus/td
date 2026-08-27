@@ -186,7 +186,7 @@ func (s *Syncer) consumeStream(ctx context.Context, lastEventID *string, onChang
 		return err
 	}
 	if conn.closeDB {
-		defer conn.database.Close()
+		defer func() { _ = conn.database.Close() }()
 	}
 	events := make(chan syncclient.ProjectEvent, 1)
 	opened := make(chan struct{}, 1)
@@ -314,7 +314,7 @@ func (s *Syncer) probe(ctx context.Context, baseline *int64, onChange func()) (f
 		return fallbackReconnect, err
 	}
 	if conn.closeDB {
-		defer conn.database.Close()
+		defer func() { _ = conn.database.Close() }()
 	}
 	status, err := conn.client.SyncStatusContext(ctx, conn.project)
 	if err != nil {
@@ -387,14 +387,14 @@ func (s *Syncer) connection(ctx context.Context) (*liveConnection, error) {
 	state, err := database.GetSyncState()
 	if err != nil || state == nil || state.ProjectID == "" {
 		if closeDB {
-			database.Close()
+			_ = database.Close()
 		}
 		return nil, fmt.Errorf("get sync state: %w", err)
 	}
 	deviceID, err := syncconfig.GetDeviceID()
 	if err != nil {
 		if closeDB {
-			database.Close()
+			_ = database.Close()
 		}
 		return nil, err
 	}
@@ -411,7 +411,7 @@ func (s *Syncer) projectID() string {
 		return ""
 	}
 	if closeDB {
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 	}
 	state, _ := database.GetSyncState()
 	if state == nil {

@@ -235,7 +235,7 @@ func backfillCursorsFromEvents(eventsDB *sql.DB, store *serverdb.ServerDB, proje
 		slog.Warn("cursor backfill: query events", "project", projectID, "err", err)
 		return 0
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	n := 0
 	for rows.Next() {

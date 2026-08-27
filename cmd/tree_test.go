@@ -14,14 +14,16 @@ func TestTreeSingleIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Root Issue",
 		Type:   models.TypeEpic,
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Retrieve and verify
 	retrieved, err := database.GetIssue(issue.ID)
@@ -40,13 +42,15 @@ func TestTreeParentChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title: "Parent Epic",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	child1 := &models.Issue{
 		Title:    "Child Task 1",
@@ -59,8 +63,12 @@ func TestTreeParentChild(t *testing.T) {
 		Type:     models.TypeTask,
 	}
 
-	database.CreateIssue(child1)
-	database.CreateIssue(child2)
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify parent-child relationships
 	child1Retrieved, _ := database.GetIssue(child1.ID)
@@ -81,7 +89,7 @@ func TestTreeNestedHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create hierarchy: root -> level1 -> level2 -> level3
 	root := &models.Issue{Title: "Root", Type: models.TypeEpic}
@@ -89,18 +97,32 @@ func TestTreeNestedHierarchy(t *testing.T) {
 	level2 := &models.Issue{Title: "Level 2", Type: models.TypeEpic}
 	level3 := &models.Issue{Title: "Level 3", Type: models.TypeTask}
 
-	database.CreateIssue(root)
-	database.CreateIssue(level1)
-	database.CreateIssue(level2)
-	database.CreateIssue(level3)
+	if err := database.CreateIssue(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(level1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(level2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(level3); err != nil {
+		t.Fatal(err)
+	}
 
 	level1.ParentID = root.ID
 	level2.ParentID = level1.ID
 	level3.ParentID = level2.ID
 
-	database.UpdateIssue(level1)
-	database.UpdateIssue(level2)
-	database.UpdateIssue(level3)
+	if err := database.UpdateIssue(level1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateIssue(level2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateIssue(level3); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify hierarchy
 	l1, _ := database.GetIssue(level1.ID)
@@ -126,10 +148,12 @@ func TestTreeMultipleChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{Title: "Parent", Type: models.TypeEpic}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create 5 children and track their IDs
 	childCount := 5
@@ -141,7 +165,9 @@ func TestTreeMultipleChildren(t *testing.T) {
 			ParentID: parent.ID,
 			Type:     models.TypeTask,
 		}
-		database.CreateIssue(child)
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatal(err)
+		}
 		childIDs[i] = child.ID
 	}
 
@@ -165,25 +191,39 @@ func TestTreeWithDifferentTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	epic := &models.Issue{Title: "Epic", Type: models.TypeEpic}
 	feature := &models.Issue{Title: "Feature", Type: models.TypeFeature}
 	bug := &models.Issue{Title: "Bug", Type: models.TypeBug}
 	task := &models.Issue{Title: "Task", Type: models.TypeTask}
 
-	database.CreateIssue(epic)
-	database.CreateIssue(feature)
-	database.CreateIssue(bug)
-	database.CreateIssue(task)
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(feature); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(bug); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(task); err != nil {
+		t.Fatal(err)
+	}
 
 	feature.ParentID = epic.ID
 	bug.ParentID = epic.ID
 	task.ParentID = epic.ID
 
-	database.UpdateIssue(feature)
-	database.UpdateIssue(bug)
-	database.UpdateIssue(task)
+	if err := database.UpdateIssue(feature); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateIssue(bug); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpdateIssue(task); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify hierarchy
 	f, _ := database.GetIssue(feature.ID)
@@ -202,14 +242,16 @@ func TestTreeOrphanedChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	orphan := &models.Issue{
 		Title:    "Orphaned Child",
 		ParentID: "td-nonexistent",
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(orphan)
+	if err := database.CreateIssue(orphan); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify orphan exists even though parent doesn't
 	retrieved, _ := database.GetIssue(orphan.ID)
@@ -231,19 +273,25 @@ func TestTreeReparenting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent1 := &models.Issue{Title: "Parent 1", Type: models.TypeEpic}
 	parent2 := &models.Issue{Title: "Parent 2", Type: models.TypeEpic}
-	database.CreateIssue(parent1)
-	database.CreateIssue(parent2)
+	if err := database.CreateIssue(parent1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(parent2); err != nil {
+		t.Fatal(err)
+	}
 
 	child := &models.Issue{
 		Title:    "Child",
 		ParentID: parent1.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify initial parent
 	c1, _ := database.GetIssue(child.ID)
@@ -253,7 +301,9 @@ func TestTreeReparenting(t *testing.T) {
 
 	// Change parent
 	child.ParentID = parent2.ID
-	database.UpdateIssue(child)
+	if err := database.UpdateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify new parent
 	c2, _ := database.GetIssue(child.ID)
@@ -269,14 +319,16 @@ func TestTreeWithDifferentStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title:  "Parent",
 		Type:   models.TypeEpic,
 		Status: models.StatusInProgress,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	statuses := []models.Status{
 		models.StatusOpen,
@@ -293,7 +345,9 @@ func TestTreeWithDifferentStatuses(t *testing.T) {
 			Type:     models.TypeTask,
 			Status:   status,
 		}
-		database.CreateIssue(child)
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatal(err)
+		}
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Status != status {
@@ -309,13 +363,15 @@ func TestTreeEmptyParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title: "Empty Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(parent.ID)
 	if retrieved.ID != parent.ID {
@@ -330,14 +386,16 @@ func TestTreeWithPriorities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title:    "Parent",
 		Type:     models.TypeEpic,
 		Priority: models.PriorityP0,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	priorities := []models.Priority{
 		models.PriorityP0,
@@ -354,7 +412,9 @@ func TestTreeWithPriorities(t *testing.T) {
 			Type:     models.TypeTask,
 			Priority: priority,
 		}
-		database.CreateIssue(child)
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatal(err)
+		}
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Priority != priority {
@@ -370,13 +430,15 @@ func TestTreeWithPoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title: "Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	points := []int{1, 2, 3, 5, 8, 13, 21}
 
@@ -387,7 +449,9 @@ func TestTreeWithPoints(t *testing.T) {
 			Type:     models.TypeTask,
 			Points:   pts,
 		}
-		database.CreateIssue(child)
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatal(err)
+		}
 
 		retrieved, _ := database.GetIssue(child.ID)
 		if retrieved.Points != pts {
@@ -403,23 +467,29 @@ func TestTreeDeleteParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title: "Parent",
 		Type:  models.TypeEpic,
 	}
-	database.CreateIssue(parent)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
 
 	child := &models.Issue{
 		Title:    "Child",
 		ParentID: parent.ID,
 		Type:     models.TypeTask,
 	}
-	database.CreateIssue(child)
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	// Delete parent
-	database.DeleteIssue(parent.ID)
+	if err := database.DeleteIssue(parent.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify parent is deleted
 	pDeleted, _ := database.GetIssue(parent.ID)
@@ -446,7 +516,7 @@ func TestTreeBlockedParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	parent := &models.Issue{
 		Title:  "Blocked Parent",
@@ -460,8 +530,12 @@ func TestTreeBlockedParent(t *testing.T) {
 		Status:   models.StatusOpen,
 	}
 
-	database.CreateIssue(parent)
-	database.CreateIssue(child)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	pRetrieved, _ := database.GetIssue(parent.ID)
 	if pRetrieved.Status != models.StatusBlocked {
@@ -481,10 +555,12 @@ func TestTreeLargeHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	root := &models.Issue{Title: "Root", Type: models.TypeEpic}
-	database.CreateIssue(root)
+	if err := database.CreateIssue(root); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create 100 child issues
 	for i := 0; i < 100; i++ {
@@ -493,7 +569,9 @@ func TestTreeLargeHierarchy(t *testing.T) {
 			ParentID: root.ID,
 			Type:     models.TypeTask,
 		}
-		database.CreateIssue(child)
+		if err := database.CreateIssue(child); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Verify root exists

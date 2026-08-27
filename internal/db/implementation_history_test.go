@@ -12,7 +12,7 @@ func TestHasImplementationHistoryStartedActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
 	if err := db.CreateIssue(issue); err != nil {

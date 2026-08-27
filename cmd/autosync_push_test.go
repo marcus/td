@@ -98,7 +98,7 @@ func setupAutoSyncTestDB(t *testing.T, n int) *db.DB {
 	if err != nil {
 		t.Fatalf("init db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	// Create a session via GetOrCreate (uses TD_SESSION_ID + current branch)
 	sess, err := session.GetOrCreate(database)
@@ -147,7 +147,7 @@ func setupAutoSyncTestDB(t *testing.T, n int) *db.DB {
 			t.Fatalf("insert action_log %d: %v", i, err)
 		}
 	}
-	stmt.Close()
+	_ = stmt.Close()
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("commit: %v", err)
 	}

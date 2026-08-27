@@ -4,6 +4,14 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Developer
+
+- **Go CI now lints the full codebase the same way sidecar does.** `make lint`
+  and the GitHub lint job run `golangci-lint` v2.13.1 under `GOOS=linux` and
+  `GOWORK=off`, with the standard correctness set (`errcheck`, `govet`,
+  `ineffassign`, `staticcheck`, `unused`). Pre-existing findings were cleared so
+  the gate can be blocking rather than `--new-from-merge-base`.
+
 ## [v0.64.0] - 2026-08-25
 
 ### Sync

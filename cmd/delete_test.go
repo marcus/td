@@ -14,7 +14,7 @@ func TestDeleteSingleIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -48,7 +48,7 @@ func TestDeleteMultipleIssues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issues := []*models.Issue{
 		{Title: "Issue 1", Status: models.StatusOpen},
@@ -58,7 +58,9 @@ func TestDeleteMultipleIssues(t *testing.T) {
 
 	issueIDs := make([]string, 0)
 	for _, issue := range issues {
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 		issueIDs = append(issueIDs, issue.ID)
 	}
 
@@ -85,7 +87,7 @@ func TestDeleteLogsAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	if _, err := database.RunMigrations(); err != nil {
 		t.Fatalf("RunMigrations failed: %v", err)
@@ -95,7 +97,9 @@ func TestDeleteLogsAction(t *testing.T) {
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	sessionID := "ses_test123"
 	issueData := `{"id":"` + issue.ID + `","title":"Test Issue","status":"open"}`
@@ -137,7 +141,7 @@ func TestDeleteNonexistentIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	_, err = database.GetIssue("td-nonexistent")
 	if err == nil {
@@ -152,7 +156,7 @@ func TestDeleteFromDifferentStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	testCases := []struct {
 		name          string
@@ -171,7 +175,9 @@ func TestDeleteFromDifferentStatuses(t *testing.T) {
 				Title:  tc.name,
 				Status: tc.initialStatus,
 			}
-			database.CreateIssue(issue)
+			if err := database.CreateIssue(issue); err != nil {
+				t.Fatal(err)
+			}
 
 			if err := database.DeleteIssue(issue.ID); err != nil {
 				t.Errorf("Failed to delete from %s: %v", tc.initialStatus, err)
@@ -192,16 +198,20 @@ func TestDeleteAlreadyDeletedIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Already Deleted",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Delete once
-	database.DeleteIssue(issue.ID)
+	if err := database.DeleteIssue(issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Delete again (should be idempotent or still work)
 	err = database.DeleteIssue(issue.ID)
@@ -222,17 +232,23 @@ func TestDeleteWithDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create two related issues
 	parent := &models.Issue{Title: "Parent", Status: models.StatusOpen}
 	child := &models.Issue{Title: "Child", Status: models.StatusOpen}
 
-	database.CreateIssue(parent)
-	database.CreateIssue(child)
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatal(err)
+	}
 
 	// Add dependency
-	database.AddDependency(child.ID, parent.ID, "depends_on")
+	if err := database.AddDependency(child.ID, parent.ID, "depends_on"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Delete parent
 	if err := database.DeleteIssue(parent.ID); err != nil {
@@ -265,20 +281,24 @@ func TestDeleteUpdatesTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	if issue.DeletedAt != nil {
 		t.Error("DeletedAt should be nil before delete")
 	}
 
 	// Delete
-	database.DeleteIssue(issue.ID)
+	if err := database.DeleteIssue(issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	retrieved, _ := database.GetIssue(issue.ID)
 	if retrieved.DeletedAt == nil {
@@ -293,7 +313,7 @@ func TestDeletePreservesIssueData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Test Issue",
@@ -304,12 +324,16 @@ func TestDeletePreservesIssueData(t *testing.T) {
 		Points:      8,
 		Labels:      []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	issueID := issue.ID
 
 	// Delete the issue
-	database.DeleteIssue(issueID)
+	if err := database.DeleteIssue(issueID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Retrieve and verify data is preserved
 	retrieved, _ := database.GetIssue(issueID)
@@ -340,7 +364,7 @@ func TestDeleteMultipleWithMixedStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	statuses := []models.Status{
 		models.StatusOpen,
@@ -356,13 +380,17 @@ func TestDeleteMultipleWithMixedStatuses(t *testing.T) {
 			Title:  string(status),
 			Status: status,
 		}
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 		issueIDs = append(issueIDs, issue.ID)
 	}
 
 	// Delete all
 	for _, id := range issueIDs {
-		database.DeleteIssue(id)
+		if err := database.DeleteIssue(id); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Verify all deleted
@@ -381,13 +409,17 @@ func TestDeletePartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusOpen}
 	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusOpen}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Delete first issue successfully
 	err1 := database.DeleteIssue(issue1.ID)

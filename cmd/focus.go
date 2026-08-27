@@ -23,7 +23,7 @@ var focusCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -69,7 +69,7 @@ var unfocusCmd = &cobra.Command{
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		_, scope, err := getCurrentStateSession(database, baseDir)
 		if err != nil {
@@ -119,7 +119,7 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 			output.Error("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {

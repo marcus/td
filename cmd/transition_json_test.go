@@ -35,7 +35,7 @@ func TestUnstartJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Unstart json smoke task")
 	setIssueStatus(t, database, id, models.StatusInProgress)
@@ -86,7 +86,7 @@ func TestUnstartHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Unstart human smoke task")
 	setIssueStatus(t, database, id, models.StatusInProgress)
@@ -117,7 +117,7 @@ func TestBlockJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Block json smoke task")
 
@@ -172,7 +172,7 @@ func TestBlockHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Block human smoke task")
 
@@ -202,7 +202,7 @@ func TestUnblockJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Unblock json smoke task")
 	setIssueStatus(t, database, id, models.StatusBlocked)
@@ -248,7 +248,7 @@ func TestReopenJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Reopen json smoke task")
 	setIssueStatus(t, database, id, models.StatusClosed)
@@ -295,7 +295,7 @@ func TestDeferJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Defer json smoke task")
 
@@ -342,7 +342,7 @@ func TestDeferClearJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	id := newJSONTestIssue(t, database, "Defer clear json smoke task")
 
@@ -389,7 +389,7 @@ func TestLinkDependsOnJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	from := newJSONTestIssue(t, database, "Link from json task")
 	to := newJSONTestIssue(t, database, "Link to json task")
@@ -442,7 +442,7 @@ func TestNoteAddJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	setJSONFlag(t, true)
 	if err := noteAddCmd.Flags().Set("content", "json note body"); err != nil {
@@ -495,7 +495,7 @@ func TestNoteEditJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	note, err := database.CreateNote("Original title", "body")
 	if err != nil {
@@ -549,7 +549,7 @@ func TestNoteDeleteJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	note, err := database.CreateNote("Delete me", "body")
 	if err != nil {
@@ -594,7 +594,7 @@ func TestNoteDeleteHumanOutputUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	note, err := database.CreateNote("Delete me human", "body")
 	if err != nil {

@@ -45,7 +45,7 @@ func LogAgentError(baseDir string, args []string, errMsg string, sessionID strin
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.Write(append(data, '\n'))
 	return err

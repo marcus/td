@@ -109,7 +109,7 @@ func findRowsWithoutSyncEvents(t *testing.T, database *DB, st syncableTableUnder
 	if err != nil {
 		t.Fatalf("orphan query for %s: %v", st.table, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

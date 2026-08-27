@@ -252,12 +252,12 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		for rows.Next() {
 			var r posRow
 			if err := rows.Scan(&r.issueID, &r.position); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return err
 			}
 			positions = append(positions, r)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		// Soft-delete positions
 		_, err = tx.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, now.UTC(), boardID)

@@ -31,7 +31,7 @@ var deferCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -56,7 +56,7 @@ var deferCmd = &cobra.Command{
 				return err
 			}
 
-			database.AddLog(&models.Log{
+			_ = database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   "Deferral cleared",
@@ -103,7 +103,7 @@ var deferCmd = &cobra.Command{
 			logMsg = fmt.Sprintf("Deferred until %s (deferred %d times)", dateStr, issue.DeferCount)
 		}
 
-		database.AddLog(&models.Log{
+		_ = database.AddLog(&models.Log{
 			IssueID:   issueID,
 			SessionID: sess.ID,
 			Message:   logMsg,

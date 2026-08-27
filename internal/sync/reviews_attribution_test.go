@@ -43,7 +43,7 @@ func setupReviewsDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(reviewsSchema); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -61,7 +61,7 @@ func reviewedByOf(t *testing.T, tx *sql.Tx, id string) (string, bool) {
 func TestSyncReviewedBy_NewPeerPayloadApplies(t *testing.T) {
 	db := setupReviewsDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	payload, _ := json.Marshal(map[string]any{
 		"issue_id":         "td-a1",
@@ -100,7 +100,7 @@ func TestSyncReviewedBy_NewPeerPayloadApplies(t *testing.T) {
 func TestSyncReviewedBy_OldPeerPayloadApplies(t *testing.T) {
 	db := setupReviewsDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	payload, _ := json.Marshal(map[string]any{
 		"issue_id":         "td-a1",
@@ -134,7 +134,7 @@ func TestSyncReviewedBy_OldPeerPayloadApplies(t *testing.T) {
 func TestSyncReviewedBy_ExplicitNullCoerced(t *testing.T) {
 	db := setupReviewsDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	payload, _ := json.Marshal(map[string]any{
 		"issue_id":         "td-a1",
@@ -167,7 +167,7 @@ func TestSyncReviewedBy_ExplicitNullCoerced(t *testing.T) {
 func TestSyncReviewedBy_UnknownColumnFiltered(t *testing.T) {
 	db := setupReviewsDB(t)
 	tx := beginTx(t, db)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	payload, _ := json.Marshal(map[string]any{
 		"issue_id":              "td-a1",

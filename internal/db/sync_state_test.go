@@ -41,7 +41,7 @@ func TestGetRecentConflictsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Ensure sync_conflicts table exists (created by schema migration)
 	// Insert a conflict with a Go time.Time value (as storeConflicts does)

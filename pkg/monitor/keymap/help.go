@@ -37,7 +37,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Enter", Description: "Open issue details"},
 	}
 	for _, b := range navBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nMODALS:\n")
@@ -52,7 +52,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Tab", Description: "Focus epic task list (if epic)"},
 	}
 	for _, b := range modalBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nEPIC TASKS (when focused):\n")
@@ -64,7 +64,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Esc", Description: "Close modal"},
 	}
 	for _, b := range epicBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nCRUD:\n")
@@ -76,7 +76,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "O", Description: "Reopen closed issue"},
 	}
 	for _, b := range crudBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nCONFIRMATION DIALOGS:\n")
@@ -89,7 +89,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Click", Description: "Click buttons directly"},
 	}
 	for _, b := range confirmBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nFORM (when editing):\n")
@@ -100,7 +100,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Ctrl+O", Description: "Edit description in $EDITOR"},
 	}
 	for _, b := range formBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nACTIONS:\n")
@@ -118,7 +118,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "q / Ctrl+C", Description: "Quit"},
 	}
 	for _, b := range actionBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nREVIEW BUCKETS (Task List):\n")
@@ -129,7 +129,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Pending Other", Description: "Someone else's work waiting on a reviewer who is not you"},
 	}
 	for _, b := range reviewBucketLines {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nGETTING STARTED:\n")
@@ -138,7 +138,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "I", Description: "Add td guidance to agent file"},
 	}
 	for _, b := range gettingStartedBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nHANDOFFS MODAL:\n")
@@ -149,7 +149,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "r", Description: "Refresh handoffs"},
 	}
 	for _, b := range handoffBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nBOARDS:\n")
@@ -165,7 +165,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "F", Description: "Cycle status filter"},
 	}
 	for _, b := range boardBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nSEARCH (TDQ Query Language):\n")
@@ -176,7 +176,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "?", Description: "Show TDQ syntax help"},
 	}
 	for _, b := range searchBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nMOUSE:\n")
@@ -186,7 +186,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Scroll wheel", Description: "Scroll hovered panel"},
 	}
 	for _, b := range mouseBindings {
-		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-20s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nPress ? to close help\n")
@@ -212,7 +212,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "field >= value", Description: "Greater than or equal"},
 	}
 	for _, b := range ops {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nBOOLEAN LOGIC:\n")
@@ -223,7 +223,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "(expr)", Description: "Grouping"},
 	}
 	for _, b := range bools {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nFIELDS:\n")
@@ -238,7 +238,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "implementer / reviewer", Description: "session IDs"},
 	}
 	for _, b := range fields {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nFUNCTIONS:\n")
@@ -249,7 +249,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "descendant_of(id)", Description: "Children of epic"},
 	}
 	for _, b := range funcs {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nCROSS-ENTITY:\n")
@@ -260,7 +260,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "file.role = test", Description: "Linked file role"},
 	}
 	for _, b := range cross {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nSPECIAL VALUES:\n")
@@ -270,7 +270,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "EMPTY", Description: "Empty/null field"},
 	}
 	for _, b := range special {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nSORTING:\n")
@@ -281,7 +281,7 @@ func (r *Registry) GenerateTDQHelp() string {
 		{Keys: "sort:created", Description: "Oldest first"},
 	}
 	for _, b := range sortOps {
-		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+		fmt.Fprintf(&sb, "  %-22s %s\n", b.Keys, b.Description)
 	}
 
 	sb.WriteString("\nEXAMPLES:\n")

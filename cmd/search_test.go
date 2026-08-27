@@ -14,7 +14,7 @@ func TestSearchByTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:  "Fix login button styling",
@@ -25,8 +25,12 @@ func TestSearchByTitle(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Search for "login"
 	opts := db.ListIssuesOptions{
@@ -60,14 +64,16 @@ func TestSearchByDescription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:       "Backend fix",
 		Description: "Database connection pool is exhausted",
 		Status:      models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "database",
@@ -100,7 +106,7 @@ func TestSearchByLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:  "Backend fix",
@@ -113,8 +119,12 @@ func TestSearchByLabel(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "backend",
@@ -148,13 +158,15 @@ func TestSearchNoResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "nonexistent_keyword_xyz",
@@ -176,7 +188,7 @@ func TestSearchWithStatusFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:  "Open issue",
@@ -187,8 +199,12 @@ func TestSearchWithStatusFilter(t *testing.T) {
 		Status: models.StatusClosed,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "issue",
@@ -214,7 +230,7 @@ func TestSearchWithTypeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:  "Bug fix",
@@ -227,8 +243,12 @@ func TestSearchWithTypeFilter(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "feature",
@@ -254,7 +274,7 @@ func TestSearchWithPriorityFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:    "Critical bug priority",
@@ -267,8 +287,12 @@ func TestSearchWithPriorityFilter(t *testing.T) {
 		Status:   models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search:   "bug",
@@ -292,7 +316,7 @@ func TestSearchWithLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create 10 issues
 	for i := 0; i < 10; i++ {
@@ -300,7 +324,9 @@ func TestSearchWithLimit(t *testing.T) {
 			Title:  "Test issue",
 			Status: models.StatusOpen,
 		}
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	opts := db.ListIssuesOptions{
@@ -324,7 +350,7 @@ func TestSearchRelevanceScoring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create issue with exact title match
 	exactMatch := &models.Issue{
@@ -339,8 +365,12 @@ func TestSearchRelevanceScoring(t *testing.T) {
 		Status:      models.StatusOpen,
 	}
 
-	database.CreateIssue(exactMatch)
-	database.CreateIssue(descMatch)
+	if err := database.CreateIssue(exactMatch); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(descMatch); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "database query",
@@ -369,13 +399,15 @@ func TestSearchCaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "FIX LOGIN BUTTON",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts1 := db.ListIssuesOptions{
 		Search: "fix login",
@@ -399,7 +431,7 @@ func TestSearchMultipleKeywords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{
 		Title:  "Database connection pool",
@@ -410,8 +442,12 @@ func TestSearchMultipleKeywords(t *testing.T) {
 		Status: models.StatusOpen,
 	}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "database",
@@ -436,13 +472,15 @@ func TestSearchEmptyQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "",
@@ -464,13 +502,15 @@ func TestSearchSpecialCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Fix bug in auth_service.go",
 		Status: models.StatusOpen,
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search: "auth_service",
@@ -492,7 +532,7 @@ func TestSearchWithMultipleFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:    "Critical database bug",
@@ -501,7 +541,9 @@ func TestSearchWithMultipleFilters(t *testing.T) {
 		Status:   models.StatusOpen,
 		Labels:   []string{"backend", "critical"},
 	}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	opts := db.ListIssuesOptions{
 		Search:   "database",

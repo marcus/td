@@ -121,7 +121,7 @@ func TestApproveNoArgsUsesSingleReviewableIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
@@ -178,7 +178,7 @@ func TestApproveClosedIssueIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:              "Already closed review target",
@@ -230,7 +230,7 @@ func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:              "Recently approved issue",

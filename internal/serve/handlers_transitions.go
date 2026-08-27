@@ -295,7 +295,7 @@ func availableTransitionsFor(ctx HandlerContext, issue *models.Issue) []string {
 	consider("block", []models.Status{models.StatusOpen, models.StatusInProgress}, models.StatusBlocked, true)
 	consider("unblock", []models.Status{models.StatusBlocked}, models.StatusOpen, true)
 	// HandleClose rejects in_review non-minor issues (must use approve).
-	closeAllowed := !(status == models.StatusInReview && !issue.Minor)
+	closeAllowed := status != models.StatusInReview || issue.Minor
 	consider("close", []models.Status{models.StatusOpen, models.StatusInProgress, models.StatusBlocked, models.StatusInReview}, models.StatusClosed, closeAllowed)
 	consider("reopen", []models.Status{models.StatusClosed}, models.StatusOpen, true)
 

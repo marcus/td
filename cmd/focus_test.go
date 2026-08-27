@@ -17,7 +17,7 @@ func TestFocusSingleIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{
 		Title:  "Test Issue",
@@ -49,23 +49,31 @@ func TestFocusChangeFocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
 
 	// Focus on issue 1
-	config.SetFocus(dir, issue1.ID)
+	if err := config.SetFocus(dir, issue1.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused1, _ := config.GetFocus(dir)
 	if focused1 != issue1.ID {
 		t.Errorf("First focus failed: expected %s, got %s", issue1.ID, focused1)
 	}
 
 	// Change focus to issue 2
-	config.SetFocus(dir, issue2.ID)
+	if err := config.SetFocus(dir, issue2.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused2, _ := config.GetFocus(dir)
 	if focused2 != issue2.ID {
 		t.Errorf("Focus change failed: expected %s, got %s", issue2.ID, focused2)
@@ -84,7 +92,7 @@ func TestFocusVerifiesIssueExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Try to focus on non-existent issue
 	_, err = database.GetIssue("td-nonexistent")
@@ -100,13 +108,17 @@ func TestUnfocus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
 		t.Error("Focus not set correctly")
@@ -131,7 +143,7 @@ func TestFocusWithDifferentStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	statuses := []models.Status{
 		models.StatusOpen,
@@ -146,7 +158,9 @@ func TestFocusWithDifferentStatuses(t *testing.T) {
 			Title:  string(status),
 			Status: status,
 		}
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 
 		// Focus on this issue
 		if err := config.SetFocus(dir, issue.ID); err != nil {
@@ -170,21 +184,25 @@ func TestFocusPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Close and reopen database
-	database.Close()
+	_ = database.Close()
 	database, err = db.Open(dir)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Verify focus is still set
 	focused, err := config.GetFocus(dir)
@@ -202,10 +220,12 @@ func TestFocusFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set focus
 	if err := config.SetFocus(dir, issue.ID); err != nil {
@@ -226,14 +246,16 @@ func TestFocusMultipleIssuesSequential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issueCount := 5
 	issues := make([]*models.Issue, issueCount)
 
 	for i := 0; i < issueCount; i++ {
 		issue := &models.Issue{Title: "Issue " + string(rune(i))}
-		database.CreateIssue(issue)
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
 		issues[i] = issue
 	}
 
@@ -272,7 +294,7 @@ func TestFocusInvalidIssueID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	invalidIDs := []string{"", "invalid", "td_wrong", "not-an-id"}
 
@@ -291,15 +313,19 @@ func TestFocusIDFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	originalID := issue.ID
 
 	// Set focus
-	config.SetFocus(dir, originalID)
+	if err := config.SetFocus(dir, originalID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify ID is preserved exactly
 	focused, _ := config.GetFocus(dir)
@@ -315,13 +341,17 @@ func TestFocusWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify no whitespace issues
 	focused, _ := config.GetFocus(dir)
@@ -337,10 +367,12 @@ func TestFocusWithSpecialCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue := &models.Issue{Title: "Test Issue"}
-	database.CreateIssue(issue)
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
 
 	// IDs should be alphanumeric format like "td-xxxxx"
 	if len(issue.ID) == 0 || issue.ID[:3] != "td-" {
@@ -348,7 +380,9 @@ func TestFocusWithSpecialCharacters(t *testing.T) {
 	}
 
 	// Set focus
-	config.SetFocus(dir, issue.ID)
+	if err := config.SetFocus(dir, issue.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	focused, _ := config.GetFocus(dir)
 	if focused != issue.ID {
@@ -363,21 +397,33 @@ func TestFocusConcurrentChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	issue1 := &models.Issue{Title: "Issue 1"}
 	issue2 := &models.Issue{Title: "Issue 2"}
 	issue3 := &models.Issue{Title: "Issue 3"}
 
-	database.CreateIssue(issue1)
-	database.CreateIssue(issue2)
-	database.CreateIssue(issue3)
+	if err := database.CreateIssue(issue1); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue2); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateIssue(issue3); err != nil {
+		t.Fatal(err)
+	}
 
 	// Rapidly change focus
 	for i := 0; i < 3; i++ {
-		config.SetFocus(dir, issue1.ID)
-		config.SetFocus(dir, issue2.ID)
-		config.SetFocus(dir, issue3.ID)
+		if err := config.SetFocus(dir, issue1.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.SetFocus(dir, issue2.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.SetFocus(dir, issue3.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Final focus should be issue 3

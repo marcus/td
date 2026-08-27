@@ -33,7 +33,7 @@ var createCmd = &cobra.Command{
 			if models.IsValidType(normalized) {
 				typeFlag, _ := cmd.Flags().GetString("type")
 				if typeFlag == "" {
-					cmd.Flags().Set("type", string(normalized))
+					_ = cmd.Flags().Set("type", string(normalized))
 				}
 				args = args[1:]
 			}
@@ -63,7 +63,7 @@ var createCmd = &cobra.Command{
 			emitErr("%v", err)
 			return err
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Get title from args or flag
 		title, _ := cmd.Flags().GetString("title")
