@@ -40,6 +40,25 @@ Each issue has:
 - **Priority** — `P0` (critical) through `P4` (none), defaulting to `P2`
 - **Labels** — freeform tags for categorization
 
+### Deferral and Due Dates
+
+td has two scheduling fields with different meanings:
+
+- **`defer_until`** — a snooze date. If it is in the future, the issue is hidden from the default `td list` output until that date arrives.
+- **`due_date`** — a deadline. The issue remains visible, and list/detail views can flag it as due soon or overdue.
+
+Use `td defer <id> <date>` and `td due <id> <date>` to set them after creation, or pass `--defer` and `--due` to `td create` or `td update`:
+
+```bash
+td create "Review release notes" --defer next-week --due +2w
+td update td-a1b2 --defer "" --due friday
+td list --deferred
+td list --overdue
+td list --due-soon
+```
+
+Supported date formats are exact dates (`2026-05-15`), relative offsets (`+7d`, `+2w`, `+1m`), weekday names (`monday`, `friday`), and keywords (`today`, `tomorrow`, `next-week`, `next-month`). `td list --all` includes deferred and closed issues; `td list --surfacing` shows previously deferred issues whose `defer_until` date is today or earlier.
+
 ### Issue Lifecycle
 
 Issues move through a state machine:

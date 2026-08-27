@@ -94,4 +94,5 @@ Works with Claude Code, Cursor, Codex, Copilot, and Gemini CLI.
 
 - [Core Workflow](./core-workflow.md) -- Issue lifecycle, logging, handoffs, and reviews in depth
 - [Boards](./boards.md) -- Visual overview of issue status across your project
+- [Deferral & Due Dates](./deferral.md) -- Hide future work until it is actionable and track deadlines
 - [Query Language](./query-language.md) -- Filter and search issues with structured queries
