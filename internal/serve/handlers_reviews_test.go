@@ -1104,8 +1104,9 @@ func TestAvailableTransitions_RemoteContextUsesTrustedDefault(t *testing.T) {
 	t.Fatalf("remote trusted context should offer approve with attestation; transitions=%v", actions)
 }
 
-func TestReviewPolicyModeFor_ExplicitStrictOverridesRemoteDefault(t *testing.T) {
-	ctx := HandlerContext{Config: HandlerConfig{ReviewPolicyMode: reviewpolicy.ModeStrict}}
+func TestReviewPolicyModeFor_RemoteEnvStrictOverridesDefault(t *testing.T) {
+	t.Setenv("TD_FEATURE_REVIEW_POLICY_MODE", "strict")
+	ctx := HandlerContext{BaseDir: ""}
 	if got := reviewPolicyModeFor(ctx); got != reviewpolicy.ModeStrict {
 		t.Fatalf("mode=%q want strict", got)
 	}

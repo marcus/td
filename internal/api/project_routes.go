@@ -20,7 +20,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/serve"
 	"github.com/marcus/td/internal/serverdb"
 )
@@ -65,10 +64,7 @@ func (s *Server) wrapServeHandler(
 			DB:        liveDB,
 			SessionID: TdWatchSessionFromCtx(r.Context()),
 			BaseDir:   "", // td-sync mode: no on-disk td root
-			Config: serve.HandlerConfig{
-				// Hosted projects have no local feature config. Match td's
-				// documented default instead of silently reverting to strict.
-				ReviewPolicyMode: reviewpolicy.ModeTrusted,
+			Config:    serve.HandlerConfig{
 				// NotifyChange intentionally nil: td-sync uses post-commit
 				// action_log -> events.db promotion (Stream 3) instead of the
 				// SSE/autosync notification path used by local `td serve`.
