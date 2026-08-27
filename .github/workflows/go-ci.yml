@@ -52,6 +52,46 @@ jobs:
       - name: Test
         run: env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI go test ./...
 
+  # The test job only builds for the runner's own platform, so code that fails
+  # to compile elsewhere lands silently. That happened: config.go called
+  # syscall.Flock unconditionally, breaking every Windows build from ac37b22
+  # until PR #79 five months later, with no CI signal in between.
+  #
+  # Release artifacts are darwin and linux only (see .goreleaser.yml), but
+  # windows is built here too so that source builds keep working for anyone
+  # on that platform.
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # One job rather than a matrix: these are compile-only checks that share
+      # a module cache, so looping is faster than paying cold runner startup
+      # six times over.
+      - name: Build for every supported platform
+        run: |
+          failed=""
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            echo "==> ${target}"
+            if ! GOOS="${goos}" GOARCH="${goarch}" go build -o /dev/null ./...; then
+              echo "::error::build failed for ${target}"
+              failed="${failed} ${target}"
+            fi
+          done
+          if [ -n "${failed}" ]; then
+            echo "Cross-platform build failed for:${failed}"
+            exit 1
+          fi
+          echo "All target platforms built successfully."
+
   lint:
     runs-on: ubuntu-latest
     steps:
