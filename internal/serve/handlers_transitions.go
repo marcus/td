@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/workflow"
@@ -115,12 +114,7 @@ func serveReviewerDecision(ctx HandlerContext, issue *models.Issue, selfReviewAc
 // --reviewed-by attestation. Kept as a separate entry point so the many
 // existing callers that never attribute stay unchanged.
 func serveReviewerDecisionAttributed(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.ReviewerEligibility {
-	mode := reviewpolicy.ModeStrict
-	if ctx.BaseDir != "" {
-		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
-			mode = m
-		}
-	}
+	mode := reviewPolicyModeFor(ctx)
 
 	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == ctx.SessionID
 	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == ctx.SessionID
@@ -168,12 +162,7 @@ func serveCloseDecision(ctx HandlerContext, issue *models.Issue, selfReviewAckno
 // path, close eligibility re-runs the trusted reviewer predicate, so dropping
 // the attribution here rejects an approval the reviewer check just allowed.
 func serveCloseDecisionAttributed(ctx HandlerContext, issue *models.Issue, selfReviewAcknowledged bool, attributedTo string) reviewpolicy.CloseEligibility {
-	mode := reviewpolicy.ModeStrict
-	if ctx.BaseDir != "" {
-		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
-			mode = m
-		}
-	}
+	mode := reviewPolicyModeFor(ctx)
 
 	isCreator := issue != nil && issue.CreatorSession != "" && issue.CreatorSession == ctx.SessionID
 	isImplementer := issue != nil && issue.ImplementerSession != "" && issue.ImplementerSession == ctx.SessionID
@@ -243,12 +232,7 @@ func canApprove(ctx HandlerContext, issue *models.Issue) bool {
 	// Mode-C (delegated): an active approval lets an eligible closer finish the
 	// close even when they are not the reviewer of record. Mirrors
 	// handledCloseAfterReview.
-	mode := reviewpolicy.ModeStrict
-	if ctx.BaseDir != "" {
-		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
-			mode = m
-		}
-	}
+	mode := reviewPolicyModeFor(ctx)
 	if mode == reviewpolicy.ModeDelegated || mode == reviewpolicy.ModeTrusted {
 		if active, err := ctx.DB.GetActiveApprovalReview(issue.ID); err == nil && active != nil {
 			if serveCloseDecision(ctx, issue, false).Allowed {
@@ -810,12 +794,7 @@ func handledCloseAfterReview(ctx HandlerContext, w http.ResponseWriter, r *http.
 	if issue.Status != models.StatusInReview {
 		return false
 	}
-	mode := reviewpolicy.ModeStrict
-	if ctx.BaseDir != "" {
-		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
-			mode = m
-		}
-	}
+	mode := reviewPolicyModeFor(ctx)
 	// Delegated and trusted both close on a recorded approval. Trusted is
 	// delegated plus the self-review escape hatch (reviewpolicy.evaluateCloseTrusted
 	// Case 1 is identical to delegated's), so withholding this path left the

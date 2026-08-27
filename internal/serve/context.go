@@ -3,6 +3,8 @@ package serve
 import (
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/features"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/workdir"
 )
 
@@ -26,6 +28,18 @@ type HandlerConfig struct {
 	// nil — its REST routes handle event-log promotion at the route adapter
 	// layer instead.
 	NotifyChange func()
+}
+
+// reviewPolicyModeFor resolves review policy consistently for local td serve
+// and remote td-sync handlers. The resolver accepts an empty BaseDir: it still
+// honors process-wide environment overrides and otherwise returns td's trusted
+// default. Skipping it for remote contexts silently selected strict mode and
+// made session-dependent actions such as Approve disappear from td-watch.
+func reviewPolicyModeFor(ctx HandlerContext) reviewpolicy.Mode {
+	if mode, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
+		return mode
+	}
+	return reviewpolicy.ModeStrict
 }
 
 // HandlerContext is the request-scoped dependency bundle that pure handler
