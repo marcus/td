@@ -12,7 +12,9 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 **Key Features**: Query-based boards, dependency graphs, epic tracking, powerful query language (TDQ), session analytics, and state machine workflows.
 
-![td](docs/td.png)
+![td monitor running inside Sidecar](docs/td-in-sidecar.png)
+
+*Above: `td monitor` running inside **[Sidecar](https://github.com/marcus/sidecar)**, a terminal development dashboard that embeds it alongside live git diffs, file browsing, and multi-agent workspace management. `td` runs standalone in any terminal too — see [Live Monitor](#live-monitor).*
 
 ## Table of Contents
 
