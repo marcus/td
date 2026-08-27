@@ -3,6 +3,8 @@ package serve
 import (
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/features"
+	"github.com/marcus/td/internal/reviewpolicy"
 	"github.com/marcus/td/internal/workdir"
 )
 
@@ -20,12 +22,39 @@ type HandlerConfig struct {
 	TitleMin int
 	TitleMax int
 
+	// ReviewPolicyMode supplies the effective review policy when the handler
+	// has no on-disk td root, as is the case for td-sync project routes. An
+	// empty value resolves from BaseDir when available, then falls back to td's
+	// documented default (trusted).
+	ReviewPolicyMode reviewpolicy.Mode
+
 	// NotifyChange, when non-nil, is invoked by write handlers after a
 	// successful mutation. The local `td serve` Server uses this to broadcast
 	// SSE refresh events and trigger debounced autosync. td-sync leaves this
 	// nil — its REST routes handle event-log promotion at the route adapter
 	// layer instead.
 	NotifyChange func()
+}
+
+// reviewPolicyModeFor resolves review policy consistently for local td serve
+// and remote td-sync handlers. Before remote contexts could carry policy, an
+// empty BaseDir silently selected strict mode even though new td projects
+// default to trusted; that made session-dependent actions such as Approve
+// disappear from td-watch.
+func reviewPolicyModeFor(ctx HandlerContext) reviewpolicy.Mode {
+	if ctx.Config.ReviewPolicyMode != "" {
+		if mode, err := reviewpolicy.ParseMode(string(ctx.Config.ReviewPolicyMode)); err == nil {
+			return mode
+		}
+		return reviewpolicy.ModeStrict
+	}
+	if ctx.BaseDir != "" {
+		if mode, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
+			return mode
+		}
+		return reviewpolicy.ModeStrict
+	}
+	return reviewpolicy.ModeTrusted
 }
 
 // HandlerContext is the request-scoped dependency bundle that pure handler

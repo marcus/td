@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/reviewpolicy"
 )
@@ -153,12 +152,7 @@ func HandleRecordReview(ctx HandlerContext, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	mode := reviewpolicy.ModeStrict
-	if ctx.BaseDir != "" {
-		if m, err := features.ResolveReviewPolicyMode(ctx.BaseDir); err == nil {
-			mode = m
-		}
-	}
+	mode := reviewPolicyModeFor(ctx)
 	// Delegated and trusted both support recording an approval without
 	// closing. Trusted is delegated plus the self-review escape hatch, so the
 	// close-using-recorded-approval path accepts these rows in both modes (see

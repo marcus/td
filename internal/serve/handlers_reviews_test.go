@@ -1076,6 +1076,41 @@ func TestIntegration_CanApprove_AttributionUnlocks(t *testing.T) {
 	}
 }
 
+// Hosted td-sync handlers have no local BaseDir from which to read feature
+// flags. They must still use td's trusted default so an involved browser
+// session can reach Approve and provide the required review attestation.
+func TestAvailableTransitions_RemoteContextUsesTrustedDefault(t *testing.T) {
+	_, database, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	sessionID := "twu_mobile"
+	issueID := seedInReviewIssue(t, database, sessionID)
+	issue, err := database.GetIssue(issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actions := availableTransitionsFor(HandlerContext{
+		DB:        database,
+		SessionID: sessionID,
+		BaseDir:   "",
+	}, issue)
+
+	for _, action := range actions {
+		if action == "approve" {
+			return
+		}
+	}
+	t.Fatalf("remote trusted context should offer approve with attestation; transitions=%v", actions)
+}
+
+func TestReviewPolicyModeFor_ExplicitStrictOverridesRemoteDefault(t *testing.T) {
+	ctx := HandlerContext{Config: HandlerConfig{ReviewPolicyMode: reviewpolicy.ModeStrict}}
+	if got := reviewPolicyModeFor(ctx); got != reviewpolicy.ModeStrict {
+		t.Fatalf("mode=%q want strict", got)
+	}
+}
+
 // TestIntegration_Approve_AuditParityWithCLI pins the audit behavior decided
 // for this epic, on the API side. The rule is about WHO RECORDED the row, not
 // which flag was used: an approval written by an implementation-involved
