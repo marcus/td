@@ -4,6 +4,14 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+## [v0.65.0] - 2026-08-27
+
+### Bug Fixes
+
+- **Hosted sessions can approve again.** Hosted `td-sync` handlers have no on-disk `BaseDir`, so review-policy checks skipped the resolver entirely and fell back to strict mode. An implementation-involved browser session was offered only `reject` in `available_transitions`, even though td's documented default is trusted and an attributed or acknowledged approval is valid. Policy resolution is now centralized across review, approve, close, and transition discovery, and honors process-wide environment overrides in hosted contexts.
+- **A failed deploy no longer reports success.** The remote build block in `deploy/deploy.sh` ran without `set -e`, so a failed `docker compose up --build` was masked by the prune and `df` commands that followed it — ssh exited 0, the outer `set -euo pipefail` never tripped, and the health check then passed against the old container that was still running. The deploy announced success having shipped nothing.
+- **The deploy image builds again.** `deploy/Dockerfile` pinned `golang:1.25-alpine` while `go.mod` requires Go 1.27, so `go mod download` failed under `GOTOOLCHAIN=local`. CI never caught it because the workflow resolves its toolchain from `go.mod`; the Dockerfile was the only hardcoded copy.
+
 ### Developer
 
 - **Go CI now lints the full codebase the same way sidecar does.** `make lint`

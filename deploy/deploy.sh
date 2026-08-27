@@ -191,6 +191,11 @@ deploy_remote() {
     log "Building and starting on remote..."
     # shellcheck disable=SC2087
     ssh "${DEPLOY_USER}@${DEPLOY_HOST}" << EOF
+# Without this, a failed build is masked by the prune/df commands below: the
+# heredoc's exit status is the last command's, so ssh returns 0, the outer
+# 'set -e' never trips, and the health check passes against the OLD container
+# that is still running. The deploy then reports success having shipped nothing.
+set -e
 cd ${DEPLOY_PATH}/deploy
 docker compose -f docker-compose.yml -f compose/docker-compose.${env}.yml --env-file envs/.env.${env} up -d $build_flag
 # Disk hygiene: building on the server accumulates build cache + dangling
