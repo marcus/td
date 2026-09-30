@@ -6,30 +6,39 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
+      - name: Validate release tag and CI
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/check-release-tag.sh
+
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   update-homebrew-tap:
     needs: goreleaser
@@ -42,11 +51,14 @@ jobs:
       - name: Get source tarball SHA256
         id: sha
         run: |
-          SHA=$(curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.version.outputs.version }}.tar.gz" | sha256sum | cut -d' ' -f1)
+          set -euo pipefail
+          curl --fail --location --retry 3 --output source.tar.gz \
+            "https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.version.outputs.version }}.tar.gz"
+          SHA=$(sha256sum source.tar.gz | cut -d' ' -f1)
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: marcus/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}

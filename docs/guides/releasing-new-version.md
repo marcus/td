@@ -7,7 +7,9 @@ Guide for cutting a new td release. If you are an automated agent, jump to
 
 Releases are triggered by **pushing a `v*` tag**. The tag push runs
 [`.github/workflows/release.yml`](../../.github/workflows/release.yml), which has
-two jobs:
+two jobs. Before publishing, the workflow requires a strict `vX.Y.Z` tag with a matching changelog entry, pointing at live `main`, with successful Go CI on that exact commit. A manual tag push cannot bypass these checks. `make release` dispatches CI when a docs-only release commit has no run; the publication check itself is read-only and fails closed if CI is missing, running, failed, or unavailable.
+
+The jobs are:
 
 1. **`goreleaser`** — runs [GoReleaser](https://goreleaser.com/) (config:
    [`.goreleaser.yml`](../../.goreleaser.yml)). Builds binaries for

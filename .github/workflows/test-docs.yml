@@ -4,15 +4,20 @@ on:
   pull_request:
     paths:
       - 'website/**'
+      - '.github/workflows/deploy-docs.yml'
+      - '.github/workflows/test-docs.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - run: npm ci
         working-directory: website
       - run: npm run build

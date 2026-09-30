@@ -11,6 +11,9 @@ on:
       - "Makefile"
       - ".golangci.yml"
       - ".github/workflows/go-ci.yml"
+      - ".github/workflows/release.yml"
+      - "scripts/check-release-tag.sh"
+      - "scripts/test-release-tag.sh"
   push:
     branches:
       - main
@@ -21,6 +24,9 @@ on:
       - "Makefile"
       - ".golangci.yml"
       - ".github/workflows/go-ci.yml"
+      - ".github/workflows/release.yml"
+      - "scripts/check-release-tag.sh"
+      - "scripts/test-release-tag.sh"
   # A release head is normally a docs-only commit — the changelog stamp —
   # which the path filters above skip. `make check-ci` fails closed when it
   # finds no run for the commit being released, so without a manual trigger
@@ -48,6 +54,9 @@ jobs:
         run: |
           git config --global user.email "ci@td.invalid"
           git config --global user.name "td CI"
+
+      - name: Test release publication guard
+        run: ./scripts/test-release-tag.sh
 
       - name: Test
         run: env -u TD_FEATURE_SYNC_AUTOSYNC -u TD_FEATURE_SYNC_CLI go test ./...
