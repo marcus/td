@@ -54,6 +54,7 @@ func (db *DB) AddLog(log *models.Log) error {
 
 // GetLogs retrieves logs for an issue, including work session logs
 func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
+	issueID = NormalizeIssueID(issueID)
 	// Get logs that are either:
 	// 1. Directly assigned to this issue (issue_id = ?)
 	// 2. Work session logs (issue_id = '') from sessions where this issue is tagged
@@ -267,6 +268,7 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 
 // GetLatestHandoff retrieves the latest handoff for an issue
 func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
+	issueID = NormalizeIssueID(issueID)
 	var handoff models.Handoff
 	var doneJSON, remainingJSON, decisionsJSON, uncertainJSON string
 
@@ -784,6 +786,7 @@ func (db *DB) AddGitSnapshot(snapshot *models.GitSnapshot) error {
 
 // GetStartSnapshot returns the start snapshot for an issue
 func (db *DB) GetStartSnapshot(issueID string) (*models.GitSnapshot, error) {
+	issueID = NormalizeIssueID(issueID)
 	var snapshot models.GitSnapshot
 
 	err := db.conn.QueryRow(`
