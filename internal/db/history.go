@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,14 +13,39 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
-// Lifecycle commands write an action_log row and a log entry for the same
-// transition, a few seconds apart (start takes a git snapshot in between).
-// A log from the same session inside this window is folded into the
-// transition's event as its detail instead of appearing as a separate event.
+// Lifecycle commands write an action_log row and then a log entry narrating
+// it, usually within a quarter second (start takes a git snapshot in
+// between, so up to a few seconds). That log is folded into the action's
+// event as its detail instead of appearing as a separate event. The small
+// negative slack only absorbs clock rounding between the two writes.
 const (
-	timelinePairBefore = 2 * time.Second
-	timelinePairAfter  = 10 * time.Second
+	timelinePairBefore = 500 * time.Millisecond
+	timelinePairAfter  = 5 * time.Second
 )
+
+// narratingLogTypes lists the actions whose command always writes its own
+// log, and the log types it writes. Only these pair: update, delete, and
+// restore write no log, so a note logged next to them is the user's own.
+var narratingLogTypes = map[models.ActionType][]models.LogType{
+	models.ActionStart:                  {models.LogTypeProgress},
+	models.ActionReview:                 {models.LogTypeProgress},
+	models.ActionApprove:                {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionReject:                 {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionClose:                  {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionCloseAfterReview:       {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionReviewApprove:          {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionReviewChangesRequested: {models.LogTypeProgress, models.LogTypeSecurity},
+	models.ActionBlock:                  {models.LogTypeBlocker, models.LogTypeProgress},
+	models.ActionUnblock:                {models.LogTypeProgress},
+	models.ActionReopen:                 {models.LogTypeProgress},
+}
+
+// timelineAction is an action event plus the log types its command narrates
+// itself with (none for actions that write no log).
+type timelineAction struct {
+	event    models.TimelineEvent
+	logTypes []models.LogType
+}
 
 // commentSummaryLen is the longest comment, in runes, shown inline in the
 // summary rather than as detail.
@@ -40,7 +66,7 @@ func (db *DB) GetIssueTimeline(issueID string, limit int) ([]models.TimelineEven
 	if err != nil {
 		return nil, fmt.Errorf("query action log: %w", err)
 	}
-	var actionEvents []models.TimelineEvent
+	var timelineActions []timelineAction
 	hasCreate := false
 	for _, a := range actions {
 		ev, ok := issueActionToEvent(a)
@@ -50,23 +76,24 @@ func (db *DB) GetIssueTimeline(issueID string, limit int) ([]models.TimelineEven
 		if ev.EventType == models.EventCreated {
 			hasCreate = true
 		}
-		actionEvents = append(actionEvents, ev)
+		timelineActions = append(timelineActions, timelineAction{ev, narratingLogTypes[a.ActionType]})
 	}
 	// Issues created without an action_log row (imports, older data) still
 	// get a starting point.
 	if !hasCreate && !issue.CreatedAt.IsZero() {
-		actionEvents = append([]models.TimelineEvent{{
+		timelineActions = append([]timelineAction{{event: models.TimelineEvent{
 			Timestamp: issue.CreatedAt,
 			EventType: models.EventCreated,
 			Summary:   createdSummary(string(issue.Type), string(issue.Priority)),
-		}}, actionEvents...)
+			SessionID: issue.CreatorSession,
+		}}}, timelineActions...)
 	}
 
 	logs, err := db.GetLogs(issueID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("query logs: %w", err)
 	}
-	events := append(actionEvents, foldLogsIntoActions(actionEvents, logs)...)
+	events := foldLogsIntoActions(timelineActions, logs)
 
 	handoffs, err := db.GetHandoffs(issueID)
 	if err != nil {
@@ -168,29 +195,28 @@ func collapseRepeats(events []models.TimelineEvent) []models.TimelineEvent {
 	return out
 }
 
-// foldLogsIntoActions attaches each lifecycle log to the action event it
-// narrates and returns the remaining logs as events of their own. A log
-// pairs with an action from the same session within the pairing window;
-// closest pairs are matched first, and each side pairs at most once. A log
-// that only repeats (a prefix of) the action's summary, such as "Approved"
-// for "Approved and closed", is dropped rather than shown twice.
-func foldLogsIntoActions(actions []models.TimelineEvent, logs []models.Log) []models.TimelineEvent {
+// foldLogsIntoActions attaches each narrating log to the action it narrates
+// and returns all action events followed by the remaining logs as events of
+// their own. A log pairs with an action from the same session, of a type that
+// action's command writes, inside the pairing window; closest pairs are
+// matched first, and each side pairs at most once. A paired log that only
+// repeats the summary ("Approved" for "Approved and closed") is dropped, and
+// a leading "<summary>: " is trimmed ("Rejected: reason" becomes "reason").
+func foldLogsIntoActions(actions []timelineAction, logs []models.Log) []models.TimelineEvent {
 	type candidate struct {
 		action, log int
 		gap         time.Duration
 	}
 	var candidates []candidate
 	for ai, a := range actions {
-		// Only transitions and reviews narrate themselves with a log; an
-		// update would otherwise swallow a note logged right after it.
-		if (a.EventType != models.EventStatusChange && a.EventType != models.EventReview) || a.SessionID == "" {
+		if len(a.logTypes) == 0 || a.event.SessionID == "" {
 			continue
 		}
 		for li, l := range logs {
-			if l.SessionID != a.SessionID {
+			if l.SessionID != a.event.SessionID || !slices.Contains(a.logTypes, l.Type) {
 				continue
 			}
-			gap := l.Timestamp.Sub(a.Timestamp)
+			gap := l.Timestamp.Sub(a.event.Timestamp)
 			if gap < -timelinePairBefore || gap > timelinePairAfter {
 				continue
 			}
@@ -199,6 +225,10 @@ func foldLogsIntoActions(actions []models.TimelineEvent, logs []models.Log) []mo
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].gap < candidates[j].gap })
 
+	events := make([]models.TimelineEvent, 0, len(actions)+len(logs))
+	for _, a := range actions {
+		events = append(events, a.event)
+	}
 	actionPaired := make([]bool, len(actions))
 	logPaired := make([]bool, len(logs))
 	for _, c := range candidates {
@@ -206,13 +236,9 @@ func foldLogsIntoActions(actions []models.TimelineEvent, logs []models.Log) []mo
 			continue
 		}
 		actionPaired[c.action], logPaired[c.log] = true, true
-		msg := strings.TrimSpace(logs[c.log].Message)
-		if !strings.HasPrefix(strings.ToLower(actions[c.action].Summary), strings.ToLower(msg)) {
-			actions[c.action].Detail = msg
-		}
+		events[c.action].Detail = narrationDetail(events[c.action].Summary, logs[c.log].Message)
 	}
 
-	var rest []models.TimelineEvent
 	for li, l := range logs {
 		if logPaired[li] {
 			continue
@@ -221,14 +247,27 @@ func foldLogsIntoActions(actions []models.TimelineEvent, logs []models.Log) []mo
 		if l.Type != "" && l.Type != models.LogTypeProgress {
 			summary = fmt.Sprintf("[%s] %s", l.Type, l.Message)
 		}
-		rest = append(rest, models.TimelineEvent{
+		events = append(events, models.TimelineEvent{
 			Timestamp: l.Timestamp,
 			EventType: models.EventLog,
 			Summary:   summary,
 			SessionID: l.SessionID,
 		})
 	}
-	return rest
+	return events
+}
+
+// narrationDetail returns what a narrating log adds to its action's summary.
+func narrationDetail(summary, msg string) string {
+	msg = strings.TrimSpace(msg)
+	lowerSummary, lowerMsg := strings.ToLower(summary), strings.ToLower(msg)
+	if strings.HasPrefix(lowerSummary, lowerMsg) {
+		return ""
+	}
+	if strings.HasPrefix(lowerMsg, lowerSummary+":") {
+		return strings.TrimSpace(msg[len(summary)+1:])
+	}
+	return msg
 }
 
 // getGitSnapshots returns all git snapshots for an issue.
@@ -298,7 +337,6 @@ var actionSummaries = map[models.ActionType]struct {
 	models.ActionRestore:                {models.EventStatusChange, "Restored"},
 	models.ActionReviewApprove:          {models.EventReview, "Review recorded: approved"},
 	models.ActionReviewChangesRequested: {models.EventReview, "Review recorded: changes requested"},
-	models.ActionReviewDelete:           {models.EventReview, "Review record removed"},
 }
 
 func issueActionToEvent(a models.ActionLog) (models.TimelineEvent, bool) {
@@ -345,10 +383,19 @@ func issueUpdateToEvent(a models.ActionLog, ev models.TimelineEvent) (models.Tim
 		return ev, true
 	}
 
+	// Union of both key sets: omitempty fields vanish from new_data when
+	// they are cleared.
 	var keys []string
-	for k := range next {
-		if !timelineIgnoredFields[k] && !reflect.DeepEqual(prev[k], next[k]) {
-			keys = append(keys, k)
+	seen := map[string]bool{}
+	for _, m := range []map[string]any{prev, next} {
+		for k := range m {
+			if seen[k] || timelineIgnoredFields[k] {
+				continue
+			}
+			seen[k] = true
+			if !reflect.DeepEqual(prev[k], next[k]) {
+				keys = append(keys, k)
+			}
 		}
 	}
 	if len(keys) == 0 {

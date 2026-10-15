@@ -20,11 +20,13 @@ Merges status changes, field updates, reviews, logs, handoffs, comments,
 git snapshots, and linked files into a single view. The log a lifecycle
 command writes (e.g. an approval reason) is shown under its status change.
 
-Times are local in text output and UTC in --json output.
+Identical consecutive events (e.g. a retry loop posting the same comment)
+collapse into one row with a count. Times are local in text output and UTC
+in --json output.
 
 Examples:
   td history td-abc1            # Full timeline
-  td history td-abc1 --limit 10 # Last 10 events
+  td history td-abc1 --limit 10 # Most recent 10 rows
   td history td-abc1 --json     # Machine-readable output`,
 	GroupID: "query",
 	Args:    cobra.ExactArgs(1),
@@ -51,6 +53,9 @@ Examples:
 		}
 
 		limit, _ := cmd.Flags().GetInt("limit")
+		if limit < 0 {
+			return reportFailure(isJSON, output.ErrCodeInvalidInput, fmt.Errorf("--limit must be 0 (no limit) or positive, got %d", limit))
+		}
 		events, err := database.GetIssueTimeline(issue.ID, limit)
 		if err != nil {
 			return reportFailure(isJSON, output.ErrCodeDatabaseError, fmt.Errorf("build timeline: %w", err))
@@ -60,15 +65,23 @@ Examples:
 		}
 
 		if isJSON {
-			return output.JSON(map[string]any{
+			result := map[string]any{
 				"issue_id": issue.ID,
 				"title":    issue.Title,
 				"status":   issue.Status,
 				"events":   events,
-			})
+			}
+			if issue.DeletedAt != nil {
+				result["deleted_at"] = issue.DeletedAt.UTC()
+			}
+			return output.JSON(result)
 		}
 
-		fmt.Printf("Timeline: %s %q [%s]\n\n", issue.ID, issue.Title, issue.Status)
+		state := string(issue.Status)
+		if issue.DeletedAt != nil {
+			state += ", deleted"
+		}
+		fmt.Printf("Timeline: %s %q [%s]\n\n", issue.ID, issue.Title, state)
 		if len(events) == 0 {
 			fmt.Println("  No events recorded.")
 			return nil
@@ -138,5 +151,5 @@ func init() {
 	rootCmd.AddCommand(historyCmd)
 
 	historyCmd.Flags().Bool("json", false, "Machine-readable JSON output")
-	historyCmd.Flags().Int("limit", 0, "Limit to last N events")
+	historyCmd.Flags().Int("limit", 0, "Show only the most recent N rows (0 = all)")
 }

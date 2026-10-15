@@ -166,6 +166,69 @@ func TestGetIssueTimeline_UpdateDoesNotSwallowNextLog(t *testing.T) {
 	}
 }
 
+func TestGetIssueTimeline_OnlyNarratingActionsTakeLogs(t *testing.T) {
+	// Agents chain commands within milliseconds. A typed note logged next to
+	// an action whose command writes no log of that type is the agent's own
+	// and must stay a standalone log with its type.
+	db, issue := newTimelineDB(t)
+	base := issue.CreatedAt.Add(time.Hour)
+
+	// td update --status blocked; td log --blocker ...
+	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate, `{"status":"open"}`, `{"status":"blocked"}`, base)
+	addLogAt(t, db, issue.ID, "ses_a", "waiting on API keys", models.LogTypeBlocker, base.Add(30*time.Millisecond))
+
+	// td log --decision ...; td delete (the log comes first).
+	d := base.Add(time.Minute)
+	addLogAt(t, db, issue.ID, "ses_a", "use approach B", models.LogTypeDecision, d)
+	addActionAt(t, db, issue.ID, "ses_a", models.ActionDelete, "", "", d.Add(20*time.Millisecond))
+
+	// td start; td log --decision ...: start narrates with progress only.
+	st := base.Add(2 * time.Minute)
+	addActionAt(t, db, issue.ID, "ses_a", models.ActionStart, "", "", st)
+	addLogAt(t, db, issue.ID, "ses_a", "going with B", models.LogTypeDecision, st.Add(10*time.Millisecond))
+
+	// A narrating log written over half a second before its action is not
+	// its narration.
+	rj := base.Add(3 * time.Minute)
+	addLogAt(t, db, issue.ID, "ses_a", "early note", models.LogTypeProgress, rj.Add(-2*time.Second))
+	addActionAt(t, db, issue.ID, "ses_a", models.ActionReject, "", "", rj)
+	addLogAt(t, db, issue.ID, "ses_a", "Rejected: missing tests", models.LogTypeProgress, rj.Add(100*time.Millisecond))
+
+	events := timeline(t, db, issue.ID, 0)
+	want := strings.Join([]string{
+		"created: Created task (P2)",
+		"status_change: Updated status: open → blocked",
+		"log: [blocker] waiting on API keys",
+		"log: [decision] use approach B",
+		"status_change: Deleted",
+		"status_change: Started work",
+		"log: [decision] going with B",
+		"log: early note",
+		"status_change: Rejected / missing tests",
+		"",
+	}, "\n")
+	if got := summaries(events); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestGetIssueTimeline_LegacyBase64Handoff(t *testing.T) {
+	// Handoffs from Dec 2025-Feb 2026 stored their lists base64-encoded.
+	db, issue := newTimelineDB(t)
+	if _, err := db.conn.Exec(`
+		INSERT INTO handoffs (id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp)
+		VALUES ('ho-legacy', ?, 'ses_a', 'WyJzaGlwcGVkIl0=', 'W10=', 'W10=', 'W10=', ?)`,
+		issue.ID, issue.CreatedAt.Add(time.Hour),
+	); err != nil {
+		t.Fatalf("insert legacy handoff: %v", err)
+	}
+
+	events := timeline(t, db, issue.ID, 0)
+	if got, want := summaries(events), "created: Created task (P2)\nhandoff: Handoff / Done: shipped\n"; got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestGetIssueTimeline_Updates(t *testing.T) {
 	db, issue := newTimelineDB(t)
 	base := issue.CreatedAt.Add(time.Hour)
@@ -173,8 +236,11 @@ func TestGetIssueTimeline_Updates(t *testing.T) {
 	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate,
 		`{"priority":"P2","updated_at":"a"}`, `{"priority":"P2","updated_at":"b"}`, base)
 	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate,
-		`{"priority":"P2","description":"x","labels":""}`,
-		`{"priority":"P1","description":"`+strings.Repeat("long ", 20)+`","labels":"ui"}`, base.Add(time.Minute))
+		`{"priority":"P2","description":"x","labels":["api"]}`,
+		`{"priority":"P1","description":"`+strings.Repeat("long ", 20)+`","labels":["api","ui"]}`, base.Add(time.Minute))
+	// Clearing an omitempty field drops its key from new_data entirely.
+	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate,
+		`{"priority":"P1","sprint":"s1"}`, `{"priority":"P1"}`, base.Add(90*time.Second))
 	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate,
 		`{"status":"open"}`, `{"status":"blocked"}`, base.Add(2*time.Minute))
 	addActionAt(t, db, issue.ID, "ses_a", models.ActionUpdate, `not json`, `{}`, base.Add(3*time.Minute))
@@ -182,7 +248,8 @@ func TestGetIssueTimeline_Updates(t *testing.T) {
 	events := timeline(t, db, issue.ID, 0)
 	want := strings.Join([]string{
 		"created: Created task (P2)",
-		"update: Updated description, labels: (none) → ui, priority: P2 → P1",
+		"update: Updated description, labels, priority: P2 → P1",
+		"update: Updated sprint: s1 → (none)",
 		"status_change: Updated status: open → blocked",
 		"update: Updated",
 		"",
@@ -268,5 +335,14 @@ func TestGetIssueTimeline_Limit(t *testing.T) {
 	events := timeline(t, db, issue.ID, 2)
 	if got, want := summaries(events), "log: log 3\nlog: log 4\n"; got != want {
 		t.Fatalf("limit keeps the most recent events; got:\n%s", got)
+	}
+
+	// A collapsed run counts as one row.
+	for i := 0; i < 3; i++ {
+		addLogAt(t, db, issue.ID, "ses_a", "retry", models.LogTypeProgress, base.Add(time.Hour+time.Duration(i)*time.Second))
+	}
+	events = timeline(t, db, issue.ID, 2)
+	if got, want := summaries(events), "log: log 4\nlog: retry x3\n"; got != want {
+		t.Fatalf("limit after collapsing; got:\n%s", got)
 	}
 }

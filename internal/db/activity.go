@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -265,6 +266,22 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 	})
 }
 
+// decodeHandoffList decodes a handoff list column. Handoffs written between
+// roughly Dec 2025 and Feb 2026 stored the JSON base64-encoded (a []byte
+// round-trip), e.g. "W10=" for "[]"; those rows are decoded transparently.
+func decodeHandoffList(raw string, dst *[]string) error {
+	err := json.Unmarshal([]byte(raw), dst)
+	if err == nil {
+		return nil
+	}
+	if decoded, b64err := base64.StdEncoding.DecodeString(raw); b64err == nil {
+		if json.Unmarshal(decoded, dst) == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 // GetLatestHandoff retrieves the latest handoff for an issue
 func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 	var handoff models.Handoff
@@ -285,16 +302,16 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(doneJSON), &handoff.Done); err != nil {
+	if err := decodeHandoffList(doneJSON, &handoff.Done); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal done: %w", err)
 	}
-	if err := json.Unmarshal([]byte(remainingJSON), &handoff.Remaining); err != nil {
+	if err := decodeHandoffList(remainingJSON, &handoff.Remaining); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
 	}
-	if err := json.Unmarshal([]byte(decisionsJSON), &handoff.Decisions); err != nil {
+	if err := decodeHandoffList(decisionsJSON, &handoff.Decisions); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
 	}
-	if err := json.Unmarshal([]byte(uncertainJSON), &handoff.Uncertain); err != nil {
+	if err := decodeHandoffList(uncertainJSON, &handoff.Uncertain); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
 	}
 
@@ -322,16 +339,16 @@ func (db *DB) GetHandoffs(issueID string) ([]models.Handoff, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan handoff row: %w", err)
 		}
-		if err := json.Unmarshal([]byte(doneJSON), &h.Done); err != nil {
+		if err := decodeHandoffList(doneJSON, &h.Done); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal done: %w", err)
 		}
-		if err := json.Unmarshal([]byte(remainingJSON), &h.Remaining); err != nil {
+		if err := decodeHandoffList(remainingJSON, &h.Remaining); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
 		}
-		if err := json.Unmarshal([]byte(decisionsJSON), &h.Decisions); err != nil {
+		if err := decodeHandoffList(decisionsJSON, &h.Decisions); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
 		}
-		if err := json.Unmarshal([]byte(uncertainJSON), &h.Uncertain); err != nil {
+		if err := decodeHandoffList(uncertainJSON, &h.Uncertain); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
 		}
 		handoffs = append(handoffs, h)
@@ -369,16 +386,16 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan handoff row: %w", err)
 		}
-		if err := json.Unmarshal([]byte(doneJSON), &h.Done); err != nil {
+		if err := decodeHandoffList(doneJSON, &h.Done); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal done: %w", err)
 		}
-		if err := json.Unmarshal([]byte(remainingJSON), &h.Remaining); err != nil {
+		if err := decodeHandoffList(remainingJSON, &h.Remaining); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal remaining: %w", err)
 		}
-		if err := json.Unmarshal([]byte(decisionsJSON), &h.Decisions); err != nil {
+		if err := decodeHandoffList(decisionsJSON, &h.Decisions); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal decisions: %w", err)
 		}
-		if err := json.Unmarshal([]byte(uncertainJSON), &h.Uncertain); err != nil {
+		if err := decodeHandoffList(uncertainJSON, &h.Uncertain); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal uncertain: %w", err)
 		}
 		handoffs = append(handoffs, h)
