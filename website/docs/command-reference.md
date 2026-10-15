@@ -13,6 +13,7 @@ Complete reference for all `td` commands.
 | `td create "title" [flags]` | Create issue. Flags: `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--parent`, `--epic`, `--minor` |
 | `td list [flags]` | List issues. Flags: `--status`, `--type`, `--priority`, `--epic` |
 | `td show <id>` | Display full issue details |
+| `td history <id>` | Chronological timeline of status changes, updates, reviews, logs, handoffs, comments, git snapshots, and linked files. Alias: `td timeline`. Flags: `--limit N` (most recent N), `--json` (UTC timestamps) |
 | `td update <id> [flags]` | Update fields. Flags: `--title`, `--type`, `--priority`, `--description`, `--description-file`, `--acceptance`, `--acceptance-file`, `--labels` |
 | `td delete <id>` | Soft-delete issue |
 | `td restore <id>` | Restore soft-deleted issue |

@@ -3,68 +3,107 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/models"
 )
 
-// GetIssueTimeline returns a chronologically sorted timeline of all events
-// for a given issue: logs, handoffs, comments, git snapshots, and status
-// changes from the action_log.
-func (db *DB) GetIssueTimeline(issueID string, limit int) ([]models.TimelineEvent, error) {
-	var events []models.TimelineEvent
+// Lifecycle commands write an action_log row and a log entry for the same
+// transition, a few seconds apart (start takes a git snapshot in between).
+// A log from the same session inside this window is folded into the
+// transition's event as its detail instead of appearing as a separate event.
+const (
+	timelinePairBefore = 2 * time.Second
+	timelinePairAfter  = 10 * time.Second
+)
 
-	// 1. Logs
+// commentSummaryLen is the longest comment, in runes, shown inline in the
+// summary rather than as detail.
+const commentSummaryLen = 80
+
+// GetIssueTimeline returns a chronologically sorted timeline of an issue:
+// lifecycle actions, field updates, logs, handoffs, comments, git snapshots,
+// and linked files. If limit > 0, only the most recent limit events are
+// returned. Event timestamps are UTC.
+func (db *DB) GetIssueTimeline(issueID string, limit int) ([]models.TimelineEvent, error) {
+	issue, err := db.GetIssue(issueID)
+	if err != nil {
+		return nil, err
+	}
+	issueID = issue.ID
+
+	actions, err := db.getIssueActions(issueID)
+	if err != nil {
+		return nil, fmt.Errorf("query action log: %w", err)
+	}
+	var actionEvents []models.TimelineEvent
+	hasCreate := false
+	for _, a := range actions {
+		ev, ok := issueActionToEvent(a)
+		if !ok {
+			continue
+		}
+		if ev.EventType == models.EventCreated {
+			hasCreate = true
+		}
+		actionEvents = append(actionEvents, ev)
+	}
+	// Issues created without an action_log row (imports, older data) still
+	// get a starting point.
+	if !hasCreate && !issue.CreatedAt.IsZero() {
+		actionEvents = append([]models.TimelineEvent{{
+			Timestamp: issue.CreatedAt,
+			EventType: models.EventCreated,
+			Summary:   createdSummary(string(issue.Type), string(issue.Priority)),
+		}}, actionEvents...)
+	}
+
 	logs, err := db.GetLogs(issueID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("query logs: %w", err)
 	}
-	for _, l := range logs {
-		events = append(events, models.TimelineEvent{
-			Timestamp: l.Timestamp,
-			EventType: models.EventLog,
-			Summary:   fmt.Sprintf("[%s] %s", l.Type, l.Message),
-			SessionID: l.SessionID,
-		})
-	}
+	events := append(actionEvents, foldLogsIntoActions(actionEvents, logs)...)
 
-	// 2. Handoffs
-	handoffs, err := db.getHandoffsForIssue(issueID)
+	handoffs, err := db.GetHandoffs(issueID)
 	if err != nil {
 		return nil, fmt.Errorf("query handoffs: %w", err)
 	}
 	for _, h := range handoffs {
-		detail := formatHandoffDetail(h)
 		events = append(events, models.TimelineEvent{
 			Timestamp: h.Timestamp,
 			EventType: models.EventHandoff,
-			Summary:   "Handoff recorded",
-			Detail:    detail,
+			Summary:   "Handoff",
+			Detail:    formatHandoffDetail(h),
 			SessionID: h.SessionID,
 		})
 	}
 
-	// 3. Comments
 	comments, err := db.GetComments(issueID)
 	if err != nil {
 		return nil, fmt.Errorf("query comments: %w", err)
 	}
 	for _, c := range comments {
-		summary := c.Text
-		if len(summary) > 80 {
-			summary = summary[:77] + "..."
-		}
-		events = append(events, models.TimelineEvent{
+		// A short one-line comment fits in the summary; anything longer is
+		// shown once, in full, as the detail.
+		ev := models.TimelineEvent{
 			Timestamp: c.CreatedAt,
 			EventType: models.EventComment,
-			Summary:   summary,
-			Detail:    c.Text,
+			Summary:   "Comment",
 			SessionID: c.SessionID,
-		})
+		}
+		text := strings.TrimSpace(c.Text)
+		if utf8.RuneCountInString(text) <= commentSummaryLen && !strings.Contains(text, "\n") {
+			ev.Summary += ": " + text
+		} else {
+			ev.Detail = text
+		}
+		events = append(events, ev)
 	}
 
-	// 4. Git snapshots
 	snapshots, err := db.getGitSnapshots(issueID)
 	if err != nil {
 		return nil, fmt.Errorf("query git snapshots: %w", err)
@@ -81,56 +120,115 @@ func (db *DB) GetIssueTimeline(issueID string, limit int) ([]models.TimelineEven
 		})
 	}
 
-	// 5. Action log entries for this issue (status changes, file links, etc.)
-	actions, err := db.getActionLogForEntity(issueID)
+	files, err := db.GetLinkedFiles(issueID)
 	if err != nil {
-		return nil, fmt.Errorf("query action log: %w", err)
+		return nil, fmt.Errorf("query linked files: %w", err)
 	}
-	for _, a := range actions {
-		ev := actionToTimelineEvent(a)
-		if ev != nil {
-			events = append(events, *ev)
-		}
+	for _, f := range files {
+		events = append(events, models.TimelineEvent{
+			Timestamp: f.LinkedAt,
+			EventType: models.EventFileLink,
+			Summary:   fmt.Sprintf("Linked file: %s (%s)", f.FilePath, f.Role),
+		})
 	}
 
-	// Sort chronologically
-	sort.Slice(events, func(i, j int) bool {
+	for i := range events {
+		events[i].Timestamp = events[i].Timestamp.UTC()
+	}
+	sort.SliceStable(events, func(i, j int) bool {
 		return events[i].Timestamp.Before(events[j].Timestamp)
 	})
+
+	events = collapseRepeats(events)
 
 	if limit > 0 && len(events) > limit {
 		events = events[len(events)-limit:]
 	}
-
 	return events, nil
 }
 
-// getHandoffsForIssue returns all handoffs for an issue, chronologically.
-func (db *DB) getHandoffsForIssue(issueID string) ([]models.Handoff, error) {
-	rows, err := db.conn.Query(`
-		SELECT CAST(id AS TEXT), issue_id, session_id, done, remaining, decisions, uncertain, timestamp
-		FROM handoffs WHERE issue_id = ? ORDER BY timestamp
-	`, issueID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var handoffs []models.Handoff
-	for rows.Next() {
-		var h models.Handoff
-		var doneJSON, remainingJSON, decisionsJSON, uncertainJSON string
-		if err := rows.Scan(&h.ID, &h.IssueID, &h.SessionID,
-			&doneJSON, &remainingJSON, &decisionsJSON, &uncertainJSON, &h.Timestamp); err != nil {
-			return nil, err
+// collapseRepeats merges runs of identical consecutive events into one
+// event carrying a Count.
+func collapseRepeats(events []models.TimelineEvent) []models.TimelineEvent {
+	var out []models.TimelineEvent
+	for _, ev := range events {
+		if n := len(out); n > 0 {
+			last := &out[n-1]
+			if last.EventType == ev.EventType && last.Summary == ev.Summary &&
+				last.Detail == ev.Detail && last.SessionID == ev.SessionID {
+				if last.Count == 0 {
+					last.Count = 1
+				}
+				last.Count++
+				continue
+			}
 		}
-		json.Unmarshal([]byte(doneJSON), &h.Done)
-		json.Unmarshal([]byte(remainingJSON), &h.Remaining)
-		json.Unmarshal([]byte(decisionsJSON), &h.Decisions)
-		json.Unmarshal([]byte(uncertainJSON), &h.Uncertain)
-		handoffs = append(handoffs, h)
+		out = append(out, ev)
 	}
-	return handoffs, nil
+	return out
+}
+
+// foldLogsIntoActions attaches each lifecycle log to the action event it
+// narrates and returns the remaining logs as events of their own. A log
+// pairs with an action from the same session within the pairing window;
+// closest pairs are matched first, and each side pairs at most once. A log
+// that only repeats (a prefix of) the action's summary, such as "Approved"
+// for "Approved and closed", is dropped rather than shown twice.
+func foldLogsIntoActions(actions []models.TimelineEvent, logs []models.Log) []models.TimelineEvent {
+	type candidate struct {
+		action, log int
+		gap         time.Duration
+	}
+	var candidates []candidate
+	for ai, a := range actions {
+		// Only transitions and reviews narrate themselves with a log; an
+		// update would otherwise swallow a note logged right after it.
+		if (a.EventType != models.EventStatusChange && a.EventType != models.EventReview) || a.SessionID == "" {
+			continue
+		}
+		for li, l := range logs {
+			if l.SessionID != a.SessionID {
+				continue
+			}
+			gap := l.Timestamp.Sub(a.Timestamp)
+			if gap < -timelinePairBefore || gap > timelinePairAfter {
+				continue
+			}
+			candidates = append(candidates, candidate{ai, li, gap.Abs()})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].gap < candidates[j].gap })
+
+	actionPaired := make([]bool, len(actions))
+	logPaired := make([]bool, len(logs))
+	for _, c := range candidates {
+		if actionPaired[c.action] || logPaired[c.log] {
+			continue
+		}
+		actionPaired[c.action], logPaired[c.log] = true, true
+		msg := strings.TrimSpace(logs[c.log].Message)
+		if !strings.HasPrefix(strings.ToLower(actions[c.action].Summary), strings.ToLower(msg)) {
+			actions[c.action].Detail = msg
+		}
+	}
+
+	var rest []models.TimelineEvent
+	for li, l := range logs {
+		if logPaired[li] {
+			continue
+		}
+		summary := l.Message
+		if l.Type != "" && l.Type != models.LogTypeProgress {
+			summary = fmt.Sprintf("[%s] %s", l.Type, l.Message)
+		}
+		rest = append(rest, models.TimelineEvent{
+			Timestamp: l.Timestamp,
+			EventType: models.EventLog,
+			Summary:   summary,
+			SessionID: l.SessionID,
+		})
+	}
+	return rest
 }
 
 // getGitSnapshots returns all git snapshots for an issue.
@@ -142,7 +240,7 @@ func (db *DB) getGitSnapshots(issueID string) ([]models.GitSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var snapshots []models.GitSnapshot
 	for rows.Next() {
@@ -152,210 +250,174 @@ func (db *DB) getGitSnapshots(issueID string) ([]models.GitSnapshot, error) {
 		}
 		snapshots = append(snapshots, s)
 	}
-	return snapshots, nil
+	return snapshots, rows.Err()
 }
 
-// getActionLogForEntity returns action_log rows where entity_id matches the issue
-// or entity_type is 'issue' with matching entity_id.
-func (db *DB) getActionLogForEntity(issueID string) ([]models.ActionLog, error) {
+// getIssueActions returns the issue's own action_log rows, oldest first,
+// excluding undone actions.
+func (db *DB) getIssueActions(issueID string) ([]models.ActionLog, error) {
 	rows, err := db.conn.Query(`
 		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id,
-		       previous_data, new_data, timestamp, undone
+		       previous_data, new_data, timestamp
 		FROM action_log
-		WHERE entity_id = ? AND entity_type IN ('issue', 'issue_files')
+		WHERE entity_type = 'issue' AND entity_id = ? AND undone = 0
 		ORDER BY timestamp
 	`, issueID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var actions []models.ActionLog
 	for rows.Next() {
 		var a models.ActionLog
-		var undone int
 		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &a.EntityType,
-			&a.EntityID, &a.PreviousData, &a.NewData, &a.Timestamp, &undone); err != nil {
+			&a.EntityID, &a.PreviousData, &a.NewData, &a.Timestamp); err != nil {
 			return nil, err
 		}
-		a.Undone = undone == 1
 		actions = append(actions, a)
 	}
-	return actions, nil
+	return actions, rows.Err()
 }
 
-func actionToTimelineEvent(a models.ActionLog) *models.TimelineEvent {
-	if a.Undone {
-		return nil
-	}
-
-	switch a.EntityType {
-	case "issue":
-		return issueActionToEvent(a)
-	case "issue_files":
-		return fileActionToEvent(a)
-	default:
-		return nil
-	}
+// actionSummaries maps lifecycle actions to their timeline event.
+var actionSummaries = map[models.ActionType]struct {
+	eventType models.EventType
+	summary   string
+}{
+	models.ActionStart:                  {models.EventStatusChange, "Started work"},
+	models.ActionReview:                 {models.EventStatusChange, "Submitted for review"},
+	models.ActionApprove:                {models.EventStatusChange, "Approved and closed"},
+	models.ActionCloseAfterReview:       {models.EventStatusChange, "Closed after review"},
+	models.ActionReject:                 {models.EventStatusChange, "Rejected"},
+	models.ActionBlock:                  {models.EventStatusChange, "Blocked"},
+	models.ActionUnblock:                {models.EventStatusChange, "Unblocked"},
+	models.ActionClose:                  {models.EventStatusChange, "Closed"},
+	models.ActionReopen:                 {models.EventStatusChange, "Reopened"},
+	models.ActionDelete:                 {models.EventStatusChange, "Deleted"},
+	models.ActionRestore:                {models.EventStatusChange, "Restored"},
+	models.ActionReviewApprove:          {models.EventReview, "Review recorded: approved"},
+	models.ActionReviewChangesRequested: {models.EventReview, "Review recorded: changes requested"},
+	models.ActionReviewDelete:           {models.EventReview, "Review record removed"},
 }
 
-func issueActionToEvent(a models.ActionLog) *models.TimelineEvent {
-	switch models.ActionType(a.ActionType) {
-	case models.ActionCreate:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Issue created",
-			SessionID: a.SessionID,
-		}
-	case models.ActionStart:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Status changed to in_progress",
-			SessionID: a.SessionID,
-		}
-	case models.ActionReview:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Submitted for review",
-			SessionID: a.SessionID,
-		}
-	case models.ActionApprove:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Approved and closed",
-			SessionID: a.SessionID,
-		}
-	case models.ActionReject:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Rejected (needs rework)",
-			SessionID: a.SessionID,
-		}
-	case models.ActionBlock:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Blocked",
-			SessionID: a.SessionID,
-		}
-	case models.ActionUnblock:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Unblocked",
-			SessionID: a.SessionID,
-		}
-	case models.ActionClose:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Closed",
-			SessionID: a.SessionID,
-		}
-	case models.ActionReopen:
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Reopened",
-			SessionID: a.SessionID,
-		}
+func issueActionToEvent(a models.ActionLog) (models.TimelineEvent, bool) {
+	ev := models.TimelineEvent{Timestamp: a.Timestamp, SessionID: a.SessionID}
+	switch a.ActionType {
 	case models.ActionUpdate:
-		return issueUpdateToEvent(a)
+		return issueUpdateToEvent(a, ev)
+	case models.ActionCreate:
+		var created struct{ Type, Priority string }
+		_ = json.Unmarshal([]byte(a.NewData), &created) // best effort: the summary just omits what it can't read
+		ev.EventType, ev.Summary = models.EventCreated, createdSummary(created.Type, created.Priority)
+		return ev, true
+	}
+	s, ok := actionSummaries[a.ActionType]
+	if !ok {
+		return ev, false
+	}
+	ev.EventType, ev.Summary = s.eventType, s.summary
+	return ev, true
+}
+
+// createdSummary reads "Created task (P1)", dropping whatever is unknown.
+func createdSummary(issueType, priority string) string {
+	s := "Created"
+	if issueType != "" {
+		s += " " + issueType
+	}
+	if priority != "" {
+		s += " (" + priority + ")"
+	}
+	return s
+}
+
+// timelineIgnoredFields change on every write and say nothing about the issue.
+var timelineIgnoredFields = map[string]bool{"updated_at": true}
+
+// issueUpdateToEvent describes an update by the fields it changed. An update
+// that changed only bookkeeping fields produces no event.
+func issueUpdateToEvent(a models.ActionLog, ev models.TimelineEvent) (models.TimelineEvent, bool) {
+	var prev, next map[string]any
+	if json.Unmarshal([]byte(a.PreviousData), &prev) != nil || json.Unmarshal([]byte(a.NewData), &next) != nil ||
+		prev == nil || next == nil {
+		ev.EventType, ev.Summary = models.EventUpdate, "Updated"
+		return ev, true
+	}
+
+	var keys []string
+	for k := range next {
+		if !timelineIgnoredFields[k] && !reflect.DeepEqual(prev[k], next[k]) {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return ev, false
+	}
+	sort.Strings(keys)
+
+	var changes []string
+	statusChanged := false
+	for _, k := range keys {
+		if k == "status" {
+			statusChanged = true
+		}
+		changes = append(changes, describeFieldChange(k, prev[k], next[k]))
+	}
+	ev.EventType = models.EventUpdate
+	if statusChanged {
+		ev.EventType = models.EventStatusChange
+	}
+	ev.Summary = "Updated " + strings.Join(changes, ", ")
+	return ev, true
+}
+
+// describeFieldChange shows short scalar changes as "field: old → new" and
+// anything longer by name only.
+func describeFieldChange(field string, oldVal, newVal any) string {
+	oldS, okOld := shortScalar(oldVal)
+	newS, okNew := shortScalar(newVal)
+	if !okOld || !okNew {
+		return field
+	}
+	return fmt.Sprintf("%s: %s → %s", field, oldS, newS)
+}
+
+func shortScalar(v any) (string, bool) {
+	var s string
+	switch x := v.(type) {
+	case nil:
+		s = "(none)"
+	case string:
+		s = x
+		if s == "" {
+			s = "(none)"
+		}
+	case bool, float64:
+		s = fmt.Sprint(x)
 	default:
-		return nil
+		return "", false
 	}
-}
-
-func issueUpdateToEvent(a models.ActionLog) *models.TimelineEvent {
-	// Try to extract what changed from previous_data vs new_data
-	var prev, next map[string]interface{}
-	json.Unmarshal([]byte(a.PreviousData), &prev)
-	json.Unmarshal([]byte(a.NewData), &next)
-
-	if prev == nil || next == nil {
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   "Issue updated",
-			SessionID: a.SessionID,
-		}
+	if utf8.RuneCountInString(s) > 40 || strings.Contains(s, "\n") {
+		return "", false
 	}
-
-	// Check for status change specifically
-	oldStatus, _ := prev["status"].(string)
-	newStatus, _ := next["status"].(string)
-	if oldStatus != "" && newStatus != "" && oldStatus != newStatus {
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   fmt.Sprintf("Status: %s → %s", oldStatus, newStatus),
-			SessionID: a.SessionID,
-		}
-	}
-
-	// Generic update - summarize changed fields
-	var changed []string
-	for key, newVal := range next {
-		if oldVal, ok := prev[key]; ok && fmt.Sprintf("%v", oldVal) != fmt.Sprintf("%v", newVal) {
-			changed = append(changed, key)
-		}
-	}
-	if len(changed) > 0 {
-		return &models.TimelineEvent{
-			Timestamp: a.Timestamp,
-			EventType: models.EventStatusChange,
-			Summary:   fmt.Sprintf("Updated: %s", strings.Join(changed, ", ")),
-			SessionID: a.SessionID,
-		}
-	}
-
-	return nil
-}
-
-func fileActionToEvent(a models.ActionLog) *models.TimelineEvent {
-	var data map[string]interface{}
-	if a.NewData != "" {
-		json.Unmarshal([]byte(a.NewData), &data)
-	} else {
-		json.Unmarshal([]byte(a.PreviousData), &data)
-	}
-
-	filePath, _ := data["file_path"].(string)
-	if filePath == "" {
-		filePath = "unknown"
-	}
-
-	action := "Linked"
-	if models.ActionType(a.ActionType) == models.ActionUnlinkFile {
-		action = "Unlinked"
-	}
-
-	return &models.TimelineEvent{
-		Timestamp: a.Timestamp,
-		EventType: models.EventFileLink,
-		Summary:   fmt.Sprintf("%s file: %s", action, filePath),
-		SessionID: a.SessionID,
-	}
+	return s, true
 }
 
 func formatHandoffDetail(h models.Handoff) string {
 	var parts []string
-	if len(h.Done) > 0 {
-		parts = append(parts, fmt.Sprintf("Done: %s", strings.Join(h.Done, "; ")))
-	}
-	if len(h.Remaining) > 0 {
-		parts = append(parts, fmt.Sprintf("Remaining: %s", strings.Join(h.Remaining, "; ")))
-	}
-	if len(h.Decisions) > 0 {
-		parts = append(parts, fmt.Sprintf("Decisions: %s", strings.Join(h.Decisions, "; ")))
-	}
-	if len(h.Uncertain) > 0 {
-		parts = append(parts, fmt.Sprintf("Uncertain: %s", strings.Join(h.Uncertain, "; ")))
+	for _, section := range []struct {
+		label string
+		items []string
+	}{
+		{"Done", h.Done},
+		{"Remaining", h.Remaining},
+		{"Decisions", h.Decisions},
+		{"Uncertain", h.Uncertain},
+	} {
+		if len(section.items) > 0 {
+			parts = append(parts, section.label+": "+strings.Join(section.items, "; "))
+		}
 	}
 	return strings.Join(parts, "\n")
 }

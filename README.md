@@ -480,6 +480,7 @@ Analytics are stored locally and help identify workflow patterns. Disable with `
 | Log a decision                   | `td log --decision "chose X because Y"`          |
 | Log a blocker                    | `td log --blocker "stuck on X"`                  |
 | View issue details               | `td show <id>`                                   |
+| View an issue's timeline         | `td history <id>`                                |
 | Capture handoff state            | `td handoff <id> --done "..." --remaining "..."` |
 | Submit for review                | `td review <id>`                                 |
 | See reviewable issues            | `td reviewable`                                  |
