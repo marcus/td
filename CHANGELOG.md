@@ -8,6 +8,10 @@ All notable changes to td are documented in this file.
 
 - **`td history <id>` (alias `td timeline`) shows an issue's whole life in order:** creation, status changes, field updates (`priority: P2 → P1`), review records, logs, handoffs, comments, git snapshots, and linked files. The log a lifecycle command writes, such as an approval's reason, appears under its status change instead of as a duplicate line. Identical consecutive events, such as a retry loop posting the same comment, collapse into one with a count. `--limit N` keeps the most recent N events; `--json` returns the events with UTC timestamps.
 
+### Bug Fixes
+
+- **`td show` no longer drops handoffs or logs on older issues.** Handoffs written between December 2025 and February 2026 stored their lists base64-encoded, and failed to decode, so `td show` silently omitted them (938 rows in td's own project). They now decode in every handoff reader. A log row left with a NULL ID by the January 2026 text-ID migration made the whole issue's log query fail; it now reads.
+
 ## [v0.67.0] - 2026-10-15
 
 ### Sync Server

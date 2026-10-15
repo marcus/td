@@ -58,7 +58,9 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 	// Get logs that are either:
 	// 1. Directly assigned to this issue (issue_id = ?)
 	// 2. Work session logs (issue_id = '') from sessions where this issue is tagged
-	query := `SELECT CAST(l.id AS TEXT), l.issue_id, l.session_id, l.work_session_id, l.message, l.type, l.timestamp
+	// COALESCE: a log row left with a NULL id by the Jan 2026 text-ID
+	// migration would otherwise fail the scan and lose every log for the issue.
+	query := `SELECT COALESCE(CAST(l.id AS TEXT), ''), l.issue_id, l.session_id, l.work_session_id, l.message, l.type, l.timestamp
 	          FROM logs l
 	          WHERE l.issue_id = ?
 	          OR (l.issue_id = '' AND l.work_session_id IN (

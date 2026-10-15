@@ -229,6 +229,23 @@ func TestGetIssueTimeline_LegacyBase64Handoff(t *testing.T) {
 	}
 }
 
+func TestGetIssueTimeline_NullLogID(t *testing.T) {
+	// One real log row was left with a NULL id by the text-ID migration.
+	db, issue := newTimelineDB(t)
+	if _, err := db.conn.Exec(`
+		INSERT INTO logs (id, issue_id, session_id, work_session_id, message, type, timestamp)
+		VALUES (NULL, ?, 'ses_a', '', 'orphaned id', 'progress', ?)`,
+		issue.ID, issue.CreatedAt.Add(time.Hour),
+	); err != nil {
+		t.Skipf("schema rejects NULL log ids: %v", err)
+	}
+
+	events := timeline(t, db, issue.ID, 0)
+	if got, want := summaries(events), "created: Created task (P2)\nlog: orphaned id\n"; got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestGetIssueTimeline_Updates(t *testing.T) {
 	db, issue := newTimelineDB(t)
 	base := issue.CreatedAt.Add(time.Hour)

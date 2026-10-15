@@ -23,9 +23,12 @@ const (
 	timelinePairAfter  = 5 * time.Second
 )
 
-// narratingLogTypes lists the actions whose command always writes its own
-// log, and the log types it writes. Only these pair: update, delete, and
-// restore write no log, so a note logged next to them is the user's own.
+// narratingLogTypes lists the actions whose CLI command writes its own log,
+// and the log types it writes. Only these pair: update, delete, and restore
+// write no log, so a note logged next to them is the user's own. Some paths
+// (cascades, programmatic closes) record these actions without a log; a
+// progress note logged within the window of one of those would be folded
+// in as its detail, which still shows it.
 var narratingLogTypes = map[models.ActionType][]models.LogType{
 	models.ActionStart:                  {models.LogTypeProgress},
 	models.ActionReview:                 {models.LogTypeProgress},
@@ -264,6 +267,8 @@ func narrationDetail(summary, msg string) string {
 	if strings.HasPrefix(lowerSummary, lowerMsg) {
 		return ""
 	}
+	// Summaries are ASCII, so their byte length is the same before and
+	// after lower-casing and slicing msg by it is safe.
 	if strings.HasPrefix(lowerMsg, lowerSummary+":") {
 		return strings.TrimSpace(msg[len(summary)+1:])
 	}
