@@ -72,6 +72,14 @@ func BackfillOrphanEntities(tx *sql.Tx, sessionID string) (int, error) {
 	return total, nil
 }
 
+// latestActionOrder orders action_log rows newest first by time. Ordering the
+// text would put this function's own rows, which the driver writes as
+// "2026-10-15 14:00:00-07:00", before "2026-10-15T21:00:00Z" rows from the
+// same day. julianday parses both, and SQLite's CURRENT_TIMESTAMP, which are
+// the formats left after migration 36 rewrote Go String() values. Ties go to
+// the row logged last.
+const latestActionOrder = `julianday(timestamp) DESC, rowid DESC`
+
 // BackfillStaleIssues inserts synthetic update events for issues whose
 // updated_at timestamp is newer than the latest action_log entry.
 // This helps sync older data where status changes weren't logged.
@@ -96,10 +104,10 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 		SELECT i.*,
 		       (SELECT timestamp FROM action_log
 		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
-		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_ts,
+		        ORDER BY ` + latestActionOrder + ` LIMIT 1) AS last_ts,
 		       (SELECT new_data FROM action_log
 		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
-		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_data,
+		        ORDER BY ` + latestActionOrder + ` LIMIT 1) AS last_data,
 		       (SELECT COUNT(*) FROM action_log
 		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
 		        AND action_type = 'delete' AND undone = 0
@@ -187,14 +195,13 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 			needsUpdate = true
 		}
 
+		updatedAt, haveUpdatedAt := parseAnyTime(updatedAtVal)
+		lastActionAt, haveLastAction := parseAnyTime(lastActionVal)
+
 		// Check updated_at staleness when we have timestamps
-		if !needsUpdate && updatedAtVal != nil && lastActionVal != nil {
-			if updatedAt, ok := parseAnyTime(updatedAtVal); ok {
-				if lastActionAt, ok := parseAnyTime(lastActionVal); ok {
-					if updatedAt.After(lastActionAt.Add(staleThreshold)) {
-						needsUpdate = true
-					}
-				}
+		if !needsUpdate && haveUpdatedAt && haveLastAction {
+			if updatedAt.After(lastActionAt.Add(staleThreshold)) {
+				needsUpdate = true
 			}
 		}
 
@@ -230,11 +237,14 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 			return count, fmt.Errorf("generate action id: %w", err)
 		}
 
+		// Stamp the row no earlier than the latest action, so it becomes the
+		// latest action and the next run sees the status it records.
 		ts := time.Now()
-		if updatedAtVal != nil {
-			if parsed, ok := parseAnyTime(updatedAtVal); ok {
-				ts = parsed
-			}
+		if haveUpdatedAt {
+			ts = updatedAt
+		}
+		if haveLastAction && lastActionAt.After(ts) {
+			ts = lastActionAt
 		}
 
 		if _, err := stmt.Exec(actionID, sessionID, entityID, string(newData), ts); err != nil {
@@ -497,7 +507,8 @@ func statusMatches(lastData any, currentStatus string) bool {
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 		return false
 	}
-	val, ok := fields["status"]
+	// Review actions such as approve nest the issue under "issue".
+	val, ok := unwrapIssuePayload(fields)["status"]
 	if !ok || val == nil {
 		return false
 	}

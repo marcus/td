@@ -629,3 +629,139 @@ func TestAnyEventSetsStatusFalsePositive(t *testing.T) {
 		t.Error("anyEventSetsStatus returned true for 'open' when only 'reopened' exists")
 	}
 }
+
+func mustExec(t *testing.T, db *sql.DB, query string, args ...any) {
+	t.Helper()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatalf("exec %q: %v", query, err)
+	}
+}
+
+// runStaleBackfill runs BackfillStaleIssues in its own transaction.
+func runStaleBackfill(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := BackfillStaleIssues(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestBackfillStaleIssues_SettlesAfterDelete(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// A delete logs no data. The backfilled row is stamped with updated_at,
+	// the same instant as the delete but written with a local offset, which
+	// sorts before the delete as text.
+	mustExec(t, db, `INSERT INTO issues (id, title, status, updated_at) VALUES ('td-703', 'Deleted', 'open', '2026-09-30 14:20:48.774338-07:00')`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-703a', 'ses-old', 'create', 'issue', 'td-703', '{"id":"td-703","status":"open"}', '2026-09-30T21:20:40.445832Z', 0)`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-703b', 'ses-old', 'delete', 'issue', 'td-703', '', '2026-09-30T21:20:48.774338Z', 0)`)
+
+	if n := runStaleBackfill(t, db); n != 1 {
+		t.Fatalf("run 1: expected 1 stale backfill, got %d", n)
+	}
+	if n := runStaleBackfill(t, db); n != 0 {
+		t.Fatalf("run 2: expected 0 stale backfills, got %d", n)
+	}
+}
+
+func TestBackfillStaleIssues_SettlesWhenLatestActionPostdatesUpdatedAt(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	mustExec(t, db, `INSERT INTO issues (id, title, status, updated_at) VALUES ('td-704', 'Closed', 'closed', '2026-10-15 14:00:00-07:00')`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-704a', 'ses-old', 'create', 'issue', 'td-704', '{"id":"td-704","status":"open"}', '2026-10-15T20:00:00Z', 0)`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-704b', 'ses-old', 'update', 'issue', 'td-704', '{"id":"td-704"}', '2026-10-15T21:00:05Z', 0)`)
+
+	if n := runStaleBackfill(t, db); n != 1 {
+		t.Fatalf("run 1: expected 1 stale backfill, got %d", n)
+	}
+	if n := runStaleBackfill(t, db); n != 0 {
+		t.Fatalf("run 2: expected 0 stale backfills, got %d", n)
+	}
+}
+
+func TestBackfillStaleIssues_OrdersActionsByTimeAcrossFormats(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// "2026-10-15 15:00:00-07:00" is 22:00 UTC, an hour after the statusless
+	// action, although it sorts before it as text and was logged first.
+	mustExec(t, db, `INSERT INTO issues (id, title, status, updated_at) VALUES ('td-705', 'Closed', 'closed', '2026-10-15 15:00:00-07:00')`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES ('al-705a', 'ses-old', 'update', 'issue', 'td-705', '{"id":"td-705","status":"open"}', '{"id":"td-705","status":"closed"}', '2026-10-15 15:00:00-07:00', 0)`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-705b', 'ses-old', 'update', 'issue', 'td-705', '{"id":"td-705"}', '2026-10-15T21:00:00Z', 0)`)
+
+	if n := runStaleBackfill(t, db); n != 0 {
+		t.Fatalf("expected 0 stale backfills, got %d", n)
+	}
+}
+
+func TestBackfillStaleIssues_ReadsStatusFromApprovePayload(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// Approve logs the issue nested under "issue", which the sync engine unwraps.
+	mustExec(t, db, `INSERT INTO issues (id, title, status, updated_at) VALUES ('td-707', 'Approved', 'closed', '2026-10-15T21:00:00Z')`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-707', 'ses-old', 'approve', 'issue', 'td-707', '{"issue":{"id":"td-707","status":"closed"},"created_review_id":"rv-1"}', '2026-10-15T21:00:00Z', 0)`)
+
+	if n := runStaleBackfill(t, db); n != 0 {
+		t.Fatalf("expected 0 stale backfills, got %d", n)
+	}
+}
+
+func TestBackfillStaleIssues_IgnoresOrphanCreateFromSamePass(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// The issue has an update but no create, so the orphan backfill adds one,
+	// stamped with created_at. The update is still the latest action.
+	mustExec(t, db, `INSERT INTO issues (id, title, status, created_at, updated_at) VALUES ('td-708', 'Closed', 'closed', '2026-10-01T00:00:00Z', '2026-10-15T21:00:00Z')`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES ('al-708', 'ses-old', 'update', 'issue', 'td-708', '{"id":"td-708","status":"open"}', '{"id":"td-708","status":"closed"}', '2026-10-15T21:00:00Z', 0)`)
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphans, err := BackfillOrphanEntities(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := BackfillStaleIssues(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if orphans != 1 || stale != 0 {
+		t.Fatalf("expected 1 orphan and 0 stale backfills, got %d and %d", orphans, stale)
+	}
+}
+
+func TestBackfillStaleIssues_SettlesWithoutUpdatedAt(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// With no updated_at, the backfilled row must still be stamped no earlier
+	// than the latest action, even one stamped in the future.
+	mustExec(t, db, `INSERT INTO issues (id, title, status, updated_at) VALUES ('td-709', 'Closed', 'closed', NULL)`)
+	mustExec(t, db, `INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-709', 'ses-old', 'delete', 'issue', 'td-709', '', '2999-01-01T00:00:00Z', 0)`)
+
+	if n := runStaleBackfill(t, db); n != 1 {
+		t.Fatalf("run 1: expected 1 stale backfill, got %d", n)
+	}
+	if n := runStaleBackfill(t, db); n != 0 {
+		t.Fatalf("run 2: expected 0 stale backfills, got %d", n)
+	}
+}
