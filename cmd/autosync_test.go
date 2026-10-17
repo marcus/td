@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 
 func TestIsMutatingCommand(t *testing.T) {
 	// Commands that should trigger auto-sync
-	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments", "monitor"}
+	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments add", "monitor"}
 	for _, name := range mutating {
 		if !isMutatingCommand(name) {
 			t.Errorf("expected %q to be mutating", name)
@@ -18,11 +19,70 @@ func TestIsMutatingCommand(t *testing.T) {
 	}
 
 	// Commands that should NOT trigger auto-sync
-	readOnly := []string{"list", "show", "search", "query", "sync", "auth", "status", "info", "version", "help", "doctor"}
+	readOnly := []string{"list", "show", "search", "query", "sync", "auth", "status", "info", "version", "help", "doctor", "comments"}
 	for _, name := range readOnly {
 		if isMutatingCommand(name) {
 			t.Errorf("expected %q to NOT be mutating", name)
 		}
+	}
+}
+
+func TestIsMutatingInvocation(t *testing.T) {
+	tests := []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"comments", "td-1"}, false},
+		{[]string{"comments", "add", "td-1", "text"}, true},
+		{[]string{"comment", "td-1", "text"}, true},
+		{[]string{"board", "list"}, true},
+		{[]string{"list"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			cmd, _, err := rootCmd.Find(tt.args)
+			if err != nil {
+				t.Fatalf("find %v: %v", tt.args, err)
+			}
+			if got := isMutatingInvocation(cmd); got != tt.want {
+				t.Errorf("isMutatingInvocation(%q) = %v, want %v", cmd.CommandPath(), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMutationHookSkipsCommentsListing(t *testing.T) {
+	t.Setenv("TD_AUTH_KEY", "test-key")
+	dir := setupSyncStateDir(t, "proj-test", false)
+	saveAndRestoreGlobals(t)
+	baseDirOverride = &dir
+
+	origHooks := syncFeatureHooks
+	t.Cleanup(func() { syncFeatureHooks = origHooks })
+	calls := 0
+	hooks := origHooks
+	hooks.OnAfterMutation = func() { calls++ }
+	syncFeatureHooks = hooks
+
+	tests := []struct {
+		args []string
+		want int
+	}{
+		{[]string{"comments", "td-1"}, 0},
+		{[]string{"comments", "add", "td-1", "text"}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			cmd, _, err := rootCmd.Find(tt.args)
+			if err != nil {
+				t.Fatalf("find %v: %v", tt.args, err)
+			}
+			calls = 0
+			runGatedSyncMutationHook(cmd)
+			if calls != tt.want {
+				t.Errorf("post-mutation sync ran %d times, want %d", calls, tt.want)
+			}
+		})
 	}
 }
 

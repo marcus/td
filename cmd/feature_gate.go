@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/marcus/td/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -60,8 +62,7 @@ func runGatedSyncMutationHook(cmd *cobra.Command) {
 
 	// Skip everything for non-mutating (read-only) commands: the stranded warning
 	// and the autosync hook both only concern commands that change local data.
-	commandName := resolveCommandName(cmd)
-	if syncFeatureHooks.IsMutatingCommand != nil && !syncFeatureHooks.IsMutatingCommand(commandName) {
+	if !isMutatingInvocation(cmd) {
 		return
 	}
 
@@ -78,6 +79,18 @@ func runGatedSyncMutationHook(cmd *cobra.Command) {
 	}
 
 	syncFeatureHooks.OnAfterMutation()
+}
+
+// isMutatingInvocation reports whether cmd counts as mutating, checking both its
+// resolved name (its parent's, for a subcommand) and its full path below the
+// root, such as "comments add". Without a registered check, every command counts.
+func isMutatingInvocation(cmd *cobra.Command) bool {
+	isMutating := syncFeatureHooks.IsMutatingCommand
+	if isMutating == nil {
+		return true
+	}
+	path := strings.TrimPrefix(cmd.CommandPath(), cmd.Root().CommandPath()+" ")
+	return isMutating(resolveCommandName(cmd)) || isMutating(path)
 }
 
 func resolveCommandName(cmd *cobra.Command) string {

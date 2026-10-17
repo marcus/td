@@ -35,6 +35,8 @@ var (
 )
 
 // mutatingCommands lists commands that modify local data and should trigger auto-sync.
+// A top-level name also covers its subcommands. A full path such as "comments add"
+// covers just that subcommand, for a parent whose own run only reads.
 var mutatingCommands = map[string]bool{
 	"create":     true,
 	"update":     true,
@@ -56,7 +58,6 @@ var mutatingCommands = map[string]bool{
 	"link":       true,
 	"unlink":     true,
 	"comment":    true,
-	"comments":   true,
 	"undo":       true,
 	"import":     true,
 	"init":       true,
@@ -68,6 +69,9 @@ var mutatingCommands = map[string]bool{
 	"task":       true,
 	"ws":         true,
 	"monitor":    true,
+
+	// Not "comments": `td comments <id>` only lists.
+	"comments add": true,
 }
 
 // isMutatingCommand checks if the given command name triggers auto-sync.
