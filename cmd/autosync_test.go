@@ -11,7 +11,8 @@ import (
 
 func TestIsMutatingCommand(t *testing.T) {
 	// Commands that should trigger auto-sync
-	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments add", "monitor"}
+	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "dep", "defer", "due", "monitor",
+		"board create", "comments add", "epic create", "note add", "task create", "ws start"}
 	for _, name := range mutating {
 		if !isMutatingCommand(name) {
 			t.Errorf("expected %q to be mutating", name)
@@ -19,7 +20,8 @@ func TestIsMutatingCommand(t *testing.T) {
 	}
 
 	// Commands that should NOT trigger auto-sync
-	readOnly := []string{"list", "show", "search", "query", "sync", "auth", "status", "info", "version", "help", "doctor", "comments"}
+	readOnly := []string{"list", "show", "search", "query", "sync", "auth", "status", "info", "version", "help", "doctor", "comments",
+		"blocked-by", "depends-on", "focus", "unfocus", "board", "epic", "note", "task", "ws"}
 	for _, name := range readOnly {
 		if isMutatingCommand(name) {
 			t.Errorf("expected %q to NOT be mutating", name)
@@ -35,7 +37,25 @@ func TestIsMutatingInvocation(t *testing.T) {
 		{[]string{"comments", "td-1"}, false},
 		{[]string{"comments", "add", "td-1", "text"}, true},
 		{[]string{"comment", "td-1", "text"}, true},
-		{[]string{"board", "list"}, true},
+		{[]string{"board", "list"}, false},
+		{[]string{"board", "show", "b"}, false},
+		{[]string{"board", "create", "b"}, true},
+		{[]string{"epic", "list"}, false},
+		{[]string{"epic", "create", "e"}, true},
+		{[]string{"task", "list"}, false},
+		{[]string{"task", "create", "t"}, true},
+		{[]string{"ws", "current"}, false},
+		{[]string{"ws", "show", "w"}, false},
+		{[]string{"ws", "start", "w"}, true},
+		{[]string{"note", "list"}, false},
+		{[]string{"note", "show", "n"}, false},
+		{[]string{"note", "add", "n"}, true},
+		{[]string{"blocked-by", "td-1"}, false},
+		{[]string{"depends-on", "td-1"}, false},
+		{[]string{"focus", "td-1"}, false},
+		{[]string{"unfocus"}, false},
+		{[]string{"defer", "td-1", "+1w"}, true},
+		{[]string{"due", "td-1", "friday"}, true},
 		{[]string{"list"}, false},
 	}
 	for _, tt := range tests {
@@ -51,7 +71,43 @@ func TestIsMutatingInvocation(t *testing.T) {
 	}
 }
 
-func TestMutationHookSkipsCommentsListing(t *testing.T) {
+// TestSubcommandsAreClassified fails when a parent whose writes are listed one
+// subcommand at a time gains a subcommand that is neither listed as mutating
+// nor known to be read-only, so a new write cannot silently skip autosync.
+func TestSubcommandsAreClassified(t *testing.T) {
+	readOnly := map[string]bool{
+		"board list": true,
+		"board show": true,
+		"epic list":  true,
+		"note list":  true,
+		"note show":  true,
+		"task list":  true,
+		"ws current": true,
+		"ws list":    true,
+		"ws show":    true,
+	}
+	for _, parent := range []string{"board", "comments", "epic", "note", "task", "ws"} {
+		cmd, _, err := rootCmd.Find([]string{parent})
+		if err != nil {
+			t.Fatalf("find %q: %v", parent, err)
+		}
+		if !cmd.HasSubCommands() {
+			t.Fatalf("%q has no subcommands", parent)
+		}
+		for _, sub := range cmd.Commands() {
+			path := strings.TrimPrefix(sub.CommandPath(), rootCmd.CommandPath()+" ")
+			if mutating := isMutatingInvocation(sub); mutating == readOnly[path] {
+				t.Errorf("%q: isMutatingInvocation = %v; list it in mutatingCommands if it writes, or only in this test's read-only list if it only reads", path, mutating)
+			}
+		}
+	}
+}
+
+func TestMutationHookRunsOnlyForMutatingCommands(t *testing.T) {
+	// The hook runs only while the autosync gate is open, so ignore any kill-switch
+	// in the developer's environment.
+	t.Setenv("TD_FEATURE_SYNC_AUTOSYNC", "")
+	t.Setenv("TD_SYNC_AUTO", "")
 	t.Setenv("TD_AUTH_KEY", "test-key")
 	dir := setupSyncStateDir(t, "proj-test", false)
 	saveAndRestoreGlobals(t)
@@ -70,6 +126,11 @@ func TestMutationHookSkipsCommentsListing(t *testing.T) {
 	}{
 		{[]string{"comments", "td-1"}, 0},
 		{[]string{"comments", "add", "td-1", "text"}, 1},
+		{[]string{"board", "list"}, 0},
+		{[]string{"board", "create", "b"}, 1},
+		{[]string{"blocked-by", "td-1"}, 0},
+		{[]string{"due", "td-1", "friday"}, 1},
+		{[]string{"note", "add", "n"}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
