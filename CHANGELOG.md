@@ -2,7 +2,7 @@
 
 All notable changes to td are documented in this file.
 
-## [Unreleased]
+## [v0.69.0] - 2026-10-19
 
 ### CLI
 
