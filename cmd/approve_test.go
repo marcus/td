@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -280,5 +281,89 @@ func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
 	}
 	if strings.Contains(got, "Recent transition: submitted for review") {
 		t.Fatalf("expected stale submitted-for-review context to be skipped in %s", got)
+	}
+}
+
+func TestApproveInitialWrongStatusReportsWorkflowRefusal(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_CONTEXT_ID", "approve-initial-status-regression")
+	for _, status := range []models.Status{models.StatusOpen, models.StatusInProgress, models.StatusBlocked} {
+		for _, jsonOut := range []bool{false, true} {
+			dir := t.TempDir()
+			baseDirOverride = &dir
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			issue := &models.Issue{Title: "Not submitted for review", Status: status}
+			if err := database.CreateIssue(issue); err != nil {
+				t.Fatal(err)
+			}
+			flags := map[string]string{"self-review": "true", "reason": "reviewed diff"}
+			if jsonOut {
+				flags["json"] = "true"
+			}
+			out, runErr := runApproveCmd(t, []string{issue.ID}, flags)
+			if runErr == nil {
+				t.Fatalf("approve of %s succeeded: %s", status, out)
+			}
+			message := out
+			if jsonOut {
+				var envelope struct {
+					Error struct {
+						Code    string `json:"code"`
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+					t.Fatalf("invalid JSON %s: %v", out, err)
+				}
+				message = envelope.Error.Message
+			}
+			if !strings.Contains(message, "status is "+string(status)+", not in_review") || !strings.Contains(message, "td review "+issue.ID) {
+				t.Fatalf("missing actual status or guidance: %s", out)
+			}
+			if strings.Contains(message, "another session") {
+				t.Fatalf("invented concurrent writer: %s", out)
+			}
+			got, err := database.GetIssue(issue.ID)
+			if err != nil || got.Status != status {
+				t.Fatalf("changed refused issue: %v, %v", got, err)
+			}
+			reviews, err := database.ListIssueReviews(issue.ID)
+			if err != nil || len(reviews) != 0 {
+				t.Fatalf("review written for refused issue: %v, %v", reviews, err)
+			}
+			_ = database.Close()
+		}
+	}
+}
+
+func TestApproveWrongStatusDoesNotPreventOtherIDs(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_CONTEXT_ID", "approve-mixed-status-regression")
+	dir := t.TempDir()
+	baseDirOverride = &dir
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	wrong := &models.Issue{Title: "Still implementing", Status: models.StatusInProgress}
+	ready := &models.Issue{Title: "Ready for approval", Status: models.StatusInReview}
+	for _, issue := range []*models.Issue{wrong, ready} {
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, runErr := runApproveCmd(t, []string{wrong.ID, ready.ID}, nil)
+	if runErr != nil {
+		t.Fatalf("mixed batch with a successful approval should retain its success exit: %v", runErr)
+	}
+	if !strings.Contains(out, "status is in_progress, not in_review") || !strings.Contains(out, "APPROVED "+ready.ID) {
+		t.Fatalf("mixed results missing: %s", out)
+	}
+	if got, err := database.GetIssue(ready.ID); err != nil || got.Status != models.StatusClosed {
+		t.Fatalf("later ready issue was not approved: %v, %v", got, err)
 	}
 }

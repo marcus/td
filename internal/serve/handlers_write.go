@@ -194,28 +194,6 @@ func HandleUpdateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Reques
 	}
 	previous := *issue
 
-	// Apply only non-nil fields
-	if body.Title != nil {
-		issue.Title = *body.Title
-	}
-	if body.Description != nil {
-		issue.Description = *body.Description
-	}
-	if body.Acceptance != nil {
-		issue.Acceptance = *body.Acceptance
-	}
-	if body.Type != nil && *body.Type != "" {
-		issue.Type = models.NormalizeType(*body.Type)
-	}
-	if body.Priority != nil && *body.Priority != "" {
-		issue.Priority = models.NormalizePriority(*body.Priority)
-	}
-	if body.Points != nil {
-		issue.Points = *body.Points
-	}
-	if body.Labels != nil {
-		issue.Labels = body.Labels
-	}
 	if body.ParentID != nil {
 		parentID := *body.ParentID
 		if parentID != "" {
@@ -249,30 +227,64 @@ func HandleUpdateIssue(ctx HandlerContext, w http.ResponseWriter, r *http.Reques
 		} else {
 			issue.ParentID = ""
 		}
+		body.ParentID = &issue.ParentID
 	}
-	if body.Sprint != nil {
-		issue.Sprint = *body.Sprint
+	comment := ""
+	if body.Comment != nil {
+		comment = *body.Comment
 	}
-	if body.Minor != nil {
-		issue.Minor = *body.Minor
+	var expected *models.Issue
+	if r.Header.Get("If-Match") != "" {
+		expected = &previous
 	}
-	if body.DeferUntil != nil {
-		if *body.DeferUntil == "" {
-			issue.DeferUntil = nil
-		} else {
-			issue.DeferUntil = body.DeferUntil
+	issue, err = ctx.DB.MutateIssueLogged(issueID, ctx.SessionID, expected, models.LabelChange{Replace: body.Labels, Add: body.LabelsAdd, Remove: body.LabelsRemove}, comment, func(issue *models.Issue) error {
+		// Apply only non-nil fields
+		if body.Title != nil {
+			issue.Title = *body.Title
 		}
-	}
-	if body.DueDate != nil {
-		if *body.DueDate == "" {
-			issue.DueDate = nil
-		} else {
-			issue.DueDate = body.DueDate
+		if body.Description != nil {
+			issue.Description = *body.Description
 		}
-	}
+		if body.Acceptance != nil {
+			issue.Acceptance = *body.Acceptance
+		}
+		if body.Type != nil && *body.Type != "" {
+			issue.Type = models.NormalizeType(*body.Type)
+		}
+		if body.Priority != nil && *body.Priority != "" {
+			issue.Priority = models.NormalizePriority(*body.Priority)
+		}
+		if body.Points != nil {
+			issue.Points = *body.Points
+		}
+		if body.ParentID != nil {
+			issue.ParentID = *body.ParentID
+		}
+		if body.Sprint != nil {
+			issue.Sprint = *body.Sprint
+		}
+		if body.Minor != nil {
+			issue.Minor = *body.Minor
+		}
+		if body.DeferUntil != nil {
+			if *body.DeferUntil == "" {
+				issue.DeferUntil = nil
+			} else {
+				issue.DeferUntil = body.DeferUntil
+			}
+		}
+		if body.DueDate != nil {
+			if *body.DueDate == "" {
+				issue.DueDate = nil
+			} else {
+				issue.DueDate = body.DueDate
+			}
+		}
 
+		return nil
+	})
 	// Update atomically with action log
-	if err := ctx.DB.UpdateIssueLoggedIfUnchanged(issue, &previous, ctx.SessionID, models.ActionUpdate); err != nil {
+	if err != nil {
 		if errors.Is(err, db.ErrIssueChanged) {
 			WriteError(w, ErrConflict, "Task changed while saving. Compare the saved version with your draft.", http.StatusConflict)
 			return

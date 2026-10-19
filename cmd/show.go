@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
@@ -16,8 +18,12 @@ var showCmd = &cobra.Command{
 	Short:   "Display full details of one or more issues",
 	Long: `Display full details of one or more issues.
 
+Git summaries are omitted by default. Use --git to include repository state and
+changes since the issue started (limited to 2 seconds across all requested issues).
+
 Examples:
   td show td-abc1                  # Show issue details
+  td show td-abc1 --git            # Include the bounded git summary
   td show td-abc1 --children       # Show issue with child tasks
   td show td-abc1 td-abc2          # Show multiple issues`,
 	GroupID: "core",
@@ -105,9 +111,13 @@ Examples:
 			return reportFailure(isJSON, output.ErrCodeInvalidInput, err)
 		}
 
+		// Share one git budget across every issue in this invocation.
+		gitContext, cancelGit := newShowGitContext(cmd)
+		defer cancelGit()
+
 		// Handle multiple issues
 		if len(args) > 1 {
-			return showMultipleIssues(cmd, database, args)
+			return showMultipleIssues(cmd, database, args, gitContext)
 		}
 
 		issueID := args[0]
@@ -154,16 +164,7 @@ Examples:
 		deps, _ := database.GetDependencies(issueID)
 		blocked, _ := database.GetBlockedBy(issueID)
 
-		// Get git snapshots
-		startSnapshot, _ := database.GetStartSnapshot(issueID)
-		var gitState *git.State
-		var commitsSinceStart int
-		var diffStats *git.DiffStats
-		if startSnapshot != nil {
-			gitState, _ = git.GetState()
-			commitsSinceStart, _ = git.GetCommitsSince(startSnapshot.CommitSHA)
-			diffStats, _ = git.GetDiffStatsSince(startSnapshot.CommitSHA)
-		}
+		gitDetails := getShowGitDetails(cmd, database, issueID, gitContext)
 
 		// Check output format (support both --json and --format json)
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -257,24 +258,8 @@ Examples:
 				})
 			}
 			result["logs"] = jsonList(logEntries)
-			if startSnapshot != nil {
-				gitInfo := map[string]interface{}{
-					"start_commit": startSnapshot.CommitSHA,
-					"start_branch": startSnapshot.Branch,
-					"started_at":   startSnapshot.Timestamp,
-				}
-				if gitState != nil {
-					gitInfo["current_commit"] = gitState.CommitSHA
-					gitInfo["current_branch"] = gitState.Branch
-					gitInfo["commits_since_start"] = commitsSinceStart
-					gitInfo["dirty_files"] = gitState.DirtyFiles
-				}
-				if diffStats != nil {
-					gitInfo["files_changed"] = diffStats.FilesChanged
-					gitInfo["additions"] = diffStats.Additions
-					gitInfo["deletions"] = diffStats.Deletions
-				}
-				result["git"] = gitInfo
+			if gitDetails != nil {
+				result["git"] = gitDetails.json()
 			}
 			return output.JSON(result)
 		}
@@ -361,19 +346,8 @@ Examples:
 			}
 		}
 
-		// Add git state section
-		if startSnapshot != nil {
-			fmt.Print(output.SectionHeader("Git State"))
-			fmt.Printf("  Started: %s (%s) %s\n",
-				output.ShortSHA(startSnapshot.CommitSHA), startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
-			if gitState != nil {
-				fmt.Printf("  Current: %s (%s) +%d commits\n",
-					output.ShortSHA(gitState.CommitSHA), gitState.Branch, commitsSinceStart)
-				if diffStats != nil && diffStats.FilesChanged > 0 {
-					fmt.Printf("  Changed: %d files (+%d -%d)\n",
-						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
-				}
-			}
+		if gitDetails != nil {
+			gitDetails.print()
 		}
 
 		// Add session history from logs
@@ -491,7 +465,7 @@ Examples:
 }
 
 // showMultipleIssues displays multiple issues with separators
-func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) error {
+func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string, gitContext context.Context) error {
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	if format, _ := cmd.Flags().GetString("format"); format == "json" {
 		jsonOutput = true
@@ -520,6 +494,9 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 			}
 			if issue.DeferCount > 0 {
 				entry["defer_count"] = issue.DeferCount
+			}
+			if details := getShowGitDetails(cmd, database, id, gitContext); details != nil {
+				entry["git"] = details.json()
 			}
 			issues = append(issues, entry)
 		}
@@ -553,6 +530,9 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 				issueForOutput = renderIssueMarkdown(issue, markdownWidth)
 			}
 			fmt.Print(output.FormatIssueLong(issueForOutput, logs, handoff))
+			if details := getShowGitDetails(cmd, database, id, gitContext); details != nil {
+				details.print()
+			}
 		}
 
 		// Add separator between issues
@@ -562,6 +542,74 @@ func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) 
 	}
 
 	return nil
+}
+
+const showGitTimeout = 2 * time.Second
+
+func newShowGitContext(cmd *cobra.Command) (context.Context, context.CancelFunc) {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, showGitTimeout)
+}
+
+type showGitDetails struct {
+	snapshot *models.GitSnapshot
+	summary  *git.Summary
+	err      error
+}
+
+func getShowGitDetails(cmd *cobra.Command, database *db.DB, issueID string, ctx context.Context) *showGitDetails {
+	includeGit, _ := cmd.Flags().GetBool("git")
+	short, _ := cmd.Flags().GetBool("short")
+	if !includeGit || (short && !jsonMode(cmd)) {
+		return nil
+	}
+	snapshot, _ := database.GetStartSnapshot(issueID)
+	if snapshot == nil {
+		return nil
+	}
+	summary, err := git.GetSummarySince(ctx, snapshot.CommitSHA)
+	return &showGitDetails{snapshot: snapshot, summary: summary, err: err}
+}
+
+func (details *showGitDetails) json() map[string]interface{} {
+	info := map[string]interface{}{
+		"start_commit": details.snapshot.CommitSHA,
+		"start_branch": details.snapshot.Branch,
+		"started_at":   details.snapshot.Timestamp,
+	}
+	if details.err != nil {
+		info["error"] = details.err.Error()
+		return info
+	}
+	summary := details.summary
+	info["current_commit"] = summary.State.CommitSHA
+	info["current_branch"] = summary.State.Branch
+	info["commits_since_start"] = summary.CommitsSinceStart
+	info["dirty_files"] = summary.State.DirtyFiles
+	info["files_changed"] = summary.DiffStats.FilesChanged
+	info["additions"] = summary.DiffStats.Additions
+	info["deletions"] = summary.DiffStats.Deletions
+	return info
+}
+
+func (details *showGitDetails) print() {
+	fmt.Print(output.SectionHeader("Git State"))
+	fmt.Printf("  Started: %s (%s) %s\n",
+		output.ShortSHA(details.snapshot.CommitSHA), details.snapshot.Branch, output.FormatTimeAgo(details.snapshot.Timestamp))
+	if details.err != nil {
+		fmt.Printf("  Summary unavailable: %s\n", output.IndentContinuation(details.err.Error()))
+		return
+	}
+	summary := details.summary
+	fmt.Printf("  Current: %s (%s) +%d commits\n",
+		output.ShortSHA(summary.State.CommitSHA), summary.State.Branch, summary.CommitsSinceStart)
+	if summary.DiffStats.FilesChanged > 0 {
+		fmt.Printf("  Changed: %d files (+%d -%d)\n",
+			summary.DiffStats.FilesChanged, summary.DiffStats.Additions, summary.DiffStats.Deletions)
+	}
 }
 
 func renderIssueMarkdown(issue *models.Issue, width int) *models.Issue {
@@ -597,6 +645,7 @@ func init() {
 
 	showCmd.Flags().Bool("long", false, "Detailed multi-line output (default)")
 	showCmd.Flags().Bool("short", false, "Compact summary")
+	showCmd.Flags().Bool("git", false, "Include git state and changes since start (2-second budget; omitted by default)")
 	showCmd.Flags().Bool("json", false, "Machine-readable JSON")
 	showCmd.Flags().StringP("format", "f", "", "Output format (json)")
 	showCmd.Flags().Bool("children", false, "Display child issues inline (alternative to 'td tree')")

@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/reviewpolicy"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -440,5 +443,162 @@ func TestMarkdownRenderingKeepsRendererANSI(t *testing.T) {
 	got := output.FormatIssueLong(rendered, nil, nil)
 	if !strings.Contains(got, rendered.Description) {
 		t.Fatalf("long formatter changed glamour's rendered output:\n%q", got)
+	}
+}
+
+// A started issue is the expensive case: show must never query repository state
+// or historical diffs unless the caller opts in, on either output surface.
+func TestShowGitOptIn(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	dir := t.TempDir()
+	baseDirOverride = &dir
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	var ids []string
+	for _, title := range []string{"First started issue", "Second started issue"} {
+		issue := &models.Issue{Title: title, Status: models.StatusInProgress}
+		if err := database.CreateIssue(issue); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.AddGitSnapshot(&models.GitSnapshot{IssueID: issue.ID, Event: "start", CommitSHA: "abc1234", Branch: "main"}); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, issue.ID)
+	}
+
+	gitDir := t.TempDir()
+	callsPath := filepath.Join(gitDir, "calls")
+	t.Setenv("TD_SHOW_TEST_GIT_CALLS", callsPath)
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$TD_SHOW_TEST_GIT_CALLS"
+if [ "$TD_SHOW_TEST_GIT_FAILURE" = "$*" ]; then
+  echo 'fatal: index file corrupt' >&2
+  exit 128
+fi
+case "$*" in
+  'rev-parse HEAD') echo def5678 ;;
+  'rev-parse --abbrev-ref HEAD') echo main ;;
+  'rev-list --count abc1234..HEAD') echo 3 ;;
+  'diff --no-ext-diff --no-textconv --shortstat abc1234..HEAD') echo '2 files changed, 7 insertions(+), 1 deletion(-)' ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(gitDir, "git"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", gitDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	defer func() { _ = showCmd.Flags().Set("git", "false") }()
+	for _, multi := range []bool{false, true} {
+		args := ids[:1]
+		if multi {
+			args = ids
+		}
+		for _, jsonOut := range []bool{false, true} {
+			for _, includeGit := range []bool{false, true} {
+				_ = os.Remove(callsPath)
+				if err := showCmd.Flags().Set("git", fmt.Sprint(includeGit)); err != nil {
+					t.Fatal(err)
+				}
+				out := runShowCmd(t, args, jsonOut)
+				calls, _ := os.ReadFile(callsPath)
+				if !includeGit {
+					if len(calls) != 0 {
+						t.Fatalf("default show queried git (multi=%v json=%v): %s", multi, jsonOut, calls)
+					}
+					if strings.Contains(out, "GIT STATE") || strings.Contains(out, `"git"`) {
+						t.Fatalf("default show included git: %s", out)
+					}
+					continue
+				}
+				if !strings.Contains(string(calls), "diff --no-ext-diff --no-textconv --shortstat abc1234..HEAD") {
+					t.Fatalf("--git did not query summary: %s", calls)
+				}
+				if jsonOut {
+					var entries []map[string]interface{}
+					if multi {
+						if err := json.Unmarshal([]byte(out), &entries); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						var entry map[string]interface{}
+						if err := json.Unmarshal([]byte(out), &entry); err != nil {
+							t.Fatal(err)
+						}
+						entries = append(entries, entry)
+					}
+					for _, entry := range entries {
+						info, ok := entry["git"].(map[string]interface{})
+						if !ok || info["files_changed"] != float64(2) || info["commits_since_start"] != float64(3) {
+							t.Fatalf("unexpected git summary: %s", out)
+						}
+					}
+				} else if strings.Count(out, "Changed: 2 files (+7 -1)") != len(args) {
+					t.Fatalf("missing git summaries: %s", out)
+				}
+			}
+		}
+	}
+	// A failed state query is unknown, not a clean repository. Exercise the
+	// actual CLI renderers so non-timeout failures cannot disappear in JSON.
+	_ = showCmd.Flags().Set("git", "true")
+	for _, failedCommand := range []string{"status --porcelain", "rev-parse --abbrev-ref HEAD"} {
+		t.Setenv("TD_SHOW_TEST_GIT_FAILURE", failedCommand)
+		for _, jsonOut := range []bool{false, true} {
+			out := runShowCmd(t, ids[:1], jsonOut)
+			if jsonOut {
+				var entry struct {
+					Git map[string]interface{} `json:"git"`
+				}
+				if err := json.Unmarshal([]byte(out), &entry); err != nil {
+					t.Fatalf("invalid JSON: %v; %s", err, out)
+				}
+				if !strings.Contains(fmt.Sprint(entry.Git["error"]), "fatal: index file corrupt") || entry.Git["start_commit"] != "abc1234" {
+					t.Fatalf("missing explicit state-query failure and start snapshot: %s", out)
+				}
+				if _, ok := entry.Git["dirty_files"]; ok {
+					t.Fatalf("failed state query presented dirty_files as known: %s", out)
+				}
+			} else if !strings.Contains(out, "Summary unavailable:") || !strings.Contains(out, "fatal: index file corrupt") || strings.Contains(out, "  Current:") {
+				t.Fatalf("state query failure was hidden: %s", out)
+			}
+		}
+	}
+}
+
+func TestShowGitExpiredBudgetIsExplicit(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	issue := &models.Issue{Title: "Old issue", Status: models.StatusInProgress}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AddGitSnapshot(&models.GitSnapshot{IssueID: issue.ID, Event: "start", CommitSHA: "abc1234"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = showCmd.Flags().Set("git", "true")
+	defer func() { _ = showCmd.Flags().Set("git", "false") }()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	details := getShowGitDetails(showCmd, database, issue.ID, ctx)
+	if details == nil {
+		t.Fatal("missing git details")
+	}
+	info := details.json()
+	if !strings.Contains(fmt.Sprint(info["error"]), context.Canceled.Error()) || info["start_commit"] != "abc1234" {
+		t.Fatalf("missing explicit failure and stored snapshot: %v", info)
+	}
+	if _, ok := info["commits_since_start"]; ok {
+		t.Fatalf("unknown count represented as known: %v", info)
+	}
+	text := captureOutput(t, details.print)
+	if !strings.Contains(text, "Summary unavailable:") || !strings.Contains(text, "context canceled") {
+		t.Fatal(text)
 	}
 }

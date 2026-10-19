@@ -4,6 +4,16 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### CLI
+
+- **`td show` retrieves task context without historical git analysis by default.** Use `--git` to include the git summary in text or JSON; git analysis has a bounded execution budget, including when showing multiple issues.
+- **`td list` reports when results are incomplete.** Text and legacy JSON listings warn on stderr when the row limit hides matches. `--json-envelope` includes counts and completeness metadata while the default JSON array remains compatible. Use `--limit 0` to remove the output limit; `--all` continues to include closed issues. TDQ queries also report when their existing 10,000-issue scan cap makes the total uncertain. Reviewable listings filter approvals before pagination and return the same issues in text and JSON.
+- **`td approve` explains an issue's actual status when it is not in review.** The concurrent-session warning is reserved for changes detected during the approval write.
+
+### Labels and HTTP API
+
+- **Add or remove labels without replacing unrelated labels.** `td update --add-label X --remove-label Y` and API updates with `labels_add` / `labels_remove` apply against the current issue atomically. An optional comment commits in the same transaction, so a failed comment cannot leave the label change behind.
+
 ## [v0.68.0] - 2026-10-16
 
 ### CLI

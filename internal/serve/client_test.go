@@ -174,7 +174,7 @@ func TestClientProjectMetadata(t *testing.T) {
 		t.Fatalf("title limits: %+v", data)
 	}
 	caps := data["capabilities"].([]interface{})
-	if len(caps) != 2 || caps[0] != "issue_revisions" || caps[1] != "board_move" {
+	if len(caps) != 3 || caps[0] != "issue_revisions" || caps[1] != "board_move" || caps[2] != "atomic_label_updates" {
 		t.Fatalf("capabilities: %+v", caps)
 	}
 	for _, path := range []string{"/", "/assets/app.js", "/v1/browser", "/v1/markdown"} {

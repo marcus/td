@@ -416,41 +416,47 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 // AddComment adds a comment to an issue
 func (db *DB) AddComment(comment *models.Comment) error {
 	return db.withWriteLock(func() error {
-		// Normalize issue_id to canonical td- form (comments.issue_id FK).
-		comment.IssueID = NormalizeIssueID(comment.IssueID)
-		comment.CreatedAt = time.Now()
-
-		id, err := generateCommentID()
-		if err != nil {
-			return fmt.Errorf("generate ID: %w", err)
-		}
-		comment.ID = id
-
-		_, err = db.conn.Exec(`
-			INSERT INTO comments (id, issue_id, session_id, text, created_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, comment.ID, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
-		if err != nil {
-			return err
-		}
-
-		actionID, err := generateActionID()
-		if err != nil {
-			return fmt.Errorf("generate action ID: %w", err)
-		}
-		newData, _ := json.Marshal(map[string]interface{}{
-			"id": comment.ID, "issue_id": comment.IssueID, "session_id": comment.SessionID,
-			"text": comment.Text, "created_at": comment.CreatedAt,
+		return db.withReviewSyncTxLocked(func(tx *sql.Tx) error {
+			return db.addCommentStore(tx, comment)
 		})
-		actionTS := actionLogTimestampNow()
-		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-			actionID, comment.SessionID, "create", "comments", comment.ID, "", string(newData), actionTS)
-		if err != nil {
-			return fmt.Errorf("log action: %w", err)
-		}
-
-		return nil
 	})
+}
+
+func (db *DB) addCommentStore(store reviewSyncStore, comment *models.Comment) error {
+	// Normalize issue_id to canonical td- form (comments.issue_id FK).
+	comment.IssueID = NormalizeIssueID(comment.IssueID)
+	comment.CreatedAt = time.Now()
+
+	id, err := generateCommentID()
+	if err != nil {
+		return fmt.Errorf("generate ID: %w", err)
+	}
+	comment.ID = id
+
+	_, err = store.Exec(`
+		INSERT INTO comments (id, issue_id, session_id, text, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, comment.ID, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	actionID, err := generateActionID()
+	if err != nil {
+		return fmt.Errorf("generate action ID: %w", err)
+	}
+	newData, _ := json.Marshal(map[string]interface{}{
+		"id": comment.ID, "issue_id": comment.IssueID, "session_id": comment.SessionID,
+		"text": comment.Text, "created_at": comment.CreatedAt,
+	})
+	actionTS := actionLogTimestampNow()
+	_, err = store.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		actionID, comment.SessionID, "create", "comments", comment.ID, "", string(newData), actionTS)
+	if err != nil {
+		return fmt.Errorf("log action: %w", err)
+	}
+
+	return nil
 }
 
 // GetComments retrieves comments for an issue

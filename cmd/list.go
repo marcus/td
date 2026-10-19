@@ -17,8 +17,22 @@ var listCmd = &cobra.Command{
 	Use:     "list [filters]",
 	Aliases: []string{"ls"},
 	Short:   "List issues matching given filters",
+	Long: `List issues matching flags or a TDQ query. By default, show up to 50 issues.
+Use --limit 0 to remove the output limit; --all includes closed and deferred
+issues and does not change the limit.
+
+--json preserves the issue-array format. --json-envelope emits issues, total,
+shown, limit, truncated, total_exact, and scan_limited for pagination-aware callers.
+TDQ queries inspect at most 10,000 issues, even with --limit 0. When that scan
+cap is reached, total is a lower bound, total_exact is false, and scan_limited
+is true. Legacy JSON and text output report incomplete results on stderr.`,
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		limit, _ := cmd.Flags().GetInt("limit")
+		if limit < 0 {
+			return fmt.Errorf("--limit must be non-negative (0 means unlimited)")
+		}
+		jsonEnvelope, _ := cmd.Flags().GetBool("json-envelope")
 		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)
@@ -60,11 +74,10 @@ var listCmd = &cobra.Command{
 				sessionID = sess.ID
 			}
 
-			limit, _ := cmd.Flags().GetInt("limit")
 			sortBy, _ := cmd.Flags().GetString("sort")
 			sortDesc, _ := cmd.Flags().GetBool("reverse")
 
-			results, err := query.Execute(database, queryStr, sessionID, query.ExecuteOptions{
+			result, err := query.ExecuteDetailed(database, queryStr, sessionID, query.ExecuteOptions{
 				Limit:    limit,
 				SortBy:   sortBy,
 				SortDesc: sortDesc,
@@ -73,6 +86,13 @@ var listCmd = &cobra.Command{
 				output.Error("Query error: %v", err)
 				return err
 			}
+
+			results := result.Issues
+			metadata := newListEnvelope(results, result.Matched, limit, result.ScanLimited)
+			if jsonEnvelope {
+				return output.JSON(metadata)
+			}
+			defer metadata.notice(cmd)
 
 			// Output format
 			format, _ := cmd.Flags().GetString("format")
@@ -217,9 +237,6 @@ var listCmd = &cobra.Command{
 			reviewableIncludeApproved, _ = cmd.Flags().GetBool("include-approved")
 			reviewableSessionID = sess.ID
 		}
-		_ = reviewableMode
-		_ = reviewableIncludeApproved
-		_ = reviewableSessionID
 
 		// Mine filter (issues where current session is implementer)
 		if mine, _ := cmd.Flags().GetBool("mine"); mine {
@@ -251,11 +268,8 @@ var listCmd = &cobra.Command{
 		opts.SortBy, _ = cmd.Flags().GetString("sort")
 		opts.SortDesc, _ = cmd.Flags().GetBool("reverse")
 
-		// Limit
-		opts.Limit, _ = cmd.Flags().GetInt("limit")
-		if opts.Limit == 0 {
-			opts.Limit = 50
-		}
+		// Fetch all matches so the count and limit reflect every filter.
+		// In particular, reviewable approvals must be filtered before limiting.
 
 		// Temporal filters (GTD deferral)
 		deferred, _ := cmd.Flags().GetBool("deferred")
@@ -281,6 +295,23 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
+		readyReviews := make(map[string]*models.IssueReview)
+		if reviewableMode {
+			issues, readyReviews, err = listReviewableIssues(database, opts, issues, reviewableSessionID, reviewableIncludeApproved)
+			if err != nil {
+				return err
+			}
+		}
+		total := len(issues)
+		if limit > 0 && len(issues) > limit {
+			issues = issues[:limit]
+		}
+		metadata := newListEnvelope(issues, total, limit, false)
+		if jsonEnvelope {
+			return output.JSON(metadata)
+		}
+		defer metadata.notice(cmd)
+
 		// Output format (supports --json, --long, --short, and --format)
 		format, _ := cmd.Flags().GetString("format")
 		jsonOutput := jsonMode(cmd)
@@ -304,42 +335,11 @@ var listCmd = &cobra.Command{
 		if reviewableMode {
 			awaiting := make([]models.Issue, 0, len(issues))
 			ready := make([]models.Issue, 0)
-			readyReviews := make(map[string]*models.IssueReview)
 			for _, issue := range issues {
-				rev, _ := database.GetActiveApprovalReview(issue.ID)
-				if rev == nil {
+				if readyReviews[issue.ID] != nil {
+					ready = append(ready, issue)
+				} else {
 					awaiting = append(awaiting, issue)
-					continue
-				}
-				if reviewableIncludeApproved && closerAllowed(&issue, reviewableSessionID, rev) {
-					ready = append(ready, issue)
-					readyReviews[issue.ID] = rev
-				}
-			}
-			if reviewableIncludeApproved {
-				readyOpts := opts
-				readyOpts.ReviewableBy = ""
-				readyOpts.ReadyToCloseBy = reviewableSessionID
-				readyIssues, err := database.ListIssues(readyOpts)
-				if err != nil {
-					output.Error("failed to list ready-to-close issues: %v", err)
-					return err
-				}
-				seenReady := make(map[string]bool, len(ready))
-				for _, issue := range ready {
-					seenReady[issue.ID] = true
-				}
-				for _, issue := range readyIssues {
-					if seenReady[issue.ID] {
-						continue
-					}
-					rev, _ := database.GetActiveApprovalReview(issue.ID)
-					if rev == nil {
-						continue
-					}
-					ready = append(ready, issue)
-					readyReviews[issue.ID] = rev
-					seenReady[issue.ID] = true
 				}
 			}
 			if len(awaiting) > 0 {
@@ -374,6 +374,83 @@ var listCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// listEnvelope reports completeness without changing the legacy JSON array.
+// Total is a lower bound when the TDQ engine reaches its scan cap.
+type listEnvelope struct {
+	Issues      []models.Issue `json:"issues"`
+	Total       int            `json:"total"`
+	Shown       int            `json:"shown"`
+	Limit       int            `json:"limit"`
+	Truncated   bool           `json:"truncated"`
+	TotalExact  bool           `json:"total_exact"`
+	ScanLimited bool           `json:"scan_limited"`
+}
+
+func newListEnvelope(issues []models.Issue, total, limit int, scanLimited bool) listEnvelope {
+	return listEnvelope{
+		Issues: jsonList(issues), Total: total, Shown: len(issues), Limit: limit,
+		Truncated:  total > len(issues) || scanLimited,
+		TotalExact: !scanLimited, ScanLimited: scanLimited,
+	}
+}
+
+func (result listEnvelope) notice(cmd *cobra.Command) {
+	if result.ScanLimited {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d of at least %d matching issues shown; TDQ scan cap (%d issues) reached, total unknown. Use ordinary list flags for a complete result; --limit 0 removes only the output limit.\n", result.Shown, result.Total, query.DefaultMaxResults)
+	} else if result.Truncated {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%d of %d issues shown; use --limit N or --limit 0 to show more.\n", result.Shown, result.Total)
+	}
+}
+
+// Filter recorded approvals before limiting, and combine the two review buckets
+// through the same database sorting path used for every other list.
+func listReviewableIssues(database *db.DB, opts db.ListIssuesOptions, issues []models.Issue, sessionID string, includeApproved bool) ([]models.Issue, map[string]*models.IssueReview, error) {
+	readyReviews := make(map[string]*models.IssueReview)
+	ids := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		rev, err := database.GetActiveApprovalReview(issue.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if rev == nil {
+			ids = append(ids, issue.ID)
+		} else if includeApproved && closerAllowed(&issue, sessionID, rev) {
+			ids = append(ids, issue.ID)
+			readyReviews[issue.ID] = rev
+		}
+	}
+	if includeApproved {
+		readyOpts := opts
+		readyOpts.ReviewableBy = ""
+		readyOpts.ReadyToCloseBy = sessionID
+		readyIssues, err := database.ListIssues(readyOpts)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, issue := range readyIssues {
+			if readyReviews[issue.ID] != nil {
+				continue
+			}
+			rev, err := database.GetActiveApprovalReview(issue.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if rev != nil {
+				ids = append(ids, issue.ID)
+				readyReviews[issue.ID] = rev
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil, readyReviews, nil
+	}
+	opts.IDs = ids
+	opts.ReviewableBy = ""
+	opts.ReadyToCloseBy = ""
+	filtered, err := database.ListIssues(opts)
+	return filtered, readyReviews, err
 }
 
 // listShortcutResult holds the result of a shortcut list operation
@@ -945,7 +1022,8 @@ func init() {
 	listCmd.Flags().String("closed", "", "Closed date filter")
 	listCmd.Flags().String("sort", "", "Sort by field")
 	listCmd.Flags().BoolP("reverse", "r", false, "Reverse sort order")
-	listCmd.Flags().IntP("limit", "n", 50, "Limit results")
+	listCmd.Flags().IntP("limit", "n", 50, "Maximum issues shown (0 = unlimited; TDQ scan cap still applies)")
+	listCmd.Flags().Bool("json-envelope", false, "JSON object with issues and count/truncation metadata")
 	listCmd.Flags().Bool("long", false, "Detailed output")
 	listCmd.Flags().Bool("short", false, "Compact output (default)")
 	listCmd.Flags().BoolP("all", "a", false, "Include closed and deferred issues")

@@ -134,12 +134,16 @@ td create --title "Refactor API" --points 5 --type task
 ### `td show [issue-id]`
 
 Display full details of an issue, including session history and handoff state.
+Git summaries are omitted from text and JSON unless `--git` is passed. The shared
+2-second budget covers all requested issues; an unavailable summary reports an
+error alongside the stored start snapshot instead of inventing zero counts.
 
 **Output options:**
 
 ```txt
   --long        Detailed multi-line output (default)
   --short       Compact summary
+  --git         Include git state and changes since start (2-second budget)
   --json        Machine-readable JSON representation
 ```
 
@@ -186,6 +190,9 @@ Update one or more fields on existing issues.
   --depends-on string    Replace dependency issues  
   --description string   New description
   --labels string        Replace labels (comma-separated)
+  --add-label string     Add one label without replacing others (repeatable)
+  --remove-label string  Remove one label without replacing others (repeatable)
+  --comment string       Add a comment atomically with the issue edit
   --parent string        New parent issue ID
   --points int           New story points
   --priority string      New priority (P0-P4)
@@ -197,6 +204,7 @@ Note: Status changes use dedicated commands (`start`, `block`, `review`, `approv
 
 ```bash
 td update td-5q --labels auth,urgent,backend
+td update td-5q --add-label ready-for-clara --remove-label for-marcus --comment "Ready for another pass"
 # Output: UPDATED td-5q
 ```
 

@@ -194,6 +194,44 @@ fmt.Printf("CREATED %s\n", issue.ID)
 
 ## JSON output (`--json`)
 
+### List completeness
+
+`td list` shows at most 50 issues by default. When more issues match, text and
+legacy JSON output write a count and a `--limit 0` hint to stderr. `--json` and
+`--format json` keep their existing issue-array shape on stdout.
+
+Use `--limit N` to set a different maximum or `--limit 0` to remove the output
+limit. `--all` includes closed and deferred issues; it does not remove the limit.
+Filters and sorting apply before the output limit, including approval filtering
+for `--reviewable`.
+
+For structured completeness information, use `td list --json-envelope`:
+
+```json
+{
+  "issues": [],
+  "total": 0,
+  "shown": 0,
+  "limit": 50,
+  "truncated": false,
+  "total_exact": true,
+  "scan_limited": false
+}
+```
+
+`total` counts matching issues before the output limit; `shown` counts the returned
+issues. `truncated` indicates that the output limit omitted matches or the TDQ
+engine could not establish completeness. Envelope output supplies this information
+in JSON and does not also print a truncation notice to stderr.
+
+TDQ queries (`--filter` or a positional query) retain the query engine's 10,000-issue
+scan cap, even with `--limit 0`. If that cap is reached, `total` is a lower bound,
+`total_exact` is false, and `scan_limited` and `truncated` are true. Text and legacy
+JSON output explicitly report that the total is unknown. Use ordinary list flags
+when you need a complete result beyond that cap.
+
+### Shared JSON behavior
+
 `--json` is a **global (persistent) flag** registered on the root command, so it
 is available on **every** command — reads *and* mutations. In JSON mode a command
 suppresses its human output and emits a single machine-readable envelope on

@@ -780,3 +780,40 @@ Enforce these constraints:
 - Use action-log rowid token for SSE change tracking.
 - Keep focus handling local/config-based.
 - Enforce startup lock and structured port-file lifecycle.
+
+### Atomic label changes and inline comments
+
+`PATCH /v1/issues/{id}` and `PATCH /v1/projects/{id}/issues/{issue_id}` accept
+`labels_add` and `labels_remove` arrays, plus an optional `comment` string:
+
+```json
+{
+  "labels_add": ["ready-for-clara"],
+  "labels_remove": ["for-marcus"],
+  "comment": "Ready for another pass."
+}
+```
+
+Deltas apply to the current label set under the write lock. Unrelated labels
+survive concurrent edits. Existing order and case are preserved; new labels
+append in request order. Repeated additions and removal of absent labels are
+idempotent. Each delta label is trimmed, must be non-empty, and cannot contain
+commas or newlines. Matching remains case-sensitive. A label cannot be present
+in both delta arrays, and `labels` replacement cannot be combined with either
+delta array (including empty arrays). `labels: []` still clears all labels.
+
+The optional comment must contain non-whitespace text. A comment-only PATCH is
+supported. The issue edit, comment, and both action/sync records commit in one
+transaction; an error leaves all of them unchanged. Existing undo semantics
+remain: the issue edit has its usual reversible action record; comments keep
+their existing audit records and are not undone with the issue edit.
+
+`If-Match` continues to protect the entire issue revision: a stale revision
+returns `409` without applying labels or comment. Invalid combinations return
+`400`. After a successful commit the local server emits its normal change
+notification, and hosted routes emit `issue.upserted`; refetching issue detail
+includes the committed comment. Hosted routes promote both action records to
+sync events.
+
+Local `GET /v1/project` includes `atomic_label_updates` in `capabilities` so
+clients can discover support for the combined write.

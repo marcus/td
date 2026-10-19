@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/marcus/td/internal/dateparse"
 	"github.com/marcus/td/internal/db"
@@ -18,6 +19,7 @@ var updateCmd = &cobra.Command{
 	Short:   "Update one or more fields on existing issues",
 	Example: "  td update td-a1b2 --priority P1 --description \"Short inline note\"\n" +
 		"  td update td-a1b2 --description-file description.md\n" +
+		"  td update td-a1b2 --add-label ready-for-clara --remove-label for-marcus --comment \"Ready for another pass\"\n" +
 		"  cat acceptance.md | td update td-a1b2 --append --acceptance-file -",
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
@@ -49,6 +51,24 @@ var updateCmd = &cobra.Command{
 		}
 		defer func() { _ = database.Close() }()
 
+		labelsAdd, _ := cmd.Flags().GetStringArray("add-label")
+		labelsRemove, _ := cmd.Flags().GetStringArray("remove-label")
+		labelChange := models.LabelChange{Add: labelsAdd, Remove: labelsRemove}
+		if cmd.Flags().Changed("labels") {
+			values, _ := cmd.Flags().GetStringArray("labels")
+			labelChange.Replace = append([]string{}, mergeMultiValueFlag(values)...)
+		}
+		if _, err := labelChange.Apply(nil); err != nil {
+			return err
+		}
+		commentText, _ := cmd.Flags().GetString("comment")
+		if commentText == "" {
+			commentText, _ = cmd.Flags().GetString("note")
+		}
+		if commentText != "" && strings.TrimSpace(commentText) == "" {
+			return fmt.Errorf("comment must not be blank")
+		}
+
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
 			emitErr("%v", err)
@@ -62,7 +82,8 @@ var updateCmd = &cobra.Command{
 				continue
 			}
 
-			// (previous state captured atomically by UpdateIssueLogged)
+			// Mutation history captures the current persisted state under the lock.
+			previous := *issue
 
 			// Update fields if flags are set
 			if title, _ := cmd.Flags().GetString("title"); title != "" {
@@ -131,16 +152,6 @@ var updateCmd = &cobra.Command{
 					continue
 				}
 				issue.Points = pts
-			}
-
-			if cmd.Flags().Changed("labels") {
-				labelsArr, _ := cmd.Flags().GetStringArray("labels")
-				merged := mergeMultiValueFlag(labelsArr)
-				if len(merged) == 0 {
-					issue.Labels = nil
-				} else {
-					issue.Labels = merged
-				}
 			}
 
 			if sprint, _ := cmd.Flags().GetString("sprint"); cmd.Flags().Changed("sprint") {
@@ -239,29 +250,28 @@ var updateCmd = &cobra.Command{
 				}
 			}
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
+			// Appends and status transitions depend on the loaded snapshot. Plain
+			// field edits and label deltas apply directly to the current issue.
+			var expected *models.Issue
+			if appendMode || cmd.Flags().Changed("status") || cmd.Flags().Changed("defer") {
+				expected = &previous
+			}
+			prepared := issue
+			issue, err = database.MutateIssueLogged(issueID, sess.ID, expected, labelChange, commentText, func(current *models.Issue) error {
+				applyPreparedUpdate(cmd, current, prepared, descriptionProvided, acceptanceProvided)
+				return nil
+			})
+			if err != nil {
+				if len(args) == 1 {
+					cmd.SilenceUsage = true
+					return reportFailure(isJSON, output.ErrCodeDatabaseError, fmt.Errorf("failed to update %s: %w", issueID, err))
+				}
 				emitErr("%s", describeIssueWriteFailure(database, "update", issueID, err))
 				continue
 			}
 
 			if !isJSON {
 				fmt.Printf("UPDATED %s\n", issueID)
-			}
-
-			// Add inline comment if --comment/-m or -c was provided
-			commentText, _ := cmd.Flags().GetString("comment")
-			if commentText == "" {
-				commentText, _ = cmd.Flags().GetString("note")
-			}
-			if commentText != "" && sess != nil {
-				comment := &models.Comment{
-					IssueID:   issueID,
-					SessionID: sess.ID,
-					Text:      commentText,
-				}
-				if err := database.AddComment(comment); err != nil {
-					emitWarn("failed to add comment to %s: %v", issueID, err)
-				}
 			}
 
 			if isJSON {
@@ -296,6 +306,8 @@ func init() {
 	updateCmd.Flags().StringP("priority", "p", "", "New priority (P0, P1, P2, P3, P4)")
 	updateCmd.Flags().Int("points", 0, "New story points")
 	updateCmd.Flags().StringArrayP("labels", "l", nil, "Replace labels (repeatable, comma-separated)")
+	updateCmd.Flags().StringArray("add-label", nil, "Add a label without replacing existing labels (repeatable)")
+	updateCmd.Flags().StringArray("remove-label", nil, "Remove a label without replacing other labels (repeatable)")
 	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
 	updateCmd.Flags().StringArray("depends-on", nil, "Replace dependencies (repeatable, comma-separated)")
@@ -307,4 +319,43 @@ func init() {
 	_ = updateCmd.Flags().MarkHidden("note")
 	updateCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01; empty to clear)")
 	updateCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15; empty to clear)")
+}
+
+// applyPreparedUpdate projects only requested fields onto the locked current
+// record. Label changes are applied separately by the shared mutation core.
+func applyPreparedUpdate(cmd *cobra.Command, current, prepared *models.Issue, descriptionProvided, acceptanceProvided bool) {
+	if value, _ := cmd.Flags().GetString("title"); value != "" {
+		current.Title = prepared.Title
+	}
+	if descriptionProvided {
+		current.Description = prepared.Description
+	}
+	if acceptanceProvided {
+		current.Acceptance = prepared.Acceptance
+	}
+	if value, _ := cmd.Flags().GetString("type"); value != "" {
+		current.Type = prepared.Type
+	}
+	if value, _ := cmd.Flags().GetString("priority"); value != "" {
+		current.Priority = prepared.Priority
+	}
+	if cmd.Flags().Changed("points") {
+		current.Points = prepared.Points
+	}
+	if cmd.Flags().Changed("sprint") {
+		current.Sprint = prepared.Sprint
+	}
+	if cmd.Flags().Changed("parent") {
+		current.ParentID = prepared.ParentID
+	}
+	if cmd.Flags().Changed("defer") {
+		current.DeferUntil = prepared.DeferUntil
+		current.DeferCount = prepared.DeferCount
+	}
+	if cmd.Flags().Changed("due") {
+		current.DueDate = prepared.DueDate
+	}
+	if value, _ := cmd.Flags().GetString("status"); value != "" {
+		current.Status = prepared.Status
+	}
 }

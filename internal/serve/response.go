@@ -740,18 +740,21 @@ type IssueCreateBody struct {
 // IssueUpdateBody represents the expected JSON body for updating an issue.
 // All fields are optional; only present fields are applied.
 type IssueUpdateBody struct {
-	Title       *string  `json:"title"`
-	Description *string  `json:"description"`
-	Type        *string  `json:"type"`
-	Priority    *string  `json:"priority"`
-	Points      *int     `json:"points"`
-	Labels      []string `json:"labels"`
-	ParentID    *string  `json:"parent_id"`
-	Acceptance  *string  `json:"acceptance"`
-	Sprint      *string  `json:"sprint"`
-	Minor       *bool    `json:"minor"`
-	DeferUntil  *string  `json:"defer_until"`
-	DueDate     *string  `json:"due_date"`
+	Title        *string  `json:"title"`
+	Description  *string  `json:"description"`
+	Type         *string  `json:"type"`
+	Priority     *string  `json:"priority"`
+	Points       *int     `json:"points"`
+	Labels       []string `json:"labels"`
+	ParentID     *string  `json:"parent_id"`
+	LabelsAdd    []string `json:"labels_add"`
+	LabelsRemove []string `json:"labels_remove"`
+	Comment      *string  `json:"comment"`
+	Acceptance   *string  `json:"acceptance"`
+	Sprint       *string  `json:"sprint"`
+	Minor        *bool    `json:"minor"`
+	DeferUntil   *string  `json:"defer_until"`
+	DueDate      *string  `json:"due_date"`
 }
 
 // ValidateIssueCreate validates an IssueCreateBody and returns any field errors.
@@ -832,6 +835,12 @@ func ValidateIssueCreate(body *IssueCreateBody, titleMin, titleMax int) []FieldE
 // The titleMin and titleMax parameters allow callers to pass configured limits.
 func ValidateIssueUpdate(body *IssueUpdateBody, titleMin, titleMax int) []FieldError {
 	var errs []FieldError
+	if _, err := (models.LabelChange{Replace: body.Labels, Add: body.LabelsAdd, Remove: body.LabelsRemove}).Apply(nil); err != nil {
+		errs = append(errs, FieldError{Field: "labels", Rule: "invalid", Message: err.Error()})
+	}
+	if body.Comment != nil && strings.TrimSpace(*body.Comment) == "" {
+		errs = append(errs, FieldError{Field: "comment", Rule: "required", Message: "comment must not be blank"})
+	}
 
 	// Title (optional, but if present must be valid)
 	if body.Title != nil {

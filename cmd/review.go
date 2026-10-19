@@ -841,6 +841,19 @@ To surface issues reviewed by a sub-agent that you can close, use
 				continue
 			}
 
+			// A known initial status is a workflow refusal, not evidence of a
+			// concurrent writer. Keep CAS conflict diagnostics for failed writes.
+			if issue.Status != models.StatusInReview {
+				msg := fmt.Sprintf("cannot approve %s: status is %s, not in_review\n%s", issueID, issue.Status, approveFollowupGuidance(issue))
+				if jsonOutput {
+					output.JSONError(output.ErrCodeInvalidInput, msg)
+				} else if !all {
+					output.Warning("%s", msg)
+				}
+				skipped++
+				continue
+			}
+
 			// Look up active approval (delegated/trusted-mode routing input).
 			// Trusted mode mirrors delegated's Case 1: an existing independent
 			// approval lets any session close without re-reviewing.

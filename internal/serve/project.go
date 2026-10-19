@@ -12,6 +12,6 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		"name": filepath.Base(s.baseDir), "path": s.baseDir,
 		"session_id":       s.sessionID,
 		"title_min_length": minTitle, "title_max_length": maxTitle,
-		"capabilities": []string{"issue_revisions", "board_move"},
+		"capabilities": []string{"issue_revisions", "board_move", "atomic_label_updates"},
 	}, http.StatusOK)
 }

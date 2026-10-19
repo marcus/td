@@ -4,10 +4,12 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // State represents the current git state
@@ -22,24 +24,31 @@ type State struct {
 
 // GetState returns the current git state
 func GetState() (*State, error) {
+	return getState(context.Background())
+}
+
+func getState(ctx context.Context) (*State, error) {
 	state := &State{}
 
 	// Get current commit SHA
-	sha, err := runGit("rev-parse", "HEAD")
+	sha, err := runGitContext(ctx, "rev-parse", "HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("not a git repository")
+		return nil, fmt.Errorf("read git state: %w", err)
 	}
 	state.CommitSHA = strings.TrimSpace(sha)
 
 	// Get current branch
-	branch, err := runGit("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := runGitContext(ctx, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		branch = "HEAD"
+		return nil, fmt.Errorf("read git branch: %w", err)
 	}
 	state.Branch = strings.TrimSpace(branch)
 
 	// Get status
-	status, _ := runGit("status", "--porcelain")
+	status, err := runGitContext(ctx, "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("read git status: %w", err)
+	}
 	lines := strings.Split(strings.TrimSpace(status), "\n")
 
 	if status == "" || (len(lines) == 1 && lines[0] == "") {
@@ -64,7 +73,11 @@ func GetState() (*State, error) {
 
 // GetCommitsSince returns the number of commits since a given SHA
 func GetCommitsSince(sha string) (int, error) {
-	output, err := runGit("rev-list", "--count", sha+"..HEAD")
+	return getCommitsSince(context.Background(), sha)
+}
+
+func getCommitsSince(ctx context.Context, sha string) (int, error) {
+	output, err := runGitContext(ctx, "rev-list", "--count", sha+"..HEAD")
 	if err != nil {
 		return 0, err
 	}
@@ -139,7 +152,11 @@ type DiffStats struct {
 
 // GetDiffStatsSince returns diff statistics since a given SHA
 func GetDiffStatsSince(sha string) (*DiffStats, error) {
-	output, err := runGit("diff", "--shortstat", sha+"..HEAD")
+	return getDiffStatsSince(context.Background(), sha)
+}
+
+func getDiffStatsSince(ctx context.Context, sha string) (*DiffStats, error) {
+	output, err := runGitContext(ctx, "diff", "--no-ext-diff", "--no-textconv", "--shortstat", sha+"..HEAD")
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +195,31 @@ func GetDiffStatsSince(sha string) (*DiffStats, error) {
 	return stats, nil
 }
 
+// Summary is the current repository state and changes since an issue started.
+type Summary struct {
+	State             *State
+	CommitsSinceStart int
+	DiffStats         *DiffStats
+}
+
+// GetSummarySince gathers a complete summary within the caller's shared budget.
+// A failed or timed-out query returns no summary, so unknown counts never appear as zero.
+func GetSummarySince(ctx context.Context, sha string) (*Summary, error) {
+	state, err := getState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	commits, err := getCommitsSince(ctx, sha)
+	if err != nil {
+		return nil, err
+	}
+	stats, err := getDiffStatsSince(ctx, sha)
+	if err != nil {
+		return nil, err
+	}
+	return &Summary{State: state, CommitsSinceStart: commits, DiffStats: stats}, nil
+}
+
 // IsRepo checks if we're in a git repository
 func IsRepo() bool {
 	_, err := runGit("rev-parse", "--git-dir")
@@ -194,12 +236,24 @@ func GetRootDir() (string, error) {
 }
 
 func runGit(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return runGitContext(context.Background(), args...)
+}
+
+func runGitContext(ctx context.Context, args ...string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, "git", args...)
+	// Bound pipe cleanup even if an external git helper leaves inherited pipes open.
+	cmd.WaitDelay = 100 * time.Millisecond
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %s", err, stderr.String())
 	}
