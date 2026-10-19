@@ -1,11 +1,9 @@
-package e2e_test
+package e2e
 
 import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/marcus/td/test/e2e"
 )
 
 func TestEngine(t *testing.T) {
@@ -13,11 +11,11 @@ func TestEngine(t *testing.T) {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	cfg := e2e.DefaultConfig()
+	cfg := DefaultConfig()
 	cfg.NumActors = 2
-	h := e2e.Setup(t, cfg)
+	h := Setup(t, cfg)
 
-	engine := e2e.NewChaosEngine(h, 42, 2)
+	engine := NewChaosEngine(h, 42, 2)
 
 	// Seed some initial issues so non-create actions have targets
 	for i := 0; i < 5; i++ {
@@ -31,7 +29,7 @@ func TestEngine(t *testing.T) {
 			out, err := h.Td(actor, "create", fmt.Sprintf("Seed issue %d for chaos testing", i),
 				"--type", "task", "--priority", "P1")
 			if err == nil {
-				id := e2e.ExtractIssueID(out)
+				id := ExtractIssueID(out)
 				if id != "" {
 					engine.TrackCreatedIssue(id, "open", actor)
 				}
@@ -79,9 +77,9 @@ func TestEngine(t *testing.T) {
 func TestEngineWeightedSelection(t *testing.T) {
 	// Verify weight distribution is reasonable (no panics, all actions reachable)
 	counts := make(map[string]int)
-	rng := e2e.NewChaosEngine(nil, 123, 2).Rng
+	rng := NewChaosEngine(nil, 123, 2).Rng
 	for i := 0; i < 10000; i++ {
-		def := e2e.SelectAction(rng)
+		def := SelectAction(rng)
 		counts[def.Name]++
 	}
 
@@ -100,4 +98,33 @@ func TestEngineWeightedSelection(t *testing.T) {
 
 	t.Logf("weight distribution (10000 samples): create=%d update=%d comment=%d restore=%d",
 		counts["create"], counts["update"], counts["comment"], counts["restore"])
+}
+
+func TestExpectedApprovalStatusFailures(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"initial_in_progress", "Warning: cannot approve td-72cdd0: status is in_progress, not in_review\n  Submit for review first: td review td-72cdd0\n", true},
+		{"initial_open", "Warning: cannot approve td-72cdd0: status is open, not in_review\n", true},
+		{"initial_blocked", "Warning: cannot approve td-72cdd0: status is blocked, not in_review\n", true},
+		{"colored_initial_status", "\x1b[38;5;214mWarning: cannot approve td-72cdd0: status is in_progress, not in_review\x1b[m\n\x1b[38;5;214m  Submit for review first: td review td-72cdd0\x1b[m\n", true},
+		{"cas_conflict", "Warning: cannot approve td-72cdd0: status changed from in_review to in_progress in another session\n", true},
+		{"database_error", "Warning: cannot approve td-72cdd0: database is locked\n", false},
+		{"unrelated_git_error", "fatal: index file corrupt\n", false},
+		{"missing_issue", "Warning: cannot approve: status is in_progress, not in_review\n", false},
+		{"unrelated_action", "Warning: cannot update td-72cdd0: status is in_progress, not in_review\n", false},
+		{"unknown_status", "Warning: cannot approve td-72cdd0: status is pending, not in_review\n", false},
+		{"different_expected_status", "Warning: cannot approve td-72cdd0: status is in_progress, not open\n", false},
+		{"incidental_status_text", "Error: query failed while checking cannot approve td-72cdd0: status is in_progress, not in_review\n", false},
+		{"extra_error_detail", "Warning: cannot approve td-72cdd0: status is in_progress, not in_review due to database corruption\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isExpectedFailure(tc.output); got != tc.want {
+				t.Fatalf("isExpectedFailure(%q) = %v, want %v", tc.output, got, tc.want)
+			}
+		})
+	}
 }

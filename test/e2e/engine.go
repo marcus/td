@@ -5,10 +5,17 @@ import (
 	"math/rand"
 	"regexp"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // issueIDRe matches td-<hex> issue IDs in command output.
 var issueIDRe = regexp.MustCompile(`td-[0-9a-f]+`)
+
+// An initial status refusal names the approval action, issue, and concrete
+// non-review status. Anchor the full diagnostic line so unrelated errors that
+// happen to mention status do not become expected failures.
+var approvalInitialStatusRefusalRe = regexp.MustCompile(`(?m)^(?:warning: )?cannot approve td-[0-9a-f]+: status is (?:open|in_progress|blocked), not in_review\r?$`)
 
 // ActionResult records the outcome of a single chaos action.
 type ActionResult struct {
@@ -188,6 +195,9 @@ func (e *ChaosEngine) TrackCreatedIssue(id, status, owner string) {
 // isExpectedFailure checks if output contains known rejection patterns.
 func isExpectedFailure(output string) bool {
 	lower := strings.ToLower(output)
+	if approvalInitialStatusRefusalRe.MatchString(ansi.Strip(lower)) {
+		return true
+	}
 	patterns := []string{
 		"cannot approve your own",
 		"self-review",
@@ -204,6 +214,8 @@ func isExpectedFailure(output string) bool {
 		//   "issue not in_progress: td-x (status: in_review)"   <- unstart
 		//   "cannot reject td-x: must be in_review
 		//    (currently in_progress)"                           <- reject
+		//   "cannot approve td-x: status is in_progress,
+		//    not in_review"                                      <- initial refusal
 		//   "cannot approve td-x: status changed from in_review
 		//    to in_progress in another session"                 <- td-e38551 guard
 		//   "cannot start td-x: invalid transition from closed"  <- start/unstart/
