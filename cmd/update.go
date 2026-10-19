@@ -51,9 +51,16 @@ var updateCmd = &cobra.Command{
 		}
 		defer func() { _ = database.Close() }()
 
-		labelsAdd, _ := cmd.Flags().GetStringArray("add-label")
-		labelsRemove, _ := cmd.Flags().GetStringArray("remove-label")
-		labelChange := models.LabelChange{Add: labelsAdd, Remove: labelsRemove}
+		// pflag returns non-nil empty slices for omitted StringArray flags.
+		// Preserve presence explicitly: an omitted delta must not conflict with
+		// the existing --labels replacement mode.
+		labelChange := models.LabelChange{}
+		if cmd.Flags().Changed("add-label") {
+			labelChange.Add, _ = cmd.Flags().GetStringArray("add-label")
+		}
+		if cmd.Flags().Changed("remove-label") {
+			labelChange.Remove, _ = cmd.Flags().GetStringArray("remove-label")
+		}
 		if cmd.Flags().Changed("labels") {
 			values, _ := cmd.Flags().GetStringArray("labels")
 			labelChange.Replace = append([]string{}, mergeMultiValueFlag(values)...)

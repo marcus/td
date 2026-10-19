@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"reflect"
@@ -159,6 +160,83 @@ func TestUpdateAtomicLabelsCommentFailureCLIContract(t *testing.T) {
 	}
 	if actions != 0 {
 		t.Fatalf("partial action records: %d", actions)
+	}
+}
+
+func TestUpdateLabelReplacementCLICompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		flags   []string
+		want    []string
+		invalid bool
+	}{
+		{name: "long replacement", flags: []string{"--labels", "foo,bar"}, want: []string{"foo", "bar"}},
+		{name: "short replacement", flags: []string{"-l", "foo,bar"}, want: []string{"foo", "bar"}},
+		{name: "repeated replacement", flags: []string{"--labels", "foo", "--labels", "bar,foo"}, want: []string{"foo", "bar"}},
+		{name: "long clear", flags: []string{"--labels", ""}},
+		{name: "short clear", flags: []string{"-l", ""}},
+		{name: "replacement with add", flags: []string{"--labels", "foo", "--add-label", "ready"}, invalid: true},
+		{name: "replacement with remove", flags: []string{"-l", "foo", "--remove-label", "original"}, invalid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := db.Initialize(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = database.Close() }()
+			issue := &models.Issue{Title: "Fresh CLI label replacement", Labels: []string{"original", "keep"}}
+			if err := database.CreateIssue(issue); err != nil {
+				t.Fatal(err)
+			}
+			before, err := database.GetIssue(issue.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := append([]string{"update", issue.ID}, test.flags...)
+			args = append(args, "--comment", "Replacement comment", "--json")
+			child := exec.Command(buildTD(t), args...)
+			child.Dir = dir
+			child.Env = append(os.Environ(), "TD_FEATURE_SYNC_AUTOSYNC=false", "TD_FEATURE_SYNC_CLI=false", "TD_CONTEXT_ID=test-label-replacement", "HOME="+dir)
+			var stdout, stderr bytes.Buffer
+			child.Stdout, child.Stderr = &stdout, &stderr
+			err = child.Run()
+			envelope := assertSoleJSONValue(t, test.name, stdout.String())
+			after, readErr := database.GetIssue(issue.ID)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			comments, readErr := database.GetComments(issue.ID)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if test.invalid {
+				var exitErr *exec.ExitError
+				if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+					t.Fatalf("expected exit 1; err=%v", err)
+				}
+				failure, ok := envelope["error"].(map[string]any)
+				if !ok || !strings.Contains(fmt.Sprint(failure["message"]), "cannot combine label replacement") {
+					t.Fatalf("wrong conflict: %v", envelope)
+				}
+				if !reflect.DeepEqual(after, before) || len(comments) != 0 {
+					t.Fatalf("conflict partially wrote issue/comment: %+v %v", after, comments)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("replacement failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+			}
+			if envelope["action"] != "updated" {
+				t.Fatalf("not an update envelope: %v", envelope)
+			}
+			if !reflect.DeepEqual(after.Labels, test.want) {
+				t.Fatalf("labels=%v want=%v", after.Labels, test.want)
+			}
+			if len(comments) != 1 || comments[0].Text != "Replacement comment" {
+				t.Fatalf("comments=%v", comments)
+			}
+		})
 	}
 }
 
