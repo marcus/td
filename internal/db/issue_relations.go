@@ -402,6 +402,7 @@ func (db *DB) GetIssueDependencyRelations(issueID string) ([]models.IssueDepende
 
 // GetDependencies returns what an issue depends on
 func (db *DB) GetDependencies(issueID string) ([]string, error) {
+	issueID = NormalizeIssueID(issueID)
 	rows, err := db.conn.Query(`
 		SELECT depends_on_id FROM issue_dependencies WHERE issue_id = ? AND relation_type = 'depends_on'
 	`, issueID)
@@ -426,6 +427,7 @@ func (db *DB) GetDependencies(issueID string) ([]string, error) {
 
 // GetBlockedBy returns what issues are blocked by this issue
 func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
+	issueID = NormalizeIssueID(issueID)
 	rows, err := db.conn.Query(`
 		SELECT issue_id FROM issue_dependencies WHERE depends_on_id = ? AND relation_type = 'depends_on'
 	`, issueID)
@@ -699,6 +701,7 @@ func (db *DB) UnlinkFile(issueID, filePath string) error {
 
 // GetLinkedFiles returns files linked to an issue
 func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
+	issueID = NormalizeIssueID(issueID)
 	rows, err := db.conn.Query(`
 		SELECT CAST(id AS TEXT), issue_id, file_path, role, linked_sha, linked_at
 		FROM issue_files WHERE issue_id = ? ORDER BY role, file_path
