@@ -36,6 +36,8 @@ in the audit trail. Do not create a throwaway session to make a review appear
 independent either. Pin `review_policy_mode=delegated|strict` when a project
 needs a mechanical independence boundary rather than an honesty-based one.
 
+Give a reviewing sub-agent its own session by having it prefix every td call with `TD_CONTEXT_ID=reviewer-<id>` inline (`TD_CONTEXT_ID=reviewer-td-a1b2 td approve ...`). An `export` does not survive between an agent's shell calls, and without the id a sub-agent collapses into the orchestrator's session. If the reviewer could not get its own session, it reports its verdict and the orchestrator closes with `--reviewed-by`.
+
 ## Development Approach
 
 - Be pragmatic: `td` is a focused local tool, not an enterprise platform.
@@ -90,6 +92,8 @@ for the non-interactive runbook and complete verification checklist.
 - `pkg/monitor/` - TUI monitor (see [docs/modal-system.md](docs/modal-system.md) for modal architecture)
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
+
+`.todos/issues.db` uses `journal_mode = TRUNCATE`, never WAL (`internal/db/conn.go`): modernc's WAL shared memory corrupts the database when a long-lived in-process connection (Sidecar's embedded monitor) runs beside bursts of short-lived `td` processes. Do not reintroduce WAL without a multi-process soak test covering that pattern. A revision from before the switch (a bisect, an old branch, a sidecar built against it) converts a live database back to WAL just by running, so run those only in an isolated HOME and state tree.
 
 ## Settings Persistence
 
