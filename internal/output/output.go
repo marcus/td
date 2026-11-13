@@ -31,6 +31,12 @@ var (
 	}
 )
 
+// render applies style to s for printing on stdout. Color is dropped when
+// stdout is not a terminal or NO_COLOR is set.
+func render(style lipgloss.Style, s string) string {
+	return lipgloss.Sprint(style.Render(s))
+}
+
 // OutputMode determines output format
 type OutputMode int
 
@@ -62,7 +68,7 @@ const (
 // and moving it would hide the command's own answer from anyone reading
 // stdout. It is not a diagnostic.
 func Success(format string, args ...interface{}) {
-	fmt.Println(successStyle.Render(fmt.Sprintf(format, args...)))
+	fmt.Println(render(successStyle, fmt.Sprintf(format, args...)))
 }
 
 // Error prints an error message to stderr. It is a diagnostic about the
@@ -71,7 +77,7 @@ func Success(format string, args ...interface{}) {
 // to stdout leaves a --json caller with unparseable output. A terminal user
 // sees no difference: stderr is unbuffered and interleaved on a tty.
 func Error(format string, args ...interface{}) {
-	fmt.Fprintln(os.Stderr, errorStyle.Render("ERROR: "+fmt.Sprintf(format, args...)))
+	_, _ = lipgloss.Fprintln(os.Stderr, errorStyle.Render("ERROR: "+fmt.Sprintf(format, args...)))
 }
 
 // Warning prints a warning message to stderr, for the same reason as Error: a
@@ -80,7 +86,7 @@ func Error(format string, args ...interface{}) {
 // WarningErr existed; now that Warning itself is safe, WarningErr is gone and
 // its call sites use Warning.)
 func Warning(format string, args ...interface{}) {
-	fmt.Fprintln(os.Stderr, warningStyle.Render("Warning: "+fmt.Sprintf(format, args...)))
+	_, _ = lipgloss.Fprintln(os.Stderr, warningStyle.Render("Warning: "+fmt.Sprintf(format, args...)))
 }
 
 // Info prints an info message to stdout. Unlike Error and Warning, Info's
@@ -207,12 +213,12 @@ func FormatStatus(s models.Status) string {
 	if !ok {
 		return string(s)
 	}
-	return style.Render(fmt.Sprintf("[%s]", s))
+	return render(style, fmt.Sprintf("[%s]", s))
 }
 
 // FormatPriority formats a priority
 func FormatPriority(p models.Priority) string {
-	return priorityStyle.Render(fmt.Sprintf("[%s]", p))
+	return render(priorityStyle, fmt.Sprintf("[%s]", p))
 }
 
 // FormatPoints returns empty string if points is 0, otherwise "Npts"
@@ -235,7 +241,7 @@ func FormatPointsSuffix(points int) string {
 // FormatIssueShort formats an issue in short format
 func FormatIssueShort(issue *models.Issue) string {
 	var parts []string
-	parts = append(parts, titleStyle.Render(issue.ID))
+	parts = append(parts, render(titleStyle, issue.ID))
 	parts = append(parts, FormatPriority(issue.Priority))
 	// Short output has many call sites (list, query, search, and show), so keep
 	// its only free-text field safe at the renderer boundary instead of relying
@@ -243,10 +249,10 @@ func FormatIssueShort(issue *models.Issue) string {
 	parts = append(parts, sanitizeIssueTitle(issue.Title))
 
 	if issue.Points > 0 {
-		parts = append(parts, subtleStyle.Render(fmt.Sprintf("%dpts", issue.Points)))
+		parts = append(parts, render(subtleStyle, fmt.Sprintf("%dpts", issue.Points)))
 	}
 
-	parts = append(parts, subtleStyle.Render(string(issue.Type)))
+	parts = append(parts, render(subtleStyle, string(issue.Type)))
 	parts = append(parts, FormatStatus(issue.Status))
 
 	return strings.Join(parts, "  ")
@@ -255,16 +261,16 @@ func FormatIssueShort(issue *models.Issue) string {
 // FormatIssueDeleted formats a deleted issue showing [deleted] marker instead of status
 func FormatIssueDeleted(issue *models.Issue) string {
 	var parts []string
-	parts = append(parts, titleStyle.Render(issue.ID))
+	parts = append(parts, render(titleStyle, issue.ID))
 	parts = append(parts, FormatPriority(issue.Priority))
 	parts = append(parts, issue.Title)
 
 	if issue.Points > 0 {
-		parts = append(parts, subtleStyle.Render(fmt.Sprintf("%dpts", issue.Points)))
+		parts = append(parts, render(subtleStyle, fmt.Sprintf("%dpts", issue.Points)))
 	}
 
-	parts = append(parts, subtleStyle.Render(string(issue.Type)))
-	parts = append(parts, errorStyle.Render("[deleted]"))
+	parts = append(parts, render(subtleStyle, string(issue.Type)))
+	parts = append(parts, render(errorStyle, "[deleted]"))
 
 	return strings.Join(parts, "  ")
 }
@@ -274,7 +280,7 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	var sb strings.Builder
 
 	// Header
-	sb.WriteString(titleStyle.Render(fmt.Sprintf("%s: %s", issue.ID, issue.Title)))
+	sb.WriteString(render(titleStyle, fmt.Sprintf("%s: %s", issue.ID, issue.Title)))
 	sb.WriteString("\n")
 	fmt.Fprintf(&sb, "Status: %s\n", FormatStatus(issue.Status))
 	fmt.Fprintf(&sb, "Type: %s | Priority: %s", issue.Type, issue.Priority)
@@ -303,7 +309,7 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	// Description
 	if issue.Description != "" {
 		sb.WriteString("\n")
-		sb.WriteString(subtleStyle.Render("Description:"))
+		sb.WriteString(render(subtleStyle, "Description:"))
 		sb.WriteString("\n")
 		// NOT sanitized here: by this point the description may already be
 		// glamour-rendered, and stripping ESC from that output leaves literal
@@ -316,7 +322,7 @@ func FormatIssueLong(issue *models.Issue, logs []models.Log, handoff *models.Han
 	// Acceptance criteria
 	if issue.Acceptance != "" {
 		sb.WriteString("\n")
-		sb.WriteString(subtleStyle.Render("Acceptance Criteria:"))
+		sb.WriteString(render(subtleStyle, "Acceptance Criteria:"))
 		sb.WriteString("\n")
 		sb.WriteString(issue.Acceptance)
 		sb.WriteString("\n")
@@ -565,7 +571,7 @@ func StatusBadge(status models.Status) string {
 	}
 	style, hasStyle := statusStyles[status]
 	if hasStyle {
-		return style.Render(fmt.Sprintf("%s %s", symbol, status))
+		return render(style, fmt.Sprintf("%s %s", symbol, status))
 	}
 	return fmt.Sprintf("%s %s", symbol, status)
 }
