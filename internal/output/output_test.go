@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/marcus/td/internal/models"
 )
 
@@ -388,6 +390,25 @@ func TestFormatIssueShortNoPoints(t *testing.T) {
 	}
 	if strings.Contains(result, "pts") {
 		t.Error("Should not contain pts when points is 0")
+	}
+}
+
+func TestFormatIssueShortPlainWhenStdoutIsNotATerminal(t *testing.T) {
+	saved := lipgloss.Writer.Profile
+	lipgloss.Writer.Profile = colorprofile.NoTTY
+	t.Cleanup(func() { lipgloss.Writer.Profile = saved })
+
+	issue := &models.Issue{
+		ID:       "td-6baac1",
+		Title:    "Piped output",
+		Status:   models.StatusInReview,
+		Type:     models.TypeBug,
+		Priority: models.PriorityP1,
+	}
+
+	got := FormatIssueShort(issue)
+	if want := "td-6baac1  [P1]  Piped output  bug  [in_review]"; got != want {
+		t.Errorf("FormatIssueShort with stdout not a terminal = %q, want %q", got, want)
 	}
 }
 
